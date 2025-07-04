@@ -2,15 +2,17 @@
 export interface TestCase {
   id: number;
   name: string;
-  description: string;
-  tags: string[];
-  priority: 'high' | 'medium' | 'low';
-  status: 'active' | 'draft' | 'disabled';
-  lastRun: string;
-  success_rate: number;
-  author: string;
-  created: string;
-  steps: TestStep[];
+  description?: string;
+  steps: string;
+  assertions?: string;
+  priority?: 'high' | 'medium' | 'low';
+  status?: 'active' | 'draft' | 'disabled';
+  tags?: string[];
+  author?: string;
+  created?: string;
+  lastRun?: string;
+  success_rate?: number;
+  suiteId?: number; // 🔥 新增：关联的测试套件ID
 }
 
 // 用于显示的简化测试用例接口（兼容现有数据）
@@ -64,10 +66,10 @@ export interface TestRun {
   id: string;
   testCaseId: number;
   name: string;
-  status: TestRunStatus;
+  status: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
   progress: number;
-  startTime: Date;
-  endTime?: Date;
+  startTime: string;
+  endTime?: string;
   duration: string;
   totalSteps: number;
   completedSteps: number;
@@ -76,7 +78,7 @@ export interface TestRun {
   executor: string;
   environment: string;
   logs: TestLog[];
-  screenshots: Screenshot[];
+  screenshots: string[];
   error?: string;
 }
 
@@ -84,7 +86,7 @@ export type TestRunStatus = 'queued' | 'running' | 'completed' | 'failed' | 'can
 
 export interface TestLog {
   id: string;
-  timestamp: Date;
+  timestamp: string;
   level: 'info' | 'success' | 'warning' | 'error';
   message: string;
   stepId?: string;
@@ -124,4 +126,47 @@ export interface WebSocketMessage {
   type: 'test_update' | 'test_complete' | 'test_error' | 'log';
   runId: string;
   data: any;
+} 
+
+// 🔥 新增：测试套件接口
+export interface TestSuite {
+  id: number;
+  name: string;
+  description?: string;
+  owner?: string;
+  tags?: string[];
+  testCaseIds: number[];
+  createdAt: string;
+  updatedAt: string;
+  environment?: string;
+  priority?: 'high' | 'medium' | 'low';
+  status?: 'active' | 'draft' | 'disabled';
+}
+
+// 🔥 新增：测试套件运行记录
+export interface TestSuiteRun {
+  id: string;
+  suiteId: number;
+  suiteName: string;
+  status: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
+  progress: number;
+  startTime: string;
+  endTime?: string;
+  duration: string;
+  totalCases: number;
+  completedCases: number;
+  passedCases: number;
+  failedCases: number;
+  executor: string;
+  environment: string;
+  testRuns: string[]; // runIds of individual test cases
+  error?: string;
+}
+
+// 🔥 新增：套件执行选项
+export interface SuiteExecutionOptions {
+  environment?: string;
+  executionMode?: 'standard' | 'interactive';
+  concurrency?: number;
+  continueOnFailure?: boolean;
 } 

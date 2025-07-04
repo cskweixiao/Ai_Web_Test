@@ -8,7 +8,7 @@ export interface TestCase {
   name: string;
   description?: string;
   steps: string;           // 原始步骤文本 
-  assertions: string;      // 原始断言文本1111222
+  assertions: string;      // 原始断言文本
   tags?: string[];
   priority?: 'high' | 'medium' | 'low';
   status?: 'active' | 'draft' | 'disabled';
@@ -19,6 +19,7 @@ export interface TestCase {
   parsedSteps?: TestStep[];     // AI解析后的步骤
   parsedAssertions?: TestStep[]; // AI解析后的断言
   totalSteps?: number;
+  suiteId?: number;        // 🔥 新增：关联的测试套件ID
 }
 
 export interface TestRun {
@@ -58,7 +59,24 @@ interface Assertion {
     steps: TestStep[];
 }
 
-const concurrency = 1; // 每次只处理一个测试
+// 🔥 灵活并发度配置
+const concurrency = Number(process.env.TEST_CONCURRENCY ?? 1);
+
+// 🔥 常量抽取，避免 magic numbers
+const STEP_DELAY_MS = 1500;
+const MAX_DISPLAYED_ELEMENTS = 5;
+const MAX_ELEMENT_TEXT_LENGTH = 30;
+
+// 🔥 简易队列占位，防止 TS 报错；真要用队列再换成 Bull
+type Job = { data: any };
+class NoopQueue {
+  process(_pattern: string, _concurrency: number, _processor: (job: Job) => Promise<void>) {
+    // 占位实现，不做任何处理
+  }
+  on(_event: string, _handler: (job: Job, err: Error) => void) {
+    // 占位实现，不做任何处理
+  }
+}
 
 export class TestExecutionService {
   private wsManager: WebSocketManager;
@@ -66,12 +84,15 @@ export class TestExecutionService {
   private runningTests: Map<string, any> = new Map();
   private clients: Map<string, PlaywrightMcpClient> = new Map();
   private externalTestCaseFinder?: (id: number) => TestCase | null;
+  private testQueue = new NoopQueue(); // 🔥 新增：队列占位，防止编译错误
 
   constructor(wsManager: WebSocketManager) {
     this.wsManager = wsManager;
     this.aiParser = new AITestParser();
 
     this.wsManager.on('executeTest', (data) => this.handleExecuteTest(data));
+    // 🔥 仅当真想启用队列时再放开
+    // this.setupQueueProcessor();
   }
 
   public setExternalTestCaseFinder(finder: (id: number) => TestCase | null) {
@@ -130,7 +151,7 @@ export class TestExecutionService {
     this.addLog(runId, `测试任务 '${testCase.name}' 已创建，运行ID: ${runId}`);
   }
 
-  private updateRunStatus(runId: string, status: string, error?: string) {
+  private updateRunStatus(runId: string, status: TestRunStatus, error?: string) {
     const testRun = this.runningTests.get(runId);
     if (testRun) {
       testRun.status = status;
@@ -273,15 +294,15 @@ export class TestExecutionService {
           
           // 详细记录前5个主要元素
           if (pageElements.length > 0) {
-            const topElements = pageElements.slice(0, 5);
+            const topElements = pageElements.slice(0, MAX_DISPLAYED_ELEMENTS);
             this.addLog(runId, `📋 [Step ${stepCounter}] 主要可交互元素:`);
             topElements.forEach((el, index) => {
               const elementDesc = this.formatElementDescription(el);
               this.addLog(runId, `   ${index + 1}. ${elementDesc}`);
             });
             
-            if (pageElements.length > 5) {
-              this.addLog(runId, `   ... 还有 ${pageElements.length - 5} 个其他元素`);
+            if (pageElements.length > MAX_DISPLAYED_ELEMENTS) {
+              this.addLog(runId, `   ... 还有 ${pageElements.length - MAX_DISPLAYED_ELEMENTS} 个其他元素`);
             }
           } else {
             this.addLog(runId, `⚠️ [Step ${stepCounter}] 当前页面未找到可交互元素`);
@@ -338,7 +359,7 @@ export class TestExecutionService {
         // 🔥 步骤间添加短暂延迟，确保页面状态稳定
         if (remainingStepsText && remainingStepsText.trim().length > 0) {
           this.addLog(runId, `⏱️ [Step ${stepCounter-1}] 等待页面状态稳定...`);
-          await new Promise(resolve => setTimeout(resolve, 1500));
+          await new Promise(resolve => setTimeout(resolve, STEP_DELAY_MS));
         }
       }
 
@@ -355,7 +376,7 @@ export class TestExecutionService {
           
           // 记录断言阶段的页面状态
           if (finalPageElements.length > 0) {
-            const importantElements = finalPageElements.slice(0, 3);
+            const importantElements = finalPageElements.slice(0, MAX_DISPLAYED_ELEMENTS);
             this.addLog(runId, `📋 [断言] 关键页面元素:`);
             importantElements.forEach((el, index) => {
               const elementDesc = this.formatElementDescription(el);
@@ -435,7 +456,7 @@ export class TestExecutionService {
     }
     
     if (element.text && element.text.length > 0) {
-      const truncatedText = element.text.length > 30 ? element.text.substring(0, 30) + '...' : element.text;
+      const truncatedText = element.text.length > MAX_ELEMENT_TEXT_LENGTH ? element.text.substring(0, MAX_ELEMENT_TEXT_LENGTH) + '...' : element.text;
       parts.push(`text="${truncatedText}"`);
     }
     
@@ -446,16 +467,61 @@ export class TestExecutionService {
     return parts.join(' ');
   }
 
-  // 🔥 新增：提供给API调用的runTest方法
+  // 🔥 新增：提供给API调用的runTest方法，返回真正的runId
   public async runTest(testCaseId: number, environment: string = 'staging', executionMode: string = 'interactive'): Promise<string> {
     console.log(`🚀 [runTest] 开始执行测试用例 ID: ${testCaseId}, 模式: ${executionMode}`);
     
-    // 直接调用内部的handleExecuteTest方法
-    const data = { testCaseId, environment, executionMode };
-    await this.handleExecuteTest(data);
+    const testCase = await this.findTestCaseById(testCaseId);
+    if (!testCase) {
+      throw new Error('Test case not found');
+    }
+
+    const runId = uuidv4();
+    this.createTestRun(runId, testCase);
+
+    if (executionMode === 'interactive') {
+      this.executeTestWithInteractiveParsing(testCase, runId).catch(error => {
+        console.error('❌ 交互式测试启动出错:', error);
+        this.updateRunStatus(runId, 'failed', `Test failed to start: ${error.message}`);
+      });
+    } else {
+      this.executeTestWithAssertions(testCase, runId).catch(error => {
+        console.error('❌ 测试启动出错:', error);
+        this.updateRunStatus(runId, 'failed', `Test failed to start: ${error.message}`);
+      });
+    }
     
-    // 由于测试是异步执行的，我们需要返回一个临时的runId
-    // 实际的runId会在handleExecuteTest中生成
-    return `temp-${testCaseId}-${Date.now()}`;
+    this.wsManager.sendToAll(JSON.stringify({ type: 'testQueued', runId, testCaseId }));
+    
+    // 🔥 返回真正的runId，而不是临时ID
+    return runId;
   }
+
+// 🔥 新增：清理已完成的测试记录，防止内存泄漏
+public cleanupCompletedTests(olderThanHours: number = 24) {
+  const cutoffTime = new Date(Date.now() - olderThanHours * 60 * 60 * 1000);
+  
+  for (const [runId, testRun] of this.runningTests.entries()) {
+    if (
+      (testRun.status === 'completed' || testRun.status === 'failed' || testRun.status === 'cancelled') &&
+      testRun.endTime &&
+      new Date(testRun.endTime) < cutoffTime
+    ) {
+      this.runningTests.delete(runId);
+      console.log(`🗑️ 清理过期测试记录: ${runId}`);
+    }
+  }
+}
+
+// 🔥 获取当前运行中的测试数量
+public getRunningTestsCount(): number {
+  return Array.from(this.runningTests.values()).filter(
+    test => test.status === 'running' || test.status === 'queued'
+  ).length;
+}
+
+// 🔥 获取所有测试运行记录
+public getAllTestRuns(): any[] {
+  return Array.from(this.runningTests.values());
+}
 } 

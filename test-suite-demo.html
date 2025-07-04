@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>测试套件功能演示</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            line-height: 1.6;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f8fafc;
+        }
+        .header {
+            background: white;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            margin-bottom: 30px;
+        }
+        .feature-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        .feature-card {
+            background: white;
+            padding: 25px;
+            border-radius: 12px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            border-left: 4px solid #3b82f6;
+        }
+        .feature-card h3 {
+            margin-top: 0;
+            color: #1f2937;
+        }
+        .feature-list {
+            list-style: none;
+            padding: 0;
+        }
+        .feature-list li {
+            padding: 8px 0;
+            border-bottom: 1px solid #e5e7eb;
+        }
+        .feature-list li:before {
+            content: "✅ ";
+            margin-right: 8px;
+        }
+        .demo-link {
+            display: inline-block;
+            background: #3b82f6;
+            color: white;
+            padding: 12px 24px;
+            text-decoration: none;
+            border-radius: 8px;
+            margin: 10px 0;
+            transition: background 0.2s;
+        }
+        .demo-link:hover {
+            background: #2563eb;
+        }
+        .highlight {
+            background: #fef3c7;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-weight: 600;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🎉 测试套件功能已上线！</h1>
+        <p>恭喜！您的测试管理系统现在支持测试套件功能，可以更好地组织和批量执行测试用例。</p>
+        <a href="http://localhost:5173" class="demo-link" target="_blank">🚀 立即体验新功能</a>
+    </div>
+
+    <div class="feature-grid">
+        <div class="feature-card">
+            <h3>🔥 新增功能</h3>
+            <ul class="feature-list">
+                <li><span class="highlight">测试套件管理</span> - 创建、编辑、删除测试套件</li>
+                <li><span class="highlight">批量执行</span> - 一键运行整个测试套件</li>
+                <li><span class="highlight">Tab切换</span> - 在测试用例和测试套件间快速切换</li>
+                <li><span class="highlight">智能筛选</span> - 按标签、优先级过滤套件</li>
+                <li><span class="highlight">关联管理</span> - 灵活选择套件包含的测试用例</li>
+            </ul>
+        </div>
+
+        <div class="feature-card">
+            <h3>🛡️ 完美兼容</h3>
+            <ul class="feature-list">
+                <li>原有测试用例功能保持不变</li>
+                <li>所有API接口向后兼容</li>
+                <li>数据结构平滑扩展</li>
+                <li>UI界面无缝集成</li>
+                <li>TypeScript类型安全保障</li>
+            </ul>
+        </div>
+
+        <div class="feature-card">
+            <h3>🎯 使用指南</h3>
+            <ul class="feature-list">
+                <li>点击"测试套件"Tab切换到套件管理</li>
+                <li>点击"创建测试套件"按钮开始</li>
+                <li>选择要包含的测试用例</li>
+                <li>设置套件名称、描述和优先级</li>
+                <li>点击播放按钮批量执行套件</li>
+            </ul>
+        </div>
+
+        <div class="feature-card">
+            <h3>⚡ 技术亮点</h3>
+            <ul class="feature-list">
+                <li>前后端分离架构，性能优化</li>
+                <li>RESTful API设计，易于扩展</li>
+                <li>React + TypeScript 类型安全</li>
+                <li>Tailwind CSS 现代化UI</li>
+                <li>Framer Motion 流畅动画</li>
+            </ul>
+        </div>
+    </div>
+
+    <div class="header">
+        <h2>🚀 快速开始</h2>
+        <p>
+            1. 首先创建一些测试用例作为基础<br>
+            2. 切换到"测试套件"标签页<br>
+            3. 点击"创建测试套件"，选择要包含的测试用例<br>
+            4. 保存套件后，就可以批量执行啦！
+        </p>
+        <a href="http://localhost:5173" class="demo-link" target="_blank">立即体验 →</a>
+    </div>
+
+    <script>
+        // 自动检查开发服务器状态
+        fetch('http://localhost:5173')
+            .then(() => {
+                console.log('✅ 开发服务器运行正常');
+            })
+            .catch(() => {
+                console.log('❌ 开发服务器未启动，请运行 npm run dev');
+                document.body.insertAdjacentHTML('afterbegin', 
+                    '<div style="background: #fef2f2; border: 1px solid #fecaca; color: #dc2626; padding: 15px; border-radius: 8px; margin-bottom: 20px;">' +
+                    '⚠️ 开发服务器未启动，请在项目目录运行 <code>npm run dev</code> 启动服务器' +
+                    '</div>'
+                );
+            });
+    </script>
+</body>
+</html> 

@@ -93,7 +93,9 @@ export class PlaywrightMcpClient {
   private async executeRealStep(step: TestStep): Promise<any> {
     if (!this.page) throw new Error('页面不存在');
 
-    const timeout = step.timeout || 30000;
+    // 🔥 优化超时时间：断言类操作使用较短超时，避免等待过久
+    const defaultTimeout = step.action === 'expect' ? 10000 : 30000; // 断言10秒，其他30秒
+    const timeout = step.timeout || defaultTimeout;
 
     switch (step.action) {
       case 'navigate':

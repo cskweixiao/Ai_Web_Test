@@ -566,7 +566,7 @@ ${stepsText}
 
   public async parseAssertions(assertionsText: string, snapshot: any, runId: string): Promise<AIParseResult> {
     this.log(runId, `🧠 AI开始解析断言: ${assertionsText}`);
-    const prompt = this.buildAssertionsPrompt(assertionsText, snapshot);
+    const prompt = this.buildAssertionsPromptWithContext(assertionsText, snapshot);
     const response = await this.callOpenRouter(prompt, runId);
 
     if (!response.success || !response.content) {
@@ -714,5 +714,65 @@ ${JSON.stringify(elementInfo, null, 2)}
       } else {
           console.log(logMessage);
       }
+  }
+
+  /**
+   * 🔥 构建带页面上下文的断言解析提示词
+   */
+  private buildAssertionsPromptWithContext(assertionsText: string, snapshot: any): string {
+    const pageContext = this.buildPageContext(snapshot);
+    
+    return `你是一个专业的Web自动化测试专家，正在解析测试断言。
+你的任务是：根据当前页面的实际状态和用户的断言要求，生成准确的验证步骤。
+
+🔥 **关键要求**：
+1. **基于实际页面状态**：使用下面提供的页面元素信息，生成真实存在的CSS选择器
+2. **智能映射**：将用户的自然语言断言映射到页面上真实的元素
+3. **避免空想**：不要猜测不存在的CSS类名或选择器
+4. **灵活验证**：如果找不到精确匹配的元素，寻找相似的或相关的元素进行验证
+
+${pageContext}
+
+用户断言要求: "${assertionsText}"
+
+🔥 **断言解析策略**：
+- 如果要求验证"错误消息"，检查页面是否有报错文本、红色提示、验证信息等
+- 如果要求验证"登录失败"，检查是否仍在登录页面、是否有错误提示、账号密码框是否还存在
+- 如果要求验证页面跳转，检查URL是否改变、页面标题是否改变
+- 如果找不到精确元素，使用更通用的验证方式，如检查页面标题、URL、输入框等
+
+🔥 **支持的断言操作**（仅限验证类）:
+- **expect**: 验证元素存在/可见/包含文本
+- **wait**: 等待元素出现或消失
+- **screenshot**: 截图记录
+
+每个断言步骤的JSON格式:
+{
+  "id": "assertion-N",
+  "action": "expect",
+  "selector": "根据实际页面元素生成的CSS选择器",
+  "text": "期望文本（如果适用）",
+  "condition": "验证条件（'visible', 'hidden', 'contains_text', 'equal_text', 'exists'）",
+  "description": "断言的自然语言描述",
+  "order": N
+}
+
+🔥 **智能选择器生成示例**：
+- 页面有 input[placeholder="请输入登录账号"] → 可以验证仍在登录页面
+- 页面有 button[text="登 录"] → 可以验证登录按钮仍然存在
+- 页面标题包含"登录" → 可以验证页面标题
+- 页面URL没有改变 → 可以验证未跳转
+
+请返回严格的JSON数组格式，例如:
+[
+  {
+    "id": "assertion-1",
+    "action": "expect",
+    "selector": "input[placeholder='请输入登录账号']",
+    "condition": "visible",
+    "description": "验证登录页面仍然存在（通过检查账号输入框）",
+    "order": 1
+  }
+]`;
   }
 } 
