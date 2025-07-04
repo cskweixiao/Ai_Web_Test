@@ -8,7 +8,7 @@ export interface TestCase {
   name: string;
   description?: string;
   steps: string;           // 原始步骤文本 
-  assertions: string;      // 原始断言文本1111
+  assertions: string;      // 原始断言文本1111222
   tags?: string[];
   priority?: 'high' | 'medium' | 'low';
   status?: 'active' | 'draft' | 'disabled';
