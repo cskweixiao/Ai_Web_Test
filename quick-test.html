@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>API接口测试</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        .button { background: #007bff; color: white; padding: 10px 20px; border: none; border-radius: 5px; margin: 10px; cursor: pointer; }
+        .result { background: #f8f9fa; padding: 15px; margin: 10px 0; border-radius: 5px; white-space: pre-wrap; }
+        .success { border-left: 4px solid #28a745; }
+        .error { border-left: 4px solid #dc3545; }
+    </style>
+</head>
+<body>
+    <h1>🧪 API接口测试工具</h1>
+    
+    <div>
+        <button class="button" onclick="testHealth()">测试健康检查</button>
+        <button class="button" onclick="testGetCases()">获取测试用例</button>
+        <button class="button" onclick="testCreateCase()">创建测试用例</button>
+        <button class="button" onclick="testRunCase()">执行测试</button>
+    </div>
+    
+    <div id="results"></div>
+
+    <script>
+        const API_BASE = 'http://localhost:3001';
+        
+        function addResult(title, content, isSuccess = true) {
+            const results = document.getElementById('results');
+            const div = document.createElement('div');
+            div.className = `result ${isSuccess ? 'success' : 'error'}`;
+            div.innerHTML = `<strong>${title}</strong>\n${content}`;
+            results.appendChild(div);
+            results.scrollTop = results.scrollHeight;
+        }
+        
+        async function testHealth() {
+            try {
+                const response = await fetch(`${API_BASE}/health`);
+                const data = await response.json();
+                addResult('✅ 健康检查成功', JSON.stringify(data, null, 2));
+            } catch (error) {
+                addResult('❌ 健康检查失败', error.message, false);
+            }
+        }
+        
+        async function testGetCases() {
+            try {
+                const response = await fetch(`${API_BASE}/api/tests/cases`);
+                const data = await response.json();
+                addResult('✅ 获取测试用例成功', `获取到 ${data.length} 个测试用例:\n${JSON.stringify(data, null, 2)}`);
+            } catch (error) {
+                addResult('❌ 获取测试用例失败', error.message, false);
+            }
+        }
+        
+        async function testCreateCase() {
+            try {
+                const testCase = {
+                    name: '浏览器自动化测试 ' + new Date().getTime(),
+                    description: '这是一个真正能启动Chrome浏览器的测试用例',
+                    priority: 'high',
+                    status: 'active',
+                    tags: ['浏览器', '自动化', 'Playwright']
+                };
+                
+                const response = await fetch(`${API_BASE}/api/tests/cases`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(testCase)
+                });
+                
+                const data = await response.json();
+                if (data.success) {
+                    addResult('✅ 创建测试用例成功', `测试用例ID: ${data.data.id}\n${JSON.stringify(data.data, null, 2)}`);
+                    window.lastTestCaseId = data.data.id;
+                } else {
+                    addResult('❌ 创建测试用例失败', data.error, false);
+                }
+            } catch (error) {
+                addResult('❌ 创建测试用例失败', error.message, false);
+            }
+        }
+        
+        async function testRunCase() {
+            if (!window.lastTestCaseId) {
+                addResult('⚠️ 请先创建测试用例', '需要先点击"创建测试用例"按钮', false);
+                return;
+            }
+            
+            try {
+                const response = await fetch(`${API_BASE}/api/tests/execute`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        testCaseId: window.lastTestCaseId,
+                        environment: 'staging'
+                    })
+                });
+                
+                const data = await response.json();
+                if (data.success) {
+                    addResult('🚀 测试开始执行！', `运行ID: ${data.runId}\n现在应该看到Chrome浏览器启动！\n${JSON.stringify(data, null, 2)}`);
+                } else {
+                    addResult('❌ 执行测试失败', data.error, false);
+                }
+            } catch (error) {
+                addResult('❌ 执行测试失败', error.message, false);
+            }
+        }
+        
+        // 页面加载时自动测试健康检查
+        window.onload = function() {
+            addResult('📝 API测试工具已加载', '点击按钮测试各个API接口\n后端地址: http://localhost:3001');
+            setTimeout(testHealth, 1000);
+        };
+    </script>
+</body>
+</html> 
