@@ -55,8 +55,17 @@ export function suiteRoutes(suiteExecutionService: SuiteExecutionService): Route
   // 执行测试套件
   router.post('/execute', async (req: Request, res: Response) => {
     try {
-      const { suiteId, environment } = req.body;
-      const runId = await suiteExecutionService.runSuite(suiteId, environment);
+      const { suiteId, environment, executionMode, concurrency, continueOnFailure } = req.body;
+      
+      // 构造执行选项对象
+      const options = {
+        environment,
+        executionMode,
+        concurrency,
+        continueOnFailure
+      };
+      
+      const runId = await suiteExecutionService.runSuite(suiteId, options);
       res.json({ success: true, runId });
     } catch (error: any) {
       res.status(500).json({ success: false, error: error.message });

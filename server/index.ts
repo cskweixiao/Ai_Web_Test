@@ -10,9 +10,12 @@ import { testRoutes } from './routes/test.js';
 import { suiteRoutes } from './routes/suite.js'; // 🔥 新增
 import { AITestParser } from './services/aiParser.js';
 import { PlaywrightMcpClient } from './services/mcpClient.js';
+import { PrismaClient } from '../src/generated/prisma';
+import crypto from 'crypto';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
+const prisma = new PrismaClient();
 
 // 创建HTTP服务器
 const server = createServer(app);
@@ -31,6 +34,50 @@ const testExecutionService = new TestExecutionService(wsManager, aiParser, mcpCl
 // 🔥 初始化套件执行服务
 const suiteExecutionService = new SuiteExecutionService(wsManager, testExecutionService);
 
+// 创建默认系统用户（如果不存在）
+async function ensureDefaultUser() {
+  try {
+    const userCount = await prisma.users.count();
+    
+    if (userCount === 0) {
+      console.log('🔑 创建默认系统用户...');
+      
+      // 创建简单的哈希密码（实际环境应使用bcrypt等）
+      const passwordHash = crypto.createHash('sha256').update('system123').digest('hex');
+      
+      const defaultUser = await prisma.users.create({
+        data: {
+          email: 'system@test.local',
+          password_hash: passwordHash,
+          created_at: new Date()
+        }
+      });
+      
+      console.log(`✅ 默认系统用户已创建: ID=${defaultUser.id}, Email=${defaultUser.email}`);
+      
+      // 为系统用户添加角色（如果需要）
+      await prisma.roles.upsert({
+        where: { name: 'admin' },
+        update: {},
+        create: {
+          name: 'admin'
+        }
+      });
+      
+      await prisma.user_roles.create({
+        data: {
+          user_id: defaultUser.id,
+          role_id: 1
+        }
+      });
+    } else {
+      console.log('✅ 系统中已有用户，无需创建默认用户');
+    }
+  } catch (error) {
+    console.error('❌ 创建默认系统用户失败:', error);
+  }
+}
+
 // Middleware
 const corsOptions = {
   origin: ['http://localhost:5173', 'http://localhost:3000', 'http://localhost:5174', 'http://localhost:5175', 'http://localhost:5176', 'http://localhost:5177', 'http://localhost:5178'],
@@ -45,8 +92,7 @@ app.use(express.json());
 
 // API Routes
 app.use('/api/tests', testRoutes(testExecutionService));
-app.use('/api/test-suites', suiteRoutes(suiteExecutionService)); // 🔥 新增
-
+app.use('/api/suites', suiteRoutes(suiteExecutionService)); // 注意路径修正
 
 // 🔥 定时清理任务，防止内存泄漏
 const setupCleanupTasks = () => {
@@ -68,12 +114,14 @@ app.get('/health', (req, res) => {
 });
 
 // Start Server
-server.listen(PORT, () => {
+server.listen(PORT, async () => {
   console.log(`🚀 服务器已启动，正在监听端口 ${PORT}`);
   console.log(`WebSocket 服务器已准备就绪`);
   
-  // 🔥 初始化示例数据和定时任务
-  // initializeSampleData();
+  // 确保默认系统用户存在
+  await ensureDefaultUser();
+  
+  // 初始化定时任务
   setupCleanupTasks();
 });
 

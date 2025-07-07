@@ -20,23 +20,9 @@ import {
   Package
 } from 'lucide-react';
 import { clsx } from 'clsx';
-import { TestSuite, TestSuiteRun } from '../types/test';
-
-// 简化的测试用例接口
-interface TestCase {
-  id: number;
-  name: string;
-  steps: string;
-  assertions: string;
-  tags: string[];
-  priority: 'high' | 'medium' | 'low';
-  status: 'active' | 'draft' | 'disabled';
-  lastRun: string;
-  success_rate: number;
-  author: string;
-  created: string;
-  suiteId?: number; // 🔥 新增：关联的测试套件ID
-}
+import { Layout } from '../components/Layout';
+import { testService } from '../services/testService';
+import type { TestCase, TestSuite as TestSuiteType } from '../types/test';
 
 // 表单数据接口
 interface CreateTestCaseForm {
@@ -74,9 +60,9 @@ export function TestCases() {
   const [deletingTestCase, setDeletingTestCase] = useState<TestCase | null>(null);
   
   // 🔥 新增：测试套件状态管理
-  const [testSuites, setTestSuites] = useState<TestSuite[]>([]);
-  const [editingTestSuite, setEditingTestSuite] = useState<TestSuite | null>(null);
-  const [deletingTestSuite, setDeletingTestSuite] = useState<TestSuite | null>(null);
+  const [testSuites, setTestSuites] = useState<TestSuiteType[]>([]);
+  const [editingTestSuite, setEditingTestSuite] = useState<TestSuiteType | null>(null);
+  const [deletingTestSuite, setDeletingTestSuite] = useState<TestSuiteType | null>(null);
   const [runningSuiteId, setRunningSuiteId] = useState<number | null>(null);
   
   const [formData, setFormData] = useState<CreateTestCaseForm>({
@@ -107,17 +93,8 @@ export function TestCases() {
   const loadTestCases = async () => {
     try {
       setLoading(true);
-      const response = await fetch('http://localhost:3001/api/tests/cases');
-      if (response.ok) {
-        const data = await response.json();
-        if (data.success) {
-          setTestCases(data.data || []);
-        } else {
-          throw new Error(data.error || '获取测试用例失败');
-        }
-      } else {
-        throw new Error('网络请求失败');
-      }
+      const cases = await testService.getTestCases();
+      setTestCases(cases || []);
     } catch (error) {
       console.error('加载测试用例失败:', error);
       setTestCases([]);
@@ -130,17 +107,8 @@ export function TestCases() {
   const loadTestSuites = async () => {
     try {
       setLoading(true);
-      const response = await fetch('http://localhost:3001/api/test-suites');
-      if (response.ok) {
-        const data = await response.json();
-        if (data.success) {
-          setTestSuites(data.data || []);
-        } else {
-          throw new Error(data.error || '获取测试套件失败');
-        }
-      } else {
-        throw new Error('网络请求失败');
-      }
+      const suites = await testService.getTestSuites();
+      setTestSuites(suites || []);
     } catch (error) {
       console.error('加载测试套件失败:', error);
       setTestSuites([]);
@@ -175,25 +143,13 @@ export function TestCases() {
           tags: formData.tags.split(',').map(tag => tag.trim()).filter(tag => tag.length > 0)
         };
 
-        const response = await fetch(`http://localhost:3001/api/tests/cases/${editingTestCase.id}`, {
-          method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(updatedTestCase)
-        });
-
-        if (response.ok) {
-          const result = await response.json();
-          if (result.success) {
-            await loadTestCases();
-            resetForm();
-            alert('测试用例更新成功！');
-          } else {
-            throw new Error(result.error || '更新失败');
-          }
-        } else {
-          throw new Error('网络请求失败');
+        try {
+          await testService.updateTestCase(editingTestCase.id, updatedTestCase);
+          await loadTestCases();
+          resetForm();
+          alert('测试用例更新成功！');
+        } catch (error: any) {
+          throw new Error(error.message || '更新失败');
         }
       } else {
         // 创建模式
@@ -210,25 +166,13 @@ export function TestCases() {
           success_rate: 0
         };
 
-        const response = await fetch('http://localhost:3001/api/tests/cases', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(newTestCase)
-        });
-
-        if (response.ok) {
-          const result = await response.json();
-          if (result.success) {
-            await loadTestCases();
-            resetForm();
-            alert('测试用例创建成功！');
-          } else {
-            throw new Error(result.error || '创建失败');
-          }
-        } else {
-          throw new Error('网络请求失败');
+        try {
+          await testService.createTestCase(newTestCase);
+          await loadTestCases();
+          resetForm();
+          alert('测试用例创建成功！');
+        } catch (error: any) {
+          throw new Error(error.message || '创建失败');
         }
       }
     } catch (error: any) {
@@ -239,15 +183,16 @@ export function TestCases() {
     }
   };
 
+  // 处理测试用例数据中的可选字段
   const handleEditTestCase = (testCase: TestCase) => {
     setEditingTestCase(testCase);
     setFormData({
       name: testCase.name,
       steps: testCase.steps,
-      assertions: testCase.assertions,
-      priority: testCase.priority,
-      status: testCase.status,
-      tags: testCase.tags.join(', ')
+      assertions: testCase.assertions || '',
+      priority: testCase.priority || 'medium',
+      status: testCase.status || 'active',
+      tags: testCase.tags ? testCase.tags.join(', ') : ''
     });
     setShowCreateModal(true);
   };
@@ -262,22 +207,15 @@ export function TestCases() {
 
     try {
       setLoading(true);
-      const response = await fetch(`http://localhost:3001/api/tests/cases/${deletingTestCase.id}`, {
-        method: 'DELETE'
-      });
-
-      if (response.ok) {
-        const result = await response.json();
-        if (result.success) {
-          await loadTestCases();
-          setShowDeleteModal(false);
-          setDeletingTestCase(null);
-          alert('测试用例删除成功！');
-        } else {
-          throw new Error(result.error || '删除失败');
-        }
-      } else {
-        throw new Error('网络请求失败');
+      
+      try {
+        await testService.deleteTestCase(deletingTestCase.id);
+        await loadTestCases();
+        setShowDeleteModal(false);
+        setDeletingTestCase(null);
+        alert('测试用例删除成功！');
+      } catch (error: any) {
+        throw new Error(error.message || '删除失败');
       }
     } catch (error: any) {
       console.error('删除测试用例失败:', error);
@@ -341,25 +279,13 @@ export function TestCases() {
           tags: suiteFormData.tags.split(',').map(tag => tag.trim()).filter(tag => tag.length > 0)
         };
 
-        const response = await fetch(`http://localhost:3001/api/test-suites/${editingTestSuite.id}`, {
-          method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(updatedSuite)
-        });
-
-        if (response.ok) {
-          const result = await response.json();
-          if (result.success) {
-            await loadTestSuites();
-            resetSuiteForm();
-            alert('测试套件更新成功！');
-          } else {
-            throw new Error(result.error || '更新失败');
-          }
-        } else {
-          throw new Error('网络请求失败');
+        try {
+          await testService.updateTestSuite(editingTestSuite.id, updatedSuite);
+          await loadTestSuites();
+          resetSuiteForm();
+          alert('测试套件更新成功！');
+        } catch (error: any) {
+          throw new Error(error.message || '更新失败');
         }
       } else {
         // 创建模式
@@ -374,25 +300,13 @@ export function TestCases() {
           created: new Date().toISOString().split('T')[0]
         };
 
-        const response = await fetch('http://localhost:3001/api/test-suites', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(newSuite)
-        });
-
-        if (response.ok) {
-          const result = await response.json();
-          if (result.success) {
-            await loadTestSuites();
-            resetSuiteForm();
-            alert('测试套件创建成功！');
-          } else {
-            throw new Error(result.error || '创建失败');
-          }
-        } else {
-          throw new Error('网络请求失败');
+        try {
+          await testService.createTestSuite(newSuite);
+          await loadTestSuites();
+          resetSuiteForm();
+          alert('测试套件创建成功！');
+        } catch (error: any) {
+          throw new Error(error.message || '创建失败');
         }
       }
     } catch (error: any) {
@@ -404,7 +318,7 @@ export function TestCases() {
   };
 
   // 🔥 新增：编辑测试套件
-  const handleEditTestSuite = (testSuite: TestSuite) => {
+  const handleEditTestSuite = (testSuite: TestSuiteType) => {
     setEditingTestSuite(testSuite);
     setSuiteFormData({
       name: testSuite.name,
@@ -418,7 +332,7 @@ export function TestCases() {
   };
 
   // 🔥 新增：删除测试套件
-  const handleDeleteTestSuite = (testSuite: TestSuite) => {
+  const handleDeleteTestSuite = (testSuite: TestSuiteType) => {
     setDeletingTestSuite(testSuite);
     setShowDeleteModal(true);
   };
@@ -429,23 +343,17 @@ export function TestCases() {
 
     try {
       setLoading(true);
-      const response = await fetch(`http://localhost:3001/api/test-suites/${deletingTestSuite.id}`, {
-        method: 'DELETE'
-      });
-
-      if (response.ok) {
-        const result = await response.json();
-        if (result.success) {
-          await loadTestSuites();
-          setShowDeleteModal(false);
-          setDeletingTestSuite(null);
-          alert('测试套件删除成功！');
-        } else {
-          throw new Error(result.error || '删除失败');
-        }
-      } else {
-        throw new Error('网络请求失败');
+      
+      try {
+        await testService.deleteTestSuite(deletingTestSuite.id);
+        await loadTestSuites();
+        setShowDeleteModal(false);
+        setDeletingTestSuite(null);
+        alert('测试套件删除成功！');
+      } catch (error: any) {
+        throw new Error(error.message || '删除失败');
       }
+      
     } catch (error: any) {
       console.error('删除测试套件失败:', error);
       alert(`删除失败: ${error.message}`);
@@ -455,7 +363,7 @@ export function TestCases() {
   };
 
   // 🔥 新增：运行测试套件
-  const handleRunTestSuite = async (testSuite: TestSuite) => {
+  const handleRunTestSuite = async (testSuite: TestSuiteType) => {
     if (runningSuiteId) {
       alert('已有套件在运行中，请等待完成');
       return;
@@ -466,32 +374,18 @@ export function TestCases() {
     try {
       console.log(`🚀 开始执行测试套件: ${testSuite.name}`);
       
-      const response = await fetch('http://localhost:3001/api/test-suites/execute', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          suiteId: testSuite.id,
-          environment: 'staging'
-        })
-      });
-
-      const result = await response.json();
-      
-      if (response.ok && result.success) {
-        alert(`✅ 测试套件开始执行: ${testSuite.name}\n运行ID: ${result.runId}`);
-        
-        console.log('套件运行ID:', result.runId);
+      try {
+        const response = await testService.runTestSuite(testSuite.id);
+        alert(`✅ 测试套件开始执行: ${testSuite.name}\n运行ID: ${response.runId}`);
+        console.log('套件运行ID:', response.runId);
         
         // 模拟等待套件完成
         setTimeout(() => {
           alert(`🎉 测试套件执行完成: ${testSuite.name}`);
           setRunningSuiteId(null);
         }, 15000); // 15秒后模拟完成
-        
-      } else {
-        throw new Error(result.error || '启动测试套件失败');
+      } catch (error: any) {
+        throw new Error(error.message || '启动测试套件失败');
       }
       
     } catch (error: any) {
@@ -504,11 +398,12 @@ export function TestCases() {
   const allTags = Array.from(new Set(testCases.flatMap(tc => tc.tags)));
   const allSuiteTags = Array.from(new Set(testSuites.flatMap(suite => suite.tags || [])));
 
+  // 过滤测试用例，确保处理可选字段
   const filteredTestCases = testCases.filter(testCase => {
     const matchesSearch = testCase.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          testCase.steps.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         testCase.assertions.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesTag = selectedTag === '' || testCase.tags.includes(selectedTag);
+                         (testCase.assertions ? testCase.assertions.toLowerCase().includes(searchTerm.toLowerCase()) : false);
+    const matchesTag = selectedTag === '' || (testCase.tags && testCase.tags.includes(selectedTag));
     const matchesPriority = selectedPriority === '' || testCase.priority === selectedPriority;
     
     return matchesSearch && matchesTag && matchesPriority;
@@ -535,34 +430,19 @@ export function TestCases() {
     try {
       console.log(`🚀 开始执行测试: ${testCase.name}`);
       
-      // 调用后端API执行测试
-      const response = await fetch('http://localhost:3001/api/tests/execute', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          testCaseId: testCase.id,
-          environment: 'staging'
-        })
-      });
-
-      const result = await response.json();
-      
-      if (response.ok && result.success) {
-        alert(`✅ 测试开始执行: ${testCase.name}\n运行ID: ${result.runId}`);
+      try {
+        const response = await testService.runTestCase(testCase.id);
+        alert(`✅ 测试开始执行: ${testCase.name}\n运行ID: ${response.runId}`);
         
-        // 可以在这里添加WebSocket监听测试执行状态
-        console.log('测试运行ID:', result.runId);
+        console.log('测试运行ID:', response.runId);
         
         // 模拟等待测试完成（实际应该通过WebSocket实时更新）
         setTimeout(() => {
           alert(`🎉 测试执行完成: ${testCase.name}`);
           setRunningTestId(null);
         }, 10000); // 10秒后模拟完成
-        
-      } else {
-        throw new Error(result.error || '启动测试失败');
+      } catch (error: any) {
+        throw new Error(error.message || '启动测试失败');
       }
       
     } catch (error: any) {
@@ -572,7 +452,7 @@ export function TestCases() {
     }
   };
 
-  const getPriorityColor = (priority: string) => {
+  const getPriorityColor = (priority: string | undefined) => {
     switch (priority) {
       case 'high': return 'bg-red-100 text-red-800';
       case 'medium': return 'bg-yellow-100 text-yellow-800';
@@ -581,7 +461,7 @@ export function TestCases() {
     }
   };
 
-  const getStatusColor = (status: string) => {
+  const getStatusColor = (status: string | undefined) => {
     switch (status) {
       case 'active': return 'bg-green-100 text-green-800';
       case 'draft': return 'bg-yellow-100 text-yellow-800';
@@ -853,7 +733,7 @@ export function TestCases() {
                     </div>
 
                     {/* Success Rate */}
-                    {testCase.success_rate > 0 && (
+                    {testCase.success_rate !== undefined && testCase.success_rate > 0 && (
                       <div className="mb-4">
                         <div className="flex items-center justify-between text-sm mb-2">
                           <span className="text-gray-600">成功率</span>
@@ -862,7 +742,7 @@ export function TestCases() {
                         <div className="w-full bg-gray-200 rounded-full h-2">
                           <div
                             className="bg-green-600 h-2 rounded-full transition-all"
-                            style={{ width: `${testCase.success_rate}%` }}
+                            style={{ width: `${testCase.success_rate || 0}%` }}
                           ></div>
                         </div>
                       </div>
@@ -872,11 +752,11 @@ export function TestCases() {
                     <div className="flex items-center justify-between text-xs text-gray-500 pt-4 border-t border-gray-100">
                       <div className="flex items-center">
                         <User className="h-3 w-3 mr-1" />
-                        {testCase.author}
+                        {testCase.author || '未知作者'}
                       </div>
                       <div className="flex items-center">
                         <Clock className="h-3 w-3 mr-1" />
-                        {testCase.lastRun}
+                        {testCase.lastRun || '从未运行'}
                       </div>
                     </div>
                   </motion.div>
@@ -887,144 +767,168 @@ export function TestCases() {
         </>
       ) : (
         <>
-          {/* Empty State - Test Suites */}
-          {testSuites.length === 0 && !loading && (
-            <div className="text-center py-16">
-              <div className="mx-auto w-32 h-32 mb-6 rounded-full bg-gray-100 flex items-center justify-center">
-                <Package className="h-16 w-16 text-gray-400" />
-              </div>
-              <h3 className="text-xl font-semibold text-gray-900 mb-3">暂无测试套件</h3>
-              <p className="text-gray-600 mb-6 max-w-md mx-auto">
-                您还没有创建任何测试套件。测试套件可以帮您批量管理和执行相关的测试用例。
-              </p>
-              <motion.button
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                onClick={() => setShowCreateModal(true)}
-                className="inline-flex items-center px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
-              >
-                <Plus className="h-5 w-5 mr-2" />
-                创建第一个测试套件
-              </motion.button>
-            </div>
-          )}
-
-          {/* Loading */}
-          {loading && (
-            <div className="text-center py-16">
-              <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4 text-blue-600" />
-              <p className="text-gray-600">加载中...</p>
-            </div>
-          )}
-
-          {/* Test Suites Grid */}
-          {!loading && filteredTestSuites.length > 0 && (
-            <div className="grid gap-6">
-              <AnimatePresence>
-                {filteredTestSuites.map((testSuite, index) => (
-                  <motion.div
-                    key={testSuite.id}
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -20 }}
-                    transition={{ delay: index * 0.1 }}
-                    className="bg-white rounded-xl p-6 shadow-sm border border-gray-200 hover:shadow-md transition-shadow"
+          {/* 测试套件列表 */}
+          {activeTab === 'suites' && (
+            <>
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-2xl font-semibold">测试套件列表</h2>
+                <div className="flex gap-2">
+                  <button
+                    className="px-3 py-2 bg-blue-600 text-white rounded-md flex items-center gap-2 hover:bg-blue-700"
+                    onClick={() => { setShowCreateModal(true); setEditingTestSuite(null); }}
                   >
-                    {/* Header */}
-                    <div className="flex items-start justify-between mb-4">
-                      <div className="flex-1">
-                        <h3 className="font-semibold text-gray-900 mb-2">{testSuite.name}</h3>
-                        <p className="text-sm text-gray-600 mb-3">{testSuite.description || '暂无描述'}</p>
-                        <div className="flex items-center space-x-4 text-sm text-gray-500">
-                          <span className="flex items-center">
-                            <FileText className="h-4 w-4 mr-1" />
-                            {testSuite.testCaseIds.length} 个测试用例
+                    <Plus size={16} />
+                    <span>创建套件</span>
+                  </button>
+                  <button
+                    className="px-3 py-2 bg-gray-200 text-gray-800 rounded-md flex items-center gap-2 hover:bg-gray-300"
+                    onClick={loadTestSuites}
+                  >
+                    <Clock size={16} />
+                    <span>刷新列表</span>
+                  </button>
+                </div>
+              </div>
+              {/* Empty State - Test Suites */}
+              {testSuites.length === 0 && !loading && (
+                <div className="text-center py-16">
+                  <div className="mx-auto w-32 h-32 mb-6 rounded-full bg-gray-100 flex items-center justify-center">
+                    <Package className="h-16 w-16 text-gray-400" />
+                  </div>
+                  <h3 className="text-xl font-semibold text-gray-900 mb-3">暂无测试套件</h3>
+                  <p className="text-gray-600 mb-6 max-w-md mx-auto">
+                    您还没有创建任何测试套件。测试套件可以帮您批量管理和执行相关的测试用例。
+                  </p>
+                  <motion.button
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                    onClick={() => setShowCreateModal(true)}
+                    className="inline-flex items-center px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
+                  >
+                    <Plus className="h-5 w-5 mr-2" />
+                    创建第一个测试套件
+                  </motion.button>
+                </div>
+              )}
+
+              {/* Loading */}
+              {loading && (
+                <div className="text-center py-16">
+                  <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4 text-blue-600" />
+                  <p className="text-gray-600">加载中...</p>
+                </div>
+              )}
+
+              {/* Test Suites Grid */}
+              {!loading && filteredTestSuites.length > 0 && (
+                <div className="grid gap-6">
+                  <AnimatePresence>
+                    {filteredTestSuites.map((testSuite, index) => (
+                      <motion.div
+                        key={testSuite.id}
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -20 }}
+                        transition={{ delay: index * 0.1 }}
+                        className="bg-white rounded-xl p-6 shadow-sm border border-gray-200 hover:shadow-md transition-shadow"
+                      >
+                        {/* Header */}
+                        <div className="flex items-start justify-between mb-4">
+                          <div className="flex-1">
+                            <h3 className="font-semibold text-gray-900 mb-2">{testSuite.name}</h3>
+                            <p className="text-sm text-gray-600 mb-3">{testSuite.description || '暂无描述'}</p>
+                            <div className="flex items-center space-x-4 text-sm text-gray-500">
+                              <span className="flex items-center">
+                                <FileText className="h-4 w-4 mr-1" />
+                                {testSuite.testCaseIds.length} 个测试用例
+                              </span>
+                              <span className="flex items-center">
+                                <User className="h-4 w-4 mr-1" />
+                                {testSuite.owner || '未知作者'}
+                              </span>
+                              <span className="flex items-center">
+                                <Clock className="h-4 w-4 mr-1" />
+                                {new Date(testSuite.createdAt).toLocaleDateString()}
+                              </span>
+                            </div>
+                          </div>
+                          <div className="flex items-center space-x-2 ml-4">
+                            <motion.button
+                              whileHover={{ scale: 1.1 }}
+                              whileTap={{ scale: 0.9 }}
+                              onClick={() => handleRunTestSuite(testSuite)}
+                              disabled={runningSuiteId === testSuite.id}
+                              className={clsx(
+                                "p-1 transition-colors",
+                                runningSuiteId === testSuite.id 
+                                  ? "text-blue-600 cursor-not-allowed" 
+                                  : "text-gray-400 hover:text-blue-600"
+                              )}
+                              title={runningSuiteId === testSuite.id ? "执行中..." : "运行套件"}
+                            >
+                              {runningSuiteId === testSuite.id ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <Play className="h-4 w-4" />
+                              )}
+                            </motion.button>
+                            <motion.button
+                              whileHover={{ scale: 1.1 }}
+                              whileTap={{ scale: 0.9 }}
+                              onClick={() => handleEditTestSuite(testSuite)}
+                              className="p-1 text-gray-400 hover:text-green-600 transition-colors"
+                              title="编辑测试套件"
+                            >
+                              <Edit3 className="h-4 w-4" />
+                            </motion.button>
+                            <motion.button
+                              whileHover={{ scale: 1.1 }}
+                              whileTap={{ scale: 0.9 }}
+                              onClick={() => handleDeleteTestSuite(testSuite)}
+                              className="p-1 text-gray-400 hover:text-red-600 transition-colors"
+                              title="删除测试套件"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </motion.button>
+                          </div>
+                        </div>
+
+                        {/* Tags */}
+                        {testSuite.tags && testSuite.tags.length > 0 && (
+                          <div className="flex flex-wrap gap-2 mb-4">
+                            {testSuite.tags.map((tag, tagIndex) => (
+                              <span
+                                key={tagIndex}
+                                className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-800"
+                              >
+                                <Tag className="h-3 w-3 mr-1" />
+                                {tag}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+
+                        {/* Status and Priority */}
+                        <div className="flex items-center justify-between">
+                          <span className={clsx(
+                            'inline-flex px-2 py-1 rounded-full text-xs font-medium',
+                            getPriorityColor(testSuite.priority)
+                          )}>
+                            优先级: {testSuite.priority === 'high' ? '高' : testSuite.priority === 'medium' ? '中' : '低'}
                           </span>
-                          <span className="flex items-center">
-                            <User className="h-4 w-4 mr-1" />
-                            {testSuite.owner || '未知作者'}
-                          </span>
-                          <span className="flex items-center">
-                            <Clock className="h-4 w-4 mr-1" />
-                            {new Date(testSuite.createdAt).toLocaleDateString()}
+                          <span className={clsx(
+                            'inline-flex px-2 py-1 rounded-full text-xs font-medium',
+                            getStatusColor(testSuite.status)
+                          )}>
+                            {testSuite.status === 'active' ? '活跃' : testSuite.status === 'draft' ? '草稿' : '禁用'}
                           </span>
                         </div>
-                      </div>
-                      <div className="flex items-center space-x-2 ml-4">
-                        <motion.button
-                          whileHover={{ scale: 1.1 }}
-                          whileTap={{ scale: 0.9 }}
-                          onClick={() => handleRunTestSuite(testSuite)}
-                          disabled={runningSuiteId === testSuite.id}
-                          className={clsx(
-                            "p-1 transition-colors",
-                            runningSuiteId === testSuite.id 
-                              ? "text-blue-600 cursor-not-allowed" 
-                              : "text-gray-400 hover:text-blue-600"
-                          )}
-                          title={runningSuiteId === testSuite.id ? "执行中..." : "运行套件"}
-                        >
-                          {runningSuiteId === testSuite.id ? (
-                            <Loader2 className="h-4 w-4 animate-spin" />
-                          ) : (
-                            <Play className="h-4 w-4" />
-                          )}
-                        </motion.button>
-                        <motion.button
-                          whileHover={{ scale: 1.1 }}
-                          whileTap={{ scale: 0.9 }}
-                          onClick={() => handleEditTestSuite(testSuite)}
-                          className="p-1 text-gray-400 hover:text-green-600 transition-colors"
-                          title="编辑测试套件"
-                        >
-                          <Edit3 className="h-4 w-4" />
-                        </motion.button>
-                        <motion.button
-                          whileHover={{ scale: 1.1 }}
-                          whileTap={{ scale: 0.9 }}
-                          onClick={() => handleDeleteTestSuite(testSuite)}
-                          className="p-1 text-gray-400 hover:text-red-600 transition-colors"
-                          title="删除测试套件"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </motion.button>
-                      </div>
-                    </div>
-
-                    {/* Tags */}
-                    {testSuite.tags && testSuite.tags.length > 0 && (
-                      <div className="flex flex-wrap gap-2 mb-4">
-                        {testSuite.tags.map((tag, tagIndex) => (
-                          <span
-                            key={tagIndex}
-                            className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-800"
-                          >
-                            <Tag className="h-3 w-3 mr-1" />
-                            {tag}
-                          </span>
-                        ))}
-                      </div>
-                    )}
-
-                    {/* Status and Priority */}
-                    <div className="flex items-center justify-between">
-                      <span className={clsx(
-                        'inline-flex px-2 py-1 rounded-full text-xs font-medium',
-                        getPriorityColor(testSuite.priority || 'medium')
-                      )}>
-                        优先级: {testSuite.priority === 'high' ? '高' : testSuite.priority === 'medium' ? '中' : '低'}
-                      </span>
-                      <span className={clsx(
-                        'inline-flex px-2 py-1 rounded-full text-xs font-medium',
-                        getStatusColor(testSuite.status || 'active')
-                      )}>
-                        {testSuite.status === 'active' ? '活跃' : testSuite.status === 'draft' ? '草稿' : '禁用'}
-                      </span>
-                    </div>
-                  </motion.div>
-                ))}
-              </AnimatePresence>
-            </div>
+                      </motion.div>
+                    ))}
+                  </AnimatePresence>
+                </div>
+              )}
+            </>
           )}
         </>
       )}

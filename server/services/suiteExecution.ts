@@ -2,70 +2,264 @@ import { v4 as uuidv4 } from 'uuid';
 import { TestSuite, TestSuiteRun, SuiteExecutionOptions } from '../types/tests.js';
 import { TestExecutionService } from './testExecution.js';
 import { WebSocketManager } from './websocket.js';
+import { PrismaClient } from '../../src/generated/prisma';
 
 // 🔥 测试套件服务：负责套件管理和批量执行
 export class SuiteExecutionService {
   private wsManager: WebSocketManager;
   private testExecutionService: TestExecutionService;
   private runningSuites: Map<string, TestSuiteRun> = new Map();
-  private externalSuiteFinder?: (id: number) => TestSuite | null;
+  private prisma: PrismaClient;
   
   constructor(wsManager: WebSocketManager, testExecutionService: TestExecutionService) {
     this.wsManager = wsManager;
     this.testExecutionService = testExecutionService;
+    this.prisma = new PrismaClient();
   }
 
   public setExternalSuiteFinder(finder: (id: number) => TestSuite | null) {
-    this.externalSuiteFinder = finder;
+    // This method is no longer needed as all suites are managed in the database.
+    // Keeping it for now, but it will be removed in a future edit.
   }
 
+  // 🔥 获取所有测试套件 - 从数据库读取
   public async getAllTestSuites(): Promise<TestSuite[]> {
-    // This is a mock implementation. In a real scenario, you would fetch from the database.
-    return []; 
+    try {
+      const dbSuites = await this.prisma.test_suites.findMany({
+        include: {
+          suite_case_map: {
+            select: {
+              case_id: true
+            }
+          },
+          users: {
+            select: {
+              email: true
+            }
+          }
+        }
+      });
+
+      return dbSuites.map(dbSuite => {
+        const metadata = dbSuite.metadata as Record<string, any> || {};
+        return {
+          id: dbSuite.id,
+          name: dbSuite.name,
+          description: metadata.description as string,
+          owner: dbSuite.users.email,
+          tags: metadata.tags as string[] || [],
+          testCaseIds: dbSuite.suite_case_map.map(map => map.case_id),
+          createdAt: dbSuite.created_at?.toISOString() || new Date().toISOString(),
+          updatedAt: metadata.updated_at as string || new Date().toISOString(),
+          environment: metadata.environment as string,
+          priority: (metadata.priority as 'high' | 'medium' | 'low') || 'medium',
+          status: (metadata.status as 'active' | 'draft' | 'disabled') || 'active'
+        };
+      });
+    } catch (error) {
+      console.error('❌ 获取测试套件失败:', error);
+      throw new Error(`Failed to fetch test suites: ${error.message}`);
+    }
   }
 
+  // 🔥 创建测试套件 - 保存到数据库
   public async createTestSuite(suiteData: any): Promise<TestSuite> {
-    // Mock implementation
-    const newSuite: TestSuite = {
-      id: Math.floor(Math.random() * 1000),
-      name: suiteData.name,
-      description: suiteData.description,
-      testCaseIds: suiteData.testCases,
-      createdAt: new Date().toISOString(),
-      // Add other fields with default values
-      owner: 'System',
-      status: 'active',
-      tags: [],
-      priority: 'medium',
-    };
-    return newSuite;
+    try {
+      // 确保提供了必要字段
+      if (!suiteData.name) {
+        throw new Error('Suite name is required');
+      }
+      if (!suiteData.testCases || !Array.isArray(suiteData.testCases) || suiteData.testCases.length === 0) {
+        throw new Error('At least one test case must be specified');
+      }
+      
+      // 准备元数据
+      const metadata = {
+        description: suiteData.description || '',
+        tags: suiteData.tags || [],
+        environment: suiteData.environment || 'staging',
+        priority: suiteData.priority || 'medium',
+        status: suiteData.status || 'active',
+        updated_at: new Date().toISOString()
+      };
+
+      // 查找有效的用户ID - 获取系统中的第一个用户作为默认用户
+      const defaultOwner = await this.prisma.users.findFirst({
+        select: { id: true }
+      });
+
+      if (!defaultOwner && !suiteData.ownerId) {
+        throw new Error('无法创建测试套件：系统中没有可用的用户账号');
+      }
+
+      const ownerId = suiteData.ownerId || defaultOwner?.id;
+
+      // 创建事务，同时创建套件和映射关系
+      const result = await this.prisma.$transaction(async (tx) => {
+        // 创建测试套件
+        const suite = await tx.test_suites.create({
+          data: {
+            name: suiteData.name,
+            owner_id: ownerId, // 使用找到的有效用户ID
+            metadata: metadata
+          }
+        });
+
+        // 创建测试用例与套件的映射
+        for (const caseId of suiteData.testCases) {
+          await tx.suite_case_map.create({
+            data: {
+              suite_id: suite.id,
+              case_id: caseId
+            }
+          });
+        }
+
+        return suite;
+      });
+
+      // 返回创建的套件
+      return {
+        id: result.id,
+        name: result.name,
+        description: metadata.description,
+        owner: suiteData.ownerName || 'System',
+        tags: metadata.tags,
+        testCaseIds: suiteData.testCases,
+        createdAt: result.created_at?.toISOString() || new Date().toISOString(),
+        updatedAt: metadata.updated_at,
+        environment: metadata.environment,
+        priority: metadata.priority as 'high' | 'medium' | 'low',
+        status: metadata.status as 'active' | 'draft' | 'disabled'
+      };
+    } catch (error) {
+      console.error('❌ 创建测试套件失败:', error);
+      throw new Error(`Failed to create test suite: ${error.message}`);
+    }
   }
 
+  // 🔥 更新测试套件 - 更新数据库记录
   public async updateTestSuite(id: number, suiteData: any): Promise<TestSuite | null> {
-    // Mock implementation
-    return {
-      id,
-      name: suiteData.name,
-      description: suiteData.description,
-      testCaseIds: suiteData.testCases,
-      createdAt: new Date().toISOString(),
-      owner: 'System',
-      status: 'active',
-      tags: [],
-      priority: 'medium',
-    };
+    try {
+      // 检查套件是否存在
+      const existingSuite = await this.prisma.test_suites.findUnique({
+        where: { id },
+        include: {
+          suite_case_map: true,
+          users: {
+            select: {
+              email: true
+            }
+          }
+        }
+      });
+
+      if (!existingSuite) {
+        return null;
+      }
+
+      // 准备更新的元数据
+      const currentMetadata = existingSuite.metadata as any || {};
+      const updatedMetadata = {
+        ...currentMetadata,
+        description: suiteData.description !== undefined ? suiteData.description : currentMetadata.description,
+        tags: suiteData.tags !== undefined ? suiteData.tags : currentMetadata.tags,
+        environment: suiteData.environment !== undefined ? suiteData.environment : currentMetadata.environment,
+        priority: suiteData.priority !== undefined ? suiteData.priority : currentMetadata.priority,
+        status: suiteData.status !== undefined ? suiteData.status : currentMetadata.status,
+        updated_at: new Date().toISOString()
+      };
+
+      // 使用事务更新套件和映射关系
+      await this.prisma.$transaction(async (tx) => {
+        // 更新套件基本信息
+        await tx.test_suites.update({
+          where: { id },
+          data: {
+            name: suiteData.name !== undefined ? suiteData.name : existingSuite.name,
+            metadata: updatedMetadata
+          }
+        });
+
+        // 如果提供了新的测试用例列表，更新映射关系
+        if (suiteData.testCases) {
+          // 删除现有映射
+          await tx.suite_case_map.deleteMany({
+            where: { suite_id: id }
+          });
+
+          // 创建新映射
+          for (const caseId of suiteData.testCases) {
+            await tx.suite_case_map.create({
+              data: {
+                suite_id: id,
+                case_id: caseId
+              }
+            });
+          }
+        }
+      });
+
+      // 获取更新后的测试用例列表
+      const updatedMappings = await this.prisma.suite_case_map.findMany({
+        where: { suite_id: id },
+        select: { case_id: true }
+      });
+
+      // 返回更新后的套件
+      return {
+        id,
+        name: suiteData.name !== undefined ? suiteData.name : existingSuite.name,
+        description: updatedMetadata.description,
+        owner: existingSuite.users.email,
+        tags: updatedMetadata.tags,
+        testCaseIds: updatedMappings.map(m => m.case_id),
+        createdAt: existingSuite.created_at?.toISOString() || new Date().toISOString(),
+        updatedAt: updatedMetadata.updated_at,
+        environment: updatedMetadata.environment,
+        priority: updatedMetadata.priority as 'high' | 'medium' | 'low',
+        status: updatedMetadata.status as 'active' | 'draft' | 'disabled'
+      };
+    } catch (error) {
+      console.error('❌ 更新测试套件失败:', error);
+      throw new Error(`Failed to update test suite: ${error.message}`);
+    }
   }
 
+  // 🔥 删除测试套件 - 从数据库删除
   public async deleteTestSuite(id: number): Promise<boolean> {
-    // Mock implementation
-    return true;
+    try {
+      // 检查套件是否存在
+      const existingSuite = await this.prisma.test_suites.findUnique({
+        where: { id }
+      });
+
+      if (!existingSuite) {
+        return false;
+      }
+
+      // 删除套件（级联删除会自动删除关联的映射记录）
+      await this.prisma.test_suites.delete({
+        where: { id }
+      });
+
+      return true;
+    } catch (error) {
+      console.error('❌ 删除测试套件失败:', error);
+      throw new Error(`Failed to delete test suite: ${error.message}`);
+    }
   }
 
   // 🔥 执行整个测试套件
   public async runSuite(
     suiteId: number, 
-    options: SuiteExecutionOptions = {}
+    options: SuiteExecutionOptions | string = {}
   ): Promise<string> {
+    // 处理options如果它是字符串（向后兼容）
+    if (typeof options === 'string') {
+      options = { environment: options };
+    }
+    
     const {
       environment = 'staging',
       executionMode = 'interactive',
@@ -87,14 +281,48 @@ export class SuiteExecutionService {
     const suiteRunId = uuidv4();
     this.createSuiteRun(suiteRunId, suite, environment);
 
-    // 🔥 异步执行套件，不阻塞API返回
-    this.executeSuiteAsync(suiteRunId, suite, environment, executionMode, continueOnFailure)
-      .catch(error => {
-        console.error('❌ 套件执行失败:', error);
-        this.updateSuiteStatus(suiteRunId, 'failed', `Suite execution failed: ${error.message}`);
+    try {
+      // 创建数据库中的测试运行记录
+      const dbRun = await this.createTestRunRecord(suiteId, suiteRunId);
+
+      // 🔥 异步执行套件，不阻塞API返回
+      this.executeSuiteAsync(suiteRunId, suite, environment, executionMode, continueOnFailure)
+        .catch(async error => {
+          console.error('❌ 套件执行失败:', error);
+          await this.updateSuiteStatus(suiteRunId, 'failed', `Suite execution failed: ${error.message}`);
+        });
+
+      return suiteRunId;
+    } catch (error) {
+      console.error('❌ 创建测试运行记录失败:', error);
+      throw new Error(`无法启动测试套件执行: ${error.message}`);
+    }
+  }
+
+  // 🔥 在数据库中创建测试运行记录
+  private async createTestRunRecord(suiteId: number, runId: string): Promise<any> {
+    try {
+      // 查找有效的用户ID - 获取系统中的第一个用户作为默认用户
+      const defaultUser = await this.prisma.users.findFirst({
+        select: { id: true }
       });
 
-    return suiteRunId;
+      if (!defaultUser) {
+        throw new Error('系统中没有可用的用户账号，无法创建测试运行记录');
+      }
+
+      return await this.prisma.test_runs.create({
+        data: {
+          suite_id: suiteId,
+          trigger_user_id: defaultUser.id, // 使用找到的有效用户
+          status: 'PENDING',
+          started_at: new Date()
+        }
+      });
+    } catch (error) {
+      console.error('❌ 创建测试运行记录失败:', error);
+      throw new Error(`Failed to create test run record: ${error.message}`);
+    }
   }
 
   // 🔥 获取套件执行状态
@@ -108,27 +336,47 @@ export class SuiteExecutionService {
   }
 
   private async findSuiteById(id: number): Promise<TestSuite | null> {
-    if (this.externalSuiteFinder) {
-      return this.externalSuiteFinder(id);
-    }
-    
-    // 🔥 默认测试套件（实际应该从数据库读取）
-    const testSuites: TestSuite[] = [
-      {
-        id: 1,
-        name: '登录模块回归测试',
-        description: '登录相关功能的完整回归测试',
-        testCaseIds: [1], // 暂时只包含一个测试用例
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        owner: '测试团队',
-        tags: ['login', 'regression'],
-        priority: 'high',
-        status: 'active'
+    try {
+      // 从数据库获取套件信息
+      const dbSuite = await this.prisma.test_suites.findUnique({
+        where: { id },
+        include: {
+          suite_case_map: {
+            select: {
+              case_id: true
+            }
+          },
+          users: {
+            select: {
+              email: true
+            }
+          }
+        }
+      });
+
+      if (!dbSuite) {
+        return null;
       }
-    ];
-    
-    return testSuites.find(suite => suite.id === id) || null;
+
+      // 转换为应用层对象
+      const metadata = dbSuite.metadata as Record<string, any> || {};
+      return {
+        id: dbSuite.id,
+        name: dbSuite.name,
+        description: metadata.description as string,
+        owner: dbSuite.users.email,
+        tags: metadata.tags as string[] || [],
+        testCaseIds: dbSuite.suite_case_map.map(map => map.case_id),
+        createdAt: dbSuite.created_at?.toISOString() || new Date().toISOString(),
+        updatedAt: metadata.updated_at as string || new Date().toISOString(),
+        environment: metadata.environment as string,
+        priority: (metadata.priority as 'high' | 'medium' | 'low') || 'medium',
+        status: (metadata.status as 'active' | 'draft' | 'disabled') || 'active'
+      };
+    } catch (error) {
+      console.error('❌ 获取测试套件失败:', error);
+      return null;
+    }
   }
 
   private createSuiteRun(suiteRunId: string, suite: TestSuite, environment: string) {
@@ -162,7 +410,7 @@ export class SuiteExecutionService {
     executionMode: string,
     continueOnFailure: boolean
   ) {
-    this.updateSuiteStatus(suiteRunId, 'running');
+    await this.updateSuiteStatus(suiteRunId, 'running');
     
     const suiteRun = this.runningSuites.get(suiteRunId);
     if (!suiteRun) return;
@@ -222,11 +470,11 @@ export class SuiteExecutionService {
       }
       
       // 🔥 套件执行完成
-      this.updateSuiteStatus(suiteRunId, 'completed');
+      await this.updateSuiteStatus(suiteRunId, 'completed');
       console.log(`🎉 [Suite ${suiteRunId}] 套件执行完成: ${suiteRun.passedCases}/${suiteRun.totalCases} 通过`);
       
     } catch (error: any) {
-      this.updateSuiteStatus(suiteRunId, 'failed', error.message);
+      await this.updateSuiteStatus(suiteRunId, 'failed', error.message);
     }
   }
 
@@ -274,19 +522,124 @@ export class SuiteExecutionService {
     });
   }
 
-  private updateSuiteStatus(suiteRunId: string, status: TestSuiteRun['status'], error?: string) {
+  private async updateSuiteStatus(suiteRunId: string, status: TestSuiteRun['status'], error?: string) {
     const suiteRun = this.runningSuites.get(suiteRunId);
-    if (suiteRun) {
-      suiteRun.status = status;
-      if (error) {
-        suiteRun.error = error;
+    if (!suiteRun) return;
+    
+    // 更新内存中的状态
+    suiteRun.status = status;
+    if (error) suiteRun.error = error;
+    
+    if (status === 'completed' || status === 'failed') {
+      suiteRun.endTime = new Date();
+      const durationMs = suiteRun.endTime.getTime() - suiteRun.startTime.getTime();
+      suiteRun.duration = this.formatDuration(durationMs);
+    }
+    
+    this.broadcastSuiteUpdate(suiteRunId, suiteRun);
+    
+    // 🔥 更新数据库中的执行状态
+    try {
+      // 获取数据库中的测试运行记录 ID
+      const dbRunResult = await this.prisma.test_runs.findFirst({
+        where: {
+          suite_id: suiteRun.suiteId,
+          started_at: {
+            // 大致匹配启动时间，允许几秒钟的误差
+            gte: new Date(suiteRun.startTime.getTime() - 10000),
+            lte: new Date(suiteRun.startTime.getTime() + 10000)
+          }
+        },
+        orderBy: {
+          started_at: 'desc'
+        }
+      });
+      
+      if (!dbRunResult) {
+        console.warn(`❓ 找不到匹配的测试运行记录: suiteId=${suiteRun.suiteId}, time=${suiteRun.startTime}`);
+        return;
       }
+      
+      // 映射状态
+      let dbStatus: any;
+      switch (status) {
+        case 'running':
+          dbStatus = 'RUNNING';
+          break;
+        case 'completed':
+          dbStatus = suiteRun.failedCases > 0 ? 'FAILED' : 'PASSED';
+          break;
+        case 'failed':
+          dbStatus = 'FAILED';
+          break;
+        case 'cancelled':
+          dbStatus = 'CANCELLED';
+          break;
+        default:
+          dbStatus = 'PENDING';
+      }
+      
+      // 更新数据库状态
+      await this.prisma.test_runs.update({
+        where: { id: dbRunResult.id },
+        data: {
+          status: dbStatus,
+          finished_at: status === 'completed' || status === 'failed' || status === 'cancelled' 
+            ? new Date() 
+            : undefined
+        }
+      });
+      
+      // 如果测试完成，生成报告
       if (status === 'completed' || status === 'failed') {
-        suiteRun.endTime = new Date();
-        const duration = suiteRun.endTime.getTime() - suiteRun.startTime.getTime();
-        suiteRun.duration = `${Math.round(duration / 1000)}s`;
+        await this.generateTestReport(dbRunResult.id, suiteRun);
       }
-      this.broadcastSuiteUpdate(suiteRunId, suiteRun);
+      
+    } catch (error) {
+      console.error('❌ 更新测试运行状态失败:', error);
+    }
+  }
+  
+  // 🔥 生成测试报告并保存到数据库
+  private async generateTestReport(dbRunId: number, suiteRun: TestSuiteRun): Promise<void> {
+    try {
+      const summary = {
+        totalCases: suiteRun.totalCases,
+        passedCases: suiteRun.passedCases,
+        failedCases: suiteRun.failedCases,
+        duration: suiteRun.duration,
+        passRate: suiteRun.totalCases > 0 
+          ? Math.round((suiteRun.passedCases / suiteRun.totalCases) * 100) 
+          : 0,
+        testRuns: suiteRun.testRuns
+      };
+      
+      await this.prisma.reports.create({
+        data: {
+          run_id: dbRunId,
+          summary,
+          generated_at: new Date()
+        }
+      });
+      
+      console.log(`📊 [Suite ${suiteRun.id}] 测试报告已生成并保存`);
+      
+    } catch (error) {
+      console.error('❌ 生成测试报告失败:', error);
+    }
+  }
+  
+  private formatDuration(ms: number): string {
+    const seconds = Math.floor(ms / 1000);
+    const minutes = Math.floor(seconds / 60);
+    const hours = Math.floor(minutes / 60);
+    
+    if (hours > 0) {
+      return `${hours}h ${minutes % 60}m ${seconds % 60}s`;
+    } else if (minutes > 0) {
+      return `${minutes}m ${seconds % 60}s`;
+    } else {
+      return `${seconds}s`;
     }
   }
 
@@ -305,7 +658,7 @@ export class SuiteExecutionService {
       return false;
     }
 
-    this.updateSuiteStatus(suiteRunId, 'cancelled');
+    await this.updateSuiteStatus(suiteRunId, 'cancelled');
     console.log(`🛑 [Suite ${suiteRunId}] 套件执行已取消`);
     return true;
   }

@@ -1,4 +1,4 @@
-import type { TestCase, TestRun, RunTestRequest, RunTestResponse, WebSocketMessage } from '../types/test';
+import type { TestCase, TestRun, RunTestRequest, RunTestResponse, WebSocketMessage, TestSuite, TestSuiteRun } from '../types/test';
 
 const API_BASE_URL = 'http://localhost:3001/api';
 const WS_URL = 'ws://localhost:3001';
@@ -79,6 +79,96 @@ export class TestService {
     }
   }
 
+  // 创建测试用例
+  async createTestCase(caseData: Partial<TestCase>): Promise<TestCase> {
+    try {
+      const response = await fetch(`${API_BASE_URL}/tests/cases`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(caseData)
+      });
+      
+      const data = await response.json();
+      
+      if (!data.success) {
+        throw new Error(data.error || '创建测试用例失败');
+      }
+      
+      return data.data;
+    } catch (error) {
+      console.error('创建测试用例失败:', error);
+      throw error;
+    }
+  }
+
+  // 更新测试用例
+  async updateTestCase(id: number, caseData: Partial<TestCase>): Promise<TestCase> {
+    try {
+      const response = await fetch(`${API_BASE_URL}/tests/cases/${id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(caseData)
+      });
+      
+      const data = await response.json();
+      
+      if (!data.success) {
+        throw new Error(data.error || '更新测试用例失败');
+      }
+      
+      return data.data;
+    } catch (error) {
+      console.error('更新测试用例失败:', error);
+      throw error;
+    }
+  }
+
+  // 删除测试用例
+  async deleteTestCase(id: number): Promise<void> {
+    try {
+      const response = await fetch(`${API_BASE_URL}/tests/cases/${id}`, {
+        method: 'DELETE'
+      });
+      
+      const data = await response.json();
+      
+      if (!data.success) {
+        throw new Error(data.error || '删除测试用例失败');
+      }
+    } catch (error) {
+      console.error('删除测试用例失败:', error);
+      throw error;
+    }
+  }
+
+  // 运行单个测试用例
+  async runTestCase(caseId: number): Promise<{runId: string}> {
+    try {
+      const response = await fetch(`${API_BASE_URL}/tests/cases/execute`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ caseId })
+      });
+      
+      const data = await response.json();
+      
+      if (!data.success) {
+        throw new Error(data.error || '执行测试用例失败');
+      }
+      
+      return { runId: data.runId };
+    } catch (error) {
+      console.error('执行测试用例失败:', error);
+      throw error;
+    }
+  }
+
   // 执行测试用例
   async runTest(request: RunTestRequest): Promise<RunTestResponse> {
     try {
@@ -151,6 +241,173 @@ export class TestService {
       }
     } catch (error) {
       console.error('取消测试失败:', error);
+      throw error;
+    }
+  }
+
+  // 获取所有测试套件
+  async getTestSuites(): Promise<TestSuite[]> {
+    try {
+      const response = await fetch(`${API_BASE_URL}/suites`);
+      const data = await response.json();
+      
+      if (!data.success) {
+        throw new Error(data.error || '获取测试套件失败');
+      }
+      
+      return data.data;
+    } catch (error) {
+      console.error('获取测试套件失败:', error);
+      throw error;
+    }
+  }
+  
+  // 创建测试套件
+  async createTestSuite(suiteData: Partial<TestSuite>): Promise<TestSuite> {
+    try {
+      const response = await fetch(`${API_BASE_URL}/suites`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(suiteData)
+      });
+      
+      const data = await response.json();
+      
+      if (!data.success) {
+        throw new Error(data.error || '创建测试套件失败');
+      }
+      
+      return data.data;
+    } catch (error) {
+      console.error('创建测试套件失败:', error);
+      throw error;
+    }
+  }
+
+  // 更新测试套件
+  async updateTestSuite(id: number, suiteData: Partial<TestSuite>): Promise<TestSuite> {
+    try {
+      const response = await fetch(`${API_BASE_URL}/suites/${id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(suiteData)
+      });
+      
+      const data = await response.json();
+      
+      if (!data.success) {
+        throw new Error(data.error || '更新测试套件失败');
+      }
+      
+      return data.data;
+    } catch (error) {
+      console.error('更新测试套件失败:', error);
+      throw error;
+    }
+  }
+
+  // 删除测试套件
+  async deleteTestSuite(id: number): Promise<void> {
+    try {
+      const response = await fetch(`${API_BASE_URL}/suites/${id}`, {
+        method: 'DELETE'
+      });
+      
+      const data = await response.json();
+      
+      if (!data.success) {
+        throw new Error(data.error || '删除测试套件失败');
+      }
+    } catch (error) {
+      console.error('删除测试套件失败:', error);
+      throw error;
+    }
+  }
+
+  // 执行测试套件
+  async runTestSuite(suiteId: number, options: { 
+    environment?: string;
+    executionMode?: 'standard' | 'interactive';
+    concurrency?: number;
+    continueOnFailure?: boolean;
+  } = {}): Promise<{runId: string}> {
+    try {
+      const response = await fetch(`${API_BASE_URL}/suites/execute`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          suiteId,
+          ...options
+        })
+      });
+      
+      const data = await response.json();
+      
+      if (!data.success) {
+        throw new Error(data.error || '执行测试套件失败');
+      }
+      
+      return { runId: data.runId };
+    } catch (error) {
+      console.error('执行测试套件失败:', error);
+      throw error;
+    }
+  }
+
+  // 获取测试套件运行状态
+  async getSuiteRun(suiteRunId: string): Promise<TestSuiteRun> {
+    try {
+      const response = await fetch(`${API_BASE_URL}/suites/runs/${suiteRunId}`);
+      const data = await response.json();
+      
+      if (!data.success) {
+        throw new Error(data.error || '获取测试套件运行状态失败');
+      }
+      
+      return data.data;
+    } catch (error) {
+      console.error('获取测试套件运行状态失败:', error);
+      throw error;
+    }
+  }
+
+  // 获取所有测试套件运行
+  async getAllSuiteRuns(): Promise<TestSuiteRun[]> {
+    try {
+      const response = await fetch(`${API_BASE_URL}/suites/runs`);
+      const data = await response.json();
+      
+      if (!data.success) {
+        throw new Error(data.error || '获取测试套件运行列表失败');
+      }
+      
+      return data.data;
+    } catch (error) {
+      console.error('获取测试套件运行列表失败:', error);
+      throw error;
+    }
+  }
+
+  // 取消测试套件运行
+  async cancelSuiteRun(suiteRunId: string): Promise<void> {
+    try {
+      const response = await fetch(`${API_BASE_URL}/suites/runs/${suiteRunId}/cancel`, {
+        method: 'POST'
+      });
+      
+      const data = await response.json();
+      
+      if (!data.success) {
+        throw new Error(data.error || '取消测试套件运行失败');
+      }
+    } catch (error) {
+      console.error('取消测试套件运行失败:', error);
       throw error;
     }
   }
