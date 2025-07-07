@@ -1,45 +1,25 @@
+import { PrismaClient, Prisma } from '../../src/generated/prisma';
 import { v4 as uuidv4 } from 'uuid';
-import { PlaywrightMcpClient, TestStep, McpExecutionResult } from './mcpClient.js';
 import { WebSocketManager } from './websocket.js';
-import { AITestParser } from './aiParser.js';
+import { AITestParser, AIParseResult } from './aiParser.js';
+import { PlaywrightMcpClient, McpExecutionResult, TestStep } from './mcpClient.js';
 
+const prisma = new PrismaClient();
+
+// This interface is a bridge between our application logic and the database schema.
+// It includes fields that might not exist directly in the test_cases table
+// but are used in the application logic (like assertions, priority, etc.).
 export interface TestCase {
   id: number;
-  name: string;
-  description?: string;
-  steps: string;           // 原始步骤文本 
-  assertions: string;      // 原始断言文本
-  tags?: string[];
+  name: string; // Corresponds to 'title' in the database
+  steps: Prisma.JsonValue | null; // Corresponds to 'steps' (JSON) in the database
+  tags: Prisma.JsonValue | null; // Corresponds to 'tags' (JSON) in the database
+  created_at?: Date | null;
+  // These fields are conceptual and not in the DB.
+  assertions?: string;
   priority?: 'high' | 'medium' | 'low';
   status?: 'active' | 'draft' | 'disabled';
   author?: string;
-  created?: string;
-  lastRun?: string;
-  success_rate?: number;
-  parsedSteps?: TestStep[];     // AI解析后的步骤
-  parsedAssertions?: TestStep[]; // AI解析后的断言
-  totalSteps?: number;
-  suiteId?: number;        // 🔥 新增：关联的测试套件ID
-}
-
-export interface TestRun {
-  id: string;
-  testCaseId: number;
-  name: string;
-  status: TestRunStatus;
-  progress: number;
-  startTime: Date;
-  endTime?: Date;
-  duration: string;
-  totalSteps: number;
-  completedSteps: number;
-  passedSteps: number;
-  failedSteps: number;
-  executor: string;
-  environment: string;
-  logs: TestLog[];
-  screenshots: string[];
-  error?: string;
 }
 
 export type TestRunStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
@@ -52,476 +32,260 @@ export interface TestLog {
   stepId?: string;
 }
 
-// ExtendedTestCase 接口已并入 TestCase 接口
-
-interface Assertion {
-    success: boolean;
-    steps: TestStep[];
-}
-
-// 🔥 灵活并发度配置
-const concurrency = Number(process.env.TEST_CONCURRENCY ?? 1);
-
-// 🔥 常量抽取，避免 magic numbers
-const STEP_DELAY_MS = 1500;
-const MAX_DISPLAYED_ELEMENTS = 5;
-const MAX_ELEMENT_TEXT_LENGTH = 30;
-
-// 🔥 简易队列占位，防止 TS 报错；真要用队列再换成 Bull
-type Job = { data: any };
-class NoopQueue {
-  process(_pattern: string, _concurrency: number, _processor: (job: Job) => Promise<void>) {
-    // 占位实现，不做任何处理
-  }
-  on(_event: string, _handler: (job: Job, err: Error) => void) {
-    // 占位实现，不做任何处理
-  }
-}
-
 export class TestExecutionService {
   private wsManager: WebSocketManager;
   private aiParser: AITestParser;
+    private mcpClient: PlaywrightMcpClient;
   private runningTests: Map<string, any> = new Map();
-  private clients: Map<string, PlaywrightMcpClient> = new Map();
-  private externalTestCaseFinder?: (id: number) => TestCase | null;
-  private testQueue = new NoopQueue(); // 🔥 新增：队列占位，防止编译错误
 
-  constructor(wsManager: WebSocketManager) {
+    constructor(wsManager: WebSocketManager, aiParser: AITestParser, mcpClient: PlaywrightMcpClient) {
     this.wsManager = wsManager;
-    this.aiParser = new AITestParser();
-
-    this.wsManager.on('executeTest', (data) => this.handleExecuteTest(data));
-    // 🔥 仅当真想启用队列时再放开
-    // this.setupQueueProcessor();
+        this.aiParser = aiParser;
+        this.mcpClient = mcpClient;
   }
 
-  public setExternalTestCaseFinder(finder: (id: number) => TestCase | null) {
-    this.externalTestCaseFinder = finder;
+    private dbTestCaseToApp(dbCase: { id: number; title: string; steps: Prisma.JsonValue | null; tags: Prisma.JsonValue | null; created_at: Date | null; }): TestCase {
+        return {
+            id: dbCase.id,
+            name: dbCase.title,
+            steps: dbCase.steps,
+            tags: dbCase.tags,
+            created_at: dbCase.created_at,
+            // Set default values for conceptual fields
+            assertions: '',
+            priority: 'medium',
+            status: 'active',
+            author: 'System',
+        };
   }
 
-  private async handleExecuteTest({ testCaseId, environment, executionMode }) {
-    console.log(`🔥🔥🔥 [API] 收到执行测试请求`);
-    console.log(`🔥🔥🔥 [API] 请求体:`, { testCaseId, environment, executionMode });
-
-    const testCase = await this.findTestCaseById(testCaseId);
-    if (!testCase) {
-      this.wsManager.sendToAll(JSON.stringify({ type: 'error', message: 'Test case not found' }));
-      return;
-    }
-
-    const runId = uuidv4();
-    this.createTestRun(runId, testCase);
-
-    if (executionMode === 'interactive') {
-      this.executeTestWithInteractiveParsing(testCase, runId).catch(error => {
-        console.error('❌ 交互式测试启动出错:', error);
-        this.updateRunStatus(runId, 'failed', `Test failed to start: ${error.message}`);
-      });
-    } else {
-      this.executeTestWithAssertions(testCase, runId).catch(error => {
-        console.error('❌ 测试启动出错:', error);
-        this.updateRunStatus(runId, 'failed', `Test failed to start: ${error.message}`);
-      });
+    public async findTestCaseById(id: number): Promise<TestCase | null> {
+        const testCase = await prisma.test_cases.findUnique({ where: { id } });
+        return testCase ? this.dbTestCaseToApp(testCase) : null;
     }
     
-    this.wsManager.sendToAll(JSON.stringify({ type: 'testQueued', runId, testCaseId }));
+    public async getTestCases(): Promise<TestCase[]> {
+        const testCases = await prisma.test_cases.findMany();
+        return testCases.map(this.dbTestCaseToApp);
   }
 
-  private async findTestCaseById(id: number): Promise<TestCase | null> {
-    if (this.externalTestCaseFinder) {
-      return this.externalTestCaseFinder(id);
-    }
-    
-    const testCases: TestCase[] = [
-        { id: 1, name: '测试', steps: '、打开https://supply-test.ycb51.cn/voperate_admin/login 账号zengqian 密码 a123456 点击登入', assertions: '校验是否登入成功' },
-    ];
-    return testCases.find(tc => tc.id === id) || null;
-  }
-
-  private createTestRun(runId: string, testCase: TestCase) {
-    const testRun = {
-      runId,
-      testCaseId: testCase.id,
-      name: testCase.name,
-      status: 'queued',
-      logs: [],
-      startTime: new Date(),
-    };
-    this.runningTests.set(runId, testRun);
-    this.addLog(runId, `测试任务 '${testCase.name}' 已创建，运行ID: ${runId}`);
-  }
-
-  private updateRunStatus(runId: string, status: TestRunStatus, error?: string) {
-    const testRun = this.runningTests.get(runId);
-    if (testRun) {
-      testRun.status = status;
-      if (error) {
-        testRun.error = error;
-        this.addLog(runId, error, 'error');
-      }
-      if (status === 'completed' || status === 'failed') {
-        testRun.endTime = new Date();
-      }
-      this.wsManager.sendTestUpdate(runId, testRun);
-    }
-  }
-
-  private addLog(runId: string, message: string, level = 'info') {
-    const testRun = this.runningTests.get(runId);
-    if (testRun) {
-      const logEntry = {
-        timestamp: new Date().toISOString(),
-        message,
-        level,
-      };
-      testRun.logs.push(logEntry);
-      console.log(`[${runId}] ${message}`);
-      this.wsManager.sendTestLog(runId, logEntry);
-    }
-  }
-
-  private async executeTestWithAssertions(testCase: TestCase, runId: string): Promise<void> {
-    this.addLog(runId, `[模式: 标准] 开始运行测试，ID: ${testCase.id}`);
-
-    const stepsText = testCase.steps;
-    if (!stepsText) {
-      this.addLog(runId, '❌ [Error] 找不到测试步骤文本，测试中止。', 'error');
-      this.updateRunStatus(runId, 'failed', 'Missing steps text');
-      return;
+    public async addTestCase(testCaseData: Partial<TestCase>): Promise<TestCase> {
+        const newTestCase = await prisma.test_cases.create({
+            data: {
+                title: testCaseData.name || 'Untitled Test Case',
+                steps: testCaseData.steps as Prisma.InputJsonValue || Prisma.JsonNull,
+                tags: testCaseData.tags as Prisma.InputJsonValue || Prisma.JsonNull,
+            },
+        });
+        return this.dbTestCaseToApp(newTestCase);
     }
 
-    const { steps: parsedSteps, success: stepsSuccess } = await this.aiParser.parseSteps(stepsText, runId);
-    if (!stepsSuccess || !parsedSteps || parsedSteps.length === 0) {
-      this.addLog(runId, `❌ [Error] AI无法解析测试步骤: ${stepsText}`, 'error');
-      this.updateRunStatus(runId, 'failed', 'AI parsing failed');
-      return;
-    }
-
-    let assertions: Assertion = { success: true, steps: [] };
-    if (testCase.assertions) {
-      // In standard mode, we don't have a live snapshot for assertion parsing.
-      assertions = await this.aiParser.parseAssertions(testCase.assertions, {}, runId);
-    }
-
-    this.addLog(runId, `🚀 直接执行 ${parsedSteps.length} 个测试步骤和 ${assertions.steps.length} 个断言步骤.`);
-
-    // 🔥 直接执行标准测试，不使用队列
-    this.processStandardTestJob({ data: { runId, steps: parsedSteps, assertions } }).catch(error => {
-      console.error('❌ 标准测试执行失败:', error);
-      this.updateRunStatus(runId, 'failed', `Standard test failed: ${error.message}`);
-    });
-  }
-
-  public async executeTestWithInteractiveParsing(testCase: TestCase, runId: string): Promise<void> {
-    this.addLog(runId, `[模式: 交互式] 开始运行测试，ID: ${testCase.id}`);
-
-    if (!testCase.steps) {
-      this.addLog(runId, '❌ [Error] 找不到测试步骤文本，测试中止。', 'error');
-      this.updateRunStatus(runId, 'failed', 'Missing steps text');
-      return;
-    }
-
-    // 🔥 直接执行交互式测试，不使用队列
-    this.addLog(runId, `🚀 直接启动交互式测试: ${testCase.name}`);
-    this.processInteractiveTestJob({ data: { testCase, runId } }).catch(error => {
-      console.error('❌ 交互式测试执行失败:', error);
-      this.updateRunStatus(runId, 'failed', `Interactive test failed: ${error.message}`);
-    });
-  }
-
-  private async processJob(job: Job): Promise<void> {
-    const { testCase, runId, interactive } = job.data;
-    if (interactive) {
-        await this.processInteractiveTestJob(job);
-    } else {
-        await this.processStandardTestJob(job);
-    }
-  }
-  
-  private async processStandardTestJob(job: Job): Promise<void> {
-    const { runId, steps, assertions } = job.data;
-    const mcpClient = new PlaywrightMcpClient();
-    this.clients.set(runId, mcpClient);
-    this.updateRunStatus(runId, 'running');
-
-    try {
-      await mcpClient.initialize();
-
-      for (const step of steps) {
-        const result = await mcpClient.executeStep(step);
-        this.logStepResult(runId, step, result);
-        if (!result.success) throw new Error(`步骤执行失败: ${step.description}`);
-      }
-
-      if (assertions && assertions.steps) {
-        for (const assertionStep of assertions.steps) {
-          const result = await mcpClient.executeStep(assertionStep);
-          this.logStepResult(runId, assertionStep, result);
-          if (!result.success) throw new Error(`断言执行失败: ${assertionStep.description}`);
-        }
-      }
-      this.updateRunStatus(runId, 'completed');
-    } catch (error: any) {
-      this.addLog(runId, `❌ 测试执行异常: ${error.message}`, 'error');
-      this.updateRunStatus(runId, 'failed', `Test execution failed: ${error.message}`);
-    } finally {
-      await mcpClient.cleanup();
-      this.clients.delete(runId);
-    }
-  }
-
-  private async processInteractiveTestJob(job: Job): Promise<void> {
-    const { testCase, runId } = job.data;
-    const mcpClient = new PlaywrightMcpClient();
-    this.clients.set(runId, mcpClient);
-    this.updateRunStatus(runId, 'running');
-
-    try {
-      await mcpClient.initialize();
-
-      let remainingStepsText = testCase.steps;
-      let stepCounter = 1;
-
-      while (remainingStepsText && remainingStepsText.trim().length > 0) {
-        this.addLog(runId, `\n🎬 [Step ${stepCounter}] 待解析文本: "${remainingStepsText}"`);
-
-        // 🔥 每次解析前先扫描页面元素
-        this.addLog(runId, `🔍 [Step ${stepCounter}] 正在扫描当前页面元素...`);
-        
+    public async updateTestCase(id: number, testCaseData: Partial<TestCase>): Promise<TestCase | null> {
         try {
-          const pageElements = await mcpClient.getPageInteractiveElements();
-          this.addLog(runId, `✅ [Step ${stepCounter}] 扫描完成，发现 ${pageElements.length} 个可交互元素`);
-          
-          // 详细记录前5个主要元素
-          if (pageElements.length > 0) {
-            const topElements = pageElements.slice(0, MAX_DISPLAYED_ELEMENTS);
-            this.addLog(runId, `📋 [Step ${stepCounter}] 主要可交互元素:`);
-            topElements.forEach((el, index) => {
-              const elementDesc = this.formatElementDescription(el);
-              this.addLog(runId, `   ${index + 1}. ${elementDesc}`);
+            const updatedTestCase = await prisma.test_cases.update({
+                where: { id },
+                data: {
+                    title: testCaseData.name,
+                    steps: testCaseData.steps as Prisma.InputJsonValue,
+                    tags: testCaseData.tags as Prisma.InputJsonValue,
+                },
             });
+            return this.dbTestCaseToApp(updatedTestCase);
+        } catch (error) {
+            console.error(`Failed to update test case ${id}:`, error);
+            return null;
+    }
+  }
+
+    public async deleteTestCase(id: number): Promise<boolean> {
+        try {
+            await prisma.test_cases.delete({ where: { id } });
+            return true;
+        } catch (error) {
+            console.error(`Failed to delete test case ${id}:`, error);
+            return false;
+        }
+    }
+
+    // --- Test Execution Logic (to be implemented) ---
+    public async runTest(testCaseId: number, environment: string): Promise<string> {
+      const runId = uuidv4();
+      this.runningTests.set(runId, {
+        id: runId,
+        testCaseId,
+        status: 'queued',
+        logs: [],
+        startedAt: new Date(),
+        environment,
+      });
+      this.addLog(runId, `测试 #${testCaseId} 已加入队列，运行环境: ${environment}`);
+      
+      this.executeTest(runId).catch(error => {
+          console.error(`[${runId}] executeTest promise被拒绝:`, error);
+          this.addLog(runId, `执行过程中发生致命错误: ${error.message}`, 'error');
+    });
+
+      return runId;
+  }
+
+    private async executeTest(runId: string) {
+        const testRun = this.runningTests.get(runId);
+        if (!testRun) {
+            this.addLog(runId, '测试运行未找到，可能已被取消。', 'error');
+      return;
+    }
+
+        const testCase = await this.findTestCaseById(testRun.testCaseId);
+        if (!testCase || typeof testCase.steps !== 'string' || testCase.steps.trim() === '') {
+            testRun.status = 'failed';
+            this.addLog(runId, `测试用例 #${testRun.testCaseId} 未找到、没有步骤或步骤为空。`, 'error');
+            this.wsManager.sendTestStatus(runId, 'failed');
+            return;
+        }
+
+        try {
+            await this.mcpClient.initialize();
             
-            if (pageElements.length > MAX_DISPLAYED_ELEMENTS) {
-              this.addLog(runId, `   ... 还有 ${pageElements.length - MAX_DISPLAYED_ELEMENTS} 个其他元素`);
+            testRun.status = 'running';
+            this.addLog(runId, `测试开始执行: ${testCase.name}`);
+            this.wsManager.sendTestStatus(runId, 'running');
+
+            // --- 重构的执行流程 ---
+            let remainingStepsText = testCase.steps;
+            let stepOrder = 1;
+
+            // 步骤 1: 单独处理第一个步骤（通常是导航），不获取快照
+            this.addLog(runId, `(交互模式) 解析第一个步骤...`);
+            const firstParseResult = await this.aiParser.parseNextStep(remainingStepsText, null, runId);
+
+            if (!firstParseResult.success || !firstParseResult.step) {
+                throw new Error(firstParseResult.error || 'AI未能解析出第一个步骤。');
             }
-          } else {
-            this.addLog(runId, `⚠️ [Step ${stepCounter}] 当前页面未找到可交互元素`);
+
+            const firstStep = firstParseResult.step;
+            firstStep.order = stepOrder;
+
+            this.addLog(runId, `[步骤 ${stepOrder}] AI解析成功: ${firstStep.description}`);
+            const firstStepResult = await this.mcpClient.executeStep(firstStep);
+
+            if (firstStepResult.success) {
+                this.addLog(runId, `[步骤 ${stepOrder}] 执行成功`, 'success');
+            } else {
+                const errorMessage = `[步骤 ${stepOrder}] 执行失败: ${firstStepResult.error}`;
+                this.addLog(runId, errorMessage, 'error');
+                await this.mcpClient.takeScreenshot(`${runId}-step-${stepOrder}-failed.png`);
+                this.addLog(runId, `已自动截图。`, 'warning');
+                throw new Error(errorMessage);
+            }
+
+            remainingStepsText = firstParseResult.remaining || '';
+            stepOrder++;
+
+            // 步骤 2: 循环处理剩余的步骤，此时应该已经有页面了
+            while (remainingStepsText.trim() !== '') {
+                this.addLog(runId, `(交互模式) 捕获页面快照并提交给AI进行解析...`);
+                const snapshot = await this.mcpClient.getSnapshot();
+
+                const parseResult = await this.aiParser.parseNextStep(remainingStepsText, snapshot, runId);
+            
+                if (!parseResult.success || !parseResult.step) {
+                    const errorMessage = parseResult.error || 'AI未能解析下一步操作。';
+                    this.addLog(runId, `AI解析失败，剩余指令: "${remainingStepsText}"`, 'error');
+                    throw new Error(errorMessage);
+                }
+
+                const step = parseResult.step;
+                step.order = stepOrder;
+
+                this.addLog(runId, `[步骤 ${stepOrder}] AI解析成功: ${step.description}`);
+                const stepResult = await this.mcpClient.executeStep(step);
+
+                if (stepResult.success) {
+                    this.addLog(runId, `[步骤 ${stepOrder}] 执行成功`, 'success');
+                } else {
+                    const errorMessage = `[步骤 ${stepOrder}] 执行失败: ${stepResult.error}`;
+                    this.addLog(runId, errorMessage, 'error');
+                    await this.mcpClient.takeScreenshot(`${runId}-step-${stepOrder}-failed.png`);
+                    this.addLog(runId, `已自动截图。`, 'warning');
+                    throw new Error(errorMessage);
+                }
+
+                remainingStepsText = parseResult.remaining || '';
+                stepOrder++;
+            }
+
+            // Handle assertions if they exist
+            if (testCase.assertions && testCase.assertions.trim() !== '') {
+                this.addLog(runId, '开始执行断言验证...');
+                const snapshot = await this.mcpClient.getSnapshot();
+                const assertionsResult = await this.aiParser.parseAssertions(testCase.assertions, snapshot, runId);
+
+                if (!assertionsResult.success || assertionsResult.steps.length === 0) {
+                    throw new Error(assertionsResult.error || 'AI未能解析任何断言步骤');
+                }
+
+                for (const assertionStep of assertionsResult.steps) {
+                    this.addLog(runId, `[断言] 开始: ${assertionStep.description}`);
+                    const assertionResult = await this.mcpClient.executeStep(assertionStep);
+                    if (assertionResult.success) {
+                        this.addLog(runId, `[断言] 成功`, 'success');
+                    } else {
+                        const errorMessage = `[断言] 失败: ${assertionResult.error}`;
+                        this.addLog(runId, errorMessage, 'error');
+                        throw new Error(errorMessage);
           }
-        } catch (elementError: any) {
-          this.addLog(runId, `❌ [Step ${stepCounter}] 扫描页面元素失败: ${elementError.message}`, 'warning');
-        }
+                }
+            }
 
-        // 获取完整的页面快照（包含元素信息）
-        const snapshot = await mcpClient.getSnapshot();
-        
-        // 🔥 基于页面元素信息解析下一步操作
-        this.addLog(runId, `🤖 [Step ${stepCounter}] 基于页面元素信息解析下一步操作...`);
-        const { step, remaining } = await this.aiParser.parseNextStep(remainingStepsText, snapshot, runId);
 
-        if (step) {
-          this.addLog(runId, `✅ [Step ${stepCounter}] AI解析成功: ${step.action} - ${step.description}`);
-          
-          // 如果有选择器，显示更多信息
-          if (step.selector) {
-            this.addLog(runId, `🎯 [Step ${stepCounter}] 目标选择器: ${step.selector}`);
-          }
-          if (step.value) {
-            this.addLog(runId, `📝 [Step ${stepCounter}] 输入值: ${step.value}`);
-          }
-          if (step.url) {
-            this.addLog(runId, `🌐 [Step ${stepCounter}] 目标URL: ${step.url}`);
-          }
+            testRun.status = 'completed';
+            this.addLog(runId, '测试执行成功完成。', 'success');
+            this.wsManager.sendTestStatus(runId, 'completed');
 
-          // 执行步骤
-          this.addLog(runId, `⚡ [Step ${stepCounter}] 开始执行操作...`);
-          const result = await mcpClient.executeStep(step);
-          this.logStepResult(runId, step, result);
-          
-          if (!result.success) {
-            throw new Error(`步骤 ${stepCounter} 执行失败: ${step.description} - ${result.error}`);
-          }
-          
-          this.addLog(runId, `🎉 [Step ${stepCounter}] 执行成功！`);
-        } else {
-          this.addLog(runId, `🤔 [Step ${stepCounter}] AI未能从 "${remainingStepsText}" 中解析出下一步操作，测试步骤结束。`);
-          break;
-        }
-
-        // 检查剩余文本是否有变化，避免无限循环
-        if (remaining && remaining.trim() === remainingStepsText.trim()) {
-          this.addLog(runId, `🛑 [Step ${stepCounter}] AI无法继续解析，剩余文本没有变化。终止执行。`, 'error');
-          break;
-        }
-        
-        remainingStepsText = remaining;
-        stepCounter++;
-        
-        // 🔥 步骤间添加短暂延迟，确保页面状态稳定
-        if (remainingStepsText && remainingStepsText.trim().length > 0) {
-          this.addLog(runId, `⏱️ [Step ${stepCounter-1}] 等待页面状态稳定...`);
-          await new Promise(resolve => setTimeout(resolve, STEP_DELAY_MS));
-        }
-      }
-
-      this.addLog(runId, `✅ 所有测试步骤执行完毕，共执行 ${stepCounter - 1} 个步骤。`);
-
-      // 🔥 执行断言前也先扫描页面元素
-      if (testCase.assertions) {
-        this.addLog(runId, `\n🎯 开始解析并执行断言...`);
-        
-        this.addLog(runId, `🔍 [断言] 正在扫描页面元素用于断言验证...`);
-        try {
-          const finalPageElements = await mcpClient.getPageInteractiveElements();
-          this.addLog(runId, `✅ [断言] 扫描完成，发现 ${finalPageElements.length} 个可交互元素`);
-          
-          // 记录断言阶段的页面状态
-          if (finalPageElements.length > 0) {
-            const importantElements = finalPageElements.slice(0, MAX_DISPLAYED_ELEMENTS);
-            this.addLog(runId, `📋 [断言] 关键页面元素:`);
-            importantElements.forEach((el, index) => {
-              const elementDesc = this.formatElementDescription(el);
-              this.addLog(runId, `   ${index + 1}. ${elementDesc}`);
-            });
-          }
-        } catch (elementError: any) {
-          this.addLog(runId, `❌ [断言] 扫描页面元素失败: ${elementError.message}`, 'warning');
-        }
-        
-        const snapshot = await mcpClient.getSnapshot();
-        const { steps: assertionSteps } = await this.aiParser.parseAssertions(testCase.assertions, snapshot, runId);
-
-        if (assertionSteps && assertionSteps.length > 0) {
-          this.addLog(runId, `🎯 [断言] 开始执行 ${assertionSteps.length} 个断言步骤`);
-          for (const [index, assertionStep] of assertionSteps.entries()) {
-            this.addLog(runId, `🔍 [断言 ${index + 1}] ${assertionStep.description}`);
-            const result = await mcpClient.executeStep(assertionStep);
-            this.logStepResult(runId, assertionStep, result);
-            if (!result.success) throw new Error(`断言失败: ${assertionStep.description} - ${result.error}`);
-            this.addLog(runId, `✅ [断言 ${index + 1}] 验证通过`);
-          }
-          this.addLog(runId, `🎉 所有断言验证完成！`);
-        } else {
-          this.addLog(runId, `🤔 AI未能解析出任何断言步骤。`);
-        }
-      }
-
-      this.updateRunStatus(runId, 'completed');
     } catch (error: any) {
-      this.addLog(runId, `❌ 交互式测试执行异常: ${error.message}`, 'error');
-      this.updateRunStatus(runId, 'failed', `Test execution failed: ${error.message}`);
+            testRun.status = 'failed';
+            this.addLog(runId, `测试执行失败: ${error.message}`, 'error');
+            this.wsManager.sendTestStatus(runId, 'failed');
     } finally {
-      await mcpClient.cleanup();
-      this.clients.delete(runId);
+            await this.mcpClient.cleanup();
+            this.addLog(runId, '浏览器已关闭，清理完成。');
+            testRun.finishedAt = new Date();
     }
   }
   
-  private logStepResult(runId: string, step: TestStep, result: McpExecutionResult) {
-      if (result.success) {
-          this.addLog(runId, `✅ ${step.action} 成功: ${step.description}`);
-      } else {
-          this.addLog(runId, `❌ ${step.action} 失败: ${step.description} - ${result.error}`, 'error');
+    public getTestRun(runId: string) {
+      return this.runningTests.get(runId);
+    }
+
+    public getAllTestRuns() {
+      return Array.from(this.runningTests.values());
+    }
+
+    public async cancelTest(runId: string): Promise<boolean> {
+      const testRun = this.runningTests.get(runId);
+      if (testRun && testRun.status === 'running' || testRun.status === 'queued') {
+        testRun.status = 'cancelled';
+        this.addLog(runId, '测试已被用户取消', 'warning');
+        this.wsManager.sendTestStatus(runId, 'cancelled');
+        // Here you would add logic to stop the actual test process
+        return true;
       }
+      return false;
+    }
+    
+    // We keep this method for logging, but the execution logic that uses it is not yet implemented.
+    private addLog(runId: string, message: string, level: 'info' | 'success' | 'warning' | 'error' = 'info') {
+        const testRun = this.runningTests.get(runId);
+        if (testRun) {
+            const logEntry: TestLog = {
+                id: uuidv4(),
+                timestamp: new Date(),
+                message,
+                level,
+            };
+            testRun.logs.push(logEntry);
+            console.log(`[${runId}] ${message}`);
+            this.wsManager.sendTestLog(runId, logEntry);
+        }
   }
-
-  private setupQueueProcessor(): void {
-    this.testQueue.process('*', concurrency, async (job: Job) => {
-      await this.processJob(job);
-    });
-
-    this.testQueue.on('failed', (job, err) => {
-      const { runId } = job.data;
-      this.addLog(runId, `队列任务失败: ${err.message}`, 'error');
-      this.updateRunStatus(runId, 'failed', err.message);
-    });
-  }
-
-  // 🔥 新增：格式化元素描述的辅助方法
-  private formatElementDescription(element: any): string {
-    const parts = [];
-    
-    if (element.tag) {
-      parts.push(`<${element.tag}>`);
-    }
-    
-    if (element.id) {
-      parts.push(`id="${element.id}"`);
-    }
-    
-    if (element['data-testid']) {
-      parts.push(`data-testid="${element['data-testid']}"`);
-    }
-    
-    if (element.name) {
-      parts.push(`name="${element.name}"`);
-    }
-    
-    if (element.text && element.text.length > 0) {
-      const truncatedText = element.text.length > MAX_ELEMENT_TEXT_LENGTH ? element.text.substring(0, MAX_ELEMENT_TEXT_LENGTH) + '...' : element.text;
-      parts.push(`text="${truncatedText}"`);
-    }
-    
-    if (element.placeholder) {
-      parts.push(`placeholder="${element.placeholder}"`);
-    }
-
-    return parts.join(' ');
-  }
-
-  // 🔥 新增：提供给API调用的runTest方法，返回真正的runId
-  public async runTest(testCaseId: number, environment: string = 'staging', executionMode: string = 'interactive'): Promise<string> {
-    console.log(`🚀 [runTest] 开始执行测试用例 ID: ${testCaseId}, 模式: ${executionMode}`);
-    
-    const testCase = await this.findTestCaseById(testCaseId);
-    if (!testCase) {
-      throw new Error('Test case not found');
-    }
-
-    const runId = uuidv4();
-    this.createTestRun(runId, testCase);
-
-    if (executionMode === 'interactive') {
-      this.executeTestWithInteractiveParsing(testCase, runId).catch(error => {
-        console.error('❌ 交互式测试启动出错:', error);
-        this.updateRunStatus(runId, 'failed', `Test failed to start: ${error.message}`);
-      });
-    } else {
-      this.executeTestWithAssertions(testCase, runId).catch(error => {
-        console.error('❌ 测试启动出错:', error);
-        this.updateRunStatus(runId, 'failed', `Test failed to start: ${error.message}`);
-      });
-    }
-    
-    this.wsManager.sendToAll(JSON.stringify({ type: 'testQueued', runId, testCaseId }));
-    
-    // 🔥 返回真正的runId，而不是临时ID
-    return runId;
-  }
-
-// 🔥 新增：清理已完成的测试记录，防止内存泄漏
-public cleanupCompletedTests(olderThanHours: number = 24) {
-  const cutoffTime = new Date(Date.now() - olderThanHours * 60 * 60 * 1000);
-  
-  for (const [runId, testRun] of this.runningTests.entries()) {
-    if (
-      (testRun.status === 'completed' || testRun.status === 'failed' || testRun.status === 'cancelled') &&
-      testRun.endTime &&
-      new Date(testRun.endTime) < cutoffTime
-    ) {
-      this.runningTests.delete(runId);
-      console.log(`🗑️ 清理过期测试记录: ${runId}`);
-    }
-  }
-}
-
-// 🔥 获取当前运行中的测试数量
-public getRunningTestsCount(): number {
-  return Array.from(this.runningTests.values()).filter(
-    test => test.status === 'running' || test.status === 'queued'
-  ).length;
-}
-
-// 🔥 获取所有测试运行记录
-public getAllTestRuns(): any[] {
-  return Array.from(this.runningTests.values());
-}
 } 

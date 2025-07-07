@@ -226,91 +226,117 @@ export class PlaywrightMcpClient {
   async getSnapshot(): Promise<any> {
     if (!this.page) {
       console.warn('⚠️ 尝试在页面不存在时获取快照');
-      return {
-        url: '',
-        title: '',
-        elements: [],
-      };
+      return { url: '', title: '', elements: [] };
     }
     
-    const pageData = await this.page.evaluate(() => {
-        const interactiveElements = Array.from(document.querySelectorAll(
-            'a[href], button, input:not([type="hidden"]), textarea, select, [role="button"], [onclick]'
-        ));
-
+    try {
+      // 使用更全面的方式获取页面元素，包括更多属性信息
+      const pageData = await this.page.evaluate(() => {
+        // 获取所有可交互元素
+        const elements = document.querySelectorAll(
+          'a, button, input, textarea, select, [role="button"], [role="link"], [role="tab"], [data-testid]'
+        );
+        
+        // 结果数组
+        const elementsData: any[] = [];
+        
+        // 遍历元素，收集详细信息
+        for (let i = 0; i < elements.length; i++) {
+          const el = elements[i];
+          const rect = el.getBoundingClientRect();
+          
+          // 忽略不可见元素
+          if (rect.width === 0 || rect.height === 0) {
+            continue;
+          }
+          
+          // 收集所有重要属性
+          const attributes: Record<string, string> = {};
+          const attributesToCollect = [
+            'id', 'name', 'type', 'placeholder', 'value', 'href', 
+            'aria-label', 'aria-labelledby', 'aria-describedby', 
+            'data-testid', 'title', 'alt', 'role'
+          ];
+          
+          attributesToCollect.forEach(attr => {
+            const value = el.getAttribute(attr);
+            if (value) {
+              attributes[attr] = value;
+            }
+          });
+          
+          // 收集CSS类名
+          if (el.className && typeof el.className === 'string') {
+            attributes['class'] = el.className;
+          }
+          
+          // 获取元素文本内容
+          const textContent = el.textContent ? el.textContent.trim() : '';
+          
+          // 生成多种可能的选择器
+          const selectors: string[] = [];
+          
+          // ID选择器（最优先）
+          if (attributes.id) {
+            selectors.push(`#${attributes.id}`);
+          }
+          
+          // 基于属性的选择器
+          if (attributes.placeholder) {
+            selectors.push(`${el.tagName.toLowerCase()}[placeholder="${attributes.placeholder}"]`);
+          }
+          
+          if (attributes.name) {
+            selectors.push(`${el.tagName.toLowerCase()}[name="${attributes.name}"]`);
+          }
+          
+          if (attributes['data-testid']) {
+            selectors.push(`[data-testid="${attributes['data-testid']}"]`);
+          }
+          
+          if (attributes['aria-label']) {
+            selectors.push(`${el.tagName.toLowerCase()}[aria-label="${attributes['aria-label']}"]`);
+          }
+          
+          // 类选择器
+          if (attributes.class) {
+            selectors.push(`${el.tagName.toLowerCase()}.${attributes.class.replace(/\s+/g, '.')}`);
+          }
+          
+          // 标签选择器（最不精确）
+          selectors.push(el.tagName.toLowerCase());
+          
+          // 添加到结果数组
+          elementsData.push({
+            ref: i.toString(),
+            tagName: el.tagName.toLowerCase(),
+            selectors: selectors, // 提供多种可能的选择器
+            bestSelector: selectors[0] || el.tagName.toLowerCase(), // 最佳选择器
+            text: textContent.substring(0, 100),
+            attributes: attributes, // 所有收集的属性
+            rect: {
+              x: rect.x,
+              y: rect.y,
+              width: rect.width,
+              height: rect.height
+            },
+            isVisible: true
+          });
+        }
+        
+        // 返回页面数据
         return {
-            url: window.location.href,
-            title: document.title,
-            elements: interactiveElements.map(el => {
-                const element = el as HTMLElement;
-                return {
-                    tag: element.tagName.toLowerCase(),
-                    text: element.innerText.trim().slice(0, 100),
-                    attributes: {
-                        id: element.id,
-                        'data-testid': element.getAttribute('data-testid'),
-                        class: element.className,
-                        name: element.getAttribute('name'),
-                        placeholder: element.getAttribute('placeholder'),
-                        href: element.getAttribute('href'),
-                    }
-                }
-            })
+          url: window.location.href,
+          title: document.title,
+          elements: elementsData
         };
-    });
-
-    return pageData;
-  }
-
-  async getPageSnapshot(): Promise<any> {
-    if (!this.page) throw new Error('页面不存在');
-    
-    return {
-      url: this.page.url(),
-      title: await this.page.title(),
-      viewport: this.page.viewportSize(),
-      timestamp: new Date().toISOString()
-    };
-  }
-
-  /**
-   * 🔥 新增：获取页面上所有可交互的元素
-   */
-  async getPageInteractiveElements(): Promise<any[]> {
-    if (!this.page) throw new Error('页面不存在');
-
-    console.log('🔍 正在扫描页面上的可交互元素...');
-
-    const elements = await this.page.evaluate(() => {
-      const selectors = [
-        'a', 'button', 'input:not([type="hidden"])', 'textarea', 'select',
-        '[role="button"]', '[role="link"]', '[role="checkbox"]', '[role="radio"]',
-        '[data-testid]'
-      ].join(',');
-
-      const visibleElements = Array.from(document.querySelectorAll(selectors)).filter(el => {
-        const style = window.getComputedStyle(el);
-        const rect = el.getBoundingClientRect();
-        return style.visibility !== 'hidden' && style.display !== 'none' && rect.width > 0 && rect.height > 0;
       });
-
-      return visibleElements.map(el => {
-        const elementInfo: any = {
-          tag: el.tagName.toLowerCase(),
-          id: el.id,
-          name: el.getAttribute('name'),
-          'data-testid': el.getAttribute('data-testid'),
-          placeholder: el.getAttribute('placeholder'),
-          text: el.textContent?.trim().slice(0, 100) || el.getAttribute('aria-label') || el.getAttribute('value'),
-          class: el.className,
-        };
-        // 清理空值
-        return Object.fromEntries(Object.entries(elementInfo).filter(([_, v]) => v != null && v !== ''));
-      });
-    });
-
-    console.log(`✅ 扫描完成，找到 ${elements.length} 个可交互元素。`);
-    return elements;
+      
+      return pageData;
+    } catch (error: any) {
+      console.error('❌ 获取页面快照失败:', error.message);
+      throw new Error(`获取页面快照失败: ${error.message}`);
+    }
   }
 
   async cleanup(): Promise<void> {

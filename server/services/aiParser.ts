@@ -20,18 +20,18 @@ export class AITestParser {
   /**
    * 使用GPT-4o解析自然语言测试描述
    */
-  async parseTestDescription(description: string, testName: string): Promise<AIParseResult> {
+  async parseTestDescription(description: string, testName: string, runId: string): Promise<AIParseResult> {
     try {
       console.log('🧠 AI开始解析测试描述:', description);
 
       const prompt = this.buildPrompt(description, testName);
-      const response = await this.callOpenRouter(prompt);
+      const response = await this.callOpenRouter(prompt, runId);
       
       if (!response.success || !response.content) {
         throw new Error(response.error || 'AI调用失败或返回内容为空');
       }
 
-      const steps = this.parseAIResponse(response.content);
+      const steps = this.parseAIResponse(response.content, runId);
       
       console.log('✅ AI解析完成，生成', steps.length, '个测试步骤');
       return {
@@ -234,545 +234,344 @@ export class AITestParser {
   }
 
   /**
-   * 验证生成的测试步骤
+   * 🔥 新增：解析AI返回的单步结果
    */
+  private parseAINextStepResponse(content: string, runId: string): { step: TestStep; remaining: string } {
+    try {
+      this.log(runId, `AI返回内容: ${content}`);
+      const cleanContent = this.extractJson(content, 'object');
+      const parsed = JSON.parse(cleanContent);
+
+      if (!parsed.nextStep || typeof parsed.remainingSteps !== 'string') {
+        throw new Error('AI响应缺少 "nextStep" 或 "remainingSteps" 字段。');
+      }
+
+      const stepData = parsed.nextStep;
+      const remaining = parsed.remainingSteps.trim();
+
+      // 验证关键步骤是否包含选择器
+      if ((stepData.action === 'click' || stepData.action === 'fill') && !stepData.selector) {
+        const errorMsg = `AI未能为操作 '${stepData.description}' 提供选择器。`;
+        this.log(runId, errorMsg, 'error');
+        throw new Error(errorMsg);
+      }
+      
+      this.log(runId, `AI成功解析步骤: ${stepData.description}`);
+      return { step: stepData, remaining };
+
+    } catch (error: any) {
+      this.log(runId, `解析AI的下一步响应失败: ${error.message}`, 'error');
+      this.log(runId, `原始内容: ${content}`, 'error');
+      throw new Error(`解析下一步错误: ${error.message}`);
+    }
+  }
+
+  private extractJson(content: string, type: 'object' | 'array'): string {
+    let cleanedContent = content.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
+
+    const startChar = type === 'object' ? '{' : '[';
+    const endChar = type === 'object' ? '}' : ']';
+
+    const startIndex = cleanedContent.indexOf(startChar);
+    const endIndex = cleanedContent.lastIndexOf(endChar);
+
+    if (startIndex !== -1 && endIndex !== -1 && endIndex > startIndex) {
+        return cleanedContent.substring(startIndex, endIndex + 1);
+    }
+    
+    // Fallback if no clear block is found, though this may fail during JSON.parse
+    return cleanedContent;
+  }
+
   private validateSteps(steps: TestStep[]): void {
     for (const step of steps) {
       switch (step.action) {
         case 'navigate':
-          if (!step.url) {
-            throw new Error(`导航步骤缺少URL: ${step.description}`);
+          if (!step.url || !step.url.startsWith('http')) {
+            throw new Error(`导航步骤缺少有效URL: ${step.description}`);
           }
-          // 修复常见URL错误
-          step.url = this.fixUrl(step.url);
           break;
-          
         case 'click':
         case 'hover':
           if (!step.selector) {
-            throw new Error(`${step.action}步骤缺少选择器: ${step.description}`);
+            throw new Error(`交互步骤缺少选择器: ${step.description}`);
           }
           break;
-          
         case 'fill':
-          if (!step.selector || !step.value) {
+          if (!step.selector || step.value === undefined) {
             throw new Error(`输入步骤缺少选择器或值: ${step.description}`);
           }
           break;
-          
         case 'expect':
-          if (!step.selector) {
-            throw new Error(`验证步骤缺少选择器: ${step.description}`);
+          if (!step.selector || !step.condition) {
+            throw new Error(`断言步骤缺少选择器或条件: ${step.description}`);
           }
-          step.condition = step.condition || 'visible';
+          break;
+        case 'wait':
+          if (!step.timeout) {
+            throw new Error(`等待步骤缺少超时时间: ${step.description}`);
+          }
           break;
       }
     }
   }
 
   /**
-   * 修复URL错误
+   * Fixes common URL errors, e.g., "2www." -> "www."
    */
   private fixUrl(url: string): string {
-    // 修复常见错误
-    url = url.replace(/2www\./g, 'www.');
-    url = url.replace(/\s+/g, '');
-    
-    // 确保有协议
-    if (!url.startsWith('http://') && !url.startsWith('https://')) {
-      url = 'https://' + url;
-    }
-    
-    return url;
+    return url.replace(/^[0-9]www\./, 'www.');
   }
 
-  /**
-   * 🔥 新增：结合页面上下文，生成更精准的选择器
-   */
   async generateSelectorWithContext(
     originalStep: TestStep,
     pageElements: any[]
   ): Promise<string> {
-    console.log(`🤖 正在为步骤 "${originalStep.description}" 结合上下文生成选择器...`);
-    const prompt = this.buildContextualSelectorPrompt(originalStep, pageElements);
+    console.log(`🧠 使用上下文为 "${originalStep.description}" 生成选择器...`);
     
-    try {
-      const response = await this.callOpenRouter(prompt);
-      if (!response.success || !response.content) {
-        throw new Error('AI未能生成选择器');
-      }
-      
-      // AI应该直接返回选择器字符串，去除可能的引号
-      const selector = response.content.replace(/['"`]/g, '').trim();
+    const prompt = this.buildContextualSelectorPrompt(originalStep, pageElements);
+    const response = await this.callOpenRouter(prompt, "selector-gen");
 
-      if (selector === 'SELECTOR_NOT_FOUND' || selector.length < 2) {
-         throw new Error('AI在当前页面未找到匹配的元素');
-      }
-
-      console.log(`✅ AI生成了新的选择器: ${selector}`);
-      return selector;
-
-    } catch (error) {
-      console.error('❌ 结合上下文生成选择器失败:', error);
-      // 返回原始选择器作为备用
+    if (!response.success || !response.content) {
+      console.warn('⚠️ AI无法生成上下文选择器，将使用原始选择器');
       return originalStep.selector || '';
     }
+    
+    // 假设AI直接返回最佳选择器字符串
+    const bestSelector = response.content.trim(); 
+    console.log(`✅ AI建议的选择器: ${bestSelector}`);
+    
+    return bestSelector;
   }
 
   private buildContextualSelectorPrompt(
     originalStep: TestStep,
     pageElements: any[]
   ): string {
-    const simplifiedElements = JSON.stringify(pageElements, null, 2);
-
-    return `你是一个顶级的Web自动化测试专家，擅长从页面的DOM结构中找到最合适的元素。
-
-你的任务:
-根据用户的操作指令和当前页面上所有可交互元素的列表(JSON格式)，找出一个最匹配该操作的CSS选择器。
-
-用户操作指令: "${originalStep.description}"
-(这是一个 ${originalStep.action} 操作)
-
-当前页面上的可交互元素列表:
-\`\`\`json
-${simplifiedElements}
-\`\`\`
-
-重要规则:
-1.  仔细分析 "用户操作指令"，理解用户的意图。
-2.  在 "当前页面上的可交互元素列表" 中，找到一个最符合用户意图的元素。
-3.  根据找到的元素，构建一个精准、稳定、唯一的CSS选择器。优先使用 'id', 'data-testid', 'name' 等唯一属性。如果都没有，再考虑 'placeholder' 或元素文本。
-4.  **只返回最终的CSS选择器字符串**，不要包含任何解释、代码块标记或多余的引号。
-5.  如果分析后认为页面上没有任何元素能匹配用户的操作指令，则严格返回 "SELECTOR_NOT_FOUND"。
-
-例如，如果指令是 "点击登录按钮"，你在元素列表里找到了一个JSON对象，内容为 '{"tag": "button", "text": "登录", "id": "login-btn"}'，那么你应该直接返回:
-#login-btn
-`;
-  }
-
-  /**
-   * 测试AI解析功能
-   */
-  async testParse(description: string): Promise<void> {
-    console.log('🧪 测试AI解析功能');
-    console.log('输入描述:', description);
-    
-    const result = await this.parseTestDescription(description, '测试用例');
-    
-    console.log('解析结果:', result);
-    if (result.success) {
-      console.log('生成的测试步骤:');
-      result.steps.forEach((step, i) => {
-        console.log(`${i + 1}. ${step.action}: ${step.description}`);
-      });
-    }
-  }
-
-  /**
-   * 🔥 新增：分别解析测试步骤和断言预期
-   */
-  async parseTestStepsAndAssertions(
-    stepsText: string, 
-    assertionsText: string, 
-    testName: string
-  ): Promise<{
-    stepsResult: AIParseResult;
-    assertionsResult: AIParseResult;
-  }> {
-    try {
-      console.log('🧠 AI开始分别解析测试步骤和断言预期');
-      console.log('📝 测试步骤:', stepsText);
-      console.log('🎯 断言预期:', assertionsText);
-
-      // 并行解析测试步骤和断言预期
-      const [stepsResult, assertionsResult] = await Promise.all([
-        this.parseTestSteps(stepsText, testName),
-        this.parseAssertions(assertionsText, testName)
-      ]);
-
-      return {
-        stepsResult,
-        assertionsResult
-      };
-
-    } catch (error: any) {
-      console.error('❌ AI解析失败:', error);
-      return {
-        stepsResult: {
-          success: false,
-          steps: [],
-          error: error.message
-        },
-        assertionsResult: {
-          success: false,
-          steps: [],
-          error: error.message
-        }
-      };
-    }
-  }
-
-  /**
-   * 🔥 新增：专门解析测试步骤
-   */
-  async parseTestSteps(stepsText: string, testName: string): Promise<AIParseResult> {
-    console.log('🧠 AI解析测试步骤:', stepsText);
-
-    const prompt = this.buildStepsPrompt(stepsText, testName);
-    const response = await this.callOpenRouter(prompt);
-    
-    if (!response.success || !response.content) {
-      return { success: false, steps: [], error: 'AI call failed' };
-    }
-
-    const steps = this.parseAIResponse(response.content);
-    
-    console.log('✅ 测试步骤解析完成，生成', steps.length, '个操作步骤');
-    return {
-      success: true,
-      steps
-    };
-  }
-
-  /**
-   * 🔥 新增：专门解析断言预期
-   */
-  async parseAssertions(assertionsText: string, testName: string): Promise<AIParseResult> {
-    console.log('🧠 AI解析断言预期:', assertionsText);
-
-    if (!assertionsText.trim()) {
-      console.log('⚠️ 断言预期为空，跳过解析');
-      return {
-        success: true,
-        steps: []
-      };
-    }
-
-    const prompt = this.buildAssertionsPrompt(assertionsText, testName);
-    const response = await this.callOpenRouter(prompt);
-    
-    if (!response.success || !response.content) {
-      throw new Error(response.error || 'AI调用失败或返回内容为空');
-    }
-
-    const assertions = this.parseAIResponse(response.content);
-    
-    console.log('✅ 断言预期解析完成，生成', assertions.length, '个断言步骤');
-    return {
-      success: true,
-      steps: assertions
-    };
-  }
-
-  /**
-   * 🔥 新增：构建测试步骤的Prompt
-   */
-  private buildStepsPrompt(stepsText: string, testName?: string): string {
-    return `你是一个专业的Web自动化测试专家。请将以下自然语言描述的**所有步骤**转换为一个结构化的JSON数组。
-
-测试用例名称: ${testName || '未命名'}
-测试描述: ${stepsText}
-
-要求:
-1.  **完整性**: 必须解析输入文本中的所有操作步骤。
-2.  **准确性**: 智能识别操作类型 (navigate, click, fill, 等) 和相关的参数 (selector, value, url)。
-3.  **严格格式**: 返回一个严格的JSON数组，不包含任何其他解释性文字。
-
-每个步骤的JSON对象格式:
-{
-  "id": "step-N",
-  "action": "操作类型",
-  "selector": "CSS选择器 (如果适用)",
-  "url": "网址 (用于 navigate)",
-  "value": "输入值 (用于 fill)",
-  "text": "期望文本 (用于 expect)",
-  "condition": "验证条件 (用于 expect, e.g., 'visible', 'contains_text')",
-  "timeout": 等待时间(毫秒),
-  "description": "步骤的自然语言描述",
-  "order": 步骤顺序 (从1开始)
-}
-
-这是一个例子:
-输入: "打开百度，搜索'AI'，然后点击搜索按钮"
-输出:
-[
-  { "id": "step-1", "action": "navigate", "url": "https://www.baidu.com", "description": "打开百度", "order": 1 },
-  { "id": "step-2", "action": "fill", "selector": "#kw", "value": "AI", "description": "搜索'AI'", "order": 2 },
-  { "id": "step-3", "action": "click", "selector": "#su", "description": "点击搜索按钮", "order": 3 }
-]
-
-现在，请解析以下文本:
-${stepsText}
-`;
-  }
-
-  /**
-   * 🔥 新增：构建断言预期的Prompt
-   */
-  private buildAssertionsPrompt(assertionsText: string, testName: string): string {
-    return `你是一个专业的Web自动化测试专家。请将以下自然语言描述的**所有断言**转换为一个结构化的JSON数组。
-
-测试用例名称: ${testName}
-断言描述: ${assertionsText}
-
-⚠️ 重要要求:
-1. 断言预期只能生成验证类型的操作，不能包含navigate、click、fill等会改变页面状态的操作
-2. 断言是在当前页面上进行验证，不会跳转到其他页面
-3. 智能识别页面元素和文本内容的验证
-4. 返回严格的JSON数组格式，不要任何其他文字
-
-🔥 断言预期支持的操作类型（仅限验证类）:
-- expect: 验证元素存在/可见/包含文本
-- wait: 等待元素出现
-- screenshot: 截图记录
-
-每个断言步骤的JSON对象格式:
-{
-  "id": "assertion-N",
-  "action": "expect",
-  "selector": "CSS选择器",
-  "text": "期望文本 (如果适用)",
-  "condition": "验证条件 ('visible', 'hidden', 'contains_text', 'equal_text')",
-  "description": "断言的自然语言描述",
-  "order": 断言顺序 (从1开始)
-}
-
-例如:
-[
-  {
-    "id": "assertion-1",
-    "action": "expect",
-    "selector": "h1.title",
-    "text": "欢迎回来",
-    "condition": "contains_text",
-    "description": "验证页面标题包含'欢迎回来'",
-    "order": 1
-  }
-]`;
-  }
-
-  public async parseSteps(stepsText: string, runId: string): Promise<AIParseResult> {
-    this.log(runId, `🧠 AI开始解析测试步骤: ${stepsText}`);
-    const prompt = this.buildStepsPrompt(stepsText);
-    const response = await this.callOpenRouter(prompt, runId);
-
-    if (!response.success || !response.content) {
-      return { success: false, steps: [], error: 'AI call failed' };
-    }
-    const steps = this.parseAIResponse(response.content, runId);
-    this.log(runId, `✅ 测试步骤解析完成，生成 ${steps.length} 个操作步骤`);
-    return { success: true, steps };
-  }
-
-  public async parseAssertions(assertionsText: string, snapshot: any, runId: string): Promise<AIParseResult> {
-    this.log(runId, `🧠 AI开始解析断言: ${assertionsText}`);
-    const prompt = this.buildAssertionsPromptWithContext(assertionsText, snapshot);
-    const response = await this.callOpenRouter(prompt, runId);
-
-    if (!response.success || !response.content) {
-      return { success: false, steps: [], error: 'AI call failed' };
-    }
-    const steps = this.parseAIResponse(response.content, runId);
-    this.log(runId, `✅ 断言预期解析完成，生成 ${steps.length} 个断言步骤`);
-    return { success: true, steps };
-  }
-  
-  public async parseNextStep(remainingStepsText: string, snapshot: any, runId: string): Promise<AINextStepParseResult> {
-    this.log(runId, `🧠 AI开始解析下一步操作 from: "${remainingStepsText}"`);
-    const prompt = this.buildNextStepPrompt(remainingStepsText, snapshot);
-    const response = await this.callOpenRouter(prompt, runId, 1000);
-
-    if (!response.success || !response.content) {
-      return { success: false, error: 'AI call failed' };
-    }
-
-    try {
-      const { step, remaining } = this.parseNextStepResponse(response.content, runId);
-      if (step) {
-        this.log(runId, `✅ AI解析出下一步: ${step.description}`);
-      }
-      return { success: true, step, remaining };
-    } catch (error: any) {
-      this.log(runId, `❌ 解析下一步操作失败: ${error.message}`, 'error');
-      return { success: false, error: error.message };
-    }
-  }
-
-  private parseNextStepResponse(content: string, runId: string): { step?: TestStep, remaining: string } {
-    try {
-      const cleanContent = this.extractJson(content, 'object');
-      const parsedJson = JSON.parse(cleanContent);
-      const { next_step: stepData, remaining_text: remainingText } = parsedJson;
-
-      if (typeof remainingText === 'undefined') {
-        throw new Error('AI响应缺少 "remaining_text" 字段');
-      }
-      if (!stepData) {
-        return { remaining: remainingText };
-      }
-      this.validateSteps([stepData]);
-      return { step: stepData, remaining: remainingText };
-    } catch (error: any) {
-      this.log(runId, `解析AI下一步响应失败: ${error.message}`, 'error');
-      this.log(runId, `原始内容: ${content}`, 'error');
-      // If parsing fails, assume the whole text is remaining to avoid infinite loops
-      return { remaining: content };
-    }
-  }
-
-  private extractJson(content: string, type: 'object' | 'array'): string {
-    const pattern = type === 'object' ? /{[\s\S]*}/ : /\[[\s\S]*\]/;
-    let cleanContent = content.replace(/```json\s*/gi, '').replace(/```\s*/g, '');
-    const match = cleanContent.match(pattern);
-    if (match) {
-      return match[0];
-    }
-    // Handle cases where AI might not return a markdown block
-    if ( (type === 'object' && cleanContent.startsWith('{')) || (type === 'array' && cleanContent.startsWith('[')) ) {
-      return cleanContent;
-    }
-    throw new Error(`AI响应中没有找到有效的JSON ${type}`);
-  }
-
-  private buildNextStepPrompt(remainingStepsText: string, snapshot: any): string {
-    const pageContext = this.buildPageContext(snapshot);
-    return `你是一个专业的Web自动化测试专家，正在进行**分步式**测试执行。
-你的任务是：只从下面的文本中解析出**第一个**可执行的操作，并返回这个操作和**剩余未解析**的文本。
-${pageContext}
-待处理的测试文本: "${remainingStepsText}"
-
-🔥 **严格支持的操作类型**（必须使用这些类型）:
-- **navigate**: 打开网页（用于"打开"、"访问"、"跳转"等）
-- **click**: 点击元素（用于"点击"、"选择"等）
-- **fill**: 填写表单（用于"输入"、"填写"等）
-- **expect**: 验证元素（用于"验证"、"检查"等）
-- **wait**: 等待（用于"等待"等）
-- **screenshot**: 截图
-- **hover**: 悬停
-
-要求:
-1.  **只解析第一步**: 仅识别并返回第一个动作。
-2.  **必须使用标准操作类型**: 只能使用上面列出的操作类型，不能自创。
-3.  **利用上下文**: 根据上面提供的页面元素信息，生成最准确的CSS选择器。
-4.  **返回剩余文本**: 必须准确返回尚未处理的剩余文本。
-5.  **严格的JSON格式**: 你的回答必须是包裹在一个JSON对象中的。
-
-next_step 对象格式:
-{
-  "id": "step-1",
-  "action": "操作类型（从上面列表选择）",
-  "selector": "CSS选择器（如果需要）",
-  "url": "网址（仅用于navigate）",
-  "value": "输入值（仅用于fill）", 
-  "text": "期望文本（仅用于expect）",
-  "condition": "验证条件（仅用于expect）",
-  "description": "步骤的详细描述",
-  "order": 1
-}
-
-返回的JSON格式:
-{ "next_step": { ... }, "remaining_text": "..." }
-
-示例：
-输入: "打开百度首页，然后搜索关键词"
-输出: 
-{
-  "next_step": {
-    "id": "step-1",
-    "action": "navigate",
-    "url": "https://www.baidu.com",
-    "description": "打开百度首页",
-    "order": 1
-  },
-  "remaining_text": "然后搜索关键词"
-}
-
-现在，请处理以下文本:
-"${remainingStepsText}"`;
-  }
-  
-  private buildPageContext(snapshot: any): string {
-    if (!snapshot || !snapshot.url) return '当前没有页面上下文。';
-    
-    const elementInfo = snapshot.elements?.slice(0, 15).map((el:any) => ({
+    const simplifiedElements = pageElements.map(el => ({
       tag: el.tag,
       text: el.text,
       attributes: el.attributes
     }));
-    
-    return `当前页面URL: ${snapshot.url}
-当前页面标题: ${snapshot.title}
-页面可见元素 (部分):
-${JSON.stringify(elementInfo, null, 2)}
-`;
-  }
-  
-  private log(runId: string, message: string, level: 'info' | 'error' = 'info') {
-      const logMessage = `[AITestParser][${runId}] ${message}`;
-      if (level === 'error') {
-          console.error(logMessage);
-      } else {
-          console.log(logMessage);
-      }
+
+    return `你是一个智能选择器生成器。根据用户意图和页面元素，找到最佳CSS选择器。
+用户意图: "${originalStep.description}"
+原始选择器: "${originalStep.selector}"
+
+页面元素:
+${JSON.stringify(simplifiedElements, null, 2)}
+
+返回最佳的CSS选择器:`;
   }
 
-  /**
-   * 🔥 构建带页面上下文的断言解析提示词
-   */
+  // --- 主要的解析方法 ---
+  
+  public async parseNextStep(remainingStepsText: string, snapshot: any | null, runId: string): Promise<AINextStepParseResult> {
+    try {
+      this.log(runId, `🧠 AI开始从以下内容解析下一步: "${remainingStepsText}"`);
+      const prompt = this.buildNextStepPrompt(remainingStepsText, snapshot);
+      const response = await this.callOpenRouter(prompt, runId, 1000);
+
+      if (!response.success || !response.content) {
+        return { success: false, error: response.error || 'AI调用失败' };
+      }
+      
+      const parsed = this.parseAINextStepResponse(response.content, runId);
+
+      return {
+        success: true,
+        step: parsed.step,
+        remaining: parsed.remaining,
+      };
+
+    } catch (error: any) {
+      this.log(runId, `❌ 解析下一步失败: ${error.message}`, 'error');
+      return { success: false, error: error.message };
+    }
+  }
+
+  public async parseAssertions(assertionsText: string, snapshot: any, runId:string): Promise<AIParseResult> {
+    this.log(runId, `🧠 AI 开始解析断言...`);
+    const prompt = this.buildAssertionsPromptWithContext(assertionsText, snapshot);
+    const response = await this.callOpenRouter(prompt, runId);
+
+    if (!response.success || !response.content) {
+      return { success: false, steps: [], error: 'AI调用失败' };
+    }
+
+    const steps = this.parseAIResponse(response.content, runId);
+    return { success: true, steps };
+  }
+
+
+  // --- Prompt 构建方法 ---
+
   private buildAssertionsPromptWithContext(assertionsText: string, snapshot: any): string {
     const pageContext = this.buildPageContext(snapshot);
-    
-    return `你是一个专业的Web自动化测试专家，正在解析测试断言。
-你的任务是：根据当前页面的实际状态和用户的断言要求，生成准确的验证步骤。
+    return `
+You are a web automation expert. Your task is to convert a list of natural language assertions into structured test steps based on the current page snapshot.
 
-🔥 **关键要求**：
-1. **基于实际页面状态**：使用下面提供的页面元素信息，生成真实存在的CSS选择器
-2. **智能映射**：将用户的自然语言断言映射到页面上真实的元素
-3. **避免空想**：不要猜测不存在的CSS类名或选择器
-4. **灵活验证**：如果找不到精确匹配的元素，寻找相似的或相关的元素进行验证
-
+**Current Page Snapshot:**
+URL: ${snapshot.url}
+Title: ${snapshot.title}
+\`\`\`json
 ${pageContext}
+\`\`\`
 
-用户断言要求: "${assertionsText}"
+**Assertions to Verify:**
+\`\`\`
+${assertionsText}
+\`\`\`
 
-🔥 **断言解析策略**：
-- 如果要求验证"错误消息"，检查页面是否有报错文本、红色提示、验证信息等
-- 如果要求验证"登录失败"，检查是否仍在登录页面、是否有错误提示、账号密码框是否还存在
-- 如果要求验证页面跳转，检查URL是否改变、页面标题是否改变
-- 如果找不到精确元素，使用更通用的验证方式，如检查页面标题、URL、输入框等
+**Your Task:**
+1.  For each assertion, find the corresponding element in the page snapshot.
+2.  Create a JSON test step for each assertion using the correct selector from the snapshot.
+3.  The action for all these steps **MUST** be "expect".
 
-🔥 **支持的断言操作**（仅限验证类）:
-- **expect**: 验证元素存在/可见/包含文本
-- **wait**: 等待元素出现或消失
-- **screenshot**: 截图记录
+**Output Format:**
+Return a single JSON array of test steps.
 
-每个断言步骤的JSON格式:
-{
-  "id": "assertion-N",
-  "action": "expect",
-  "selector": "根据实际页面元素生成的CSS选择器",
-  "text": "期望文本（如果适用）",
-  "condition": "验证条件（'visible', 'hidden', 'contains_text', 'equal_text', 'exists'）",
-  "description": "断言的自然语言描述",
-  "order": N
-}
-
-🔥 **智能选择器生成示例**：
-- 页面有 input[placeholder="请输入登录账号"] → 可以验证仍在登录页面
-- 页面有 button[text="登 录"] → 可以验证登录按钮仍然存在
-- 页面标题包含"登录" → 可以验证页面标题
-- 页面URL没有改变 → 可以验证未跳转
-
-请返回严格的JSON数组格式，例如:
+**Example:**
+If the assertion is "The user 'John Doe' should be visible" and the snapshot contains \`{"selector": "#user-name", "name": "John Doe"}\`, the output should be:
+\`\`\`json
 [
   {
-    "id": "assertion-1",
     "action": "expect",
-    "selector": "input[placeholder='请输入登录账号']",
+    "selector": "#user-name",
     "condition": "visible",
-    "description": "验证登录页面仍然存在（通过检查账号输入框）",
-    "order": 1
+    "text": "John Doe",
+    "description": "The user 'John Doe' should be visible"
   }
-]`;
+]
+\`\`\`
+
+Now, convert the provided assertions.`;
+  }
+  
+  /**
+   * @returns The generated prompt string.
+   */
+  private buildNextStepPrompt(remainingStepsText: string, snapshot: any | null): string {
+    const firstLine = remainingStepsText.split('\n')[0].trim();
+    
+    let prompt = `You are an expert web automation assistant. Your task is to determine the very next step to execute based on a list of remaining steps and, if available, a snapshot of the current web page.
+
+**Test Plan (Remaining Steps):**
+\`\`\`
+${remainingStepsText}
+\`\`\`
+
+**Your Task:**
+1.  Analyze the **first line** of the remaining steps: "${firstLine}".
+`;
+
+    if (snapshot) {
+      const pageContext = this.buildPageContext(snapshot);
+      prompt += `
+**Current Page Snapshot:**
+URL: ${snapshot.url}
+Title: ${snapshot.title}
+
+**Visible Interactive Elements on Page:**
+\`\`\`json
+${pageContext}
+\`\`\`
+
+2. From the list of visible elements, find the **best matching element** for this action.
+3. **IMPORTANT SELECTOR GUIDELINES:**
+   - Each element has multiple possible selectors in the "selectors" array
+   - Choose the MOST SPECIFIC selector that uniquely identifies the element
+   - Prefer selectors with attributes like placeholder, id, or data-testid over generic class selectors
+   - For input fields, ALWAYS check the "attributes" object to find unique identifiers like placeholder text
+   - For username/login fields, look for placeholders containing words like "username", "账号", "login", etc.
+   - For password fields, look for type="password" or placeholders containing "password", "密码", etc.
+   - AVOID using selectors that might match multiple elements
+`;
+    } else {
+      prompt += `
+2.  **No page snapshot is available.** You must infer the action from the text alone. This is most likely a 'navigate' action.
+`;
+    }
+
+    prompt += `
+**Output Format:**
+Return a single JSON object with two keys:
+-   \`nextStep\`: A JSON object for the single next action.
+-   \`remainingSteps\`: A string containing all test steps **except** the one you just processed.
+
+**Example (with snapshot):**
+If the first step is "Enter 'admin' in the username field" and you find an element with placeholder="Username", your output should be:
+\`\`\`json
+{
+  "nextStep": {
+    "action": "fill",
+    "selector": "input[placeholder='Username']",
+    "value": "admin",
+    "description": "Enter 'admin' in the username field"
+  },
+  "remainingSteps": "<the rest of the steps here>"
+}
+\`\`\`
+
+**Example (without snapshot):**
+If the first step is "Navigate to https://example.com", your output should be:
+\`\`\`json
+{
+  "nextStep": {
+    "action": "navigate",
+    "url": "https://example.com",
+    "description": "Navigate to https://example.com"
+  },
+  "remainingSteps": "<the rest of the steps here>"
+}
+\`\`\`
+
+Now, determine the next step for: "${firstLine}"`;
+    return prompt;
+  }
+
+  private buildPageContext(snapshot: any): string {
+    if (!snapshot || !Array.isArray(snapshot.elements) || snapshot.elements.length === 0) {
+      return '[]'; // No elements found
+    }
+    
+    // 提供更丰富的元素信息给AI，包括多种选择器和属性
+    const elementsForPrompt = snapshot.elements.map((el: any) => {
+      // 构建一个简化但信息丰富的元素表示
+      const element = {
+        // 提供多个可能的选择器，让AI选择最精确的
+        selectors: el.selectors || [el.selector || el.bestSelector],
+        // 推荐的最佳选择器
+        bestSelector: el.bestSelector || el.selector,
+        // 元素文本内容
+        text: el.text || el.name || '',
+        // 元素标签名
+        tagName: el.tagName || '',
+        // 元素角色
+        role: el.attributes?.role || el.role || '',
+        // 重要属性
+        attributes: {}
+      };
+      
+      // 添加重要属性
+      if (el.attributes) {
+        // 优先添加这些对识别元素最有用的属性
+        const importantAttrs = ['id', 'placeholder', 'name', 'type', 'value', 'aria-label', 'data-testid'];
+        importantAttrs.forEach(attr => {
+          if (el.attributes[attr]) {
+            element.attributes[attr] = el.attributes[attr];
+          }
+        });
+      }
+      
+      return element;
+    });
+
+    return JSON.stringify(elementsForPrompt, null, 2);
+  }
+
+  private log(runId: string, message: string, level: 'info' | 'error' | 'warning' = 'info') {
+    // Helper for structured logging
+    console.log(`[${new Date().toLocaleTimeString()}] [${runId}] [AITestParser] [${level.toUpperCase()}] ${message}`);
   }
 } 

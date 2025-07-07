@@ -19,6 +19,48 @@ export class SuiteExecutionService {
     this.externalSuiteFinder = finder;
   }
 
+  public async getAllTestSuites(): Promise<TestSuite[]> {
+    // This is a mock implementation. In a real scenario, you would fetch from the database.
+    return []; 
+  }
+
+  public async createTestSuite(suiteData: any): Promise<TestSuite> {
+    // Mock implementation
+    const newSuite: TestSuite = {
+      id: Math.floor(Math.random() * 1000),
+      name: suiteData.name,
+      description: suiteData.description,
+      testCaseIds: suiteData.testCases,
+      createdAt: new Date().toISOString(),
+      // Add other fields with default values
+      owner: 'System',
+      status: 'active',
+      tags: [],
+      priority: 'medium',
+    };
+    return newSuite;
+  }
+
+  public async updateTestSuite(id: number, suiteData: any): Promise<TestSuite | null> {
+    // Mock implementation
+    return {
+      id,
+      name: suiteData.name,
+      description: suiteData.description,
+      testCaseIds: suiteData.testCases,
+      createdAt: new Date().toISOString(),
+      owner: 'System',
+      status: 'active',
+      tags: [],
+      priority: 'medium',
+    };
+  }
+
+  public async deleteTestSuite(id: number): Promise<boolean> {
+    // Mock implementation
+    return true;
+  }
+
   // 🔥 执行整个测试套件
   public async runSuite(
     suiteId: number, 

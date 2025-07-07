@@ -7,12 +7,12 @@ export function testRoutes(testExecutionService: TestExecutionService): Router {
   // 获取所有测试用例
   router.get('/cases', async (req: Request, res: Response) => {
     try {
-      const testCases = testExecutionService.getTestCases();
+      const testCases = await testExecutionService.getTestCases();
       res.json({
         success: true,
         data: testCases
       });
-    } catch (error) {
+    } catch (error: any) {
       res.status(500).json({
         success: false,
         error: error.message
@@ -113,28 +113,20 @@ export function testRoutes(testExecutionService: TestExecutionService): Router {
     }
   });
 
-  // 🔥 新增：创建测试用例API
+  // 🔥 更新：创建测试用例API
   router.post('/cases', async (req: Request, res: Response) => {
     try {
-      const { name, steps, assertions, priority, status, tags, author } = req.body;
+      // The body now aligns with the conceptual TestCase interface
+      const testCaseData = req.body;
 
-      if (!name || !steps) {
+      if (!testCaseData.name || !testCaseData.steps) {
         return res.status(400).json({
           success: false,
           error: '缺少必要参数：name 和 steps'
         });
       }
 
-      // 调用服务类保存测试用例
-      const newTestCase = testExecutionService.addTestCase({
-        name: name.trim(),
-        steps: steps.trim(),
-        assertions: assertions?.trim() || '',
-        tags: Array.isArray(tags) ? tags : [],
-        priority: priority || 'medium',
-        status: status || 'draft',
-        author: author || '系统'
-      });
+      const newTestCase = await testExecutionService.addTestCase(testCaseData);
 
       console.log('✅ 测试用例创建成功:', newTestCase);
 
@@ -152,30 +144,24 @@ export function testRoutes(testExecutionService: TestExecutionService): Router {
     }
   });
 
-  // 🔥 新增：更新测试用例API
+  // 🔥 更新：更新测试用例API
   router.put('/cases/:id', async (req: Request, res: Response) => {
     try {
       const { id } = req.params;
-      const { name, steps, assertions, tags, priority, status } = req.body;
+      const testCaseData = req.body;
 
-      const success = testExecutionService.updateTestCase(parseInt(id), {
-        name: name?.trim(),
-        steps: steps?.trim(),
-        assertions: assertions?.trim(),
-        tags: Array.isArray(tags) ? tags : undefined,
-        priority,
-        status
-      });
+      const updatedTestCase = await testExecutionService.updateTestCase(parseInt(id), testCaseData);
 
-      if (!success) {
+      if (!updatedTestCase) {
         return res.status(404).json({
           success: false,
-          error: '测试用例不存在'
+          error: '测试用例不存在或更新失败'
         });
       }
 
       res.json({
         success: true,
+        data: updatedTestCase,
         message: '测试用例更新成功'
       });
     } catch (error: any) {
@@ -186,12 +172,12 @@ export function testRoutes(testExecutionService: TestExecutionService): Router {
     }
   });
 
-  // 🔥 新增：删除测试用例API
+  // 🔥 更新：删除测试用例API
   router.delete('/cases/:id', async (req: Request, res: Response) => {
     try {
       const { id } = req.params;
 
-      const success = testExecutionService.deleteTestCase(parseInt(id));
+      const success = await testExecutionService.deleteTestCase(parseInt(id));
 
       if (!success) {
         return res.status(404).json({

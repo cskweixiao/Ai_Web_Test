@@ -1,5 +1,5 @@
 // 测试修复后的快照功能
-const fetch = require('node-fetch');
+import fetch from 'node-fetch';
 
 async function testFixedSnapshot() {
   console.log('测试修复后的快照功能...');
@@ -45,8 +45,8 @@ async function testFixedSnapshot() {
     // 步骤3: 等待测试完成
     console.log('⏳ 等待测试执行完成...');
     
-    // 简单等待10秒，实际应用中应该轮询测试状态
-    await new Promise(resolve => setTimeout(resolve, 10000));
+    // 简单等待15秒，实际应用中应该轮询测试状态
+    await new Promise(resolve => setTimeout(resolve, 15000));
     
     // 步骤4: 获取测试结果
     const resultResponse = await fetch(`http://localhost:3001/api/test-runs/${runResult.runId}`);

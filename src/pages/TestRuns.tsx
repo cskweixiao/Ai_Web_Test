@@ -56,37 +56,37 @@ export function TestRuns() {
   // 🔥 从后端API加载真实的测试运行数据
   const loadTestRuns = async () => {
     try {
-      setLoading(true);
-      const response = await fetch('http://localhost:3001/api/tests/runs');
-      const data = await response.json();
+      // setLoading(true);
+      // const response = await fetch('http://localhost:3001/api/tests/runs');
+      // const data = await response.json();
       
-      if (data.success) {
+      // if (data.success) {
         // 转换数据格式，确保时间字段正确
-        const runs = (data.data || []).map((run: any) => ({
-          ...run,
-          startTime: new Date(run.startTime),
-          endTime: run.endTime ? new Date(run.endTime) : undefined,
-          logs: (run.logs || []).map((log: any) => ({
-            ...log,
-            timestamp: new Date(log.timestamp)
-          }))
-        }));
+        // const runs = (data.data || []).map((run: any) => ({
+        //   ...run,
+        //   startTime: new Date(run.startTime),
+        //   endTime: run.endTime ? new Date(run.endTime) : undefined,
+        //   logs: (run.logs || []).map((log: any) => ({
+        //     ...log,
+        //     timestamp: new Date(log.timestamp)
+        //   }))
+        // }));
         
-        setTestRuns(runs);
-        console.log('📊 加载测试运行数据:', runs);
-      } else {
-        console.error('获取测试运行失败:', data.error);
-      }
+        // setTestRuns(runs);
+        // console.log('📊 加载测试运行数据:', runs);
+      // } else {
+        // console.error('获取测试运行失败:', data.error);
+      // }
     } catch (error) {
       console.error('加载测试运行失败:', error);
     } finally {
-      setLoading(false);
+      // setLoading(false);
     }
   };
 
   // 🔥 实时刷新测试状态
   useEffect(() => {
-    loadTestRuns();
+    // loadTestRuns();
     
     let interval: NodeJS.Timeout;
     if (autoRefresh) {

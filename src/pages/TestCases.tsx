@@ -108,8 +108,16 @@ export function TestCases() {
     try {
       setLoading(true);
       const response = await fetch('http://localhost:3001/api/tests/cases');
-      const data = await response.json();
-      setTestCases(data || []);
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success) {
+          setTestCases(data.data || []);
+        } else {
+          throw new Error(data.error || '获取测试用例失败');
+        }
+      } else {
+        throw new Error('网络请求失败');
+      }
     } catch (error) {
       console.error('加载测试用例失败:', error);
       setTestCases([]);
@@ -121,12 +129,23 @@ export function TestCases() {
   // 🔥 新增：加载测试套件
   const loadTestSuites = async () => {
     try {
+      setLoading(true);
       const response = await fetch('http://localhost:3001/api/test-suites');
-      const data = await response.json();
-      setTestSuites(data || []);
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success) {
+          setTestSuites(data.data || []);
+        } else {
+          throw new Error(data.error || '获取测试套件失败');
+        }
+      } else {
+        throw new Error('网络请求失败');
+      }
     } catch (error) {
       console.error('加载测试套件失败:', error);
       setTestSuites([]);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -806,7 +825,7 @@ export function TestCases() {
 
                     {/* Tags */}
                     <div className="flex flex-wrap gap-2 mb-4">
-                      {testCase.tags.map((tag, tagIndex) => (
+                      {(testCase.tags || []).map((tag, tagIndex) => (
                         <span
                           key={tagIndex}
                           className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800"

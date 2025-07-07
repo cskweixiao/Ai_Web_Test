@@ -7,7 +7,7 @@ import { TestRuns } from './pages/TestRuns';
 import { Reports } from './pages/Reports';
 import { Settings } from './pages/Settings';
 import { LLMAssistant } from './pages/LLMAssistant';
-import TestFactory from './pages/TestFactory.tsx';
+import { TestFactory } from './pages/TestFactory.tsx';
 
 function App() {
   return (

@@ -1,6 +1,6 @@
 import React from 'react';
 
-function TestFactory() {
+export function TestFactory() {
   return (
     <div className="p-4 sm:p-6 lg:p-8">
       <div className="max-w-4xl mx-auto">
@@ -70,6 +70,4 @@ function TestFactory() {
       </div>
     </div>
   );
-}
-
-export default TestFactory; 
+} 

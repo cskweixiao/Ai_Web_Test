@@ -127,6 +127,14 @@ export class WebSocketManager extends EventEmitter {
     });
   }
 
+  public sendTestStatus(runId: string, status: string, data: any = {}) {
+    this.broadcast({
+      type: 'test_update', // Reusing 'test_update' for status changes
+      runId,
+      data: { ...data, status }
+    });
+  }
+
   public shutdown() {
     console.log('🔌 正在关闭所有 WebSocket 连接...');
     this.clients.forEach((ws, clientId) => {
