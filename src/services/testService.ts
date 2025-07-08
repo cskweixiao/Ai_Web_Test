@@ -176,9 +176,29 @@ export class TestService {
 
   // 通知所有监听器
   private notifyListeners(message: WebSocketMessage): void {
-    this.listeners.forEach(callback => {
-      callback(message);
-    });
+    try {
+      // 标准化消息格式
+      const standardizedMessage = { ...message };
+      
+      // 处理suiteUpdate消息
+      if (message.type === 'suiteUpdate') {
+        // 确保data字段存在
+        if (!standardizedMessage.data && standardizedMessage.suiteRun) {
+          standardizedMessage.data = standardizedMessage.suiteRun;
+        }
+      }
+      
+      // 调用所有监听器
+      this.listeners.forEach(callback => {
+        try {
+          callback(standardizedMessage);
+        } catch (error) {
+          console.error('WebSocket消息监听器回调错误:', error);
+        }
+      });
+    } catch (error) {
+      console.error('通知监听器时出错:', error);
+    }
   }
 
   // 获取所有测试用例
@@ -546,6 +566,11 @@ export class TestService {
       console.error('获取测试报告详情失败:', error);
       throw error;
     }
+  }
+
+  // 检查WebSocket是否连接
+  isWebSocketConnected(): boolean {
+    return this.ws !== null && this.ws.readyState === WebSocket.OPEN;
   }
 
   // 关闭 WebSocket 连接

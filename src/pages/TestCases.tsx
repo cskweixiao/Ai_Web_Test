@@ -92,6 +92,32 @@ export function TestCases() {
   useEffect(() => {
     loadTestCases();
     loadTestSuites();
+    
+    // 🔥 添加WebSocket连接状态检查
+    const initWebSocket = async () => {
+      try {
+        await testService.initializeWebSocket();
+        console.log('✅ WebSocket连接已初始化');
+      } catch (error) {
+        console.error('❌ WebSocket连接初始化失败:', error);
+      }
+    };
+    
+    // 初始化WebSocket
+    initWebSocket();
+    
+    // 设置定期检查WebSocket连接状态
+    const wsCheckInterval = setInterval(() => {
+      if (!testService.isWebSocketConnected()) {
+        console.log('⚠️ WebSocket连接已断开，尝试重连...');
+        initWebSocket();
+      }
+    }, 10000); // 每10秒检查一次
+    
+    // 清理函数
+    return () => {
+      clearInterval(wsCheckInterval);
+    };
   }, []);
 
   const loadTestCases = async () => {
@@ -374,44 +400,128 @@ export function TestCases() {
     }
 
     setRunningSuiteId(testSuite.id);
+    let suiteRunId = '';
     
     try {
       console.log(`🚀 开始执行测试套件: ${testSuite.name}`);
       
       try {
         // 添加一次性监听器，用于接收套件完成通知
-        const listenerId = `suite-run-${testSuite.id}`;
+        const listenerId = `suite-run-${testSuite.id}-${Date.now()}`;
+        let messageReceivedFlag = false;
         
         testService.addMessageListener(listenerId, (message) => {
           console.log(`📣 [TestSuite] 收到WebSocket消息:`, message);
+          messageReceivedFlag = true;
           
-          // 检查多种可能的测试套件完成情况
-          const isCompleted = 
-            // suiteUpdate消息
-            (message.type === 'suiteUpdate' && 
-              (message.suiteRun?.status === 'completed' || 
-               message.suiteRun?.status === 'failed' || 
-               message.suiteRun?.status === 'cancelled')) ||
-            // 测试完成消息，且包含suiteId
-            (message.type === 'test_complete' && message.data?.suiteId === testSuite.id);
+          // 检查是否是套件更新消息
+          if (message.type === 'suiteUpdate') {
+            const status = message.data?.status;
+            console.log(`💡 套件状态更新: ${status}`);
             
-          if (isCompleted) {
-            console.log(`✅ 收到套件完成通知:`, message);
-            setRunningSuiteId(null);
-            testService.removeMessageListener(listenerId);
+            // 检查套件是否完成
+            if (status === 'completed' || status === 'failed' || status === 'cancelled') {
+              console.log(`✅ 套件执行完成，状态: ${status}`);
+              setRunningSuiteId(null);
+              testService.removeMessageListener(listenerId);
+              
+              // 可以导航到结果页面或显示结果
+              if (status === 'completed') {
+                const passedCases = message.data?.passedCases || 0;
+                const totalCases = message.data?.totalCases || 0;
+                alert(`🎉 测试套件执行完成: ${testSuite.name}\n通过: ${passedCases}/${totalCases}`);
+              } else if (status === 'failed') {
+                alert(`❌ 测试套件执行失败: ${testSuite.name}\n${message.data?.error || '未知错误'}`);
+              } else {
+                alert(`⚠️ 测试套件执行被取消: ${testSuite.name}`);
+              }
+              
+              // 导航到测试运行页面
+              navigate('/test-runs');
+            }
+          } else if (message.type === 'test_complete' && message.data?.suiteId === testSuite.id) {
+            // 捕获测试完成消息也可能指示套件完成
+            console.log(`✅ 通过test_complete消息推断套件可能已完成`);
             
-            // 可以导航到结果页面或显示结果
-            alert(`🎉 测试套件执行完成: ${testSuite.name}`);
-            
-            // 导航到测试运行页面
-            navigate('/test-runs');
+            // 询问服务器当前套件状态
+            setTimeout(async () => {
+              try {
+                if (suiteRunId) {
+                  const suiteStatus = await testService.getSuiteRun(suiteRunId);
+                  if (suiteStatus && (suiteStatus.status === 'completed' || 
+                      suiteStatus.status === 'failed' || 
+                      suiteStatus.status === 'cancelled')) {
+                    console.log('✅ 确认套件已完成:', suiteStatus.status);
+                    setRunningSuiteId(null);
+                    testService.removeMessageListener(listenerId);
+                    alert(`🎉 测试套件执行完成: ${testSuite.name}`);
+                    navigate('/test-runs');
+                  }
+                }
+              } catch (error) {
+                console.error('获取套件状态失败:', error);
+              }
+            }, 1000);
           }
         });
         
         // 启动测试套件
         const response = await testService.runTestSuite(testSuite.id);
+        suiteRunId = response.runId;
         alert(`✅ 测试套件开始执行: ${testSuite.name}\n运行ID: ${response.runId}`);
         console.log('套件运行ID:', response.runId);
+        
+        // 设置安全超时（5分钟），以防WebSocket消息丢失
+        setTimeout(() => {
+          if (runningSuiteId === testSuite.id) {
+            console.warn('⚠️ 套件执行超时保护触发，重置状态');
+            setRunningSuiteId(null);
+            testService.removeMessageListener(listenerId);
+            
+            if (!messageReceivedFlag) {
+              // 从未收到任何消息，可能是WebSocket彻底断开了
+              alert('⚠️ 未收到任何WebSocket消息，可能连接已断开。已重置界面状态。');
+              testService.initializeWebSocket().catch(e => console.error('重连失败:', e));
+            } else {
+              alert('测试套件执行超时，已重置界面状态。请检查测试运行页面查看实际执行结果。');
+            }
+          }
+        }, 3 * 60 * 1000); // 3分钟超时
+        
+        // 添加周期性状态检查，防止消息丢失
+        let checkCount = 0;
+        const maxChecks = 10;
+        const statusCheckInterval = setInterval(async () => {
+          checkCount++;
+          
+          // 如果已经超出检查次数或者套件不再运行，停止检查
+          if (checkCount > maxChecks || runningSuiteId !== testSuite.id) {
+            clearInterval(statusCheckInterval);
+            return;
+          }
+          
+          // 检查套件状态
+          if (suiteRunId) {
+            try {
+              const suiteStatus = await testService.getSuiteRun(suiteRunId);
+              console.log(`🔍 定期检查套件状态: ${suiteStatus?.status}`);
+              
+              if (suiteStatus && (suiteStatus.status === 'completed' || 
+                  suiteStatus.status === 'failed' || 
+                  suiteStatus.status === 'cancelled')) {
+                console.log('✅ 定期检查发现套件已完成');
+                clearInterval(statusCheckInterval);
+                setRunningSuiteId(null);
+                testService.removeMessageListener(listenerId);
+                alert(`🎉 测试套件执行完成: ${testSuite.name} (通过定期检查发现)`);
+                navigate('/test-runs');
+              }
+            } catch (error) {
+              console.error('定期检查套件状态失败:', error);
+            }
+          }
+        }, 30000); // 每30秒检查一次
+        
       } catch (error: any) {
         setRunningSuiteId(null);
         throw new Error(error.message || '启动测试套件失败');
@@ -537,15 +647,37 @@ export function TestCases() {
           <h2 className="text-2xl font-bold text-gray-900">测试管理</h2>
           <p className="text-gray-600">创建、编辑和管理您的自动化测试用例和测试套件</p>
         </div>
-        <motion.button
-          whileHover={{ scale: 1.02 }}
-          whileTap={{ scale: 0.98 }}
-          onClick={() => setShowCreateModal(true)}
-          className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-        >
-          <Plus className="h-5 w-5 mr-2" />
-          {activeTab === 'cases' ? '创建测试用例' : '创建测试套件'}
-        </motion.button>
+        <div className="flex space-x-2">
+          {/* 🔥 新增: 重置按钮 */}
+          {(runningTestId || runningSuiteId) && (
+            <motion.button
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+              onClick={() => {
+                if (window.confirm('确定要重置执行状态吗？如果测试仍在运行，这可能会导致界面状态不同步。')) {
+                  setRunningTestId(null);
+                  setRunningSuiteId(null);
+                  alert('已重置执行状态');
+                  console.log('✅ 手动重置了测试执行状态');
+                }
+              }}
+              className="inline-flex items-center px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors"
+              title="如果测试已完成但loading状态未消失，请点击此按钮重置"
+            >
+              <AlertTriangle className="h-5 w-5 mr-2" />
+              重置状态
+            </motion.button>
+          )}
+          <motion.button
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+            onClick={() => setShowCreateModal(true)}
+            className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+          >
+            <Plus className="h-5 w-5 mr-2" />
+            {activeTab === 'cases' ? '创建测试用例' : '创建测试套件'}
+          </motion.button>
+        </div>
       </div>
 
       {/* 🔥 新增：Tab切换 */}

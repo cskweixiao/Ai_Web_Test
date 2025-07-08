@@ -609,29 +609,65 @@ export class SuiteExecutionService {
     suiteRun.status = status;
     if (error) suiteRun.error = error;
     
-    if (status === 'completed' || status === 'failed') {
+    if (status === 'completed' || status === 'failed' || status === 'cancelled') {
       suiteRun.endTime = new Date();
       const durationMs = suiteRun.endTime.getTime() - suiteRun.startTime.getTime();
       suiteRun.duration = this.formatDuration(durationMs);
+      
+      // 🔥 套件完成时，确保进度值为100%
+      if (status === 'completed') {
+        suiteRun.progress = 100;
+      }
     }
     
     // 使用WebSocket发送更新
     if (this.wsManager) {
-      // 将Date对象转换为ISO字符串
-      const sanitizedData = {
-        ...suiteRun,
-        startTime: suiteRun.startTime ? suiteRun.startTime.toISOString() : null,
-        endTime: suiteRun.endTime ? suiteRun.endTime.toISOString() : null
-      };
-      
-      // 通过broadcast发送套件更新
-      this.wsManager.broadcast({
-        type: 'suiteUpdate', 
-        runId: suiteRunId,
-        data: sanitizedData
-      });
-      
-      console.log(`已发送套件状态更新: ${suiteRunId}, 状态: ${status}, 进度: ${suiteRun.progress}%`);
+      try {
+        // 将Date对象转换为ISO字符串
+        const sanitizedData = {
+          ...suiteRun,
+          startTime: suiteRun.startTime ? suiteRun.startTime.toISOString() : null,
+          endTime: suiteRun.endTime ? suiteRun.endTime.toISOString() : null
+        };
+        
+        // 🔥 使用一致的消息格式
+        this.wsManager.broadcast({
+          type: 'suiteUpdate', 
+          runId: suiteRunId,
+          data: sanitizedData
+        });
+        
+        console.log(`已发送套件状态更新: ${suiteRunId}, 状态: ${status}, 进度: ${suiteRun.progress}%`);
+        
+        // 🔥 对于已完成的测试，发送额外的完成通知，确保前端可以接收到
+        if (status === 'completed' || status === 'failed' || status === 'cancelled') {
+          setTimeout(() => {
+            // 延迟再发一次以确保前端接收
+            this.wsManager.broadcast({
+              type: 'suiteUpdate',
+              runId: suiteRunId,
+              data: {
+                ...sanitizedData,
+                finalStatus: true // 添加标志指示这是最终状态更新
+              }
+            });
+            
+            console.log(`已发送套件最终状态更新: ${suiteRunId}, 状态: ${status}`);
+            
+            // 🔥 套件完成后，清理内存中的套件运行记录
+            if (status === 'completed' || status === 'failed' || status === 'cancelled') {
+              setTimeout(() => {
+                if (this.runningSuites.has(suiteRunId)) {
+                  console.log(`🧹 清理已完成的套件运行记录: ${suiteRunId}`);
+                  this.runningSuites.delete(suiteRunId);
+                }
+              }, 5000); // 延迟5秒后清理
+            }
+          }, 1000); // 延迟1秒发送
+        }
+      } catch (wsError) {
+        console.error(`WebSocket广播套件状态更新失败: ${wsError.message}`);
+      }
     }
     
     // 🔥 更新数据库中的执行状态

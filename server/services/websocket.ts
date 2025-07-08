@@ -7,6 +7,7 @@ export interface WebSocketMessage {
   runId: string;
   data?: any;
   timestamp?: string;
+  suiteRun?: any; // 添加suiteRun字段支持套件更新消息
 }
 
 export class WebSocketManager extends EventEmitter {
@@ -101,6 +102,14 @@ export class WebSocketManager extends EventEmitter {
         ...message,
         timestamp: message.timestamp || new Date().toISOString()
       };
+      
+      // 🔥 确保消息格式一致性
+      if (message.type === 'suiteUpdate') {
+        // 确保suiteUpdate消息有一致的字段命名
+        if (!messageWithTimestamp.suiteRun && messageWithTimestamp.data) {
+          messageWithTimestamp.suiteRun = messageWithTimestamp.data;
+        }
+      }
       
       const messageStr = JSON.stringify(messageWithTimestamp);
       let liveClientCount = 0;

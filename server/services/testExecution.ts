@@ -47,14 +47,37 @@ export class TestExecutionService {
   }
 
     private dbTestCaseToApp(dbCase: { id: number; title: string; steps: Prisma.JsonValue | null; tags: Prisma.JsonValue | null; created_at: Date | null; }): TestCase {
+        // 从steps中提取assertions字段（如果有的话）
+        let steps = dbCase.steps;
+        let assertions = '';
+        
+        if (typeof steps === 'string') {
+            try {
+                const stepsObj = JSON.parse(steps);
+                if (stepsObj && typeof stepsObj === 'object') {
+                    // 如果有assertions字段，提取出来
+                    if (stepsObj.assertions) {
+                        assertions = stepsObj.assertions;
+                    }
+                    
+                    // 如果有steps字段，使用它替换原始的steps
+                    if (stepsObj.steps) {
+                        steps = stepsObj.steps;
+                    }
+                }
+            } catch (e) {
+                // 解析失败，继续使用原始steps
+            }
+        }
+        
         return {
             id: dbCase.id,
             name: dbCase.title,
-            steps: dbCase.steps,
+            steps: steps,
             tags: dbCase.tags,
             created_at: dbCase.created_at,
-            // Set default values for conceptual fields
-            assertions: '',
+            // 设置解析出的assertions或默认值
+            assertions: assertions,
             priority: 'medium',
             status: 'active',
             author: 'System',
@@ -72,10 +95,43 @@ export class TestExecutionService {
   }
 
     public async addTestCase(testCaseData: Partial<TestCase>): Promise<TestCase> {
+        // 处理steps和assertions，确保assertions被正确保存
+        let stepsData = testCaseData.steps;
+        
+        // 如果有assertions字段，需要将其整合到steps中
+        if (testCaseData.assertions) {
+            try {
+                if (typeof stepsData === 'string') {
+                    // 尝试将steps解析为JSON对象（如果它已经是JSON格式）
+                    try {
+                        let stepsObj = JSON.parse(stepsData);
+                        stepsObj.assertions = testCaseData.assertions;
+                        stepsData = JSON.stringify(stepsObj);
+                    } catch (e) {
+                        // 如果不是JSON格式，创建一个新的对象
+                        const stepsObj = {
+                            steps: stepsData || '',
+                            assertions: testCaseData.assertions
+                        };
+                        stepsData = JSON.stringify(stepsObj);
+                    }
+                } else {
+                    // 如果steps不是字符串，创建一个新的对象
+                    const stepsObj = {
+                        steps: stepsData || '',
+                        assertions: testCaseData.assertions
+                    };
+                    stepsData = JSON.stringify(stepsObj);
+                }
+            } catch (e) {
+                console.error('处理assertions时出错:', e);
+            }
+        }
+        
         const newTestCase = await prisma.test_cases.create({
             data: {
                 title: testCaseData.name || 'Untitled Test Case',
-                steps: testCaseData.steps as Prisma.InputJsonValue || Prisma.JsonNull,
+                steps: stepsData as Prisma.InputJsonValue || Prisma.JsonNull,
                 tags: testCaseData.tags as Prisma.InputJsonValue || Prisma.JsonNull,
             },
         });
@@ -84,11 +140,38 @@ export class TestExecutionService {
 
     public async updateTestCase(id: number, testCaseData: Partial<TestCase>): Promise<TestCase | null> {
         try {
+            // 处理steps和assertions，确保assertions被正确保存
+            let stepsData = testCaseData.steps;
+            
+            // 如果steps是字符串，并且assertions存在，将assertions整合到steps中
+            if (typeof stepsData === 'string' && testCaseData.assertions) {
+                try {
+                    // 尝试将steps解析为JSON对象（如果它已经是JSON格式）
+                    let stepsObj = JSON.parse(stepsData);
+                    stepsObj.assertions = testCaseData.assertions;
+                    stepsData = JSON.stringify(stepsObj);
+                } catch (e) {
+                    // 如果不是JSON格式，创建一个新的对象
+                    const stepsObj = {
+                        steps: stepsData,
+                        assertions: testCaseData.assertions
+                    };
+                    stepsData = JSON.stringify(stepsObj);
+                }
+            } else if (testCaseData.assertions && typeof stepsData !== 'string') {
+                // 如果steps不是字符串但assertions存在，创建一个包含两者的对象
+                const stepsObj = {
+                    steps: stepsData || '',
+                    assertions: testCaseData.assertions
+                };
+                stepsData = JSON.stringify(stepsObj);
+            }
+            
             const updatedTestCase = await prisma.test_cases.update({
                 where: { id },
                 data: {
                     title: testCaseData.name,
-                    steps: testCaseData.steps as Prisma.InputJsonValue,
+                    steps: stepsData as Prisma.InputJsonValue,
                     tags: testCaseData.tags as Prisma.InputJsonValue,
                 },
             });
