@@ -3,9 +3,10 @@ import { v4 as uuidv4 } from 'uuid';
 import { EventEmitter } from 'events';
 
 export interface WebSocketMessage {
-  type: 'test_update' | 'test_complete' | 'test_error' | 'log';
+  type: 'test_update' | 'test_complete' | 'test_error' | 'log' | 'suiteUpdate';
   runId: string;
-  data: any;
+  data?: any;
+  timestamp?: string;
 }
 
 export class WebSocketManager extends EventEmitter {
@@ -58,6 +59,15 @@ export class WebSocketManager extends EventEmitter {
   private handleClientMessage(clientId: string, message: any) {
     console.log(`📨 收到客户端消息 (${clientId}):`, message);
     
+    // 处理心跳请求
+    if (message.type === 'ping') {
+      const ws = this.clients.get(clientId);
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send('pong');
+      }
+      return;
+    }
+    
     // 处理客户端订阅测试运行更新
     if (message.type === 'subscribe_test_run') {
       // 可以在这里实现客户端订阅特定测试运行的逻辑
@@ -79,33 +89,70 @@ export class WebSocketManager extends EventEmitter {
 
   // 广播给所有连接的客户端
   public broadcast(message: WebSocketMessage) {
-    const messageStr = JSON.stringify(message);
-    
-    this.clients.forEach((ws, clientId) => {
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send(messageStr);
-      } else {
-        // 清理已断开的连接
-        this.clients.delete(clientId);
+    try {
+      // 确保消息符合预期格式
+      if (!message.type) {
+        console.error('尝试广播无类型的消息:', message);
+        return;
       }
-    });
+      
+      // 序列化前添加时间戳
+      const messageWithTimestamp = {
+        ...message,
+        timestamp: message.timestamp || new Date().toISOString()
+      };
+      
+      const messageStr = JSON.stringify(messageWithTimestamp);
+      let liveClientCount = 0;
+      
+      this.clients.forEach((ws, clientId) => {
+        try {
+          if (ws.readyState === WebSocket.OPEN) {
+            ws.send(messageStr);
+            liveClientCount++;
+          } else {
+            // 清理已断开的连接
+            console.log(`清理断开的WebSocket连接: ${clientId} (状态: ${ws.readyState})`);
+            this.clients.delete(clientId);
+          }
+        } catch (wsError) {
+          console.error(`向客户端 ${clientId} 发送消息失败:`, wsError);
+          // 移除出现问题的客户端
+          this.clients.delete(clientId);
+        }
+      });
+      
+      console.log(`WebSocket消息广播完成: type=${message.type}, 发送给 ${liveClientCount} 个客户端`);
+    } catch (error) {
+      console.error('WebSocket广播消息时出错:', error);
+    }
   }
 
   // 发送测试更新
   public sendTestUpdate(runId: string, data: any) {
+    if (!runId) {
+      console.error('尝试发送测试更新，但未提供runId');
+      return;
+    }
+    
     this.broadcast({
       type: 'test_update',
       runId,
-      data
+      data: data || {}
     });
   }
 
   // 发送测试完成
   public sendTestComplete(runId: string, data: any) {
+    if (!runId) {
+      console.error('尝试发送测试完成，但未提供runId');
+      return;
+    }
+    
     this.broadcast({
       type: 'test_complete',
       runId,
-      data
+      data: data || {}
     });
   }
 

@@ -94,6 +94,87 @@ app.use(express.json());
 app.use('/api/tests', testRoutes(testExecutionService));
 app.use('/api/suites', suiteRoutes(suiteExecutionService)); // 注意路径修正
 
+// 🔥 新增: 报告API路由
+app.get('/api/reports/:runId', async (req, res) => {
+  try {
+    const runId = req.params.runId;
+    
+    // 先检查是否为测试套件运行ID
+    const suiteRun = suiteExecutionService.getSuiteRun(runId);
+    
+    if (suiteRun) {
+      // 尝试从数据库查询报告
+      let reportData: any = null;
+      
+      try {
+        reportData = await prisma.reports.findFirst({
+          where: {
+            run_id: {
+              equals: Number(suiteRun.suiteId) // 尝试匹配suite_id
+            }
+          },
+          include: {
+            test_runs: true
+          }
+        });
+      } catch (dbError) {
+        console.warn('从数据库获取报告数据失败，将使用内存数据:', dbError);
+      }
+      
+      // 无论是否在数据库找到记录，都返回可用的报告数据
+      res.json({ 
+        success: true, 
+        data: {
+          generatedAt: new Date(),
+          summary: {
+            totalCases: suiteRun.totalCases,
+            passedCases: suiteRun.passedCases,
+            failedCases: suiteRun.failedCases,
+            duration: suiteRun.duration || '0s',
+            passRate: suiteRun.totalCases > 0 
+              ? Math.round((suiteRun.passedCases / suiteRun.totalCases) * 100) 
+              : 0,
+            status: suiteRun.status
+          },
+          suiteRun,
+          // 如果数据库有数据，附加进来
+          dbReport: reportData || null
+        }
+      });
+    } else {
+      // 如果不是套件ID，尝试作为单个测试用例处理
+      const testRun = testExecutionService.getTestRun(runId);
+      
+      if (testRun) {
+        res.json({
+          success: true,
+          data: {
+            generatedAt: new Date(),
+            testRun,
+            summary: {
+              status: testRun.status,
+              duration: testRun.finishedAt 
+                ? `${Math.round((testRun.finishedAt.getTime() - testRun.startedAt.getTime()) / 1000)}s`
+                : '进行中...'
+            }
+          }
+        });
+      } else {
+        res.status(404).json({
+          success: false,
+          error: '找不到指定的测试报告'
+        });
+      }
+    }
+  } catch (error) {
+    console.error('获取测试报告失败:', error);
+    res.status(500).json({
+      success: false,
+      error: `获取测试报告失败: ${error.message}`
+    });
+  }
+});
+
 // 🔥 定时清理任务，防止内存泄漏
 const setupCleanupTasks = () => {
   // 每小时清理一次已完成的测试记录

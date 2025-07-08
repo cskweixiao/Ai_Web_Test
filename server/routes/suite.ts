@@ -72,5 +72,46 @@ export function suiteRoutes(suiteExecutionService: SuiteExecutionService): Route
     }
   });
 
+  // 🔥 新增: 获取所有测试套件运行
+  router.get('/runs', async (req: Request, res: Response) => {
+    try {
+      // 从数据库获取测试运行记录
+      const runningSuites = suiteExecutionService.getAllRunningSuites();
+      res.json({ success: true, data: runningSuites });
+    } catch (error: any) {
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+  // 🔥 新增: 获取特定测试运行的详情
+  router.get('/runs/:runId', async (req: Request, res: Response) => {
+    try {
+      const runId = req.params.runId;
+      const suiteRun = suiteExecutionService.getSuiteRun(runId);
+      
+      if (suiteRun) {
+        res.json({ success: true, data: suiteRun });
+      } else {
+        res.status(404).json({ success: false, error: '找不到指定的测试运行记录' });
+      }
+    } catch (error: any) {
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+  
+  // 🔥 新增: 取消测试套件运行
+  router.post('/runs/:runId/cancel', async (req: Request, res: Response) => {
+    try {
+      const success = await suiteExecutionService.cancelSuite(req.params.runId);
+      if (success) {
+        res.json({ success: true });
+      } else {
+        res.status(404).json({ success: false, error: '找不到指定的测试运行或者该测试已完成' });
+      }
+    } catch (error: any) {
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
   return router;
 } 

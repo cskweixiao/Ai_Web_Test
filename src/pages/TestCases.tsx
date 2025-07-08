@@ -23,6 +23,7 @@ import { clsx } from 'clsx';
 import { Layout } from '../components/Layout';
 import { testService } from '../services/testService';
 import type { TestCase, TestSuite as TestSuiteType } from '../types/test';
+import { useNavigate } from 'react-router-dom';
 
 // 表单数据接口
 interface CreateTestCaseForm {
@@ -45,6 +46,9 @@ interface CreateTestSuiteForm {
 }
 
 export function TestCases() {
+  // 🔥 新增: 导航钩子
+  const navigate = useNavigate();
+  
   // 🔥 新增：Tab状态管理
   const [activeTab, setActiveTab] = useState<'cases' | 'suites'>('cases');
   
@@ -362,7 +366,7 @@ export function TestCases() {
     }
   };
 
-  // 🔥 新增：运行测试套件
+  // 🔥 新增：运行测试套件 - 使用WebSocket监听而非模拟通知
   const handleRunTestSuite = async (testSuite: TestSuiteType) => {
     if (runningSuiteId) {
       alert('已有套件在运行中，请等待完成');
@@ -375,16 +379,41 @@ export function TestCases() {
       console.log(`🚀 开始执行测试套件: ${testSuite.name}`);
       
       try {
+        // 添加一次性监听器，用于接收套件完成通知
+        const listenerId = `suite-run-${testSuite.id}`;
+        
+        testService.addMessageListener(listenerId, (message) => {
+          console.log(`📣 [TestSuite] 收到WebSocket消息:`, message);
+          
+          // 检查多种可能的测试套件完成情况
+          const isCompleted = 
+            // suiteUpdate消息
+            (message.type === 'suiteUpdate' && 
+              (message.suiteRun?.status === 'completed' || 
+               message.suiteRun?.status === 'failed' || 
+               message.suiteRun?.status === 'cancelled')) ||
+            // 测试完成消息，且包含suiteId
+            (message.type === 'test_complete' && message.data?.suiteId === testSuite.id);
+            
+          if (isCompleted) {
+            console.log(`✅ 收到套件完成通知:`, message);
+            setRunningSuiteId(null);
+            testService.removeMessageListener(listenerId);
+            
+            // 可以导航到结果页面或显示结果
+            alert(`🎉 测试套件执行完成: ${testSuite.name}`);
+            
+            // 导航到测试运行页面
+            navigate('/test-runs');
+          }
+        });
+        
+        // 启动测试套件
         const response = await testService.runTestSuite(testSuite.id);
         alert(`✅ 测试套件开始执行: ${testSuite.name}\n运行ID: ${response.runId}`);
         console.log('套件运行ID:', response.runId);
-        
-        // 模拟等待套件完成
-        setTimeout(() => {
-          alert(`🎉 测试套件执行完成: ${testSuite.name}`);
-          setRunningSuiteId(null);
-        }, 15000); // 15秒后模拟完成
       } catch (error: any) {
+        setRunningSuiteId(null);
         throw new Error(error.message || '启动测试套件失败');
       }
       
@@ -419,6 +448,7 @@ export function TestCases() {
     return matchesSearch && matchesTag && matchesPriority;
   });
 
+  // 🔥 运行测试用例 - 使用WebSocket监听而非模拟通知
   const handleRunTest = async (testCase: TestCase) => {
     if (runningTestId) {
       alert('已有测试在运行中，请等待完成');
@@ -431,17 +461,46 @@ export function TestCases() {
       console.log(`🚀 开始执行测试: ${testCase.name}`);
       
       try {
+        // 启动WebSocket监听器来跟踪测试运行
+        const listenerId = `test-run-${testCase.id}`;
+        
+        // 添加一次性监听器，用于接收测试完成通知
+        testService.addMessageListener(listenerId, (message) => {
+          console.log(`📣 [TestCase] 收到WebSocket消息:`, message);
+          
+          // 检查多种可能的测试完成情况
+          const isCompleted = 
+            // 经典测试完成消息
+            (message.type === 'test_complete' && message.runId) || 
+            // 测试状态更新
+            (message.type === 'test_update' && message.data?.status === 'completed') ||
+            // 测试错误消息
+            (message.type === 'test_error' && message.runId) ||
+            // suiteUpdate类型消息
+            (message.type === 'suiteUpdate' && message.suiteRun?.status === 'completed');
+            
+          if (isCompleted) {
+            console.log(`✅ 收到测试完成通知:`, message);
+            // 只有当runId与testCase.id匹配时才处理
+            if (message.runId && message.runId.includes(testCase.id.toString())) {
+              setRunningTestId(null);
+              testService.removeMessageListener(listenerId);
+              
+              // 可以导航到结果页面或显示结果
+              alert(`🎉 测试执行完成: ${testCase.name}`);
+              
+              // 导航到测试运行页面
+              navigate('/test-runs');
+            }
+          }
+        });
+        
+        // 启动测试
         const response = await testService.runTestCase(testCase.id);
         alert(`✅ 测试开始执行: ${testCase.name}\n运行ID: ${response.runId}`);
-        
         console.log('测试运行ID:', response.runId);
-        
-        // 模拟等待测试完成（实际应该通过WebSocket实时更新）
-        setTimeout(() => {
-          alert(`🎉 测试执行完成: ${testCase.name}`);
-          setRunningTestId(null);
-        }, 10000); // 10秒后模拟完成
       } catch (error: any) {
+        setRunningTestId(null);
         throw new Error(error.message || '启动测试失败');
       }
       

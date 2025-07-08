@@ -35,8 +35,10 @@ export interface TestLog {
 export class TestExecutionService {
   private wsManager: WebSocketManager;
   private aiParser: AITestParser;
-    private mcpClient: PlaywrightMcpClient;
+  private mcpClient: PlaywrightMcpClient;
   private runningTests: Map<string, any> = new Map();
+  // 新增：共享上下文数据存储
+  private sharedContext: Map<string, any> = new Map();
 
     constructor(wsManager: WebSocketManager, aiParser: AITestParser, mcpClient: PlaywrightMcpClient) {
     this.wsManager = wsManager;
@@ -108,148 +110,231 @@ export class TestExecutionService {
     }
 
     // --- Test Execution Logic (to be implemented) ---
-    public async runTest(testCaseId: number, environment: string): Promise<string> {
-      const runId = uuidv4();
-      this.runningTests.set(runId, {
-        id: runId,
-        testCaseId,
-        status: 'queued',
-        logs: [],
-        startedAt: new Date(),
-        environment,
-      });
-      this.addLog(runId, `测试 #${testCaseId} 已加入队列，运行环境: ${environment}`);
-      
-      this.executeTest(runId).catch(error => {
-          console.error(`[${runId}] executeTest promise被拒绝:`, error);
-          this.addLog(runId, `执行过程中发生致命错误: ${error.message}`, 'error');
+    public async runTest(
+    testCaseId: number, 
+    environment: string,
+    executionMode?: string,
+    options: {
+      reuseBrowser?: boolean,
+      suiteId?: string,
+      contextState?: any
+    } = {}
+  ): Promise<string> {
+    const runId = uuidv4();
+    
+    // 增强测试运行对象，添加关联信息
+    this.runningTests.set(runId, {
+      id: runId,
+      runId, // 为兼容性添加
+      testCaseId,
+      status: 'queued',
+      logs: [],
+      startedAt: new Date(),
+      environment,
+      // 新增字段
+      suiteId: options.suiteId,
+      reuseBrowser: options.reuseBrowser || false,
+      contextState: options.contextState,
+      executionMode: executionMode || 'standard'
+    });
+    
+    this.addLog(runId, `测试 #${testCaseId} 已加入队列，运行环境: ${environment}${options.reuseBrowser ? '，复用浏览器' : ''}`);
+    
+    // 如果有上下文状态，记录一下
+    if (options.contextState) {
+      this.addLog(runId, `已接收上下文状态数据`, 'info');
+    }
+    
+    // 启动异步执行
+    this.executeTest(runId).catch(error => {
+      console.error(`[${runId}] executeTest promise被拒绝:`, error);
+      this.addLog(runId, `执行过程中发生致命错误: ${error.message}`, 'error');
     });
 
-      return runId;
+    return runId;
   }
 
-    private async executeTest(runId: string) {
-        const testRun = this.runningTests.get(runId);
-        if (!testRun) {
-            this.addLog(runId, '测试运行未找到，可能已被取消。', 'error');
+  // 修改executeTest方法，实现浏览器复用逻辑
+  private async executeTest(runId: string) {
+    const testRun = this.runningTests.get(runId);
+    if (!testRun) {
+      this.addLog(runId, '测试运行未找到，可能已被取消。', 'error');
       return;
     }
 
-        const testCase = await this.findTestCaseById(testRun.testCaseId);
-        if (!testCase || typeof testCase.steps !== 'string' || testCase.steps.trim() === '') {
-            testRun.status = 'failed';
-            this.addLog(runId, `测试用例 #${testRun.testCaseId} 未找到、没有步骤或步骤为空。`, 'error');
-            this.wsManager.sendTestStatus(runId, 'failed');
-            return;
+    const testCase = await this.findTestCaseById(testRun.testCaseId);
+    if (!testCase || typeof testCase.steps !== 'string' || testCase.steps.trim() === '') {
+      testRun.status = 'failed';
+      this.addLog(runId, `测试用例 #${testRun.testCaseId} 未找到、没有步骤或步骤为空。`, 'error');
+      this.wsManager.sendTestStatus(runId, 'failed');
+      return;
+    }
+
+    try {
+      // 关键修改：初始化时考虑是否复用浏览器
+      await this.mcpClient.initialize({ 
+        reuseSession: testRun.reuseBrowser 
+      });
+      
+      // 处理上下文恢复
+      if (testRun.contextState) {
+        this.addLog(runId, `尝试恢复上下文状态...`, 'info');
+        const restored = await this.mcpClient.restorePageState(testRun.contextState);
+        if (restored) {
+          this.addLog(runId, `成功恢复上下文状态`, 'success');
+        } else {
+          this.addLog(runId, `无法恢复上下文状态，将重新开始`, 'warning');
+        }
+      }
+      
+      testRun.status = 'running';
+      this.addLog(runId, `测试开始执行: ${testCase.name}`);
+      this.wsManager.sendTestStatus(runId, 'running');
+
+      // --- 重构的执行流程 ---
+      let remainingStepsText = testCase.steps;
+      let stepOrder = 1;
+
+      // 步骤 1: 单独处理第一个步骤（通常是导航），不获取快照
+      this.addLog(runId, `(交互模式) 解析第一个步骤...`);
+      const firstParseResult = await this.aiParser.parseNextStep(remainingStepsText, null, runId);
+
+      if (!firstParseResult.success || !firstParseResult.step) {
+        throw new Error(firstParseResult.error || 'AI未能解析出第一个步骤。');
+      }
+
+      const firstStep = firstParseResult.step;
+      firstStep.order = stepOrder;
+
+      this.addLog(runId, `[步骤 ${stepOrder}] AI解析成功: ${firstStep.description}`);
+      const firstStepResult = await this.mcpClient.executeStep(firstStep);
+
+      if (firstStepResult.success) {
+        this.addLog(runId, `[步骤 ${stepOrder}] 执行成功`, 'success');
+      } else {
+        const errorMessage = `[步骤 ${stepOrder}] 执行失败: ${firstStepResult.error}`;
+        this.addLog(runId, errorMessage, 'error');
+        await this.mcpClient.takeScreenshot(`${runId}-step-${stepOrder}-failed.png`);
+        this.addLog(runId, `已自动截图。`, 'warning');
+        throw new Error(errorMessage);
+      }
+
+      remainingStepsText = firstParseResult.remaining || '';
+      stepOrder++;
+
+      // 步骤 2: 循环处理剩余的步骤，此时应该已经有页面了
+      while (remainingStepsText.trim() !== '') {
+        this.addLog(runId, `(交互模式) 捕获页面快照并提交给AI进行解析...`);
+        const snapshot = await this.mcpClient.getSnapshot();
+
+        const parseResult = await this.aiParser.parseNextStep(remainingStepsText, snapshot, runId);
+        
+        if (!parseResult.success || !parseResult.step) {
+          const errorMessage = parseResult.error || 'AI未能解析下一步操作。';
+          this.addLog(runId, `AI解析失败，剩余指令: "${remainingStepsText}"`, 'error');
+          throw new Error(errorMessage);
         }
 
-        try {
-            await this.mcpClient.initialize();
-            
-            testRun.status = 'running';
-            this.addLog(runId, `测试开始执行: ${testCase.name}`);
-            this.wsManager.sendTestStatus(runId, 'running');
+        const step = parseResult.step;
+        step.order = stepOrder;
 
-            // --- 重构的执行流程 ---
-            let remainingStepsText = testCase.steps;
-            let stepOrder = 1;
+        this.addLog(runId, `[步骤 ${stepOrder}] AI解析成功: ${step.description}`);
+        const stepResult = await this.mcpClient.executeStep(step);
 
-            // 步骤 1: 单独处理第一个步骤（通常是导航），不获取快照
-            this.addLog(runId, `(交互模式) 解析第一个步骤...`);
-            const firstParseResult = await this.aiParser.parseNextStep(remainingStepsText, null, runId);
+        if (stepResult.success) {
+          this.addLog(runId, `[步骤 ${stepOrder}] 执行成功`, 'success');
+        } else {
+          const errorMessage = `[步骤 ${stepOrder}] 执行失败: ${stepResult.error}`;
+          this.addLog(runId, errorMessage, 'error');
+          await this.mcpClient.takeScreenshot(`${runId}-step-${stepOrder}-failed.png`);
+          this.addLog(runId, `已自动截图。`, 'warning');
+          throw new Error(errorMessage);
+        }
 
-            if (!firstParseResult.success || !firstParseResult.step) {
-                throw new Error(firstParseResult.error || 'AI未能解析出第一个步骤。');
-            }
+        remainingStepsText = parseResult.remaining || '';
+        stepOrder++;
+      }
 
-            const firstStep = firstParseResult.step;
-            firstStep.order = stepOrder;
+      // Handle assertions if they exist
+      if (testCase.assertions && testCase.assertions.trim() !== '') {
+        this.addLog(runId, '开始执行断言验证...');
+        const snapshot = await this.mcpClient.getSnapshot();
+        const assertionsResult = await this.aiParser.parseAssertions(testCase.assertions, snapshot, runId);
 
-            this.addLog(runId, `[步骤 ${stepOrder}] AI解析成功: ${firstStep.description}`);
-            const firstStepResult = await this.mcpClient.executeStep(firstStep);
+        if (!assertionsResult.success || assertionsResult.steps.length === 0) {
+          throw new Error(assertionsResult.error || 'AI未能解析任何断言步骤');
+        }
 
-            if (firstStepResult.success) {
-                this.addLog(runId, `[步骤 ${stepOrder}] 执行成功`, 'success');
-            } else {
-                const errorMessage = `[步骤 ${stepOrder}] 执行失败: ${firstStepResult.error}`;
-                this.addLog(runId, errorMessage, 'error');
-                await this.mcpClient.takeScreenshot(`${runId}-step-${stepOrder}-failed.png`);
-                this.addLog(runId, `已自动截图。`, 'warning');
-                throw new Error(errorMessage);
-            }
-
-            remainingStepsText = firstParseResult.remaining || '';
-            stepOrder++;
-
-            // 步骤 2: 循环处理剩余的步骤，此时应该已经有页面了
-            while (remainingStepsText.trim() !== '') {
-                this.addLog(runId, `(交互模式) 捕获页面快照并提交给AI进行解析...`);
-                const snapshot = await this.mcpClient.getSnapshot();
-
-                const parseResult = await this.aiParser.parseNextStep(remainingStepsText, snapshot, runId);
-            
-                if (!parseResult.success || !parseResult.step) {
-                    const errorMessage = parseResult.error || 'AI未能解析下一步操作。';
-                    this.addLog(runId, `AI解析失败，剩余指令: "${remainingStepsText}"`, 'error');
-                    throw new Error(errorMessage);
-                }
-
-                const step = parseResult.step;
-                step.order = stepOrder;
-
-                this.addLog(runId, `[步骤 ${stepOrder}] AI解析成功: ${step.description}`);
-                const stepResult = await this.mcpClient.executeStep(step);
-
-                if (stepResult.success) {
-                    this.addLog(runId, `[步骤 ${stepOrder}] 执行成功`, 'success');
-                } else {
-                    const errorMessage = `[步骤 ${stepOrder}] 执行失败: ${stepResult.error}`;
-                    this.addLog(runId, errorMessage, 'error');
-                    await this.mcpClient.takeScreenshot(`${runId}-step-${stepOrder}-failed.png`);
-                    this.addLog(runId, `已自动截图。`, 'warning');
-                    throw new Error(errorMessage);
-                }
-
-                remainingStepsText = parseResult.remaining || '';
-                stepOrder++;
-            }
-
-            // Handle assertions if they exist
-            if (testCase.assertions && testCase.assertions.trim() !== '') {
-                this.addLog(runId, '开始执行断言验证...');
-                const snapshot = await this.mcpClient.getSnapshot();
-                const assertionsResult = await this.aiParser.parseAssertions(testCase.assertions, snapshot, runId);
-
-                if (!assertionsResult.success || assertionsResult.steps.length === 0) {
-                    throw new Error(assertionsResult.error || 'AI未能解析任何断言步骤');
-                }
-
-                for (const assertionStep of assertionsResult.steps) {
-                    this.addLog(runId, `[断言] 开始: ${assertionStep.description}`);
-                    const assertionResult = await this.mcpClient.executeStep(assertionStep);
-                    if (assertionResult.success) {
-                        this.addLog(runId, `[断言] 成功`, 'success');
-                    } else {
-                        const errorMessage = `[断言] 失败: ${assertionResult.error}`;
-                        this.addLog(runId, errorMessage, 'error');
-                        throw new Error(errorMessage);
+        for (const assertionStep of assertionsResult.steps) {
+          this.addLog(runId, `[断言] 开始: ${assertionStep.description}`);
+          const assertionResult = await this.mcpClient.executeStep(assertionStep);
+          if (assertionResult.success) {
+            this.addLog(runId, `[断言] 成功`, 'success');
+          } else {
+            const errorMessage = `[断言] 失败: ${assertionResult.error}`;
+            this.addLog(runId, errorMessage, 'error');
+            throw new Error(errorMessage);
           }
-                }
-            }
+        }
+      }
 
 
-            testRun.status = 'completed';
-            this.addLog(runId, '测试执行成功完成。', 'success');
-            this.wsManager.sendTestStatus(runId, 'completed');
+      testRun.status = 'completed';
+      this.addLog(runId, '测试执行成功完成。', 'success');
+      
+      // 如果是套件的一部分，保存当前状态供后续测试使用
+      if (testRun.suiteId) {
+        const contextKey = `suite_${testRun.suiteId}`;
+        const pageState = await this.mcpClient.extractPageState();
+        this.sharedContext.set(contextKey, {
+          lastTestId: testRun.testCaseId,
+          pageState,
+          timestamp: new Date().toISOString()
+        });
+        this.addLog(runId, `已保存状态供套件中后续测试使用`, 'info');
+      }
+      
+      // 发送状态更新
+      this.wsManager.sendTestStatus(runId, 'completed');
+      
+      // 发送测试完成通知
+      setTimeout(() => {
+        this.wsManager.sendTestComplete(runId, {
+          testRun: this.getTestRun(runId),
+          success: true
+        });
+        console.log(`✓ [${runId}] 已发送测试完成通知`);
+      }, 1000);
 
     } catch (error: any) {
-            testRun.status = 'failed';
-            this.addLog(runId, `测试执行失败: ${error.message}`, 'error');
-            this.wsManager.sendTestStatus(runId, 'failed');
+      testRun.status = 'failed';
+      this.addLog(runId, `测试执行失败: ${error.message}`, 'error');
+      
+      // 先发送状态更新
+      this.wsManager.sendTestStatus(runId, 'failed');
+      
+      // 然后延迟一秒后发送测试完成通知，确保客户端收到
+      setTimeout(() => {
+        this.wsManager.sendTestError(runId, {
+          error: error.message,
+          testRun: this.getTestRun(runId)
+        });
+        console.log(`✗ [${runId}] 已发送测试失败通知`);
+      }, 1000);
     } finally {
-            await this.mcpClient.cleanup();
-            this.addLog(runId, '浏览器已关闭，清理完成。');
-            testRun.finishedAt = new Date();
+      // 关键修改：根据设置决定是否关闭浏览器
+      const forceClose = !testRun.reuseBrowser;
+      await this.mcpClient.cleanup(forceClose);
+      
+      if (forceClose) {
+        this.addLog(runId, '浏览器已关闭，清理完成。');
+      } else {
+        this.addLog(runId, '浏览器保持打开状态，供后续测试使用。');
+      }
+      
+      testRun.finishedAt = new Date();
+      // 计算持续时间
+      testRun.duration = this.calculateDuration(testRun.startedAt, testRun.finishedAt);
     }
   }
   
@@ -287,5 +372,33 @@ export class TestExecutionService {
             console.log(`[${runId}] ${message}`);
             this.wsManager.sendTestLog(runId, logEntry);
         }
+  }
+
+  // 新增：获取套件共享上下文
+  public getSharedContext(suiteId: string): any {
+    return this.sharedContext.get(`suite_${suiteId}`);
+  }
+  
+  // 新增：清除套件共享上下文
+  public clearSharedContext(suiteId: string): void {
+    this.sharedContext.delete(`suite_${suiteId}`);
+  }
+  
+  // 新增：计算持续时间的辅助函数
+  private calculateDuration(startTime: Date, endTime: Date): string {
+    const durationMs = endTime.getTime() - startTime.getTime();
+    
+    if (durationMs < 1000) {
+      return `${durationMs}ms`;
+    }
+    
+    const seconds = Math.floor(durationMs / 1000);
+    if (seconds < 60) {
+      return `${seconds}s`;
+    }
+    
+    const minutes = Math.floor(seconds / 60);
+    const remainingSeconds = seconds % 60;
+    return `${minutes}m ${remainingSeconds}s`;
   }
 } 

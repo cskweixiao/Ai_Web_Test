@@ -35,12 +35,30 @@ export class PlaywrightMcpClient {
   private browser: Browser | null = null;
   private page: Page | null = null;
   private isInitialized = false;
+  // 添加状态追踪变量
+  private browserSharedState = false;
 
-  async initialize(): Promise<void> {
+  // 修改：initialize方法支持浏览器复用
+  async initialize(options: { reuseSession?: boolean } = {}): Promise<void> {
     try {
+      // 如果已初始化且请求复用会话，则直接返回
+      if (this.isInitialized && this.browser && options.reuseSession) {
+        console.log('♻️ 复用现有浏览器实例，跳过初始化');
+        this.browserSharedState = true;
+        
+        // 如果页面关闭了但浏览器还在，创建新页面
+        if (!this.page || this.page.isClosed?.()) {
+          console.log('🔄 现有页面已关闭，创建新页面');
+          this.page = await this.browser.newPage();
+          await this.page.setViewportSize({ width: 1280, height: 720 });
+        }
+        
+        return;
+      }
+      
       console.log('🚀 正在启动 Chromium 浏览器...');
       
-      // 启动真正的 Chromium 浏览器
+      // 正常启动浏览器流程
       this.browser = await chromium.launch({
         headless: false, // 显示浏览器窗口
         slowMo: 500,     // 减慢操作速度以便观察
@@ -59,6 +77,7 @@ export class PlaywrightMcpClient {
       await this.page.setViewportSize({ width: 1280, height: 720 });
       
       this.isInitialized = true;
+      this.browserSharedState = options.reuseSession || false;
       
       console.log('✅ Chromium 浏览器启动成功！准备执行测试...');
     } catch (error: any) {
@@ -339,8 +358,23 @@ export class PlaywrightMcpClient {
     }
   }
 
-  async cleanup(): Promise<void> {
+  // 修改：cleanup方法支持条件关闭
+  async cleanup(forceClose = true): Promise<void> {
     try {
+      // 如果浏览器处于共享状态且不强制关闭，则保持打开
+      if (this.browserSharedState && !forceClose) {
+        console.log('⚠️ 保持浏览器会话打开状态 (处于共享模式)');
+        
+        // 仅关闭页面但保留浏览器实例
+        if (this.page) {
+          await this.page.close();
+          this.page = null;
+          console.log('🔍 当前页面已关闭，浏览器保持运行');
+        }
+        
+        return;
+      }
+      
       console.log('🧹 正在关闭浏览器...');
       
       if (this.page) {
@@ -354,9 +388,107 @@ export class PlaywrightMcpClient {
       }
       
       this.isInitialized = false;
-      console.log('✅ 浏览器已关闭');
+      this.browserSharedState = false;
+      console.log('✅ 浏览器已完全关闭');
     } catch (error: any) {
       console.error('❌ 浏览器关闭失败:', error);
+    }
+  }
+  
+  // 新增：提取页面状态方法，用于在测试之间传递状态
+  async extractPageState(): Promise<any> {
+    if (!this.page) {
+      return null;
+    }
+    
+    try {
+      // 提取cookies
+      const cookies = await this.page.context().cookies();
+      
+      // 提取localStorage (如果需要)
+      const localStorage = await this.page.evaluate(() => {
+        const items = {};
+        for (let i = 0; i < window.localStorage.length; i++) {
+          const key = window.localStorage.key(i);
+          if (key) {
+            items[key] = window.localStorage.getItem(key);
+          }
+        }
+        return items;
+      });
+      
+      // 提取当前URL
+      const currentUrl = this.page.url();
+      
+      return {
+        cookies,
+        localStorage,
+        currentUrl,
+        timestamp: new Date().toISOString()
+      };
+    } catch (error) {
+      console.error('❌ 提取页面状态失败:', error);
+      return null;
+    }
+  }
+  
+  // 新增：恢复页面状态方法
+  async restorePageState(state: any): Promise<boolean> {
+    if (!this.page || !state) {
+      return false;
+    }
+    
+    try {
+      // 恢复cookies
+      if (state.cookies && Array.isArray(state.cookies)) {
+        await this.page.context().addCookies(state.cookies);
+      }
+      
+      // 恢复localStorage
+      if (state.localStorage) {
+        await this.page.evaluate((storageItems) => {
+          for (const key in storageItems) {
+            try {
+              window.localStorage.setItem(key, storageItems[key]);
+            } catch (e) {
+              console.error(`无法设置localStorage项 ${key}:`, e);
+            }
+          }
+        }, state.localStorage);
+      }
+      
+      // 如果需要，导航回之前的URL
+      if (state.currentUrl && this.page.url() !== state.currentUrl) {
+        await this.page.goto(state.currentUrl, { waitUntil: 'domcontentloaded' });
+      }
+      
+      console.log('✅ 已恢复页面状态，包含cookies和localStorage数据');
+      return true;
+    } catch (error) {
+      console.error('❌ 恢复页面状态失败:', error);
+      return false;
+    }
+  }
+  
+  // 新增：检查浏览器和页面健康状态
+  async checkHealth(): Promise<{isAlive: boolean, reason?: string}> {
+    if (!this.browser) {
+      return { isAlive: false, reason: 'browser_null' };
+    }
+    
+    try {
+      // 如果页面不存在或已关闭，尝试创建新页面
+      if (!this.page || this.page.isClosed?.()) {
+        this.page = await this.browser.newPage();
+        await this.page.setViewportSize({ width: 1280, height: 720 });
+      }
+      
+      // 执行简单操作确保页面响应
+      await this.page.evaluate(() => document.title);
+      
+      return { isAlive: true };
+    } catch (error) {
+      return { isAlive: false, reason: 'page_unresponsive' };
     }
   }
 } 

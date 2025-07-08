@@ -392,13 +392,30 @@ export class SuiteExecutionService {
       completedCases: 0,
       passedCases: 0,
       failedCases: 0,
-      executor: '系统',
-      environment,
+      executor: 'System',
+      environment: environment || 'default',
       testRuns: []
     };
 
     this.runningSuites.set(suiteRunId, suiteRun);
-    this.broadcastSuiteUpdate(suiteRunId, suiteRun);
+    
+    // 使用WebSocket发送更新
+    if (this.wsManager) {
+      // 将Date对象转换为ISO字符串
+      const sanitizedData = {
+        ...suiteRun,
+        startTime: suiteRun.startTime ? suiteRun.startTime.toISOString() : null
+      };
+      
+      // 通过broadcast发送套件更新
+      this.wsManager.broadcast({
+        type: 'suiteUpdate', 
+        runId: suiteRunId,
+        data: sanitizedData
+      });
+      
+      console.log(`已发送套件创建消息: ${suiteRunId}, ${suite.name}`);
+    }
     
     console.log(`✅ 创建套件执行记录: ${suite.name} (${suiteRunId})`);
   }
@@ -418,21 +435,52 @@ export class SuiteExecutionService {
     try {
       console.log(`🚀 [Suite ${suiteRunId}] 开始串行执行 ${suite.testCaseIds.length} 个测试用例`);
       
-      // 🔥 串行执行所有测试用例，确保不会相互干扰
-      for (let i = 0; i < suite.testCaseIds.length; i++) {
-        const testCaseId = suite.testCaseIds[i];
+      // 先清除可能存在的旧上下文
+      this.testExecutionService.clearSharedContext(suiteRunId);
+      
+      // 执行前分析测试用例关系
+      const testCaseIds = await this.analyzeTestOrder(suite.testCaseIds);
+      
+      // 🔥 串行执行所有测试用例，现在支持浏览器复用
+      for (let i = 0; i < testCaseIds.length; i++) {
+        const testCaseId = testCaseIds[i];
+        const isFirstTest = i === 0;
+        const isLastTest = i === testCaseIds.length - 1;
         
-        console.log(`🎬 [Suite ${suiteRunId}] 执行测试用例 ${i + 1}/${suite.testCaseIds.length}: ${testCaseId}`);
+        console.log(`🎬 [Suite ${suiteRunId}] 执行测试用例 ${i + 1}/${testCaseIds.length}: ${testCaseId}`);
         
         try {
-          // 🔥 调用现有的测试执行服务
-          const testRunId = await this.testExecutionService.runTest(testCaseId, environment, executionMode);
+          // 获取上一个测试的状态（如果有）
+          const previousContext = !isFirstTest 
+            ? this.testExecutionService.getSharedContext(suiteRunId)?.pageState 
+            : undefined;
+          
+          // 测试执行选项
+          const testOptions = {
+            // 除了第一个测试外都尝试复用浏览器
+            reuseBrowser: !isFirstTest,
+            // 传递套件ID用于后续上下文共享
+            suiteId: suiteRunId,
+            // 传递上下文状态（如果有）
+            contextState: previousContext
+          };
+          
+          // 🔥 调用测试执行服务，传递复用选项
+          const testRunId = await this.testExecutionService.runTest(
+            testCaseId, 
+            environment,
+            executionMode,
+            testOptions
+          );
+          
+          // 记录该测试到套件运行中
           suiteRun.testRuns.push(testRunId);
           
           // 🔥 等待单个测试完成并获取结果
           console.log(`⏳ [Suite ${suiteRunId}] 等待测试用例 ${testCaseId} (${testRunId}) 执行完成...`);
           const testResult = await this.waitForTestCompletion(testRunId);
           
+          // 更新套件统计
           suiteRun.completedCases++;
           
           if (testResult.success) {
@@ -460,14 +508,19 @@ export class SuiteExecutionService {
         
         // 🔥 更新进度
         suiteRun.progress = Math.round((suiteRun.completedCases / suiteRun.totalCases) * 100);
-        this.broadcastSuiteUpdate(suiteRunId, suiteRun);
         
-        // 🔥 测试用例间添加短暂间隔，确保资源释放
-        if (i < suite.testCaseIds.length - 1) {
-          console.log(`⏱️ [Suite ${suiteRunId}] 测试用例间隔等待 2 秒...`);
-          await new Promise(resolve => setTimeout(resolve, 2000));
+        // 使用WebSocket发送进度更新
+        this.broadcastProgress(suiteRunId, suiteRun);
+        
+        // 测试用例间只添加很短的间隔，因为不需要等待浏览器重启
+        if (!isLastTest) {
+          console.log(`⏱️ [Suite ${suiteRunId}] 测试用例间隔等待 500ms...`);
+          await new Promise(resolve => setTimeout(resolve, 500));
         }
       }
+      
+      // 🔥 套件执行完成后，清理共享上下文
+      this.testExecutionService.clearSharedContext(suiteRunId);
       
       // 🔥 套件执行完成
       await this.updateSuiteStatus(suiteRunId, 'completed');
@@ -476,6 +529,32 @@ export class SuiteExecutionService {
     } catch (error: any) {
       await this.updateSuiteStatus(suiteRunId, 'failed', error.message);
     }
+  }
+  
+  // 发送进度更新的辅助方法
+  private broadcastProgress(suiteRunId: string, suiteRun: TestSuiteRun): void {
+    if (this.wsManager) {
+      const sanitizedData = {
+        ...suiteRun,
+        startTime: suiteRun.startTime ? suiteRun.startTime.toISOString() : null,
+        endTime: suiteRun.endTime ? suiteRun.endTime.toISOString() : null
+      };
+      
+      this.wsManager.broadcast({
+        type: 'suiteUpdate', 
+        runId: suiteRunId,
+        data: sanitizedData
+      });
+      
+      console.log(`已发送套件进度更新: ${suiteRunId}, 进度: ${suiteRun.progress}%`);
+    }
+  }
+  
+  // 新增：分析测试用例执行顺序
+  private async analyzeTestOrder(testCaseIds: number[]): Promise<number[]> {
+    // 目前我们只返回原始顺序，后续可以实现更复杂的依赖分析和排序
+    // 例如基于测试用例元数据的依赖关系确定最优执行顺序
+    return [...testCaseIds];
   }
 
   private async waitForTestCompletion(testRunId: string): Promise<{ success: boolean; error?: string }> {
@@ -536,7 +615,24 @@ export class SuiteExecutionService {
       suiteRun.duration = this.formatDuration(durationMs);
     }
     
-    this.broadcastSuiteUpdate(suiteRunId, suiteRun);
+    // 使用WebSocket发送更新
+    if (this.wsManager) {
+      // 将Date对象转换为ISO字符串
+      const sanitizedData = {
+        ...suiteRun,
+        startTime: suiteRun.startTime ? suiteRun.startTime.toISOString() : null,
+        endTime: suiteRun.endTime ? suiteRun.endTime.toISOString() : null
+      };
+      
+      // 通过broadcast发送套件更新
+      this.wsManager.broadcast({
+        type: 'suiteUpdate', 
+        runId: suiteRunId,
+        data: sanitizedData
+      });
+      
+      console.log(`已发送套件状态更新: ${suiteRunId}, 状态: ${status}, 进度: ${suiteRun.progress}%`);
+    }
     
     // 🔥 更新数据库中的执行状态
     try {
@@ -641,14 +737,6 @@ export class SuiteExecutionService {
     } else {
       return `${seconds}s`;
     }
-  }
-
-  private broadcastSuiteUpdate(suiteRunId: string, suiteRun: TestSuiteRun) {
-    this.wsManager.sendToAll(JSON.stringify({
-      type: 'suiteUpdate',
-      suiteRunId,
-      suiteRun
-    }));
   }
 
   // 🔥 取消套件执行
