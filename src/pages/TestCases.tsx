@@ -24,6 +24,9 @@ import { Layout } from '../components/Layout';
 import { testService } from '../services/testService';
 import type { TestCase, TestSuite as TestSuiteType } from '../types/test';
 import { useNavigate } from 'react-router-dom';
+import { Modal, ConfirmModal } from '../components/ui/modal';
+import { Button } from '../components/ui/button';
+import { showToast } from '../utils/toast';
 
 // 表单数据接口
 interface CreateTestCaseForm {
@@ -149,12 +152,12 @@ export function TestCases() {
 
   const handleCreateTestCase = async () => {
     if (!formData.name.trim()) {
-      alert('请输入测试用例名称');
+      showToast.warning('请输入测试用例名称');
       return;
     }
     
     if (!formData.steps.trim()) {
-      alert('请输入测试步骤');
+      showToast.warning('请输入测试步骤');
       return;
     }
 
@@ -177,7 +180,7 @@ export function TestCases() {
           await testService.updateTestCase(editingTestCase.id, updatedTestCase);
           await loadTestCases();
           resetForm();
-          alert('测试用例更新成功！');
+          showToast.success('测试用例更新成功！');
         } catch (error: any) {
           throw new Error(error.message || '更新失败');
         }
@@ -200,14 +203,14 @@ export function TestCases() {
           await testService.createTestCase(newTestCase);
           await loadTestCases();
           resetForm();
-          alert('测试用例创建成功！');
+          showToast.success('测试用例创建成功！');
         } catch (error: any) {
           throw new Error(error.message || '创建失败');
         }
       }
     } catch (error: any) {
       console.error('操作测试用例失败:', error);
-      alert(`操作失败: ${error.message}`);
+      showToast.error(`操作失败: ${error.message}`);
     } finally {
       setLoading(false);
     }
@@ -243,13 +246,13 @@ export function TestCases() {
         await loadTestCases();
         setShowDeleteModal(false);
         setDeletingTestCase(null);
-        alert('测试用例删除成功！');
+        showToast.success('测试用例删除成功！');
       } catch (error: any) {
         throw new Error(error.message || '删除失败');
       }
     } catch (error: any) {
       console.error('删除测试用例失败:', error);
-      alert(`删除失败: ${error.message}`);
+      showToast.error(`删除失败: ${error.message}`);
     } finally {
       setLoading(false);
     }
@@ -285,12 +288,12 @@ export function TestCases() {
   // 🔥 新增：创建/编辑测试套件
   const handleCreateTestSuite = async () => {
     if (!suiteFormData.name.trim()) {
-      alert('请输入测试套件名称');
+      showToast.warning('请输入测试套件名称');
       return;
     }
     
     if (suiteFormData.testCases.length === 0) {
-      alert('请选择至少一个测试用例');
+      showToast.warning('请选择至少一个测试用例');
       return;
     }
 
@@ -313,7 +316,7 @@ export function TestCases() {
           await testService.updateTestSuite(editingTestSuite.id, updatedSuite);
           await loadTestSuites();
           resetSuiteForm();
-          alert('测试套件更新成功！');
+          showToast.success('测试套件更新成功！');
         } catch (error: any) {
           throw new Error(error.message || '更新失败');
         }
@@ -334,14 +337,14 @@ export function TestCases() {
           await testService.createTestSuite(newSuite);
           await loadTestSuites();
           resetSuiteForm();
-          alert('测试套件创建成功！');
+          showToast.success('测试套件创建成功！');
         } catch (error: any) {
           throw new Error(error.message || '创建失败');
         }
       }
     } catch (error: any) {
       console.error('操作测试套件失败:', error);
-      alert(`操作失败: ${error.message}`);
+      showToast.error(`操作失败: ${error.message}`);
     } finally {
       setLoading(false);
     }
@@ -379,14 +382,14 @@ export function TestCases() {
         await loadTestSuites();
         setShowDeleteModal(false);
         setDeletingTestSuite(null);
-        alert('测试套件删除成功！');
+        showToast.success('测试套件删除成功！');
       } catch (error: any) {
         throw new Error(error.message || '删除失败');
       }
       
     } catch (error: any) {
       console.error('删除测试套件失败:', error);
-      alert(`删除失败: ${error.message}`);
+      showToast.error(`删除失败: ${error.message}`);
     } finally {
       setLoading(false);
     }
@@ -395,7 +398,7 @@ export function TestCases() {
   // 🔥 新增：运行测试套件 - 使用WebSocket监听而非模拟通知
   const handleRunTestSuite = async (testSuite: TestSuiteType) => {
     if (runningSuiteId) {
-      alert('已有套件在运行中，请等待完成');
+      showToast.warning('已有套件在运行中，请等待完成');
       return;
     }
 
@@ -429,11 +432,11 @@ export function TestCases() {
               if (status === 'completed') {
                 const passedCases = message.data?.passedCases || 0;
                 const totalCases = message.data?.totalCases || 0;
-                alert(`🎉 测试套件执行完成: ${testSuite.name}\n通过: ${passedCases}/${totalCases}`);
+                showToast.success(`🎉 测试套件执行完成: ${testSuite.name}\n通过: ${passedCases}/${totalCases}`);
               } else if (status === 'failed') {
-                alert(`❌ 测试套件执行失败: ${testSuite.name}\n${message.data?.error || '未知错误'}`);
+                showToast.error(`❌ 测试套件执行失败: ${testSuite.name}\n${message.data?.error || '未知错误'}`);
               } else {
-                alert(`⚠️ 测试套件执行被取消: ${testSuite.name}`);
+                showToast.warning(`⚠️ 测试套件执行被取消: ${testSuite.name}`);
               }
               
               // 导航到测试运行页面
@@ -454,7 +457,7 @@ export function TestCases() {
                     console.log('✅ 确认套件已完成:', suiteStatus.status);
                     setRunningSuiteId(null);
                     testService.removeMessageListener(listenerId);
-                    alert(`🎉 测试套件执行完成: ${testSuite.name}`);
+                    showToast.success(`🎉 测试套件执行完成: ${testSuite.name}`);
                     navigate('/test-runs');
                   }
                 }
@@ -468,7 +471,7 @@ export function TestCases() {
         // 启动测试套件
         const response = await testService.runTestSuite(testSuite.id);
         suiteRunId = response.runId;
-        alert(`✅ 测试套件开始执行: ${testSuite.name}\n运行ID: ${response.runId}`);
+        showToast.info(`✅ 测试套件开始执行: ${testSuite.name}\n运行ID: ${response.runId}`);
         console.log('套件运行ID:', response.runId);
         
         // 设置安全超时（5分钟），以防WebSocket消息丢失
@@ -480,10 +483,10 @@ export function TestCases() {
             
             if (!messageReceivedFlag) {
               // 从未收到任何消息，可能是WebSocket彻底断开了
-              alert('⚠️ 未收到任何WebSocket消息，可能连接已断开。已重置界面状态。');
+              showToast.warning('⚠️ 未收到任何WebSocket消息，可能连接已断开。已重置界面状态。');
               testService.initializeWebSocket().catch(e => console.error('重连失败:', e));
             } else {
-              alert('测试套件执行超时，已重置界面状态。请检查测试运行页面查看实际执行结果。');
+              showToast.warning('测试套件执行超时，已重置界面状态。请检查测试运行页面查看实际执行结果。');
             }
           }
         }, 3 * 60 * 1000); // 3分钟超时
@@ -513,7 +516,7 @@ export function TestCases() {
                 clearInterval(statusCheckInterval);
                 setRunningSuiteId(null);
                 testService.removeMessageListener(listenerId);
-                alert(`🎉 测试套件执行完成: ${testSuite.name} (通过定期检查发现)`);
+                showToast.success(`🎉 测试套件执行完成: ${testSuite.name} (通过定期检查发现)`);
                 navigate('/test-runs');
               }
             } catch (error) {
@@ -529,7 +532,7 @@ export function TestCases() {
       
     } catch (error: any) {
       console.error('执行测试套件失败:', error);
-      alert(`❌ 执行测试套件失败: ${error.message}`);
+      showToast.error(`❌ 执行测试套件失败: ${error.message}`);
       setRunningSuiteId(null);
     }
   };
@@ -561,7 +564,7 @@ export function TestCases() {
   // 🔥 运行测试用例 - 使用WebSocket监听而非模拟通知
   const handleRunTest = async (testCase: TestCase) => {
     if (runningTestId) {
-      alert('已有测试在运行中，请等待完成');
+      showToast.warning('已有测试在运行中，请等待完成');
       return;
     }
 
@@ -597,7 +600,7 @@ export function TestCases() {
               testService.removeMessageListener(listenerId);
               
               // 可以导航到结果页面或显示结果
-              alert(`🎉 测试执行完成: ${testCase.name}`);
+              showToast.success(`🎉 测试执行完成: ${testCase.name}`);
               
               // 导航到测试运行页面
               navigate('/test-runs');
@@ -607,7 +610,7 @@ export function TestCases() {
         
         // 启动测试
         const response = await testService.runTestCase(testCase.id);
-        alert(`✅ 测试开始执行: ${testCase.name}\n运行ID: ${response.runId}`);
+        showToast.info(`✅ 测试开始执行: ${testCase.name}\n运行ID: ${response.runId}`);
         console.log('测试运行ID:', response.runId);
       } catch (error: any) {
         setRunningTestId(null);
@@ -616,7 +619,7 @@ export function TestCases() {
       
     } catch (error: any) {
       console.error('执行测试失败:', error);
-      alert(`❌ 执行测试失败: ${error.message}`);
+      showToast.error(`❌ 执行测试失败: ${error.message}`);
       setRunningTestId(null);
     }
   };
@@ -657,7 +660,7 @@ export function TestCases() {
                 if (window.confirm('确定要重置执行状态吗？如果测试仍在运行，这可能会导致界面状态不同步。')) {
                   setRunningTestId(null);
                   setRunningSuiteId(null);
-                  alert('已重置执行状态');
+                  showToast.info('已重置执行状态');
                   console.log('✅ 手动重置了测试执行状态');
                 }
               }}
@@ -1127,330 +1130,271 @@ export function TestCases() {
 
 
       {/* Create/Edit Modal */}
-      <AnimatePresence>
-        {showCreateModal && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center p-4 z-50"
-          >
-            <motion.div
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-white rounded-xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto"
+      <Modal 
+        isOpen={showCreateModal} 
+        onClose={() => activeTab === 'cases' ? resetForm() : resetSuiteForm()}
+        title={activeTab === 'cases' 
+          ? (editingTestCase ? '编辑测试用例' : '创建新测试用例')
+          : (editingTestSuite ? '编辑测试套件' : '创建新测试套件')
+        }
+        size="2xl"
+        footer={
+          <div className="flex justify-end space-x-3">
+            <Button
+              variant="outline"
+              onClick={activeTab === 'cases' ? resetForm : resetSuiteForm}
+              disabled={loading}
             >
-              <div className="px-6 py-4 border-b border-gray-200">
-                <h3 className="text-lg font-semibold text-gray-900">
-                  {activeTab === 'cases' 
-                    ? (editingTestCase ? '编辑测试用例' : '创建新测试用例')
-                    : (editingTestSuite ? '编辑测试套件' : '创建新测试套件')
-                  }
-                </h3>
-              </div>
-              
-              {activeTab === 'cases' ? (
-                // 🔥 测试用例表单
-                <div className="px-6 py-4 space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      用例名称 *
-                    </label>
-                    <input
-                      type="text"
-                      value={formData.name}
-                      onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      placeholder="输入测试用例名称"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      测试步骤 *
-                    </label>
-                    <textarea
-                      rows={4}
-                      value={formData.steps}
-                      onChange={(e) => setFormData(prev => ({ ...prev, steps: e.target.value }))}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      placeholder="例如：&#10;1. 打开登录页面&#10;2. 输入用户名和密码&#10;3. 点击登录按钮&#10;4. 验证页面跳转"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      断言预期
-                    </label>
-                    <textarea
-                      rows={3}
-                      value={formData.assertions}
-                      onChange={(e) => setFormData(prev => ({ ...prev, assertions: e.target.value }))}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      placeholder="例如：&#10;• 页面成功跳转到首页&#10;• 显示用户昵称&#10;• 退出按钮可见"
-                    />
-                  </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        优先级
-                      </label>
-                      <select 
-                        value={formData.priority}
-                        onChange={(e) => setFormData(prev => ({ ...prev, priority: e.target.value as 'high' | 'medium' | 'low' }))}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      >
-                        <option value="high">高</option>
-                        <option value="medium">中</option>
-                        <option value="low">低</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        状态
-                      </label>
-                      <select 
-                        value={formData.status}
-                        onChange={(e) => setFormData(prev => ({ ...prev, status: e.target.value as 'active' | 'draft' | 'disabled' }))}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      >
-                        <option value="draft">草稿</option>
-                        <option value="active">活跃</option>
-                        <option value="disabled">禁用</option>
-                      </select>
-                    </div>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      标签 (用逗号分隔)
-                    </label>
-                    <input
-                      type="text"
-                      value={formData.tags}
-                      onChange={(e) => setFormData(prev => ({ ...prev, tags: e.target.value }))}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      placeholder="登录, 认证, 核心功能"
-                    />
-                  </div>
-                </div>
-              ) : (
-                // 🔥 测试套件表单
-                <div className="px-6 py-4 space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      套件名称 *
-                    </label>
-                    <input
-                      type="text"
-                      value={suiteFormData.name}
-                      onChange={(e) => setSuiteFormData(prev => ({ ...prev, name: e.target.value }))}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      placeholder="输入测试套件名称"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      套件描述
-                    </label>
-                    <textarea
-                      rows={3}
-                      value={suiteFormData.description}
-                      onChange={(e) => setSuiteFormData(prev => ({ ...prev, description: e.target.value }))}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      placeholder="描述这个测试套件的用途和覆盖范围"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      选择测试用例 *
-                    </label>
-                    <div className="max-h-48 overflow-y-auto border border-gray-300 rounded-lg p-3 space-y-2">
-                      {testCases.length === 0 ? (
-                        <p className="text-gray-500 text-sm">暂无可用的测试用例，请先创建测试用例</p>
-                      ) : (
-                        testCases.map((testCase) => (
-                          <label key={testCase.id} className="flex items-center space-x-2 cursor-pointer">
-                            <input
-                              type="checkbox"
-                              checked={suiteFormData.testCases.includes(testCase.id)}
-                              onChange={(e) => {
-                                if (e.target.checked) {
-                                  setSuiteFormData(prev => ({
-                                    ...prev,
-                                    testCases: [...prev.testCases, testCase.id]
-                                  }));
-                                } else {
-                                  setSuiteFormData(prev => ({
-                                    ...prev,
-                                    testCases: prev.testCases.filter(id => id !== testCase.id)
-                                  }));
-                                }
-                              }}
-                              className="rounded text-blue-600 focus:ring-blue-500"
-                            />
-                            <span className="text-sm text-gray-700">{testCase.name}</span>
-                            <span className={clsx(
-                              'text-xs px-2 py-0.5 rounded-full',
-                              getPriorityColor(testCase.priority)
-                            )}>
-                              {testCase.priority === 'high' ? '高' : testCase.priority === 'medium' ? '中' : '低'}
-                            </span>
-                          </label>
-                        ))
-                      )}
-                    </div>
-                    {suiteFormData.testCases.length > 0 && (
-                      <p className="text-sm text-gray-600 mt-1">
-                        已选择 {suiteFormData.testCases.length} 个测试用例
-                      </p>
-                    )}
-                  </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        优先级
-                      </label>
-                      <select 
-                        value={suiteFormData.priority}
-                        onChange={(e) => setSuiteFormData(prev => ({ ...prev, priority: e.target.value as 'high' | 'medium' | 'low' }))}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      >
-                        <option value="high">高</option>
-                        <option value="medium">中</option>
-                        <option value="low">低</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        状态
-                      </label>
-                      <select 
-                        value={suiteFormData.status}
-                        onChange={(e) => setSuiteFormData(prev => ({ ...prev, status: e.target.value as 'active' | 'draft' | 'disabled' }))}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      >
-                        <option value="draft">草稿</option>
-                        <option value="active">活跃</option>
-                        <option value="disabled">禁用</option>
-                      </select>
-                    </div>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      标签 (用逗号分隔)
-                    </label>
-                    <input
-                      type="text"
-                      value={suiteFormData.tags}
-                      onChange={(e) => setSuiteFormData(prev => ({ ...prev, tags: e.target.value }))}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      placeholder="回归测试, 冒烟测试, 核心功能"
-                    />
-                  </div>
-                </div>
+              取消
+            </Button>
+            <Button
+              onClick={activeTab === 'cases' ? handleCreateTestCase : handleCreateTestSuite}
+              disabled={loading || (activeTab === 'cases' 
+                ? (!formData.name.trim() || !formData.steps.trim())
+                : (!suiteFormData.name.trim() || suiteFormData.testCases.length === 0)
               )}
-              
-              <div className="px-6 py-4 border-t border-gray-200 flex justify-end space-x-3">
-                <button
-                  onClick={activeTab === 'cases' ? resetForm : resetSuiteForm}
-                  disabled={loading}
-                  className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors disabled:opacity-50"
+              isLoading={loading}
+            >
+              {activeTab === 'cases' 
+                ? (editingTestCase ? '更新用例' : '创建用例')
+                : (editingTestSuite ? '更新套件' : '创建套件')
+              }
+            </Button>
+          </div>
+        }
+      >
+        {activeTab === 'cases' ? (
+          // 🔥 测试用例表单
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                用例名称 *
+              </label>
+              <input
+                type="text"
+                value={formData.name}
+                onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="输入测试用例名称"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                测试步骤 *
+              </label>
+              <textarea
+                rows={5}
+                value={formData.steps}
+                onChange={(e) => setFormData(prev => ({ ...prev, steps: e.target.value }))}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="例如：&#10;1. 打开登录页面&#10;2. 输入用户名和密码&#10;3. 点击登录按钮&#10;4. 验证页面跳转"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                断言预期
+              </label>
+              <textarea
+                rows={4}
+                value={formData.assertions}
+                onChange={(e) => setFormData(prev => ({ ...prev, assertions: e.target.value }))}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="例如：&#10;• 页面成功跳转到首页&#10;• 显示用户昵称&#10;• 退出按钮可见"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  优先级
+                </label>
+                <select 
+                  value={formData.priority}
+                  onChange={(e) => setFormData(prev => ({ ...prev, priority: e.target.value as 'high' | 'medium' | 'low' }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 >
-                  取消
-                </button>
-                <button
-                  onClick={activeTab === 'cases' ? handleCreateTestCase : handleCreateTestSuite}
-                  disabled={loading || (activeTab === 'cases' 
-                    ? (!formData.name.trim() || !formData.steps.trim())
-                    : (!suiteFormData.name.trim() || suiteFormData.testCases.length === 0)
-                  )}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
-                >
-                  {loading ? (
-                    <>
-                      <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                      {activeTab === 'cases' 
-                        ? (editingTestCase ? '更新中...' : '创建中...')
-                        : (editingTestSuite ? '更新中...' : '创建中...')
-                      }
-                    </>
-                  ) : (
-                    activeTab === 'cases' 
-                      ? (editingTestCase ? '更新用例' : '创建用例')
-                      : (editingTestSuite ? '更新套件' : '创建套件')
-                  )}
-                </button>
+                  <option value="high">高</option>
+                  <option value="medium">中</option>
+                  <option value="low">低</option>
+                </select>
               </div>
-            </motion.div>
-          </motion.div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  状态
+                </label>
+                <select 
+                  value={formData.status}
+                  onChange={(e) => setFormData(prev => ({ ...prev, status: e.target.value as 'active' | 'draft' | 'disabled' }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                >
+                  <option value="draft">草稿</option>
+                  <option value="active">活跃</option>
+                  <option value="disabled">禁用</option>
+                </select>
+              </div>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                标签 (用逗号分隔)
+              </label>
+              <input
+                type="text"
+                value={formData.tags}
+                onChange={(e) => setFormData(prev => ({ ...prev, tags: e.target.value }))}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="登录, 认证, 核心功能"
+              />
+            </div>
+          </div>
+        ) : (
+          // 🔥 测试套件表单
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                套件名称 *
+              </label>
+              <input
+                type="text"
+                value={suiteFormData.name}
+                onChange={(e) => setSuiteFormData(prev => ({ ...prev, name: e.target.value }))}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="输入测试套件名称"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                套件描述
+              </label>
+              <textarea
+                rows={4}
+                value={suiteFormData.description}
+                onChange={(e) => setSuiteFormData(prev => ({ ...prev, description: e.target.value }))}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="描述这个测试套件的用途和覆盖范围"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                选择测试用例 *
+              </label>
+              <div className="max-h-56 overflow-y-auto border border-gray-300 rounded-lg p-3 space-y-2">
+                {testCases.length === 0 ? (
+                  <p className="text-gray-500 text-sm">暂无可用的测试用例，请先创建测试用例</p>
+                ) : (
+                  testCases.map((testCase) => (
+                    <label key={testCase.id} className="flex items-center space-x-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={suiteFormData.testCases.includes(testCase.id)}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setSuiteFormData(prev => ({
+                              ...prev,
+                              testCases: [...prev.testCases, testCase.id]
+                            }));
+                          } else {
+                            setSuiteFormData(prev => ({
+                              ...prev,
+                              testCases: prev.testCases.filter(id => id !== testCase.id)
+                            }));
+                          }
+                        }}
+                        className="rounded text-blue-600 focus:ring-blue-500"
+                      />
+                      <span className="text-sm text-gray-700">{testCase.name}</span>
+                      <span className={clsx(
+                        'text-xs px-2 py-0.5 rounded-full',
+                        getPriorityColor(testCase.priority)
+                      )}>
+                        {testCase.priority === 'high' ? '高' : testCase.priority === 'medium' ? '中' : '低'}
+                      </span>
+                    </label>
+                  ))
+                )}
+              </div>
+              {suiteFormData.testCases.length > 0 && (
+                <p className="text-sm text-gray-600 mt-1">
+                  已选择 {suiteFormData.testCases.length} 个测试用例
+                </p>
+              )}
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  优先级
+                </label>
+                <select 
+                  value={suiteFormData.priority}
+                  onChange={(e) => setSuiteFormData(prev => ({ ...prev, priority: e.target.value as 'high' | 'medium' | 'low' }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                >
+                  <option value="high">高</option>
+                  <option value="medium">中</option>
+                  <option value="low">低</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  状态
+                </label>
+                <select 
+                  value={suiteFormData.status}
+                  onChange={(e) => setSuiteFormData(prev => ({ ...prev, status: e.target.value as 'active' | 'draft' | 'disabled' }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                >
+                  <option value="draft">草稿</option>
+                  <option value="active">活跃</option>
+                  <option value="disabled">禁用</option>
+                </select>
+              </div>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                标签 (用逗号分隔)
+              </label>
+              <input
+                type="text"
+                value={suiteFormData.tags}
+                onChange={(e) => setSuiteFormData(prev => ({ ...prev, tags: e.target.value }))}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="回归测试, 冒烟测试, 核心功能"
+              />
+            </div>
+          </div>
         )}
-      </AnimatePresence>
+      </Modal>
 
       {/* Delete Confirmation Modal */}
-      <AnimatePresence>
-        {showDeleteModal && (deletingTestCase || deletingTestSuite) && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center p-4 z-50"
-          >
-            <motion.div
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-white rounded-xl shadow-xl max-w-md w-full"
-            >
-              <div className="px-6 py-4">
-                <div className="flex items-center mb-4">
-                  <div className="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center mr-3">
-                    <AlertTriangle className="h-5 w-5 text-red-600" />
-                  </div>
-                  <h3 className="text-lg font-semibold text-gray-900">确认删除</h3>
-                </div>
-                <p className="text-gray-600 mb-6">
-                  您确定要删除{deletingTestCase ? '测试用例' : '测试套件'} "
-                  <span className="font-medium">
-                    {deletingTestCase ? deletingTestCase.name : deletingTestSuite?.name}
-                  </span>" 吗？
-                  此操作无法撤销。
-                  {deletingTestSuite && (
-                    <span className="block mt-2 text-sm text-amber-600">
-                      注意：删除套件不会删除其中的测试用例，但会移除套件与用例的关联。
-                    </span>
-                  )}
-                </p>
-                <div className="flex justify-end space-x-3">
-                  <button
-                    onClick={() => {
-                      setShowDeleteModal(false);
-                      setDeletingTestCase(null);
-                      setDeletingTestSuite(null);
-                    }}
-                    disabled={loading}
-                    className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors disabled:opacity-50"
-                  >
-                    取消
-                  </button>
-                  <button
-                    onClick={deletingTestCase ? confirmDelete : confirmDeleteSuite}
-                    disabled={loading}
-                    className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
-                  >
-                    {loading ? (
-                      <>
-                        <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                        删除中...
-                      </>
-                    ) : (
-                      '确认删除'
-                    )}
-                  </button>
-                </div>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      <ConfirmModal
+        isOpen={showDeleteModal && (deletingTestCase !== null || deletingTestSuite !== null)}
+        onClose={() => {
+          setShowDeleteModal(false);
+          setDeletingTestCase(null);
+          setDeletingTestSuite(null);
+        }}
+        title="确认删除"
+        description={
+          <div className="space-y-2">
+            <p>
+              您确定要删除{deletingTestCase ? '测试用例' : '测试套件'} "
+              <span className="font-medium">
+                {deletingTestCase ? deletingTestCase?.name : deletingTestSuite?.name}
+              </span>" 吗？
+              此操作无法撤销。
+            </p>
+            {deletingTestSuite && (
+              <p className="text-sm text-amber-600">
+                注意：删除套件不会删除其中的测试用例，但会移除套件与用例的关联。
+              </p>
+            )}
+          </div>
+        }
+        onConfirm={deletingTestCase ? confirmDelete : confirmDeleteSuite}
+        confirmText="确认删除"
+        cancelText="取消"
+        variant="destructive"
+        isLoading={loading}
+        size="sm"
+      />
     </div>
   );
 }

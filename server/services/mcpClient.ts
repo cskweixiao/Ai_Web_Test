@@ -155,31 +155,128 @@ export class PlaywrightMcpClient {
         
       case 'expect':
         console.log(`✅ 验证元素: ${step.selector} ${step.condition}`);
-        const locator = this.page.locator(step.selector!);
         
-        switch (step.condition) {
-          case 'visible':
-            await locator.waitFor({ state: 'visible', timeout });
-            break;
-          case 'hidden':
-            await locator.waitFor({ state: 'hidden', timeout });
-            break;
-          case 'contains_text':
-            if (step.text) {
-              await locator.filter({ hasText: step.text }).waitFor({ timeout });
-            }
-            break;
-          default:
-            await locator.waitFor({ timeout });
+        // 优化：处理不同类型的断言条件
+        if (step.condition === 'url_changed') {
+          // 这种情况由AIParser添加的extendMcpClientWithCustomConditions处理
+          const currentUrl = this.page.url();
+          console.log(`   当前URL: ${currentUrl}`);
+          
+          if (step.url && !currentUrl.includes(step.url)) {
+            throw new Error(`URL未包含"${step.url}"，当前URL: ${currentUrl}`);
+          }
+          
+          if (currentUrl.includes('/login')) {
+            throw new Error(`URL仍然是登录页面: ${currentUrl}`);
+          }
+          
+          return {
+            action: 'expect',
+            condition: 'url_changed',
+            currentUrl,
+            status: 'success',
+            message: `验证URL已更改成功，当前: ${currentUrl}`
+          };
         }
         
-        return {
-          action: 'expect',
-          selector: step.selector,
-          condition: step.condition,
-          status: 'success',
-          message: `验证 ${step.selector} ${step.condition} 成功`
-        };
+        // 常规元素断言
+        const locator = this.page.locator(step.selector!);
+        
+        try {
+          switch (step.condition) {
+            case 'visible':
+              console.log(`   等待元素可见: ${step.selector}`);
+              await locator.waitFor({ state: 'visible', timeout });
+              break;
+              
+            case 'hidden':
+              console.log(`   等待元素隐藏: ${step.selector}`);
+              await locator.waitFor({ state: 'hidden', timeout });
+              break;
+              
+            case 'contains_text':
+              if (step.text) {
+                console.log(`   验证文本: "${step.text}"`);
+                // 首先确保元素存在并可见
+                await locator.waitFor({ timeout });
+                
+                // 然后检查文本内容
+                const content = await locator.textContent();
+                if (!content || !content.includes(step.text)) {
+                  throw new Error(`元素文本不包含"${step.text}"，实际文本: "${content}"`);
+                }
+              }
+              break;
+              
+            case 'logged_in':
+              // 特殊断言：检查是否已登录成功
+              console.log(`   验证登录状态...`);
+              
+              // 1. 检查URL是否已改变（不再是登录页面）
+              const currentUrl = this.page.url();
+              if (currentUrl.includes('/login')) {
+                throw new Error(`用户仍在登录页面: ${currentUrl}`);
+              }
+              
+              // 2. 尝试查找欢迎信息或用户信息元素
+              try {
+                // 尝试多种可能的选择器
+                const selectors = [
+                  '.user-info', 
+                  '.username', 
+                  '.welcome', 
+                  '.avatar',
+                  'header .user',
+                  '[data-testid="user-profile"]'
+                ];
+                
+                let found = false;
+                for (const selector of selectors) {
+                  const count = await this.page.locator(selector).count();
+                  if (count > 0) {
+                    console.log(`   找到用户信息元素: ${selector}`);
+                    found = true;
+                    break;
+                  }
+                }
+                
+                if (!found) {
+                  console.log(`   未找到明确的用户信息元素，但URL已更改，可能已登录`);
+                }
+              } catch (e) {
+                // 忽略错误，URL变化已经是登录成功的充分条件
+                console.log(`   检查用户元素时出错，但已确认URL变化`);
+              }
+              
+              break;
+              
+            default:
+              console.log(`   等待元素存在: ${step.selector}`);
+              await locator.waitFor({ timeout });
+          }
+          
+          return {
+            action: 'expect',
+            selector: step.selector,
+            condition: step.condition,
+            status: 'success',
+            message: `验证 ${step.selector} ${step.condition || 'exists'} 成功`
+          };
+        } catch (error: any) {
+          // 断言失败时，捕获并返回页面状态信息以便更好地调试
+          let errorDetails = error.message;
+          
+          try {
+            // 获取当前URL和标题，帮助调试
+            const url = await this.page.url();
+            const title = await this.page.title();
+            errorDetails += ` (页面: ${url}, 标题: ${title})`;
+          } catch (e) {
+            // 忽略额外信息获取失败
+          }
+          
+          throw new Error(`断言失败: ${errorDetails}`);
+        }
         
       case 'screenshot':
         console.log('📸 截图中...');

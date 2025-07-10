@@ -17,6 +17,8 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",
     "@prisma/client": "^6.11.1",
+    "@radix-ui/react-alert-dialog": "^1.1.14",
+    "@radix-ui/react-dialog": "^1.1.14",
     "bull": "^4.16.5",
     "clsx": "^2.0.0",
     "cors": "^2.8.5",

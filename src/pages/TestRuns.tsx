@@ -21,6 +21,7 @@ import { clsx } from 'clsx';
 
 // 🔥 引入测试服务
 import { testService } from '../services/testService';
+import { showToast } from '../utils/toast';
 
 // 🔥 使用真实的测试运行接口
 interface TestRun {
@@ -294,7 +295,7 @@ export function TestRuns() {
       setShowLogs(true);
     } catch (error: any) {
       console.error('加载测试报告失败:', error);
-      alert('加载测试报告失败: ' + (error.message || '未知错误'));
+      showToast.error('加载测试报告失败: ' + (error.message || '未知错误'));
     } finally {
       setLoading(false);
     }

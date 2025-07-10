@@ -151,6 +151,34 @@ export class WebSocketManager extends EventEmitter {
     });
   }
 
+  // 添加新方法：广播测试更新
+  public broadcastTestUpdate(testRun: any) {
+    if (!testRun || !testRun.runId) {
+      console.error('尝试广播测试更新，但未提供有效的testRun对象');
+      return;
+    }
+    
+    this.broadcast({
+      type: 'test_update',
+      runId: testRun.runId,
+      data: testRun
+    });
+  }
+
+  // 添加新方法：广播日志
+  public broadcastLog(runId: string, log: any) {
+    if (!runId) {
+      console.error('尝试广播日志，但未提供runId');
+      return;
+    }
+    
+    this.broadcast({
+      type: 'log',
+      runId,
+      data: log
+    });
+  }
+
   // 发送测试完成
   public sendTestComplete(runId: string, data: any) {
     if (!runId) {

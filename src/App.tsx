@@ -9,8 +9,13 @@ import { Settings } from './pages/Settings';
 import { LLMAssistant } from './pages/LLMAssistant';
 import { TestFactory } from './pages/TestFactory.tsx';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { ToastProvider } from './components/ui/toast';
+import { useSetupToast } from './utils/toast';
 
-function App() {
+function AppContent() {
+  // 设置Toast实例
+  useSetupToast();
+
   return (
     <Router>
       <Layout>
@@ -31,6 +36,14 @@ function App() {
         </ErrorBoundary>
       </Layout>
     </Router>
+  );
+}
+
+function App() {
+  return (
+    <ToastProvider>
+      <AppContent />
+    </ToastProvider>
   );
 }
 
