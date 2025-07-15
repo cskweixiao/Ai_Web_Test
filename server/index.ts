@@ -12,6 +12,7 @@ import { AITestParser } from './services/aiParser.js';
 import { PlaywrightMcpClient } from './services/mcpClient.js';
 import { PrismaClient } from '../src/generated/prisma';
 import crypto from 'crypto';
+import { testRunStore } from '../lib/TestRunStore.js';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -33,6 +34,14 @@ const testExecutionService = new TestExecutionService(wsManager, aiParser, mcpCl
 
 // 🔥 初始化套件执行服务
 const suiteExecutionService = new SuiteExecutionService(wsManager, testExecutionService);
+
+// 绑定WebSocket通知到Store
+testRunStore.onChange((runId, testRun) => {
+  wsManager.sendTestStatus(runId, testRun.status, testRun.error);
+  // 如果需要，也可以在这里发送详细的 testRun 对象
+  // wsManager.broadcast({ type: 'test_update', payload: testRun });
+});
+
 
 // 创建默认系统用户（如果不存在）
 async function ensureDefaultUser() {
@@ -153,8 +162,8 @@ app.get('/api/reports/:runId', async (req, res) => {
             testRun,
             summary: {
               status: testRun.status,
-              duration: testRun.finishedAt 
-                ? `${Math.round((testRun.finishedAt.getTime() - testRun.startedAt.getTime()) / 1000)}s`
+              duration: testRun.endedAt 
+                ? `${Math.round((testRun.endedAt.getTime() - testRun.startedAt.getTime()) / 1000)}s`
                 : '进行中...'
             }
           }

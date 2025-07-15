@@ -1,4 +1,5 @@
-import { TestStep } from './mcpClient.js';
+import { PlaywrightMcpClient } from './mcpClient.js';
+import type { TestStep } from '../../src/types/test.js';
 
 export interface AIParseResult {
   success: boolean;
@@ -19,15 +20,21 @@ export interface AINextStepParseResult {
 export class AITestParser {
   private readonly OPENROUTER_API_KEY = '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';
   private readonly API_URL = 'https://openrouter.ai/api/v1/chat/completions';
+  private readonly mcpClient: PlaywrightMcpClient;
+  private lastRemainingSteps: string = '';
+
+  constructor(mcpClient: PlaywrightMcpClient) {
+    this.mcpClient = mcpClient;
+  }
 
   /**
    * 使用GPT-4o解析自然语言测试描述
    */
-  async parseTestDescription(description: string, testName: string, runId: string): Promise<AIParseResult> {
+  async parseTestDescription(description: string, testName: string, runId: string, snapshot: any | null): Promise<AIParseResult> {
     try {
       console.log(`[${runId}] 🧠 AI开始解析测试描述:`, description);
 
-      const prompt = this.buildPrompt(description, testName);
+      const prompt = await this.buildPrompt(description, testName, snapshot);
       const response = await this.callOpenRouter(prompt, runId);
       
       if (!response.success || !response.content) {
@@ -61,66 +68,124 @@ export class AITestParser {
   }
 
   /**
-   * 构建优化的Prompt
+   * 构建优化的Prompt - 针对Playwright MCP优化
    */
-  private buildPrompt(description: string, testName: string): string {
-    return `你是一个专业的Web自动化测试专家。请将以下自然语言描述转换为结构化的测试步骤。
+  private async buildPrompt(description: string, testName: string, snapshot: any | null): Promise<string> {
+    const pageContext = snapshot ? await this.buildPageContext(snapshot) : '页面快照不可用。';
+
+    return `你是一个专业的Playwright MCP自动化测试专家。请将以下自然语言描述转换为结构化的测试步骤。
 
 测试用例名称: ${testName}
 测试描述: ${description}
 
-要求:
-1. 分析描述中的每个操作，转换为具体的测试步骤
-2. 自动修复URL中的错误(如"2www."改为"www.")
-3. 智能识别常见的CSS选择器
-4. 返回严格的JSON数组格式，不要任何其他文字
+${pageContext}
 
-支持的操作类型:
+要求:
+1. 分析描述中的每个操作，转换为具体的Playwright MCP测试步骤。
+2. **严格使用提供的页面快照信息**来生成精确的选择器。
+3. 如果生成的选择器在快照中匹配到多个元素，必须细化选择器直到它唯一匹配一个元素。
+4. 自动修复URL中的错误(如"2www."改为"www.")
+5. 优先使用Playwright推荐的选择器策略。
+6. 返回严格的JSON数组格式，不要任何其他文字。
+
+支持的Playwright MCP操作类型:
 - navigate: 打开网页
 - click: 点击元素
-- fill: 输入文本
-- expect: 验证元素存在/可见
-- wait: 等待指定时间
+- fill: 输入文本 (对应playwright的fill)
+- type: 逐字符输入 (对应playwright的type)
+- expect: 验证元素存在/可见/包含文本等
+- wait: 等待指定时间或条件
 - screenshot: 截图
 - hover: 悬停
+- drag: 拖拽元素
+- select_option: 下拉选择
+- file_upload: 文件上传
+- press_key: 按键操作
+- scroll: 滚动页面
 
 每个步骤的JSON格式:
 {
   "id": "step-N",
   "action": "操作类型",
-  "selector": "CSS选择器(如果需要)",
+  "selector": "选择器(优先使用Playwright语法)",
   "url": "网址(navigate时使用)",
-  "value": "输入值(fill时使用)",
+  "value": "输入值(fill/type时使用)",
   "text": "期望文本(expect时使用)",
-  "condition": "验证条件(expect时使用,如visible)",
+  "condition": "验证条件(expect时使用)",
   "timeout": 等待时间毫秒(wait时使用),
+  "key": "按键名称(press_key时使用)",
+  "position": "滚动位置(scroll时使用: top/bottom/center)",
+  "files": "文件路径数组(file_upload时使用)",
   "description": "步骤描述",
   "order": 步骤序号
 }
 
-常见选择器映射:
-- 搜索框: "#kw, .search-input, input[type='search']"
-- 搜索按钮: "#su, .btn-search, .search-btn"
-- 登录按钮: "#login-btn, .login-button, button:contains('登录')"
-- 用户名输入: "#username, #email, input[name='username']"
-- 密码输入: "#password, input[type='password']"
+🔥 **重要提示**: 
+1.  **导航后必须加等待**：在 \`navigate\` 操作之后，请务必紧跟一个 \`wait\` 步骤（例如等待3秒），确保页面有足够时间加载完成，否则后续步骤会因为找不到元素而失败。
+2.  **复杂操作分解**：将包含多个动作的步骤（如"输入密码并点击登录"）分解为多个独立的步骤。
+
+Playwright MCP推荐选择器策略 (按优先级排序):
+1. **文本定位器**: 
+   - 按钮: "button:has-text('登录')" 或 "text=登录"
+   - 链接: "a:has-text('商品管理')" 或 "text=商品管理"
+   - 任意元素: ":has-text('错误信息')"
+
+2. **角色定位器**:
+   - "role=button[name='提交']"
+   - "role=textbox[name='用户名']"
+   - "role=link[name='首页']"
+
+3. **属性定位器**:
+   - "data-testid=submit-btn"
+   - "placeholder=请输入用户名"
+   - "[name='username']"
+   - "#login-form"
+
+4. **组合选择器**:
+   - "form >> input[placeholder='密码']"
+   - ".nav-menu >> text=设置"
+   - "#sidebar >> role=button[name='保存']"
+
+常见元素选择器映射:
+- 搜索框: "input[placeholder*='搜索'], [data-testid*='search'], role=searchbox"
+- 登录按钮: "button:has-text('登录'), role=button[name*='登录'], [data-testid*='login']"
+- 用户名输入: "input[placeholder*='用户名'], input[name='username'], role=textbox[name*='用户']"
+- 密码输入: "input[type='password'], input[placeholder*='密码'], role=textbox[name*='密码']"
+- 提交按钮: "button[type='submit'], button:has-text('提交'), role=button[name*='提交']"
+- 导航菜单: "nav >> a:has-text('菜单项'), role=navigation >> role=link"
+- 错误提示: ".error, .alert, [role='alert'], :has-text('错误')"
 
 请直接返回JSON数组，例如:
 [
   {
     "id": "step-1",
     "action": "navigate",
-    "url": "https://www.baidu.com",
-    "description": "打开百度首页",
+    "url": "https://www.example.com",
+    "description": "打开示例网站",
     "order": 1
   },
   {
     "id": "step-2", 
     "action": "fill",
-    "selector": "#kw",
-    "value": "人工智能",
-    "description": "在搜索框输入关键词",
+    "selector": "input[placeholder*='用户名']",
+    "value": "testuser",
+    "description": "输入用户名",
     "order": 2
+  },
+  {
+    "id": "step-3",
+    "action": "click",
+    "selector": "button:has-text('登录')",
+    "description": "点击登录按钮",
+    "order": 3
+  },
+  {
+    "id": "step-4",
+    "action": "expect",
+    "selector": ":has-text('欢迎')",
+    "condition": "visible",
+    "description": "验证登录成功",
+    "order": 4
   }
 ]`;
   }
@@ -128,29 +193,40 @@ export class AITestParser {
   /**
    * 调用OpenRouter API
    */
-  private async callOpenRouter(prompt: string, runId: string, max_tokens = 2000): Promise<{success: boolean, content?: string, error?: string}> {
+  private async callOpenRouter(
+    prompt: string, 
+    runId: string, 
+    max_tokens = 2000,
+    format: 'text' | 'json_object' = 'text'
+  ): Promise<{success: boolean, content?: string, error?: string}> {
     try {
+      const body: any = {
+        "model": "openai/gpt-4o",
+        "messages": [
+          {
+            "role": "system",
+            "content": "You are a professional Playwright MCP automation testing expert. Convert natural language descriptions into executable Playwright MCP test steps using recommended selector strategies. Return strict JSON format optimized for Playwright MCP execution."
+          },
+          {
+            "role": "user", 
+            "content": prompt
+          }
+        ],
+        "temperature": 0.3,
+        "max_tokens": max_tokens
+      };
+
+      if (format === 'json_object') {
+        body.response_format = { "type": "json_object" };
+      }
+
       const response = await fetch(this.API_URL, {
         method: "POST",
         headers: {
           "Authorization": `Bearer ${this.OPENROUTER_API_KEY}`,
           "Content-Type": "application/json"
         },
-        body: JSON.stringify({
-          "model": "openai/gpt-4o",
-          "messages": [
-            {
-              "role": "system",
-              "content": "You are a professional web automation testing expert. Convert natural language descriptions into executable test steps. Return strict JSON format."
-            },
-            {
-              "role": "user", 
-              "content": prompt
-            }
-          ],
-          "temperature": 0.3,
-          "max_tokens": max_tokens
-        })
+        body: JSON.stringify(body)
       });
 
       if (!response.ok) {
@@ -307,32 +383,220 @@ export class AITestParser {
    */
   private parseAINextStepResponse(content: string, runId: string): { step: TestStep; remaining: string } {
     try {
-      this.log(runId, `AI返回内容: ${content}`);
-      const cleanContent = this.extractJson(content, 'object');
-      const parsed = JSON.parse(cleanContent);
+      const step = JSON.parse(content) as TestStep;
 
-      if (!parsed.nextStep || typeof parsed.remainingSteps !== 'string') {
-        throw new Error('AI响应缺少 "nextStep" 或 "remainingSteps" 字段。');
-      }
-
-      const stepData = parsed.nextStep;
-      const remaining = parsed.remainingSteps.trim();
-
-      // 验证关键步骤是否包含选择器
-      if ((stepData.action === 'click' || stepData.action === 'fill') && !stepData.selector) {
-        const errorMsg = `AI未能为操作 '${stepData.description}' 提供选择器。`;
-        this.log(runId, errorMsg, 'error');
-        throw new Error(errorMsg);
-      }
+      // Manually find the step description in the original remaining steps to split them.
+      // This is a bit brittle but necessary since the AI now only returns the next step.
+      const originalRemaining = this.lastRemainingSteps || '';
+      const stepDescription = step.description;
       
-      this.log(runId, `AI成功解析步骤: ${stepData.description}`);
-      return { step: stepData, remaining };
+      let remaining = '';
+      const lines = originalRemaining.split('\n');
+      const stepIndex = lines.findIndex(line => line.includes(stepDescription));
+      
+      if (stepIndex !== -1 && stepIndex + 1 < lines.length) {
+        remaining = lines.slice(stepIndex + 1).join('\n');
+      }
 
+      this.log(runId, `📝 AI成功解析步骤: ${step.description}`);
+      return { step, remaining };
     } catch (error: any) {
-      this.log(runId, `解析AI的下一步响应失败: ${error.message}`, 'error');
-      this.log(runId, `原始内容: ${content}`, 'error');
+      this.log(runId, `❌ 解析AI的下一步响应失败: ${error.message}`, 'error');
+      this.log(runId, `❌ 原始内容: ${content}`, 'error');
       throw new Error(`解析下一步错误: ${error.message}`);
     }
+  }
+
+  /**
+   * 🆕 智能选择器增强和验证 - 包含冲突解决
+   */
+  private enhanceSelector(step: TestStep, description: string, runId: string): TestStep {
+    this.log(runId, `🔧 开始增强选择器: "${step.selector}" for "${description}"`);
+    
+    // 如果是导航操作，无需选择器
+    if (step.action === 'navigate') {
+      return step;
+    }
+    
+    // 提取步骤描述中的关键文本
+    const keyText = this.extractKeyTextFromDescription(description);
+    this.log(runId, `📝 提取的关键文本: "${keyText}"`);
+    
+    // 🆕 完全信任AI生成的选择器，不做任何修改
+    if (step.selector && this.isSelectorTextBased(step.selector)) {
+      this.log(runId, `✅ 保持AI生成的文本选择器不变: "${step.selector}"`);
+      return step;
+    }
+    
+    // 如果选择器是通用类选择器，尝试增强
+    if (step.selector && this.isGenericSelector(step.selector)) {
+      this.log(runId, `⚠️ 检测到通用选择器，尝试增强`);
+      
+      // 尝试添加文本约束
+      if (keyText) {
+        const enhancedSelector = this.addTextConstraintToSelector(step.selector, keyText);
+        if (enhancedSelector !== step.selector) {
+          this.log(runId, `🔧 选择器已增强: "${step.selector}" → "${enhancedSelector}"`);
+          step.selector = enhancedSelector;
+        }
+      }
+    }
+    
+    return step;
+  }
+  
+  /**
+   * 🆕 从步骤描述中提取关键文本
+   */
+  private extractKeyTextFromDescription(description: string): string {
+    // 移除常见的动作词，提取核心文本
+    const actionWords = ['点击', '输入', '填写', '选择', '等待', '验证', '打开', 'click', 'fill', 'type', 'select', 'enter', 'choose', 'wait', 'verify', 'open'];
+    let text = description;
+    
+    // 移除动作词
+    actionWords.forEach(word => {
+      text = text.replace(new RegExp(`\\b${word}\\b`, 'gi'), '').trim();
+    });
+    
+    // 移除常见的辅助词
+    const auxiliaryWords = ['菜单', '按钮', '输入框', '字段', '元素', '页面', '链接', '选项', 'menu', 'button', 'input', 'field', 'element', 'page', 'link', 'option'];
+    auxiliaryWords.forEach(word => {
+      text = text.replace(new RegExp(`\\b${word}\\b`, 'gi'), '').trim();
+    });
+    
+    // 移除引号和其他标点
+    text = text.replace(/["""''()（）]/g, '').trim();
+    
+    // 如果提取的文本太短或为空，尝试其他策略
+    if (!text || text.length < 2) {
+      // 寻找引号中的内容
+      const quotedMatch = description.match(/[""]([^"""]+)[""]|'([^']+)'/);
+      if (quotedMatch) {
+        text = quotedMatch[1] || quotedMatch[2];
+      } else {
+        // 尝试找到最长的连续字符串（排除动作词）
+        const words = description.split(/\s+/).filter(word => 
+          word.length > 1 && !actionWords.some(action => 
+            word.toLowerCase().includes(action.toLowerCase())
+          )
+        );
+        if (words.length > 0) {
+          text = words.reduce((longest, current) => 
+            current.length > longest.length ? current : longest
+          );
+        }
+      }
+    }
+    
+    return text;
+  }
+  
+  /**
+   * 🆕 检查选择器是否基于文本
+   */
+  private isSelectorTextBased(selector: string): boolean {
+    return selector.includes(':has-text(') || 
+           selector.includes(':contains(') ||
+           selector.includes('text=') ||
+           selector.includes(':text(');
+  }
+  
+  /**
+   * 🆕 检查是否为通用选择器
+   */
+  private isGenericSelector(selector: string): boolean {
+    // 检查是否是纯类选择器或标签选择器
+    const genericPatterns = [
+      /^\.[\w-]+$/,           // 纯类选择器 .menu-item
+      /^[a-z]+\.[\w-]+$/,     // 标签+类 a.menu-item
+      /^[a-z]+$/,             // 纯标签选择器 a, button
+      /^\.[\w-]+\.[\w-]+$/,   // 多类选择器 .menu.item
+    ];
+    
+    return genericPatterns.some(pattern => pattern.test(selector));
+  }
+  
+  /**
+   * 🆕 为选择器添加文本约束
+   */
+  private addTextConstraintToSelector(selector: string, text: string): string {
+    if (!text) return selector;
+    
+    // 为不同类型的选择器添加文本约束
+    if (selector.startsWith('.')) {
+      // 类选择器：.menu-item → .menu-item:has-text("商品管理")
+      return `${selector}:has-text("${text}")`;
+    } else if (selector.match(/^[a-z]+$/)) {
+      // 标签选择器：a → a:has-text("商品管理")
+      return `${selector}:has-text("${text}")`;
+    } else if (selector.match(/^[a-z]+\.[\w-]+$/)) {
+      // 标签+类选择器：a.menu-item → a.menu-item:has-text("商品管理")
+      return `${selector}:has-text("${text}")`;
+    }
+    
+    // 其他情况，尝试智能添加
+    return `${selector}:has-text("${text}")`;
+  }
+  
+  /**
+   * 🆕 移除多匹配冲突修改 - 完全信任AI判断
+   */
+  private resolveTextBasedConflict(selector: string, description: string, keyText: string): string {
+    // 新策略：完全保持AI生成的选择器不变
+    // 多匹配问题应该在执行阶段通过更智能的方式处理，而不是在解析阶段强行修改
+    return selector;
+  }
+
+  /**
+   * 🆕 生成备选选择器策略
+   */
+  private generateFallbackSelectors(description: string, keyText: string): string[] {
+    const selectors: string[] = [];
+    
+    if (!keyText) return selectors;
+    
+    // 策略1: 基于文本的通用选择器
+    selectors.push(`:has-text("${keyText}")`);
+    selectors.push(`:contains("${keyText}")`);
+    
+    // 策略2: 推测可能的标签+文本（基于通用操作模式）
+    const lowerDesc = description.toLowerCase();
+    const clickWords = ['点击', 'click', '选择', 'select', '按'];
+    const inputWords = ['输入', '填写', 'fill', 'type', 'enter'];
+    const navWords = ['菜单', '导航', 'menu', 'nav', '链接', 'link'];
+    
+    if (clickWords.some(word => lowerDesc.includes(word))) {
+      selectors.push(`a:has-text("${keyText}")`);
+      selectors.push(`button:has-text("${keyText}")`);
+      selectors.push(`[role="button"]:has-text("${keyText}")`);
+      selectors.push(`[role="menuitem"]:has-text("${keyText}")`);
+    }
+    
+    if (inputWords.some(word => lowerDesc.includes(word))) {
+      selectors.push(`input[placeholder*="${keyText}"]`);
+      selectors.push(`input[name*="${keyText}"]`);
+      selectors.push(`textarea[placeholder*="${keyText}"]`);
+    }
+    
+    // 策略3: 导航/菜单相关选择器（基于通用模式）
+    if (navWords.some(word => lowerDesc.includes(word))) {
+      selectors.push(`nav a:has-text("${keyText}")`);
+      selectors.push(`.menu a:has-text("${keyText}")`);
+      selectors.push(`.nav a:has-text("${keyText}")`);
+      selectors.push(`[role="navigation"] a:has-text("${keyText}")`);
+      selectors.push(`.sidebar a:has-text("${keyText}")`);
+      selectors.push(`[role="menubar"] a:has-text("${keyText}")`);
+    }
+    
+    // 策略4: 基于常见CSS类模式的组合选择器
+    const commonClassPatterns = ['item', 'link', 'button', 'menu', 'nav', 'tab'];
+    commonClassPatterns.forEach(pattern => {
+      selectors.push(`.${pattern}:has-text("${keyText}")`);
+      selectors.push(`a.${pattern}:has-text("${keyText}")`);
+      selectors.push(`button.${pattern}:has-text("${keyText}")`);
+    });
+    
+    return selectors;
   }
 
   private extractJson(content: string, type: 'object' | 'array'): string {
@@ -428,40 +692,204 @@ export class AITestParser {
       attributes: el.attributes
     }));
 
-    return `你是一个智能选择器生成器。根据用户意图和页面元素，找到最佳CSS选择器。
+    return `你是一个Playwright MCP智能选择器生成器。根据用户意图和页面元素，找到最佳的Playwright MCP选择器。
+
 用户意图: "${originalStep.description}"
 原始选择器: "${originalStep.selector}"
 
 页面元素:
 ${JSON.stringify(simplifiedElements, null, 2)}
 
-返回最佳的CSS选择器:`;
+请使用Playwright MCP推荐的选择器策略：
+1. 优先使用文本定位器：:has-text(), text=
+2. 其次使用角色定位器：role=button, role=textbox
+3. 然后使用属性定位器：[data-testid], [placeholder]
+4. 最后使用组合选择器：parent >> child
+
+返回最佳的Playwright MCP选择器:`;
   }
 
   // --- 主要的解析方法 ---
   
   public async parseNextStep(remainingStepsText: string, snapshot: any | null, runId: string): Promise<AINextStepParseResult> {
     try {
-      this.log(runId, `🧠 AI开始从以下内容解析下一步: "${remainingStepsText}"`);
-      const prompt = this.buildNextStepPrompt(remainingStepsText, snapshot);
-      const response = await this.callOpenRouter(prompt, runId, 1000);
+      if (!remainingStepsText?.trim()) {
+        return { success: true, step: undefined, remaining: '' };
+      }
+      this.lastRemainingSteps = remainingStepsText; // Cache for response parsing
+
+      const prompt = await this.buildNextStepPrompt(remainingStepsText, snapshot);
+      const response = await this.callOpenRouter(prompt, runId, 400, 'json_object');
 
       if (!response.success || !response.content) {
-        return { success: false, error: response.error || 'AI调用失败' };
+        throw new Error(response.error || 'AI failed to return content for the next step.');
       }
-      
-      const parsed = this.parseAINextStepResponse(response.content, runId);
+
+      const { step, remaining } = this.parseAINextStepResponse(response.content, runId);
 
       return {
         success: true,
-        step: parsed.step,
-        remaining: parsed.remaining,
+        step: step,
+        remaining: remaining,
+        rawResponse: response.content
       };
-
     } catch (error: any) {
-      this.log(runId, `❌ 解析下一步失败: ${error.message}`, 'error');
-      return { success: false, error: error.message };
+      console.error(`[${runId}] 解析下一步失败:`, error.message);
+      return {
+        success: false,
+        error: error.message,
+      };
     }
+  }
+
+  /**
+   * 🆕 记录选择器分析信息
+   */
+  private logSelectorAnalysis(step: TestStep, description: string, runId: string): void {
+    if (!step.selector) return;
+    
+    const analysis = {
+      原始描述: description,
+      操作类型: step.action,
+      选择器: step.selector,
+      是否文本基础: this.isSelectorTextBased(step.selector),
+      是否通用选择器: this.isGenericSelector(step.selector),
+      提取的关键文本: this.extractKeyTextFromDescription(description)
+    };
+    
+    this.log(runId, `📊 选择器分析: ${JSON.stringify(analysis, null, 2)}`);
+  }
+
+  /**
+   * 🆕 错误恢复机制
+   */
+  private async attemptErrorRecovery(
+    remainingStepsText: string, 
+    runId: string, 
+    originalError: string
+  ): Promise<AINextStepParseResult> {
+    try {
+      this.log(runId, `🔄 尝试错误恢复，原始错误: ${originalError}`);
+      
+      const firstLine = remainingStepsText.split('\n')[0].trim();
+      const keyText = this.extractKeyTextFromDescription(firstLine);
+      
+      if (!keyText) {
+        this.log(runId, `❌ 无法提取关键文本，错误恢复失败`);
+        return { success: false, error: `错误恢复失败: 无法提取关键文本` };
+      }
+      
+      // 构建简化的提示，专注于选择器生成
+      const recoveryPrompt = `Based on this failed parsing, please generate a simple Playwright MCP step.
+
+Failed step: "${firstLine}"
+Key text identified: "${keyText}"
+Original error: ${originalError}
+
+Generate a JSON object with nextStep using Playwright MCP selector strategies:
+- For clicks: use :has-text() selectors (e.g., button:has-text("Save"))
+- For inputs: use role=textbox or placeholder attributes
+- For navigation: use text= or role=link selectors
+- Be very specific and avoid generic selectors
+
+Use Playwright MCP recommended selector priority:
+1. Text-based: :has-text(), text=
+2. Role-based: role=button, role=textbox
+3. Attribute-based: [data-testid], [placeholder]
+
+Return format:
+{
+  "nextStep": {
+    "action": "...",
+    "selector": "...",
+    "description": "..."
+  },
+  "remainingSteps": "..."
+}`;
+
+      const response = await this.callOpenRouter(recoveryPrompt, runId, 500);
+      
+      if (response.success && response.content) {
+        const parsed = this.parseAINextStepResponse(response.content, runId);
+        this.log(runId, `✅ 错误恢复解析成功: ${parsed.step.description}`);
+        
+        return {
+          success: true,
+          step: parsed.step,
+          remaining: parsed.remaining,
+          rawResponse: response.content
+        };
+      }
+      
+      // 如果AI仍然失败，返回手工构建的基本步骤
+      return this.createBasicFallbackStep(firstLine, keyText, remainingStepsText);
+      
+    } catch (error: any) {
+      this.log(runId, `❌ 错误恢复失败: ${error.message}`, 'error');
+      return { success: false, error: `错误恢复失败: ${error.message}` };
+    }
+  }
+
+  /**
+   * 🆕 创建基本的回退步骤
+   */
+  private createBasicFallbackStep(
+    firstLine: string, 
+    keyText: string, 
+    remainingStepsText: string
+  ): AINextStepParseResult {
+    const remaining = remainingStepsText.split('\n').slice(1).join('\n').trim();
+    
+    // 基于描述推测操作类型
+    let action = 'wait'; // 默认安全操作
+    let selector: string | undefined = 'body';
+    
+    const lowerDesc = firstLine.toLowerCase();
+    const clickWords = ['点击', 'click', '选择', 'select', '按'];
+    const inputWords = ['输入', '填写', 'fill', 'type', 'enter'];
+    const navWords = ['导航', '打开', 'navigate', 'open', '访问', 'visit'];
+    
+    if (clickWords.some(word => lowerDesc.includes(word))) {
+      action = 'click';
+      selector = keyText ? `button:has-text("${keyText}")` : 'button';
+    } else if (inputWords.some(word => lowerDesc.includes(word))) {
+      action = 'fill';
+      selector = keyText ? `role=textbox[placeholder*="${keyText}"]` : 'role=textbox';
+    } else if (navWords.some(word => lowerDesc.includes(word))) {
+      action = 'navigate';
+      selector = undefined;
+    }
+    
+    const step: TestStep = {
+      id: `recovery-step-${Date.now()}`,
+      action: action as any,
+      description: `恢复步骤: ${firstLine}`,
+      order: 1
+    };
+    
+    // 为需要选择器的操作添加选择器
+    if (selector) {
+      step.selector = selector;
+    }
+    
+    // 为导航步骤添加URL
+    if (action === 'navigate') {
+      const urlMatch = firstLine.match(/https?:\/\/[^\s]+/);
+      if (urlMatch) {
+        step.url = urlMatch[0];
+      }
+    }
+    
+    // 为wait步骤添加timeout
+    if (action === 'wait') {
+      step.timeout = 3000;
+    }
+    
+    return {
+      success: true,
+      step: step,
+      remaining: remaining
+    };
   }
 
   /**
@@ -469,176 +897,66 @@ ${JSON.stringify(simplifiedElements, null, 2)}
    */
   public async parseAssertions(assertionsText: string, snapshot: any, runId:string): Promise<AIParseResult> {
     try {
-      console.log(`[${runId}] 🧠 开始解析断言: "${assertionsText}"`);
-      console.log(`[${runId}] 📸 页面快照标题: "${snapshot.title || '无标题'}"`);
-      console.log(`[${runId}] 📸 页面快照URL: "${snapshot.url || '未知'}"`);
+      this.log(runId, `🧠 AI开始解析断言: "${assertionsText}"`);
+
+      // 使用MCP工具从快照中提取有效选择器
+      const selectorsResult = await this.mcpClient.callTool({
+        name: 'page_get_selectors', // 假设的工具
+        arguments: { snapshot },
+      }) as { selectors: string[] };
+      const validSelectors = selectorsResult.selectors || [];
       
-      // 步骤1: 分析断言类型
+      if (validSelectors.length === 0) {
+        this.log(runId, '⚠️ 页面快照中未找到有效选择器', 'warning');
+      }
+
       const assertionType = this.identifyAssertionType(assertionsText);
-      console.log(`[${runId}] 🔍 断言类型识别: ${assertionType}`);
       
-      // 步骤2: 提取有效元素选择器列表
-      const validSelectors = this.extractValidSelectors(snapshot.elements || []);
-      console.log(`[${runId}] 🔍 页面上有效选择器: ${validSelectors.length}个`);
+      const prompt = await this.buildEnhancedAssertionsPrompt(
+        assertionsText, 
+        snapshot, 
+        assertionType, 
+        validSelectors
+      );
       
-      // 步骤3: 使用增强的断言提示
-      const prompt = this.buildEnhancedAssertionsPrompt(assertionsText, snapshot, assertionType, validSelectors);
       const response = await this.callOpenRouter(prompt, runId);
       
       if (!response.success || !response.content) {
-        throw new Error(response.error || '断言解析失败，返回内容为空');
+        throw new Error(response.error || 'AI未能返回断言步骤');
       }
 
-      const steps = this.parseAIResponse(response.content, runId);
+      let steps = this.parseAIResponse(response.content, runId);
+
+      // 进一步增强和验证
+      steps = await this.enhanceAndVerifyAssertions(steps, snapshot, assertionType, validSelectors, runId);
       
-      // 步骤4: 验证和修复生成的断言选择器
-      const enhancedSteps = await this.enhanceAndVerifyAssertions(steps, snapshot, assertionType, validSelectors, runId);
-      
-      // 记录每个断言步骤的详情
-      enhancedSteps.filter(s => s.action === 'expect').forEach((step, idx) => {
-        console.log(`[${runId}] 🔍 断言 #${idx+1}: ${JSON.stringify({
-          selector: step.selector,
-          condition: step.condition,
-          text: step.text,
-          description: step.description
-        })}`);
-      });
-      
+      this.log(runId, `✅ AI断言解析完成，生成${steps.length}个步骤`);
+
       return {
         success: true,
-        steps: enhancedSteps,
-        rawResponse: response.content,
-        parsedDetails: {
-          assertionsText,
-          snapshotUrl: snapshot.url,
-          assertionType: assertionType,
-          assertionCount: enhancedSteps.filter(s => s.action === 'expect').length,
-          method: "混合断言策略"
-        }
+        steps,
+        rawResponse: response.content
       };
+
     } catch (error: any) {
-      console.error(`[${runId}] ❌ 断言解析失败:`, error);
-      
-      // 直接返回错误，让调用者处理
+      this.log(runId, `❌ AI断言解析失败: ${error.message}`, 'error');
       return {
         success: false,
         steps: [],
-        error: `断言解析错误: ${error.message}`,
-        rawResponse: error.stack || "无详细错误信息"
+        error: error.message
       };
     }
   }
-  
-  /**
-   * 识别断言类型
-   */
+
   private identifyAssertionType(assertionsText: string): 'text' | 'attribute' | 'state' | 'visual' | 'relation' {
-    assertionsText = assertionsText.toLowerCase();
-    
-    // 文本相关的断言
-    if (assertionsText.match(/显示|文本|内容|包含|提示|消息|出现|文案|显示/)) {
-      return 'text';
-    }
-    
-    // 属性相关的断言
-    if (assertionsText.match(/属性|禁用|启用|选中|checked|disabled|enabled|selected|属性/)) {
-      return 'attribute';
-    }
-    
-    // 状态相关的断言
-    if (assertionsText.match(/状态|成功|失败|登录|跳转|导航|url|链接|地址|切换/)) {
-      return 'state';
-    }
-    
-    // 视觉相关的断言
-    if (assertionsText.match(/颜色|大小|位置|可见|隐藏|visible|hidden|style|样式|图片|图标/)) {
-      return 'visual';
-    }
-    
-    // 元素关系相关的断言
-    if (assertionsText.match(/前面|后面|内部|包含|父|子|兄弟|下方|上方|旁边|左侧|右侧/)) {
-      return 'relation';
-    }
-    
-    // 默认为文本断言
-    return 'text';
+    const lowerText = assertionsText.toLowerCase();
+    if (lowerText.includes('属性') || lowerText.includes('attribute') || /has|have|prop/.test(lowerText)) return 'attribute';
+    if (lowerText.includes('状态') || /is |are /.test(lowerText)) return 'state';
+    if (lowerText.includes('对比') || lowerText.includes('样子') || lowerText.includes('appear')) return 'visual';
+    if (lowerText.includes('关系') || lowerText.includes('位于') || /inside|below|above/.test(lowerText)) return 'relation';
+    return 'text'; // 默认
   }
-  
-  /**
-   * 从页面元素中提取有效选择器
-   */
-  private extractValidSelectors(elements: any[]): string[] {
-    if (!elements || elements.length === 0) {
-      return [];
-    }
-    
-    const selectors: string[] = [];
-    
-    elements.forEach(element => {
-      // 基于ID的选择器
-      if (element.id) {
-        selectors.push(`#${element.id}`);
-      }
-      
-      // 基于class的选择器
-      if (element.className && typeof element.className === 'string') {
-        const classes = element.className.trim().split(/\s+/);
-        if (classes.length > 0) {
-          selectors.push(`.${classes.join('.')}`);
-        }
-      }
-      
-      // 基于标签和属性的选择器
-      if (element.tagName) {
-        const tag = element.tagName.toLowerCase();
-        
-        // 输入框
-        if (tag === 'input' && element.attributes) {
-          // 基于placeholder
-          if (element.attributes.placeholder) {
-            selectors.push(`input[placeholder='${element.attributes.placeholder}']`);
-          }
-          
-          // 基于type
-          if (element.attributes.type) {
-            selectors.push(`input[type='${element.attributes.type}']`);
-          }
-          
-          // 基于name
-          if (element.attributes.name) {
-            selectors.push(`input[name='${element.attributes.name}']`);
-          }
-        }
-        
-        // 按钮
-        if (tag === 'button' && element.innerText) {
-          selectors.push(`button:contains('${element.innerText}')`);
-        }
-        
-        // 链接
-        if (tag === 'a' && element.innerText) {
-          selectors.push(`a:contains('${element.innerText}')`);
-        }
-      }
-      
-      // 基于包含文本的选择器(任何元素)
-      if (element.innerText && element.tagName) {
-        const text = element.innerText.trim();
-        if (text.length > 0) {
-          const tag = element.tagName.toLowerCase();
-          selectors.push(`${tag}:contains('${text}')`);
-          
-          // 通用选择器
-          if (text.length < 50) { // 避免过长文本
-            selectors.push(`:contains('${text}')`);
-          }
-        }
-      }
-    });
-    
-    return [...new Set(selectors)]; // 去重
-  }
-  
+
   /**
    * 增强和验证生成的断言
    */
@@ -918,187 +1236,83 @@ ${JSON.stringify(simplifiedElements, null, 2)}
   // --- Prompt 构建方法 ---
 
   /**
-   * 增强的断言提示构建 - 包含类型识别和有效选择器提示
+   * 增强的断言提示构建 - 针对Playwright MCP优化
    */
-  private buildEnhancedAssertionsPrompt(
+  private async buildEnhancedAssertionsPrompt(
     assertionsText: string, 
     snapshot: any, 
     assertionType: string, 
     validSelectors: string[]
-  ): string {
-    const pageTitle = snapshot.title || '无标题页面';
-    const pageUrl = snapshot.url || '未知URL';
-    
-    // 提取页面上可能的关键元素列表（最多10个）
-    const keyElements = this.extractKeyElements(snapshot.elements || []);
-    const elementsText = keyElements.length > 0 
-      ? `页面上的关键元素:\n${keyElements.join('\n')}` 
-      : '页面上没有找到关键元素';
-    
-    // 提取页面文本内容
-    const pageTexts = this.extractPageTexts(snapshot.elements || []);
-    const pageTextsStr = pageTexts.length > 0
-      ? `页面文本内容:\n${pageTexts.join('\n')}`
-      : '未找到页面文本内容';
-    
-    // 创建有效选择器列表字符串
-    const selectorsText = validSelectors.length > 0
-      ? `有效的页面选择器: \n${validSelectors.slice(0, 30).join('\n')}`
-      : '页面未提供有效选择器';
-      
-    // 根据断言类型提供特定指导
-    let typeSpecificGuidance = '';
-    switch(assertionType) {
-      case 'text':
-        typeSpecificGuidance = `
-【文本类型断言】指导:
-1. 你的任务是验证页面中是否存在与"${assertionsText}"相关的文本
-2. 首先在页面文本内容中查找关键词，提取核心信息（如"密码不能为空"中的"密码"+"不能为空"）
-3. 【重要】错误/提示信息通常显示在专门的提示元素中，而不是表单输入框内部
-4. 【重要】表单验证错误通常显示在表单字段附近，但不是字段本身
-5. 使用contains_text条件，不要求完全匹配，只需包含核心关键词即可
-6. 如果找不到精确元素，可以尝试更通用的选择器如错误信息容器(.error, .message, .alert等)`;
-        break;
-      case 'state':
-        typeSpecificGuidance = `
-【状态类型断言】指导:
-1. 你的任务是验证页面状态变化，如登录成功、操作完成等
-2. 检查URL变化、登录状态指示器或成功/失败消息
-3. 寻找状态指示元素，如成功图标、欢迎信息等`;
-        break;
-      case 'visual':
-        typeSpecificGuidance = `
-【视觉类型断言】指导:
-1. 你的任务是验证元素的可见性或视觉状态
-2. 检查特定元素是否可见、隐藏或有特定样式`;
-        break;
-      case 'attribute':
-        typeSpecificGuidance = `
-【属性类型断言】指导:
-1. 你的任务是验证元素属性，如禁用状态、选中状态等
-2. 检查表单元素的状态属性是否符合预期`;
-        break;
-      case 'relation':
-        typeSpecificGuidance = `
-【关系类型断言】指导:
-1. 你的任务是验证元素之间的关系
-2. 检查元素的层次结构或相对位置`;
-        break;
-    }
+  ): Promise<string> {
+    const pageContext = await this.buildPageContext(snapshot);
 
-    return `你是一个专业的Web自动化测试断言专家。你的唯一任务是根据页面信息创建准确的断言步骤，验证页面是否符合预期。
+    return `
+You are a top-tier QA automation expert specializing in Playwright. Your task is to convert a natural language assertion into a precise and robust Playwright MCP 'expect' step.
 
-【断言目标】: "${assertionsText}"
+**Natural Language Assertion:**
+"${assertionsText}"
 
-【当前页面信息】:
-- 标题: ${pageTitle}
-- URL: ${pageUrl}
-- 断言类型: ${assertionType}
+**Analysis:**
+- Assertion Type: ${assertionType}
+- Available Selectors on Page: ${validSelectors.join(', ') || 'N/A'}
 
-${pageTextsStr}
+${pageContext}
 
-${elementsText}
+**Instructions:**
+1.  **Analyze the user's intent** based on the assertion text.
+2.  **Select the BEST possible selector** from the available selectors list or create a more robust one based on the page context. Prioritize text, roles, and stable attributes.
+3.  **Determine the correct 'condition'** for the 'expect' step (e.g., 'visible', 'contains_text', 'has_attribute').
+4.  **Construct a single, perfect JSON object** for the 'expect' step.
+5.  **Return ONLY the JSON object.** No extra text or explanations.
 
-${selectorsText}
+**JSON Output Format:**
+{
+  "id": "assertion-1",
+  "action": "expect",
+  "selector": "your_best_selector",
+  "condition": "the_correct_condition",
+  "text": "text_to_check (if applicable)",
+  "attribute": { "name": "attr_name", "value": "attr_value" } (if applicable),
+  "description": "A concise summary of the assertion"
+}
 
-${typeSpecificGuidance}
-
-【断言要求】:
-1. 你必须创建断言步骤，验证"${assertionsText}"是否满足
-2. 断言必须精确匹配用户意图，不要过度解释或扩展断言范围
-3. 【关键】分析页面文本内容，寻找与断言相关的文本（如错误提示、成功消息）
-4. 【重要】仅使用上面列出的"有效的页面选择器"，不要创造不存在的选择器
-5. 如果找不到精确匹配的选择器，使用包含相关文本的元素
-6. 必要时添加wait步骤等待元素出现（必须设置timeout值）
-7. 不要添加navigate操作或其他改变页面状态的操作
-
-【支持的条件类型】:
-- visible: 元素可见
-- hidden: 元素隐藏
-- contains_text: 元素包含指定文本（最常用，推荐）
-- url_changed: URL已更改
-- logged_in: 登录状态检查
-
-返回严格的JSON数组格式，例如:
-[
-  {
-    "id": "assertion-1",
-    "action": "wait",
-    "timeout": 3000,
-    "description": "等待3秒确保状态更新",
-    "order": 1
-  },
-  {
-    "id": "assertion-2",
-    "action": "expect",
-    "selector": "选择器",
-    "condition": "contains_text",
-    "text": "关键文本",
-    "description": "验证页面包含期望文本",
-    "order": 2
-  }
-]`;
+**Example:**
+For an assertion "verify the error message 'Invalid credentials' is shown", your output should be:
+{
+  "id": "assertion-1",
+  "action": "expect",
+  "selector": ".error-message:has-text('Invalid credentials')",
+  "condition": "visible",
+  "description": "Verify error message is visible"
+}
+`;
   }
 
-  /**
-   * 旧版断言提示构建方法(保留作为兼容和参考)
-   */
-  private buildAssertionsPromptWithContext(assertionsText: string, snapshot: any): string {
-    const pageTitle = snapshot.title || '无标题页面';
-    const pageUrl = snapshot.url || '未知URL';
-    
-    // 提取页面上可能的关键元素列表（最多10个）
-    const keyElements = this.extractKeyElements(snapshot.elements || []);
-    const elementsText = keyElements.length > 0 
-      ? `页面上的关键元素:\n${keyElements.join('\n')}` 
-      : '页面上没有找到关键元素';
 
-    return `你是一个专业的Web自动化测试专家。请根据当前页面信息和预期结果，创建准确的断言步骤。
+  private async buildAssertionsPromptWithContext(assertionsText: string, snapshot: any): Promise<string> {
+    const pageContext = await this.buildPageContext(snapshot);
 
-当前页面信息:
-- 标题: ${pageTitle}
-- URL: ${pageUrl}
-- 当前时间: ${new Date().toISOString()}
+    return `
+You are a QA automation expert. Convert the following natural language assertion into a Playwright MCP 'expect' step based on the provided page context.
 
-${elementsText}
+**Assertion:**
+"${assertionsText}"
 
-用户期望的测试结果: "${assertionsText}"
+${pageContext}
 
-要求:
-1. 创建一系列断言步骤，验证页面是否满足预期结果
-2. 对所有类型的断言采用相同的分析逻辑，不要特殊处理某种类型
-3. 根据页面上下文提供合适的验证步骤，如验证特定元素存在、文本内容匹配等
-4. 对于页面上找不到相关元素的情况，可以添加wait步骤等待元素出现
-5. 优先使用可见文本和语义化元素进行断言
-6. 严禁添加navigate操作，不要离开当前页面
+**Task:**
+Return a single JSON object for the 'expect' step.
 
-支持的条件类型:
-- visible: 元素可见
-- hidden: 元素隐藏
-- contains_text: 元素包含指定文本
-- url_changed: URL已更改
-- logged_in: 登录状态检查
-
-返回严格的JSON数组格式，例如:
-[
-  {
-    "id": "assertion-1",
-    "action": "expect",
-    "selector": ".welcome-message",
-    "condition": "visible",
-    "description": "验证欢迎消息可见",
-    "order": 1
-  },
-  {
-    "id": "assertion-2", 
-    "action": "expect",
-    "selector": ".username-display",
-    "condition": "contains_text",
-    "text": "用户名",
-    "description": "验证用户名显示正确",
-    "order": 2
-  }
-]`;
+**JSON Format:**
+{
+  "id": "assertion-1",
+  "action": "expect",
+  "selector": "...",
+  "condition": "...",
+  "text": "...",
+  "description": "..."
+}
+`;
   }
 
   /**
@@ -1187,123 +1401,83 @@ ${elementsText}
   /**
    * @returns The generated prompt string.
    */
-  private buildNextStepPrompt(remainingStepsText: string, snapshot: any | null): string {
-    const firstLine = remainingStepsText.split('\n')[0].trim();
-    
-    let prompt = `You are an expert web automation assistant. Your task is to determine the very next step to execute based on a list of remaining steps and, if available, a snapshot of the current web page.
+  private async buildNextStepPrompt(remainingStepsText: string, snapshot: any | null): Promise<string> {
+    const pageContext = snapshot
+      ? await this.buildPageContext(snapshot)
+      : 'No page snapshot available.';
 
-**Test Plan (Remaining Steps):**
-\`\`\`
+    return `You are a professional Playwright MCP automation testing expert. Based on the current page context and the remaining steps, generate the JSON for the *very next* step.
+
+Remaining Steps:
 ${remainingStepsText}
-\`\`\`
 
-**Your Task:**
-1.  Analyze the **first line** of the remaining steps: "${firstLine}".
-`;
-
-    if (snapshot) {
-      const pageContext = this.buildPageContext(snapshot);
-      prompt += `
-**Current Page Snapshot:**
-URL: ${snapshot.url}
-Title: ${snapshot.title}
-
-**Visible Interactive Elements on Page:**
-\`\`\`json
 ${pageContext}
-\`\`\`
 
-2. From the list of visible elements, find the **best matching element** for this action.
-3. **IMPORTANT SELECTOR GUIDELINES:**
-   - Each element has multiple possible selectors in the "selectors" array
-   - Choose the MOST SPECIFIC selector that uniquely identifies the element
-   - Prefer selectors with attributes like placeholder, id, or data-testid over generic class selectors
-   - For input fields, ALWAYS check the "attributes" object to find unique identifiers like placeholder text
-   - For username/login fields, look for placeholders containing words like "username", "账号", "login", etc.
-   - For password fields, look for type="password" or placeholders containing "password", "密码", etc.
-   - AVOID using selectors that might match multiple elements
-`;
-    } else {
-      prompt += `
-2.  **No page snapshot is available.** You must infer the action from the text alone. This is most likely a 'navigate' action.
-`;
-    }
+Requirements:
+1.  **Analyze the current page context** to find the most accurate selector for the next action.
+2.  Prioritize user-visible text, roles, and accessibility attributes for selectors.
+3.  Generate JSON for ONLY the next single step.
+4.  If the next step is an assertion (e.g., "verify the welcome message is displayed"), use the "expect" action.
+5.  Return ONLY the JSON object for the next step, nothing else.
 
-    prompt += `
-**Output Format:**
-Return a single JSON object with two keys:
--   \`nextStep\`: A JSON object for the single next action.
--   \`remainingSteps\`: A string containing all test steps **except** the one you just processed.
+Supported Actions: "navigate", "click", "fill", "type", "expect", "wait", "screenshot", "hover", "drag", "select_option", "file_upload", "press_key", "scroll".
 
-**Example (with snapshot):**
-If the first step is "Enter 'admin' in the username field" and you find an element with placeholder="Username", your output should be:
-\`\`\`json
+JSON format for the next step:
 {
-  "nextStep": {
-    "action": "fill",
-    "selector": "input[placeholder='Username']",
-    "value": "admin",
-    "description": "Enter 'admin' in the username field"
-  },
-  "remainingSteps": "<the rest of the steps here>"
+  "id": "step-N",
+  "action": "action_type",
+  "selector": "CSS or Playwright selector",
+  "url": "URL for navigate",
+  "value": "text to fill",
+  "description": "description of the step",
+  "order": "auto" 
 }
-\`\`\`
 
-**Example (without snapshot):**
-If the first step is "Navigate to https://example.com", your output should be:
-\`\`\`json
+Example: If the next step is "click the login button", and the page context shows a button with "data-testid=login-button" and text "Log In", your response should be:
 {
-  "nextStep": {
-    "action": "navigate",
-    "url": "https://example.com",
-    "description": "Navigate to https://example.com"
-  },
-  "remainingSteps": "<the rest of the steps here>"
-}
-\`\`\`
-
-Now, determine the next step for: "${firstLine}"`;
-    return prompt;
+  "id": "step-2",
+  "action": "click",
+  "selector": "button:has-text('Log In')",
+  "description": "Click the login button",
+  "order": "auto"
+}`;
   }
 
-  private buildPageContext(snapshot: any): string {
-    if (!snapshot || !Array.isArray(snapshot.elements) || snapshot.elements.length === 0) {
-      return '[]'; // No elements found
-    }
-    
-    // 提供更丰富的元素信息给AI，包括多种选择器和属性
-    const elementsForPrompt = snapshot.elements.map((el: any) => {
-      // 构建一个简化但信息丰富的元素表示
-      const element = {
-        // 提供多个可能的选择器，让AI选择最精确的
-        selectors: el.selectors || [el.selector || el.bestSelector],
-        // 推荐的最佳选择器
-        bestSelector: el.bestSelector || el.selector,
-        // 元素文本内容
-        text: el.text || el.name || '',
-        // 元素标签名
-        tagName: el.tagName || '',
-        // 元素角色
-        role: el.attributes?.role || el.role || '',
-        // 重要属性
-        attributes: {}
-      };
-      
-      // 添加重要属性
-      if (el.attributes) {
-        // 优先添加这些对识别元素最有用的属性
-        const importantAttrs = ['id', 'placeholder', 'name', 'type', 'value', 'aria-label', 'data-testid'];
-        importantAttrs.forEach(attr => {
-          if (el.attributes[attr]) {
-            element.attributes[attr] = el.attributes[attr];
-          }
-        });
-      }
-      
-      return element;
-    });
+  private async buildPageContext(snapshot: string): Promise<string> {
+    try {
+      // 依赖注入的mcpClient现在可以用了
+      // 我们假设有一个工具可以从YAML快照中提取关键信息
+      const summaryResult = await this.mcpClient.callTool({
+        name: 'page_get_summary', // 假设的工具
+        arguments: { snapshot },
+      }) as { text_content: string, interactive_elements: string[] };
 
-    return JSON.stringify(elementsForPrompt, null, 2);
+      const { text_content, interactive_elements } = summaryResult;
+
+      const elementsText = interactive_elements.length > 0
+        ? `可交互元素 (选择器):\n${interactive_elements.join('\n')}`
+        : '页面上没有检测到可交互的元素。';
+
+      const pageTextSummary = text_content
+        ? `页面文本内容摘要:\n${text_content}`
+        : '页面没有可见的文本内容。';
+
+      return `
+当前页面快照分析:
+---
+${pageTextSummary}
+---
+${elementsText}
+---`;
+    } catch (error: any) {
+      console.error('构建页面上下文失败:', error);
+      // 即使失败，也返回一个无害的默认值，而不是让整个流程中断
+      return `
+当前页面快照分析:
+---
+[页面摘要生成失败: ${error.message}]
+---`;
+    }
   }
 
   /**
@@ -1315,7 +1489,7 @@ Now, determine the next step for: "${firstLine}"`;
   }
 
   /**
-   * 优化executeStep方法，添加url_changed条件支持
+   * 🔥 优化executeStep方法，添加url_changed条件支持 (MCP兼容版本)
    */
   public extendMcpClientWithCustomConditions(mcpClient: any) {
     // 保存原始的executeStep方法
@@ -1326,13 +1500,13 @@ Now, determine the next step for: "${firstLine}"`;
       // 处理自定义条件
       if (step.action === 'expect' && step.condition === 'url_changed') {
         try {
-          const page = mcpClient.page;
-          if (!page) {
-            throw new Error('页面不存在');
-          }
+          // 🔥 MCP兼容方式：通过快照获取当前URL
+          const snapshot = await mcpClient.getSnapshot();
+          const currentUrl = snapshot?.url || '';
           
-          // 获取当前URL
-          const currentUrl = page.url();
+          if (!currentUrl) {
+            throw new Error('无法获取当前页面URL');
+          }
           
           // 如果指定了需要匹配的URL部分
           if (step.url) {
@@ -1346,7 +1520,7 @@ Now, determine the next step for: "${firstLine}"`;
                   currentUrl,
                   expectedUrl: step.url,
                   status: 'success',
-                  message: `URL已更改且包含"${step.url}"`
+                  message: `MCP验证URL已更改且包含"${step.url}"`
                 }
               };
             } else {
@@ -1366,7 +1540,7 @@ Now, determine the next step for: "${firstLine}"`;
               condition: 'url_changed',
               currentUrl,
               status: 'success',
-              message: `URL已更改: ${currentUrl}`
+              message: `MCP验证URL已更改: ${currentUrl}`
             }
           };
         } catch (error: any) {
@@ -1382,5 +1556,73 @@ Now, determine the next step for: "${firstLine}"`;
     };
     
     return mcpClient;
+  }
+
+  async fixStepSelector(failedStep: TestStep, error: string, snapshot: any, runId: string): Promise<AIParseResult> {
+    try {
+      console.log(`[${runId}] 🤖 AI开始修正失败的步骤: ${failedStep.description}`);
+
+      const prompt = this.buildFixSelectorPrompt(failedStep, error, snapshot);
+      // 使用较小的max_tokens，因为我们只需要一个JSON对象
+      const response = await this.callOpenRouter(prompt, runId, 500);
+      
+      if (!response.success || !response.content) {
+        throw new Error(response.error || 'AI调用失败或返回内容为空');
+      }
+
+      // AI应该返回一个JSON对象，我们将其解析并放入数组中
+      const content = this.extractJson(response.content, 'object');
+      const fixedStep = JSON.parse(content);
+      
+      console.log(`[${runId}] ✅ AI修正完成，新选择器: ${fixedStep.selector}`);
+      
+      return {
+        success: true,
+        steps: [fixedStep], // 作为步骤数组返回
+        rawResponse: response.content,
+      };
+
+    } catch (e: any) {
+      console.error(`[${runId}] ❌ AI修正步骤失败:`, e);
+      return {
+        success: false,
+        steps: [],
+        error: e.message
+      };
+    }
+  }
+
+  private buildFixSelectorPrompt(failedStep: TestStep, error: string, snapshot: any): string {
+    const pageContext = this.buildPageContext(snapshot);
+
+    return `你是一个自动化测试修复专家。下面的Playwright MCP测试步骤在执行时失败了。
+请分析错误信息和当前的页面快照，然后仅返回一个修正后的、只包含一个步骤的JSON数组。
+
+失败的步骤:
+${JSON.stringify(failedStep, null, 2)}
+
+错误信息:
+"${error}"
+
+${pageContext}
+
+要求:
+1.  **只修正选择器 (selector)**，保持其他所有字段（action, value, id, order等）不变。
+2.  你的首要目标是生成一个在当前快照中**唯一且可见**的元素选择器。
+3.  仔细分析快照中的元素，使用最稳定、最精确的定位策略（如 role, text, data-testid）。
+4.  **不要返回任何解释或额外的文本**，直接返回一个包含单个JSON对象的数组。
+
+例如:
+[
+  {
+    "id": "${failedStep.id}",
+    "action": "${failedStep.action}",
+    "selector": "role=button[name=' corrected login button ']",
+    "value": ${JSON.stringify(failedStep.value)},
+    "description": "${failedStep.description}",
+    "order": ${failedStep.order}
+  }
+]
+`;
   }
 } 

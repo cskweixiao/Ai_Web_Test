@@ -1,3 +1,4 @@
+import pLimit from 'p-limit';
 import { v4 as uuidv4 } from 'uuid';
 import { TestSuite, TestSuiteRun, SuiteExecutionOptions } from '../types/tests.js';
 import { TestExecutionService } from './testExecution.js';
@@ -255,47 +256,41 @@ export class SuiteExecutionService {
     suiteId: number, 
     options: SuiteExecutionOptions | string = {}
   ): Promise<string> {
-    // 处理options如果它是字符串（向后兼容）
-    if (typeof options === 'string') {
-      options = { environment: options };
-    }
-    
-    const {
-      environment = 'staging',
-      executionMode = 'interactive',
-      concurrency = 1,
-      continueOnFailure = true
-    } = options;
-
-    console.log(`🚀 [SuiteExecution] 开始执行测试套件 ID: ${suiteId}`);
-    
-    const suite = await this.findSuiteById(suiteId);
-    if (!suite) {
-      throw new Error('Test suite not found');
-    }
-
-    if (!suite.testCaseIds || suite.testCaseIds.length === 0) {
-      throw new Error('Test suite contains no test cases');
-    }
-
     const suiteRunId = uuidv4();
-    this.createSuiteRun(suiteRunId, suite, environment);
+    const opts: SuiteExecutionOptions = typeof options === 'string' ? { environment: options } : options;
+    const environment = opts.environment || 'production';
+    const executionMode = opts.executionMode || 'standard';
+    const continueOnFailure = opts.continueOnFailure !== false; // 默认true
+    const concurrency = opts.concurrency || 2; // 从options读取或默认2
 
     try {
-      // 创建数据库中的测试运行记录
+      const suite = await this.findSuiteById(suiteId);
+      if (!suite) {
+        throw new Error(`Suite with ID ${suiteId} not found`);
+      }
+      
       const dbRun = await this.createTestRunRecord(suiteId, suiteRunId);
 
-      // 🔥 异步执行套件，不阻塞API返回
-      this.executeSuiteAsync(suiteRunId, suite, environment, executionMode, continueOnFailure)
-        .catch(async error => {
-          console.error('❌ 套件执行失败:', error);
-          await this.updateSuiteStatus(suiteRunId, 'failed', `Suite execution failed: ${error.message}`);
-        });
+      this.createSuiteRun(suiteRunId, suite, environment);
+      
+      this.executeSuiteAsync(
+        suiteRunId, 
+        suite, 
+        environment, 
+        executionMode, 
+        continueOnFailure,
+        concurrency // 传递并发数
+      ).catch(error => {
+        console.error(`[${suiteRunId}] executeSuiteAsync promise被拒绝:`, error);
+        this.updateSuiteStatus(suiteRunId, 'failed', error.message);
+      });
 
       return suiteRunId;
-    } catch (error) {
-      console.error('❌ 创建测试运行记录失败:', error);
-      throw new Error(`无法启动测试套件执行: ${error.message}`);
+    } catch (error: any) {
+      console.error('❌ 启动套件执行失败:', error);
+      // We can't easily send a WebSocket message here because we don't have a runId yet
+      // if createSuiteRun failed. The client will have to handle the failed HTTP request.
+      throw error;
     }
   }
 
@@ -420,137 +415,102 @@ export class SuiteExecutionService {
     console.log(`✅ 创建套件执行记录: ${suite.name} (${suiteRunId})`);
   }
 
+  private broadcastProgress(suiteRunId: string, suiteRun: TestSuiteRun): void {
+    const progress = suiteRun.totalCases > 0 ? Math.round((suiteRun.completedCases / suiteRun.totalCases) * 100) : 0;
+    suiteRun.progress = progress;
+    this.wsManager.sendToAll(JSON.stringify({
+        type: 'suiteUpdate',
+        payload: {
+            id: suiteRunId,
+            progress: progress,
+            status: suiteRun.status,
+            passed: suiteRun.passedCases,
+            failed: suiteRun.failedCases,
+            total: suiteRun.totalCases,
+            completed: suiteRun.completedCases
+        }
+    }));
+  }
+
   private async executeSuiteAsync(
     suiteRunId: string,
     suite: TestSuite,
     environment: string,
     executionMode: string,
-    continueOnFailure: boolean
+    continueOnFailure: boolean,
+    concurrency: number
   ) {
-    await this.updateSuiteStatus(suiteRunId, 'running');
-    
     const suiteRun = this.runningSuites.get(suiteRunId);
     if (!suiteRun) return;
 
+    const limit = pLimit(concurrency);
+    console.log(`[${suiteRunId}] 🚀 套件执行开始，并发数: ${concurrency}`);
+
     try {
-      console.log(`🚀 [Suite ${suiteRunId}] 开始串行执行 ${suite.testCaseIds.length} 个测试用例`);
+      suiteRun.status = 'running';
+      this.broadcastProgress(suiteRunId, suiteRun);
+
+      const sortedTestCaseIds = await this.analyzeTestOrder(suite.testCaseIds);
+      suiteRun.totalCases = sortedTestCaseIds.length;
       
-      // 先清除可能存在的旧上下文
-      this.testExecutionService.clearSharedContext(suiteRunId);
-      
-      // 执行前分析测试用例关系
-      const testCaseIds = await this.analyzeTestOrder(suite.testCaseIds);
-      
-      // 🔥 串行执行所有测试用例，现在支持浏览器复用
-      for (let i = 0; i < testCaseIds.length; i++) {
-        const testCaseId = testCaseIds[i];
-        const isFirstTest = i === 0;
-        const isLastTest = i === testCaseIds.length - 1;
-        
-        console.log(`🎬 [Suite ${suiteRunId}] 执行测试用例 ${i + 1}/${testCaseIds.length}: ${testCaseId}`);
-        
-        try {
-          // 获取上一个测试的状态（如果有）
-          const previousContext = !isFirstTest 
-            ? this.testExecutionService.getSharedContext(suiteRunId)?.pageState 
-            : undefined;
-          
-          // 测试执行选项
-          const testOptions = {
-            // 除了第一个测试外都尝试复用浏览器
-            reuseBrowser: !isFirstTest,
-            // 传递套件ID用于后续上下文共享
-            suiteId: suiteRunId,
-            // 传递上下文状态（如果有）
-            contextState: previousContext
-          };
-          
-          // 🔥 调用测试执行服务，传递复用选项
-          const testRunId = await this.testExecutionService.runTest(
-            testCaseId, 
-            environment,
-            executionMode,
-            testOptions
-          );
-          
-          // 记录该测试到套件运行中
-          suiteRun.testRuns.push(testRunId);
-          
-          // 🔥 等待单个测试完成并获取结果
-          console.log(`⏳ [Suite ${suiteRunId}] 等待测试用例 ${testCaseId} (${testRunId}) 执行完成...`);
-          const testResult = await this.waitForTestCompletion(testRunId);
-          
-          // 更新套件统计
-          suiteRun.completedCases++;
-          
-          if (testResult.success) {
-            suiteRun.passedCases++;
-            console.log(`✅ [Suite ${suiteRunId}] 测试用例 ${testCaseId} 执行成功`);
-          } else {
-            suiteRun.failedCases++;
-            console.log(`❌ [Suite ${suiteRunId}] 测试用例 ${testCaseId} 执行失败: ${testResult.error}`);
-            
-            if (!continueOnFailure) {
-              throw new Error(`Test case ${testCaseId} failed: ${testResult.error}`);
+      const testPromises = sortedTestCaseIds.map((testCaseId, index) => {
+        return limit(async () => {
+          if (suiteRun.status === 'cancelled' || (!continueOnFailure && suiteRun.failedCases > 0)) {
+            console.log(`[${suiteRunId}] 套件执行中止，跳过剩余测试.`);
+            return;
+          }
+
+          const testCase = await this.testExecutionService.findTestCaseById(testCaseId);
+          const testCaseName = testCase ? testCase.name : `ID ${testCaseId}`;
+          console.log(`[${suiteRunId}] [${index + 1}/${suiteRun.totalCases}] 开始执行测试用例: ${testCaseName}`);
+
+          try {
+            const testRunId = await this.testExecutionService.runTest(
+              testCaseId, 
+              environment, 
+              executionMode,
+              {
+                reuseBrowser: true,
+                suiteId: suiteRunId,
+                contextState: this.testExecutionService.getSharedContext(suiteRunId),
+              }
+            );
+
+            suiteRun.testRuns.push(testRunId);
+
+            const testResult = await this.waitForTestCompletion(testRunId);
+
+            suiteRun.completedCases++;
+
+            if (!testResult.success) {
+              suiteRun.failedCases++;
+            } else {
+              suiteRun.passedCases++;
             }
+            this.broadcastProgress(suiteRunId, suiteRun);
+
+          } catch (error: any) {
+            suiteRun.completedCases++;
+            suiteRun.failedCases++;
+            console.log(`[${suiteRunId}] 执行测试用例 ${testCaseName} 时发生严重错误: ${error.message}`);
+          } finally {
+            this.broadcastProgress(suiteRunId, suiteRun);
           }
-          
-        } catch (testError: any) {
-          console.error(`❌ [Suite ${suiteRunId}] 测试用例 ${testCaseId} 启动失败:`, testError.message);
-          
-          suiteRun.completedCases++;
-          suiteRun.failedCases++;
-          
-          if (!continueOnFailure) {
-            throw new Error(`Test case ${testCaseId} failed to start: ${testError.message}`);
-          }
-        }
-        
-        // 🔥 更新进度
-        suiteRun.progress = Math.round((suiteRun.completedCases / suiteRun.totalCases) * 100);
-        
-        // 使用WebSocket发送进度更新
-        this.broadcastProgress(suiteRunId, suiteRun);
-        
-        // 测试用例间只添加很短的间隔，因为不需要等待浏览器重启
-        if (!isLastTest) {
-          console.log(`⏱️ [Suite ${suiteRunId}] 测试用例间隔等待 500ms...`);
-          await new Promise(resolve => setTimeout(resolve, 500));
-        }
+        });
+      });
+
+      await Promise.all(testPromises);
+
+      if (suiteRun.status === 'running') {
+        suiteRun.status = suiteRun.failedCases === 0 ? 'completed' : 'failed';
       }
-      
-      // 🔥 套件执行完成后，清理共享上下文
-      this.testExecutionService.clearSharedContext(suiteRunId);
-      
-      // 🔥 套件执行完成
-      await this.updateSuiteStatus(suiteRunId, 'completed');
-      console.log(`🎉 [Suite ${suiteRunId}] 套件执行完成: ${suiteRun.passedCases}/${suiteRun.totalCases} 通过`);
-      
+
     } catch (error: any) {
       await this.updateSuiteStatus(suiteRunId, 'failed', error.message);
     }
   }
   
   // 发送进度更新的辅助方法
-  private broadcastProgress(suiteRunId: string, suiteRun: TestSuiteRun): void {
-    if (this.wsManager) {
-      const sanitizedData = {
-        ...suiteRun,
-        startTime: suiteRun.startTime ? suiteRun.startTime.toISOString() : null,
-        endTime: suiteRun.endTime ? suiteRun.endTime.toISOString() : null
-      };
-      
-      this.wsManager.broadcast({
-        type: 'suiteUpdate', 
-        runId: suiteRunId,
-        data: sanitizedData
-      });
-      
-      console.log(`已发送套件进度更新: ${suiteRunId}, 进度: ${suiteRun.progress}%`);
-    }
-  }
-  
-  // 新增：分析测试用例执行顺序
   private async analyzeTestOrder(testCaseIds: number[]): Promise<number[]> {
     // 目前我们只返回原始顺序，后续可以实现更复杂的依赖分析和排序
     // 例如基于测试用例元数据的依赖关系确定最优执行顺序

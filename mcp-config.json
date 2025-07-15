@@ -2,10 +2,15 @@
   "mcpServers": {
     "playwright": {
       "command": "npx",
-      "args": ["@anthropic-ai/mcp-server-playwright"],
+      "args": [
+        "@playwright/mcp@latest",
+        "--browser", "chromium",
+        "--no-sandbox",
+        "--ignore-https-errors"
+      ],
       "env": {
-        "PLAYWRIGHT_HEADLESS": "true",
-        "PLAYWRIGHT_BROWSER": "chromium"
+        "PLAYWRIGHT_HEADLESS": "false",
+        "DEBUG": "pw:browser*,pw:api*"
       }
     }
   },
@@ -13,6 +18,7 @@
     "timeout": 30000,
     "retries": 2,
     "screenshot": true,
-    "video": false
+    "video": false,
+    "headless": false
   }
 } 

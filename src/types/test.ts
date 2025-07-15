@@ -52,41 +52,46 @@ export type TestAction =
   | 'screenshot'
   | 'hover'
   | 'select'
-  | 'upload';
+  | 'upload'
+  | 'scroll';
 
 export type ExpectCondition = 
   | 'visible'
   | 'hidden'
   | 'contains_text'
+  | 'not_contains_text'
   | 'has_value'
-  | 'has_attribute';
+  | 'has_attribute'
+  | 'is_enabled'
+  | 'is_disabled'
+  | 'url_changed'
+  | 'logged_in'
+  | 'element_exists';
 
 // 测试执行结果
 export interface TestRun {
-  id: string;
+  id:string;
+  runId: string;
   testCaseId: number;
-  name: string;
-  status: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
-  progress: number;
-  startTime: string;
-  endTime?: string;
-  duration: string;
-  totalSteps: number;
-  completedSteps: number;
-  passedSteps: number;
-  failedSteps: number;
-  executor: string;
-  environment: string;
+  status: TestRunStatus;
   logs: TestLog[];
-  screenshots: string[];
+  startedAt: Date;
+  environment: string;
+  suiteId?: string;
+  reuseBrowser?: boolean;
+  contextState?: any;
+  executionMode?: string;
+  steps: TestStep[];
+  successfulSteps: string[];
   error?: string;
+  endedAt?: Date;
 }
 
-export type TestRunStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
+export type TestRunStatus = 'queued' | 'running' | 'completed' | 'failed' | 'error' | 'cancelled';
 
 export interface TestLog {
   id: string;
-  timestamp: string;
+  timestamp: Date;
   level: 'info' | 'success' | 'warning' | 'error';
   message: string;
   stepId?: string;

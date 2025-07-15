@@ -32,20 +32,20 @@ interface TestCaseGeneration {
 }
 
 const examplePrompts = [
-  '生成一个测试用户登录功能的测试用例',
-  '为电商网站的购物车功能创建端到端测试',
-  '测试搜索功能的性能和准确性',
-  '验证用户注册流程的完整测试场景',
-  '检查响应式设计在不同设备上的表现'
+  '生成一个使用Playwright MCP测试用户登录功能的完整测试用例',
+  '为电商网站创建包含拖拽操作和文件上传的Playwright MCP测试',
+  '使用Playwright MCP测试响应式菜单的展开/收起功能',
+  '创建Playwright MCP测试验证表单验证错误提示的显示',
+  '生成Playwright MCP多标签页操作和页面跳转的测试场景'
 ];
 
 const mockGeneratedTestCase: TestCaseGeneration = {
-  title: '用户登录功能测试',
-  description: '验证用户使用正确的邮箱和密码成功登录系统，包括输入验证、错误处理和成功跳转。',
-  code: `# 用户登录功能测试
-name: 用户登录流程测试
-description: 测试用户登录的完整流程
-tags: [登录, 认证, 核心功能]
+  title: 'Playwright MCP用户登录功能测试',
+  description: '使用Playwright MCP验证用户登录流程，包括文本定位器、角色选择器和断言验证。',
+  code: `# Playwright MCP用户登录功能测试
+name: Playwright MCP登录流程测试
+description: 测试用户登录的完整流程(使用Playwright MCP推荐选择器)
+tags: [登录, 认证, Playwright MCP, 核心功能]
 priority: high
 
 steps:
@@ -55,33 +55,43 @@ steps:
     
   - name: 输入用户邮箱
     action: fill
-    selector: 'input[name="email"]'
+    selector: 'role=textbox[name="email"]'
     value: "test@example.com"
     
   - name: 输入密码
     action: fill
-    selector: 'input[name="password"]'
+    selector: 'input[type="password"]'
     value: "password123"
     
   - name: 点击登录按钮
     action: click
-    selector: 'button[type="submit"]'
+    selector: 'button:has-text("登录")'
     
-  - name: 验证登录成功
+  - name: 等待页面加载
+    action: wait
+    timeout: 3000
+    
+  - name: 验证登录成功 - 仪表板可见
     action: expect
-    selector: '.dashboard'
+    selector: 'role=main >> :has-text("仪表板")'
     condition: visible
     
-  - name: 检查用户信息显示
+  - name: 验证用户信息显示
     action: expect
-    selector: '.user-profile'
+    selector: ':has-text("test@example.com")'
+    condition: contains_text
     text: "test@example.com"
+    
+  - name: 截图保存登录状态
+    action: screenshot
+    filename: "login_success.png"
 
 assertions:
   - 页面标题包含"仪表板"
-  - URL 包含"/dashboard"
-  - 用户头像显示正确`,
-  explanation: '这个测试用例涵盖了用户登录的完整流程，包括页面导航、表单填写、提交和验证。测试确保用户能够成功登录并跳转到正确的页面，同时验证用户信息的正确显示。'
+  - URL包含"/dashboard"
+  - 用户头像使用role=img选择器验证
+  - 导航菜单使用text=定位器检查可见性`,
+  explanation: '这个Playwright MCP测试用例展示了推荐的选择器策略：使用role=定位器用于语义元素，:has-text()用于文本匹配，以及组合选择器用于精确定位。测试涵盖了登录流程的完整验证，包括状态检查和截图保存。'
 };
 
 export function LLMAssistant() {
