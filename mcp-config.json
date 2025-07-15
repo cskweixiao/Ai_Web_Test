@@ -3,13 +3,14 @@
     "playwright": {
       "command": "npx",
       "args": [
-        "@playwright/mcp@latest",
+        "@playwright/mcp@0.0.30",
         "--browser", "chromium",
         "--no-sandbox",
         "--ignore-https-errors"
       ],
       "env": {
         "PLAYWRIGHT_HEADLESS": "false",
+        "HEADLESS": "false",
         "DEBUG": "pw:browser*,pw:api*"
       }
     }

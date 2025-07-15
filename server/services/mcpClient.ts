@@ -51,9 +51,9 @@ export class PlaywrightMcpClient {
          if (fs.existsSync(browserDir)) {
            // 查找 chromium 相关目录
            const entries = fs.readdirSync(browserDir, { withFileTypes: true });
-           const chromiumDir = entries.find(entry => 
-             entry.isDirectory() && entry.name.startsWith('chromium-')
-           );
+           const chromiumDir = entries.find(function(entry) {
+             return entry.isDirectory() && entry.name.startsWith('chromium-');
+           });
            if (chromiumDir) {
              browserPath = browserDir;
              console.log('🔍 找到Playwright浏览器目录:', browserPath);
@@ -97,7 +97,7 @@ export class PlaywrightMcpClient {
       this.transport = new StdioClientTransport({
         command: 'npx',
         args: [
-          '@playwright/mcp@latest',
+          '@playwright/mcp@0.0.30',
           '--browser', 'chromium',
           '--no-sandbox',
           '--ignore-https-errors'
@@ -105,6 +105,7 @@ export class PlaywrightMcpClient {
         env: {
           ...process.env,
           PLAYWRIGHT_HEADLESS: 'false',  // 🎯 强制显示浏览器
+          HEADLESS: 'false',
           DEBUG: 'pw:browser*,pw:api*'
         }
       });
@@ -128,9 +129,13 @@ export class PlaywrightMcpClient {
       console.log('🔍 可用工具列表:', availableTools);
       
       // 检查是否使用 mcp_playwright_browser_ 前缀
-      const hasMcpPrefix = availableTools.some(tool => tool.startsWith('mcp_playwright_browser_'));
+      const hasMcpPrefix = availableTools.some(function(tool) {
+        return tool.startsWith('mcp_playwright_browser_');
+      });
       // 检查是否使用 browser_ 前缀  
-      const hasBrowserPrefix = availableTools.some(tool => tool.startsWith('browser_'));
+      const hasBrowserPrefix = availableTools.some(function(tool) {
+        return tool.startsWith('browser_');
+      });
       
       if (hasMcpPrefix) {
         console.log('✅ 使用 mcp_playwright_browser_* 格式的工具名称');
@@ -160,7 +165,7 @@ export class PlaywrightMcpClient {
       try {
         const toolsResult = await this.client.listTools();
         console.log('🔧 MCP实际可用工具列表:');
-        toolsResult.tools.forEach((tool, index) => {
+        toolsResult.tools.forEach(function(tool, index) {
           console.log(`  ${index + 1}. ${tool.name} - ${tool.description || '无描述'}`);
         });
       } catch (listError: any) {
@@ -215,8 +220,12 @@ export class PlaywrightMcpClient {
     
     try {
       const result = await this.client.listTools();
-      console.log('🔧 MCP可用工具列表:', result.tools.map(t => t.name));
-      return result.tools.map(t => t.name);
+      console.log('🔧 MCP可用工具列表:', result.tools.map(function(t) {
+        return t.name;
+      }));
+      return result.tools.map(function(t) {
+        return t.name;
+      });
     } catch (error: any) {
       console.error('❌ 获取MCP工具列表失败:', error.message);
       return [];
@@ -258,7 +267,7 @@ export class PlaywrightMcpClient {
     console.log(`🌐 目标URL: ${step.url || '无'}`);
 
     // 🔥 工具名称映射函数 - 动态适配版
-    const getToolName = (baseName: string): string => {
+    const getToolName = function(baseName: string): string {
       if (this.useAlternativeToolNames) {
         // 使用 browser_* 格式
         return baseName.replace('mcp_playwright_browser_', 'browser_');
@@ -304,7 +313,9 @@ export class PlaywrightMcpClient {
       case 'wait':
         const waitTimeout = step.timeout || 3000;
         console.log(`⏱️ [${runId}] 开始等待 ${waitTimeout}ms...`);
-        await new Promise(res => setTimeout(res, waitTimeout));
+        await new Promise(function(res) {
+          setTimeout(res, waitTimeout);
+        });
         console.log(`✅ [${runId}] 等待完成`);
         break;
       
@@ -336,113 +347,139 @@ export class PlaywrightMcpClient {
 
   private async findBestElement(selector: string, runId: string): Promise<any> {
     if (!this.client) throw new Error('MCP_DISCONNECTED: Client is null.');
-    if (!this.snapshot) await this.refreshSnapshot();
-
-    console.log(`🔍 [${runId}] === 开始元素查找 ===`);
-    console.log(`🎯 [${runId}] 原始选择器: ${selector}`);
-
-    // Playwright-style 'data-testid=' to standard CSS selector
-    if (selector.startsWith('data-testid=')) {
-      const value = selector.split('=')[1].trim();
-      selector = `[data-testid="${value}"]`;
-      console.log(`🔄 [${runId}] 转换后选择器: ${selector}`);
+    if (!this.snapshot) {
+      await this.refreshSnapshot();
+      // 等待一小段时间确保页面完全加载
+      await new Promise(function(res) {
+        setTimeout(res, 500);
+      });
     }
 
-    // 🔥 修复：直接从快照中查找元素，不使用不存在的工具
-    // MCP Playwright 的快照是 YAML 格式，包含了所有可交互元素的引用
-    
-    // 简单的元素匹配逻辑 - 在实际的快照 YAML 中查找匹配的元素
+    console.log(`🔍 [${runId}] === 开始元素查找 ===`);
+    console.log(`🎯 [${runId}] 选择器: ${selector}`);
+
     try {
-      // 解析 YAML 快照中的元素
       const lines = this.snapshot.split('\n');
       let foundElement: { ref: string; text: string } | null = null;
       
-      console.log(`📊 [${runId}] 快照包含 ${lines.length} 行内容`);
-      console.log(`🔍 [${runId}] 开始精确匹配...`);
-      
-      for (let i = 0; i < lines.length; i++) {
-        const line = lines[i];
+      // 🔍 智能文本提取策略
+      const extractKeywords = function(selector: string): string[] {
+        const keywords: string[] = [];
         
-        // 查找包含目标选择器信息的行
-        if (line.includes(selector) || 
-            line.includes(selector.replace(/^\[|\]$/g, '')) || // 去掉方括号
-            (selector.includes('data-testid') && line.includes(selector.split('"')[1]))) {
-          
-          console.log(`🎯 [${runId}] 找到匹配行 ${i + 1}: ${line.trim()}`);
-          
-          // 查找对应的 ref
-          for (let j = Math.max(0, i - 5); j < Math.min(lines.length, i + 5); j++) {
-            const refLine = lines[j];
-            if (refLine.includes('ref:') || refLine.includes('- ref:')) {
-              const refMatch = refLine.match(/ref:\s*(\d+)/);
-              if (refMatch) {
-                foundElement = {
-                  ref: refMatch[1],
-                  text: line.trim()
-                };
-                console.log(`✅ [${runId}] 精确匹配成功！元素ref: ${foundElement.ref}`);
-                break;
-              }
+        // 提取所有可能的文本片段
+        const patterns = [
+          /text=([^,\]]+)/,
+          /:has-text\(["']([^"']+)["']\)/g,
+          /placeholder=([^,\]]+)/,
+          /name=([^,\]]+)/,
+          /["']([^"']+)["']/g,
+          /([^\[\],=\s]+)/g
+        ];
+        
+        patterns.forEach(function(pattern) {
+          let match;
+          while ((match = pattern.exec(selector)) !== null) {
+            const text = match[1] || match[0];
+            if (text && text.length > 1 && !text.includes('[') && !text.includes(']')) {
+              keywords.push(text.trim());
             }
           }
-          
-          if (foundElement) break;
-        }
-      }
-      
-      if (!foundElement) {
-        console.log(`⚠️ [${runId}] 精确匹配失败，开始模糊匹配...`);
-        // 🔍 如果找不到精确匹配，尝试模糊匹配
-        const selectorKeywords = selector.toLowerCase().replace(/[^\w\s]/g, ' ').split(/\s+/).filter(k => k.length > 2);
-        console.log(`🔍 [${runId}] 模糊匹配关键词: ${selectorKeywords.join(', ')}`);
-        
-        for (const line of lines) {
-          const lineText = line.toLowerCase();
-          const matchCount = selectorKeywords.filter(keyword => lineText.includes(keyword)).length;
-          
-          if (matchCount > 0) {
-            console.log(`🎯 [${runId}] 模糊匹配候选: ${line.trim()} (匹配${matchCount}个关键词)`);
-            // 查找最近的 ref
-            const lineIndex = lines.indexOf(line);
-            for (let j = Math.max(0, lineIndex - 3); j < Math.min(lines.length, lineIndex + 3); j++) {
-              const refLine = lines[j];
-              const refMatch = refLine.match(/ref:\s*(\d+)/);
-              if (refMatch) {
-                foundElement = {
-                  ref: refMatch[1],
-                  text: line.trim()
-                };
-                console.log(`🎯 [${runId}] 模糊匹配成功: ${foundElement.text} (ref: ${foundElement.ref})`);
-                break;
-              }
-            }
-            if (foundElement) break;
-          }
-        }
-      }
-      
-      if (!foundElement) {
-        console.error(`❌ [${runId}] 在快照中找不到匹配的元素: ${selector}`);
-        console.log(`📊 [${runId}] 当前快照内容预览 (前500字符):`);
-        console.log(this.snapshot.substring(0, 500) + '...');
-        
-        // 显示所有可交互元素供参考
-        console.log(`🔍 [${runId}] 当前页面可交互元素列表:`);
-        const interactiveLines = lines.filter(line => line.includes('ref:') || line.includes('- ref:'));
-        interactiveLines.slice(0, 10).forEach((line, index) => {
-          console.log(`  ${index + 1}. ${line.trim()}`);
         });
-        if (interactiveLines.length > 10) {
-          console.log(`  ... 还有 ${interactiveLines.length - 10} 个元素`);
-        }
         
-        throw new Error(`页面里找不到元素: ${selector} (runId: ${runId})`);
+        return [...new Set(keywords)]; // 去重
+      };
+
+      const keywords = extractKeywords(selector);
+      console.log(`🔍 [${runId}] 提取关键词: ${keywords.join(' | ')}`);
+
+      // 🔍 收集所有可交互元素
+      const elements = [];
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i].trim();
+        
+        if (line.includes('textbox') || line.includes('button') || line.includes('link') || line.includes('input')) {
+          let elementRef = '';
+          let elementText = '';
+          let elementPlaceholder = '';
+          let elementType = '';
+          
+          // 查找ref
+          const refLines = lines.slice(Math.max(0, i-3), Math.min(lines.length, i+3));
+          const refMatch = refLines.find(function(l) {
+            return l.includes('ref:');
+          })?.match(/ref:\s*(\d+)/);
+          if (refMatch) {
+            elementRef = refMatch[1];
+            
+            // 提取所有文本信息
+            const textMatch = line.match(/text:\s*["']([^"']+)["']/);
+            const placeholderMatch = line.match(/placeholder:\s*["']([^"']+)["']/);
+            const nameMatch = line.match(/name:\s*["']([^"']+)["']/);
+            const typeMatch = line.match(/type:\s*["']([^"']+)["']/);
+            
+            elementText = textMatch?.[1] || '';
+            elementPlaceholder = placeholderMatch?.[1] || '';
+            elementType = typeMatch?.[1] || '';
+            
+            if (elementRef && (elementText || elementPlaceholder || nameMatch?.[1])) {
+              elements.push({
+                ref: elementRef,
+                text: elementText,
+                placeholder: elementPlaceholder,
+                name: nameMatch?.[1] || '',
+                type: elementType,
+                fullText: [elementText, elementPlaceholder, nameMatch?.[1], elementType].filter(Boolean).join(' ')
+              });
+            }
+          }
+        }
       }
+
+      if (elements.length === 0) {
+        console.log(`[${runId}] ❌ 页面快照中未发现任何可交互元素`);
+        throw new Error(`页面中没有可交互元素 (runId: ${runId})`);
+      }
+
+      console.log(`[${runId}] 📋 发现 ${elements.length} 个可交互元素`);
+
+      // 🔍 智能匹配算法
+      for (const element of elements) {
+        const elementText = element.fullText.toLowerCase();
+        
+        // 计算匹配分数
+        let score = 0;
+        
+        for (const keyword of keywords) {
+          const kw = keyword.toLowerCase();
+          
+          // 完全匹配
+          if (element.text.toLowerCase() === kw) score += 100;
+          if (element.placeholder.toLowerCase() === kw) score += 80;
+          if (element.name.toLowerCase() === kw) score += 60;
+          
+          // 包含匹配
+          if (element.text.toLowerCase().includes(kw)) score += 40;
+          if (element.placeholder.toLowerCase().includes(kw)) score += 30;
+          if (element.name.toLowerCase().includes(kw)) score += 20;
+        }
+
+        if (score > 0) {
+          foundElement = { ref: element.ref, text: element.text || element.placeholder || element.name };
+          console.log(`✅ [${runId}] 匹配成功！元素: "${foundElement.text}" (ref: ${foundElement.ref}) 分数: ${score}`);
+          return foundElement;
+        }
+      }
+
+      // ❌ 找不到匹配元素
+      console.error(`❌ [${runId}] 在 ${elements.length} 个元素中找不到匹配: ${selector}`);
       
-      console.log(`✅ [${runId}] === 元素查找成功 ===`);
-      console.log(`📝 [${runId}] 元素文本: ${foundElement.text}`);
-      console.log(`🔗 [${runId}] 元素引用: ${foundElement.ref}`);
-      return foundElement;
+      // 显示最接近的匹配
+      console.log(`[${runId}] 🔍 可用元素列表:`);
+      elements.slice(0, 8).forEach(function(element, index) {
+        console.log(`[${runId}]   ${index + 1}. "${element.text || element.placeholder}" [ref=${element.ref}]`);
+      });
+      
+      throw new Error(`找不到匹配元素: ${selector} (runId: ${runId})`);
       
     } catch (parseError: any) {
       console.error(`❌ [${runId}] 解析快照时出错:`, parseError.message);
@@ -489,6 +526,19 @@ export class PlaywrightMcpClient {
       console.log(`📸 截图已保存: ${filename}`);
     } catch (error) {
       console.error(`❌ 截图失败:`, error);
+    }
+  }
+
+  async waitForLoad(): Promise<void> {
+    if (!this.isInitialized || !this.client) return;
+    try {
+      await this.client.callTool({ 
+        name: this.useAlternativeToolNames ? 'browser_wait' : 'mcp_playwright_browser_wait', 
+        arguments: { state: 'networkidle' } 
+      });
+      console.log('⏳ 页面已完全加载');
+    } catch (error) {
+      console.warn('⚠️ 等待页面加载失败，继续执行:', error);
     }
   }
 

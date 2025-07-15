@@ -191,8 +191,27 @@ export class TestExecutionService {
       console.log(`🤖 [${runId}] === 开始AI解析 ===`);
       console.log(`📄 [${runId}] 待解析内容: ${testCase.steps}`);
 
-      // AI解析步骤
-      const parseResult = await this.aiParser.parseTestDescription(testCase.steps, testCase.name, runId, null);
+      // 🔥 获取当前页面快照用于AI解析
+      let snapshot = null;
+      try {
+        console.log(`[${runId}] 📊 等待页面完全加载...`);
+        
+        // 等待页面网络空闲
+        await this.mcpClient.waitForLoad();
+        
+        console.log(`[${runId}] 📊 获取页面快照供AI分析...`);
+        snapshot = await this.mcpClient.getSnapshot();
+        
+        // 打印快照摘要供调试
+        console.log(`[${runId}] ✅ 页面快照获取成功，元素概览:`);
+        this.logSnapshotSummary(snapshot, runId);
+        
+      } catch (error) {
+        console.warn(`[${runId}] ⚠️ 获取页面快照失败，继续无快照解析:`, error.message);
+      }
+
+      // AI解析步骤（带页面上下文）
+      const parseResult = await this.aiParser.parseTestDescription(testCase.steps, testCase.name, runId, snapshot);
       
       if (!parseResult.success || !parseResult.steps || parseResult.steps.length === 0) {
         console.error(`❌ [${runId}] AI解析失败: ${parseResult.error || '没有解析出任何步骤'}`);
@@ -390,5 +409,55 @@ export class TestExecutionService {
   private calculateDuration(startTime: Date, endTime: Date): string {
     return ((endTime.getTime() - startTime.getTime()) / 1000).toFixed(2) + 's';
   }
-  // #endregion
-} 
+
+  private logSnapshotSummary(snapshot: string, runId: string): void {
+    if (!snapshot) return;
+    
+    try {
+      const lines = snapshot.split('\n');
+      const elements = [];
+      
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i].trim();
+        if (line.includes('textbox') || line.includes('button') || line.includes('link') || line.includes('input')) {
+          const textMatch = line.match(/text:\s*["']([^"']+)["']/);
+          const placeholderMatch = line.match(/placeholder:\s*["']([^"']+)["']/);
+          const typeMatch = line.match(/type:\s*["']([^"']+)["']/);
+          
+          const refLine = lines.slice(Math.max(0, i-2), Math.min(lines.length, i+3))
+                           .find(l => l.includes('ref:'));
+          const refMatch = refLine?.match(/ref:\s*(\d+)/);
+          
+          if (refMatch && (textMatch || placeholderMatch)) {
+            elements.push({
+              type: line.includes('textbox') ? '输入框' : 
+                   line.includes('button') ? '按钮' : 
+                   line.includes('link') ? '链接' : '输入',
+              text: textMatch?.[1] || placeholderMatch?.[1] || '',
+              placeholder: placeholderMatch?.[1] || '',
+              typeAttr: typeMatch?.[1] || '',
+              ref: refMatch[1]
+            });
+          }
+        }
+      }
+
+      if (elements.length === 0) {
+        console.log(`[${runId}] 📋 页面快照: 未发现可交互元素`);
+        return;
+      }
+
+      console.log(`[${runId}] 📋 页面快照摘要:`);
+      elements.slice(0, 5).forEach(function(element, index) {
+        console.log(`[${runId}]   ${index + 1}. ${element.type}: "${element.text}" [ref=${element.ref}]`);
+      });
+      
+      if (elements.length > 5) {
+        console.log(`[${runId}]   ... 共 ${elements.length} 个元素`);
+      }
+      
+    } catch (error) {
+      console.log(`[${runId}] 📋 页面快照摘要: 解析失败 - ${error.message}`);
+    }
+  }
+  // #endregion 

@@ -67,26 +67,32 @@ export class AITestParser {
     }
   }
 
-  /**
-   * 构建优化的Prompt - 针对Playwright MCP优化
+/**
+   * 构建优化的Prompt - 针对MCP快照格式优化
    */
   private async buildPrompt(description: string, testName: string, snapshot: any | null): Promise<string> {
     const pageContext = snapshot ? await this.buildPageContext(snapshot) : '页面快照不可用。';
 
-    return `你是一个专业的Playwright MCP自动化测试专家。请将以下自然语言描述转换为结构化的测试步骤。
+    return `你是一个专业的MCP自动化测试专家。请将以下自然语言描述转换为结构化的测试步骤。
 
 测试用例名称: ${testName}
 测试描述: ${description}
 
 ${pageContext}
 
+🔥 **关键要求**:
+1. **必须基于实际页面快照**生成选择器，绝不要生成不存在的元素
+2. **使用MCP兼容的选择器格式**：
+   - 文本匹配：使用 "text=实际文本内容" 格式
+   - 占位符匹配：使用 "placeholder=实际占位符文本" 格式
+   - 类型匹配：使用 "type=实际类型值" 格式
+3. **当页面快照显示具体文本时**，直接使用该文本作为选择器
+4. **避免使用CSS选择器语法**，改用基于实际页面内容的描述
+
 要求:
-1. 分析描述中的每个操作，转换为具体的Playwright MCP测试步骤。
-2. **严格使用提供的页面快照信息**来生成精确的选择器。
-3. 如果生成的选择器在快照中匹配到多个元素，必须细化选择器直到它唯一匹配一个元素。
-4. 自动修复URL中的错误(如"2www."改为"www.")
-5. 优先使用Playwright推荐的选择器策略。
-6. 返回严格的JSON数组格式，不要任何其他文字。
+1. 分析描述中的每个操作，转换为具体的MCP测试步骤
+2. **严格使用页面快照中可见的文本内容**作为选择依据
+3. 返回严格的JSON数组格式，不要任何其他文字
 
 支持的Playwright MCP操作类型:
 - navigate: 打开网页
@@ -1445,22 +1451,46 @@ Example: If the next step is "click the login button", and the page context show
 
   private async buildPageContext(snapshot: string): Promise<string> {
     try {
-      // 依赖注入的mcpClient现在可以用了
-      // 我们假设有一个工具可以从YAML快照中提取关键信息
-      const summaryResult = await this.mcpClient.callTool({
-        name: 'page_get_summary', // 假设的工具
-        arguments: { snapshot },
-      }) as { text_content: string, interactive_elements: string[] };
+      if (!snapshot) {
+        return `
+当前页面快照分析:
+---
+[无页面快照，基于描述生成选择器]
+---`;
+      }
 
-      const { text_content, interactive_elements } = summaryResult;
+      const lines = snapshot.split('\n');
+      const interactiveElements: string[] = [];
+      const textContents: string[] = [];
+      
+      // 提取可交互元素
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        
+        // 查找交互元素（按钮、链接、输入框等）
+        if (line.includes('button') || line.includes('input') || line.includes('link') || line.includes('a ')) {
+          const elementMatch = line.match(/(\w+).*?(text|value|placeholder|name):\s*["']([^"']+)["']/);
+          if (elementMatch) {
+            interactiveElements.push(`${elementMatch[1]}: ${elementMatch[2]}="${elementMatch[3]}"`);
+          }
+        }
+        
+        // 提取文本内容
+        if (line.includes('text:') || line.includes('innerText:')) {
+          const textMatch = line.match(/text:\s*["']([^"']+)["']/);
+          if (textMatch && textMatch[1].trim().length > 2) {
+            textContents.push(textMatch[1].trim());
+          }
+        }
+      }
 
-      const elementsText = interactive_elements.length > 0
-        ? `可交互元素 (选择器):\n${interactive_elements.join('\n')}`
-        : '页面上没有检测到可交互的元素。';
+      const elementsText = interactiveElements.length > 0
+        ? `可交互元素:\n${interactiveElements.slice(0, 10).join('\n')}`
+        : '页面上没有检测到明显的可交互元素。';
 
-      const pageTextSummary = text_content
-        ? `页面文本内容摘要:\n${text_content}`
-        : '页面没有可见的文本内容。';
+      const pageTextSummary = textContents.length > 0
+        ? `页面文本摘要:\n${textContents.slice(0, 5).join('\n')}`
+        : '页面文本内容较少。';
 
       return `
 当前页面快照分析:
@@ -1471,7 +1501,6 @@ ${elementsText}
 ---`;
     } catch (error: any) {
       console.error('构建页面上下文失败:', error);
-      // 即使失败，也返回一个无害的默认值，而不是让整个流程中断
       return `
 当前页面快照分析:
 ---
