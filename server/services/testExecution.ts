@@ -160,10 +160,7 @@ export class TestExecutionService {
       return;
     }
 
-    console.log(`🚀 [${runId}] ======= 开始执行测试 =======`);
-    console.log(`📝 [${runId}] 测试用例ID: ${testRun.testCaseId}`);
-    console.log(`🎯 [${runId}] 执行模式: ${testRun.executionMode}`);
-    console.log(`🌍 [${runId}] 运行环境: ${testRun.environment}`);
+    console.log(`🚀 [${runId}] 开始执行测试 #${testRun.testCaseId}`);
 
     // 查找测试用例
     const testCase = await this.findTestCaseById(testRun.testCaseId);
@@ -173,11 +170,7 @@ export class TestExecutionService {
       return;
     }
 
-    console.log(`✅ [${runId}] 找到测试用例: ${testCase.name}`);
-    console.log(`📋 [${runId}] 原始步骤内容:`);
-    console.log(`${testCase.steps}`);
-    console.log(`📋 [${runId}] 断言内容:`);
-    console.log(`${testCase.assertions || '无断言'}`);
+    console.log(`📋 [${runId}] 测试内容: ${testCase.name}`);
 
     try {
       await this.mcpClient.initialize({
@@ -194,89 +187,158 @@ export class TestExecutionService {
       // 🔥 获取当前页面快照用于AI解析
       let snapshot = null;
       try {
-        console.log(`[${runId}] 📊 等待页面完全加载...`);
-        
-        // 等待页面网络空闲
-        await this.mcpClient.waitForLoad();
-        
-        console.log(`[${runId}] 📊 获取页面快照供AI分析...`);
-        snapshot = await this.mcpClient.getSnapshot();
-        
-        // 打印快照摘要供调试
-        console.log(`[${runId}] ✅ 页面快照获取成功，元素概览:`);
+          try {
+          // 增强等待 - 等待网络空闲和页面完全加载
+          await this.mcpClient.waitForLoad();
+          
+          // 重试获取页面快照
+          let retryCount = 0;
+          while (retryCount < 3) {
+            snapshot = await this.mcpClient.getSnapshot();
+            
+            if (snapshot && snapshot.length > 100) { // 确保快照有内容
+              break;
+            }
+            
+            console.warn(`[${runId}] ⚠️ 页面快照为空，重试 ${retryCount + 1}/3`);
+            await new Promise(resolve => setTimeout(resolve, 2000));
+            retryCount++;
+          }
+          
+          if (!snapshot || snapshot.length <= 100) {
+            console.error(`[${runId}] ❌ 页面加载异常，获取不到内容`);
+            console.error(`[${runId}] 📊 建议检查：1) 网络连接 2) 网站访问权限 3) 页面是否被防火墙拦截`);
+            
+            // 尝试截图查看实际页面状态
+            try {
+              await this.mcpClient.takeScreenshot(`${runId}-debug.png`);
+              console.log(`[${runId}] 📸 调试截图已保存: ${runId}-debug.png`);
+            } catch (screenshotError) {
+              console.error(`[${runId}] 截图失败: ${screenshotError.message}`);
+            }
+          }
+          
+          this.logSnapshotSummary(snapshot, runId);
+        } catch (loadError) {
+          console.error(`[${runId}] ❌ 页面加载失败: ${loadError.message}`);
+          console.error(`[${runId}] 📊 当前URL: ${await this.mcpClient.getCurrentUrl?.() || '未知'}`);
+        }
         this.logSnapshotSummary(snapshot, runId);
         
       } catch (error) {
         console.warn(`[${runId}] ⚠️ 获取页面快照失败，继续无快照解析:`, error.message);
       }
 
-      // AI解析步骤（带页面上下文）
-      const parseResult = await this.aiParser.parseTestDescription(testCase.steps, testCase.name, runId, snapshot);
+      // 🔥 移除一次性完整解析，改为逐步解析
+
+      // 🔥 智能用例拆分和逐步执行
+      this.updateTestRunStatus(runId, 'running', '开始智能拆分和执行测试步骤...');
+
+      console.log(`🎯 [${runId}] ===== 开始智能拆分模式 =====`);
+      console.log(`📋 [${runId}] 原始测试用例: "${testCase.steps}"`);
       
-      if (!parseResult.success || !parseResult.steps || parseResult.steps.length === 0) {
-        console.error(`❌ [${runId}] AI解析失败: ${parseResult.error || '没有解析出任何步骤'}`);
-        this.updateTestRunStatus(runId, 'failed', `AI解析失败: ${parseResult.error || '没有解析出有效的测试步骤'}`);
-        return;
+      let stepNumber = 1;
+      let remainingSteps = testCase.steps;
+      
+      // 🔥 增强的换行符处理，支持多种换行格式
+      const normalizeLineBreaks = (text: string) => {
+        return text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+      };
+      
+      remainingSteps = normalizeLineBreaks(remainingSteps);
+      const allLines = remainingSteps.split('\n').filter(line => line.trim());
+      console.log(`📊 [${runId}] 总步骤数: ${allLines.length}行`);
+      
+      // 🔥 增强的智能拆分 - 不仅限于长文本
+      if (allLines.length === 1) {
+        console.log(`🔍 [${runId}] 检测到单行文本，使用AI智能拆分...`);
+        const smartSplit = await this.smartSplitTestSteps(remainingSteps, runId);
+        if (smartSplit.length > 1) {
+          remainingSteps = smartSplit.join('\n');
+          console.log(`✅ [${runId}] AI智能拆分为 ${smartSplit.length} 个步骤`);
+          
+          // 重新计算行数
+          const newLines = remainingSteps.split('\n').filter(line => line.trim());
+          console.log(`📊 [${runId}] 拆分后总步骤数: ${newLines.length}行`);
+        }
       }
-
-      const parsedSteps = parseResult.steps;
       
-      console.log(`🎉 [${runId}] AI解析完成，共解析出 ${parsedSteps.length} 个步骤:`);
-      parsedSteps.forEach((step, index) => {
-        console.log(`  ${index + 1}. [${step.action}] ${step.description}`);
-        if (step.selector) console.log(`     选择器: ${step.selector}`);
-        if (step.url) console.log(`     URL: ${step.url}`);
-        if (step.value) console.log(`     值: ${step.value}`);
-      });
-
-      this.addLog(runId, `✅ AI解析成功，共${parsedSteps.length}个步骤`, 'success');
-
-      // 执行步骤
-      console.log(`⚡ [${runId}] === 开始执行步骤 ===`);
-      this.updateTestRunStatus(runId, 'running', `开始执行 ${parsedSteps.length} 个步骤...`);
-
-      for (let i = 0; i < parsedSteps.length; i++) {
-        const step = this.processParsedStep(parsedSteps[i], i + 1, runId, testRun);
+      while (remainingSteps.trim()) {
+        console.log(`🤖 [${runId}] ===== 步骤 ${stepNumber} =====`);
+        console.log(`📋 [${runId}] 当前剩余: "${remainingSteps.substring(0, 150)}..."`);
         
-        console.log(`\n🎬 [${runId}] === 执行第 ${i + 1}/${parsedSteps.length} 步 ===`);
-        console.log(`📝 [${runId}] 步骤: ${step.description}`);
+        const currentLines = remainingSteps.split('\n').filter(line => line.trim());
+        console.log(`📊 [${runId}] 当前剩余步骤数: ${currentLines.length}行`);
         
-        this.addLog(runId, `执行步骤 ${i + 1}/${parsedSteps.length}: ${step.description}`, 'info');
-        this.updateTestRunStatus(runId, 'running', `执行步骤 ${i + 1}/${parsedSteps.length}: ${step.description}`);
+        // 🔍 每步骤前获取最新页面快照
+        let currentSnapshot = null;
+        try {
+          currentSnapshot = await this.mcpClient.getSnapshot();
+          if (currentSnapshot) {
+            console.log(`📊 [${runId}] 已获取当前页面快照 (${currentSnapshot.split('\n').length}行)`);
+          }
+        } catch (snapshotError) {
+          console.warn(`⚠️ [${runId}] 获取页面快照失败，继续无快照解析:`, snapshotError.message);
+        }
+
+        // 🔥 获取下一步骤
+        const nextLine = currentLines[0] || remainingSteps.trim();
+        console.log(`📋 [${runId}] 当前步骤文本: "${nextLine}"`);
+        
+        // 🔥 使用增强的逐步解析
+        const parseResult = await this.aiParser.parseNextStep(remainingSteps, currentSnapshot, runId);
+        
+        if (!parseResult.success || !parseResult.step) {
+          console.log(`✅ [${runId}] 所有步骤已执行完成`);
+          break;
+        }
+
+        const step = this.processParsedStep(parseResult.step, stepNumber, runId, testRun);
+        remainingSteps = parseResult.remaining || '';
+        
+        console.log(`✅ [${runId}] 步骤 ${stepNumber} 解析成功: ${step.description}`);
+        console.log(`📋 [${runId}] 下一步骤剩余: ${remainingSteps.split('\n').filter(l => l.trim()).length}行`);
+        
+        console.log(`🎯 [${runId}] 执行步骤 ${stepNumber}: ${step.description}`);
+        this.addLog(runId, `执行步骤 ${stepNumber}: ${step.description}`, 'info');
+        this.updateTestRunStatus(runId, 'running', `执行步骤 ${stepNumber}: ${step.description}`);
 
         try {
           const result = await this.executeStepWithRetry(step, testRun);
           if (result.success) {
-            console.log(`✅ [${runId}] 第 ${i + 1} 步执行成功`);
-            this.addLog(runId, `✅ 步骤 ${i + 1} 执行成功`, 'success');
+            console.log(`✅ [${runId}] 步骤 ${stepNumber} 执行成功`);
+            this.addLog(runId, `✅ 步骤 ${stepNumber} 执行成功`, 'success');
           } else {
-            console.error(`❌ [${runId}] 第 ${i + 1} 步执行失败: ${result.error}`);
-            this.addLog(runId, `❌ 步骤 ${i + 1} 执行失败: ${result.error}`, 'error');
-            this.updateTestRunStatus(runId, 'failed', `步骤 ${i + 1} 执行失败: ${result.error}`);
+            console.error(`❌ [${runId}] 步骤 ${stepNumber} 失败: ${result.error}`);
+            this.addLog(runId, `❌ 步骤 ${stepNumber} 执行失败: ${result.error}`, 'error');
+            this.updateTestRunStatus(runId, 'failed', `步骤 ${stepNumber} 执行失败: ${result.error}`);
             return;
           }
         } catch (error: any) {
-          console.error(`💥 [${runId}] 第 ${i + 1} 步执行异常:`, error);
-          this.addLog(runId, `💥 步骤 ${i + 1} 执行异常: ${error.message}`, 'error');
-          this.updateTestRunStatus(runId, 'failed', `步骤 ${i + 1} 执行异常: ${error.message}`);
+          console.error(`💥 [${runId}] 步骤 ${stepNumber} 异常:`, error.message);
+          this.addLog(runId, `💥 步骤 ${stepNumber} 执行异常: ${error.message}`, 'error');
+          this.updateTestRunStatus(runId, 'failed', `步骤 ${stepNumber} 执行异常: ${error.message}`);
           return;
         }
+
+        stepNumber++;
+        
+        // 🔥 步骤间短暂等待，确保状态同步
+        await new Promise(resolve => setTimeout(resolve, 1000));
       }
 
-      console.log(`🎉 [${runId}] === 所有步骤执行完成 ===`);
-      this.addLog(runId, `🎉 所有 ${parsedSteps.length} 个步骤执行完成`, 'success');
+      this.addLog(runId, `🎉 所有 ${stepNumber - 1} 个步骤执行完成`, 'success');
 
       // 处理上下文共享
       await this.handleContextSharingOnSuccess(testRun);
 
-      this.updateTestRunStatus(runId, 'completed', `测试执行成功，共执行 ${parsedSteps.length} 个步骤`);
+      this.updateTestRunStatus(runId, 'completed', `测试执行成功，共执行 ${stepNumber - 1} 个步骤`);
       this.addLog(runId, '✅ 测试执行成功完成', 'success');
 
-      console.log(`🏆 [${runId}] ======= 测试执行成功 =======\n`);
+      console.log(`🏆 [${runId}] 测试完成 ✅`);
 
     } catch (error: any) {
-      console.error(`💥 [${runId}] 测试执行失败:`, error);
-      console.error(`💥 [${runId}] 错误堆栈:`, error.stack);
+      console.error(`💥 [${runId}] 测试失败:`, error.message);
       this.addLog(runId, `💥 测试执行失败: ${error.message}`, 'error');
       this.updateTestRunStatus(runId, 'failed', `测试执行失败: ${error.message}`);
     } finally {
@@ -297,7 +359,7 @@ export class TestExecutionService {
 
   private async executeStepWithRetry(step: TestStep, testRun: TestRun) {
     const runId = testRun.id;
-    const maxRetries = 1;
+    const maxRetries = 3; // 增加重试次数
     let attempt = 0;
 
     while (attempt < maxRetries) {
@@ -307,13 +369,175 @@ export class TestExecutionService {
         this.addLog(runId, `✅ [步骤 ${step.order}] 执行成功`, 'success');
         testRun.successfulSteps.push(step.id);
         this.wsManager.broadcast({ type: 'test_update', runId, data: { successfulSteps: testRun.successfulSteps } });
-        return { success: true }; // Indicate success for the loop
+        return { success: true };
       } catch (error: any) {
         attempt++;
+        
+        // 🔥 增强失败诊断信息，但减少日志量
+        console.error(`❌ [${runId}] 步骤${step.order}失败 (尝试 ${attempt}/${maxRetries}): ${error.message}`);
+        
+        if (attempt < maxRetries) {
+          console.log(`🔄 [${runId}] 正在重试...`);
+          await new Promise(resolve => setTimeout(resolve, 2000 * attempt)); // 递增等待
+        } else {
+          // 最后一次失败时获取详细信息
+          try {
+            const diagnosticSnapshot = await this.mcpClient.getSnapshot();
+            if (diagnosticSnapshot) {
+              const lines = diagnosticSnapshot.split('\n');
+              const elements = lines.filter(l => l.includes('button') || l.includes('input') || l.includes('textbox')).length;
+              console.error(`📊 [${runId}] 诊断: 页面${elements}个可交互元素`);
+            }
+          } catch (diagnosticError) {
+            console.error(`📊 [${runId}] 诊断快照失败:`, diagnosticError);
+          }
+        }
+        
         this.addLog(runId, `⚠️ [步骤 ${step.order}] 失败 (尝试 ${attempt}/${maxRetries}): ${error.message}`, 'warning');
       }
     }
+    
+    // 所有重试都失败后，尝试AI自愈
+    if (step.action === 'click' || step.action === 'fill') {
+      console.log(`🤖 [${runId}] 尝试AI自愈定位...`);
+      try {
+        await this.attemptSelfHeal(step, testRun);
+        return { success: true };
+      } catch (healError) {
+        console.error(`❌ AI自愈失败:`, healError);
+      }
+    }
+    
     return { success: false, error: `步骤 ${step.order} 执行失败，达到最大重试次数。` };
+  }
+
+  /**
+   * 🔥 智能AI拆分测试用例 - 针对中文格式优化
+   */
+  private async smartSplitTestSteps(longText: string, runId: string): Promise<string[]> {
+    try {
+      console.log(`[${runId}] 🤖 AI开始智能拆分测试用例...`);
+      
+      const prompt = `你是一个专业的测试用例设计专家。请将以下测试用例拆分为多个独立的、可执行的步骤。
+
+原始测试用例：
+${longText}
+
+拆分规则：
+1. 按序号（1、2、3...）或动作词（点击、输入、验证等）进行拆分
+2. 每个步骤必须是独立的操作
+3. 保留中文描述，使其自然可读
+4. 使用换行符分隔每个步骤
+5. 确保步骤顺序正确
+
+示例输入：
+1、进入网站https://example.com/login 2、输入账号admin 3、点击登入
+
+示例输出：
+进入网站 https://example.com/login
+输入账号 admin
+点击登入按钮
+
+请直接返回拆分后的步骤，每行一个步骤，不要添加序号或其他标记：
+
+拆分结果：`;
+
+      const response = await this.aiParser.callOpenRouter(prompt, runId, 1000);
+      
+      if (response.success && response.content) {
+        let content = response.content;
+        
+        // 清理AI返回的内容
+        content = content.replace(/^拆分结果：\s*/gm, '');
+        content = content.replace(/^```.*\n?/gm, '');
+        content = content.replace(/\n```\s*$/gm, '');
+        
+        const splitSteps = content
+          .split('\n')
+          .map(line => line.trim())
+          .filter(line => line.length > 0 && !line.match(/^[\d\s]*$/));
+        
+        console.log(`[${runId}] ✅ AI智能拆分完成，共 ${splitSteps.length} 个步骤`);
+        console.log(`[${runId}] 拆分结果:`, splitSteps);
+        
+        return splitSteps.length > 0 ? splitSteps : this.simpleRuleBasedSplit(longText);
+      }
+      
+      // 如果AI拆分失败，使用规则拆分
+      console.log(`[${runId}] ⚠️ AI拆分失败，使用规则拆分`);
+      return this.simpleRuleBasedSplit(longText);
+      
+    } catch (error) {
+      console.error(`[${runId}] ❌ AI智能拆分失败:`, error);
+      return this.simpleRuleBasedSplit(longText);
+    }
+  }
+
+/**
+   * 🔥 增强的规则拆分 - 针对中文格式优化
+   */
+  private simpleRuleBasedSplit(text: string): string[] {
+    // 中文数字和常见分隔符
+    const chineseNumbers = /[一二三四五六七八九十]+[、.，,\s]/g;
+    const arabicNumbers = /\d+[、.，,\s]/g;
+    
+    // 先尝试按中文序号拆分
+    let steps: string[] = [];
+    
+    // 方法1: 按中文序号拆分
+    const chineseSplit = text.split(chineseNumbers).filter(s => s.trim());
+    if (chineseSplit.length > 1) {
+      steps = chineseSplit.map(s => s.trim()).filter(s => s);
+    } else {
+      // 方法2: 按阿拉伯数字序号拆分
+      const arabicSplit = text.split(arabicNumbers).filter(s => s.trim());
+      if (arabicSplit.length > 1) {
+        steps = arabicSplit.map(s => s.trim()).filter(s => s);
+      } else {
+        // 方法3: 按动作词拆分
+        const actionKeywords = [
+          '打开', '访问', '导航到', '进入', '前往',
+          '点击', '选择', '按下', '选中', '单击',
+          '输入', '填写', '填入', '键入', '录入',
+          '等待', '暂停', '延迟',
+          '验证', '检查', '确认', '断言', '校验',
+          '截图', '保存', '提交', '登录', '登入'
+        ];
+        
+        // 按逗号和句号拆分
+        const commaSplit = text.split(/[,，；;、]/).filter(s => s.trim());
+        if (commaSplit.length > 1) {
+          steps = commaSplit.map(s => s.trim()).filter(s => s);
+        } else {
+          // 按句号拆分
+          const sentenceSplit = text.split(/[。！？.!?]/).filter(s => s.trim());
+          steps = sentenceSplit.map(s => s.trim()).filter(s => s);
+        }
+      }
+    }
+    
+    // 确保每个步骤都有动作词
+    const enhancedSteps = steps.map(step => {
+      let enhanced = step.trim();
+      
+      // 如果没有动作词，添加适当的动作词
+      if (!enhanced.match(/^(打开|访问|导航|进入|点击|输入|填写|验证|检查)/)) {
+        // 根据内容推测动作
+        if (enhanced.includes('http')) {
+          enhanced = '打开 ' + enhanced;
+        } else if (enhanced.includes('账号') || enhanced.includes('密码') || enhanced.includes('用户名')) {
+          enhanced = '输入 ' + enhanced;
+        } else if (enhanced.includes('按钮') || enhanced.includes('登录') || enhanced.includes('登入')) {
+          enhanced = '点击 ' + enhanced;
+        } else {
+          enhanced = '执行 ' + enhanced;
+        }
+      }
+      
+      return enhanced;
+    });
+    
+    return enhancedSteps.filter(s => s.length > 2);
   }
 
   private async attemptSelfHeal(step: TestStep, testRun: TestRun) {
@@ -410,54 +634,96 @@ export class TestExecutionService {
     return ((endTime.getTime() - startTime.getTime()) / 1000).toFixed(2) + 's';
   }
 
+  private async validatePageContent(runId: string): Promise<{hasContent: boolean, url?: string, title?: string}> {
+    try {
+      const snapshot = await this.mcpClient.getSnapshot();
+      const lines = snapshot?.split('\n') || [];
+      const hasInteractiveElements = lines.some(l => 
+        l.includes('textbox') || l.includes('button') || 
+        l.includes('link') || l.includes('input') ||
+        l.includes('form') || l.includes('div')
+      );
+      
+      return {
+        hasContent: hasInteractiveElements && lines.length > 50,
+        url: snapshot?.match(/url:\s*['"]([^'"]+)['"]/)?.[1],
+        title: snapshot?.match(/title:\s*['"]([^'"]+)['"]/)?.[1]
+      };
+    } catch (error) {
+      return { hasContent: false };
+    }
+  }
+
   private logSnapshotSummary(snapshot: string, runId: string): void {
-    if (!snapshot) return;
+    if (!snapshot) {
+      console.log(`[${runId}] 📋 页面快照: 空`);
+      return;
+    }
     
     try {
       const lines = snapshot.split('\n');
       const elements = [];
       
+      // 提取URL和标题
+      const urlMatch = snapshot.match(/url:\s*["']([^"']+)["']/);
+      const titleMatch = snapshot.match(/title:\s*["']([^"']+)["']/);
+      
+      // 提取所有可交互元素
       for (let i = 0; i < lines.length; i++) {
         const line = lines[i].trim();
-        if (line.includes('textbox') || line.includes('button') || line.includes('link') || line.includes('input')) {
+        if (line.includes('textbox') || line.includes('button') || 
+            line.includes('link') || line.includes('input') || 
+            line.includes('form') || line.includes('div')) {
+          
           const textMatch = line.match(/text:\s*["']([^"']+)["']/);
           const placeholderMatch = line.match(/placeholder:\s*["']([^"']+)["']/);
-          const typeMatch = line.match(/type:\s*["']([^"']+)["']/);
+          const roleMatch = line.match(/role:\s*["']([^"']+)["']/);
+          const refMatch = line.match(/ref:\s*(\d+)/);
           
-          const refLine = lines.slice(Math.max(0, i-2), Math.min(lines.length, i+3))
-                           .find(l => l.includes('ref:'));
-          const refMatch = refLine?.match(/ref:\s*(\d+)/);
-          
-          if (refMatch && (textMatch || placeholderMatch)) {
+          if (textMatch || placeholderMatch || roleMatch) {
             elements.push({
               type: line.includes('textbox') ? '输入框' : 
                    line.includes('button') ? '按钮' : 
-                   line.includes('link') ? '链接' : '输入',
+                   line.includes('link') ? '链接' : 
+                   line.includes('input') ? '输入' : '元素',
               text: textMatch?.[1] || placeholderMatch?.[1] || '',
               placeholder: placeholderMatch?.[1] || '',
-              typeAttr: typeMatch?.[1] || '',
-              ref: refMatch[1]
+              role: roleMatch?.[1] || '',
+              ref: refMatch?.[1] || '?'
             });
           }
         }
       }
 
-      if (elements.length === 0) {
-        console.log(`[${runId}] 📋 页面快照: 未发现可交互元素`);
+      // 页面状态诊断
+      if (lines.length < 50) {
+        console.log(`[${runId}] 📋 页面状态: 异常 - 内容过短(${lines.length}行)`);
+        if (urlMatch) console.log(`[${runId}] 📊 URL: ${urlMatch[1]}`);
+        if (titleMatch) console.log(`[${runId}] 📊 标题: ${titleMatch[1]}`);
+        console.log(`[${runId}] 📊 建议: 检查网络连接或页面访问权限`);
         return;
       }
 
-      console.log(`[${runId}] 📋 页面快照摘要:`);
-      elements.slice(0, 5).forEach(function(element, index) {
-        console.log(`[${runId}]   ${index + 1}. ${element.type}: "${element.text}" [ref=${element.ref}]`);
+      if (elements.length === 0) {
+        console.log(`[${runId}] 📋 页面状态: 正常加载但无交互元素`);
+        console.log(`[${runId}] 📊 可能原因: 页面使用iframe/Shadow DOM或动态加载`);
+        console.log(`[${runId}] 📊 建议: 等待更长时间或检查页面结构`);
+        return;
+      }
+
+      console.log(`[${runId}] 📋 页面状态: 正常 (${elements.length}个元素)`);
+      elements.slice(0, 5).forEach((element, index) => {
+        const label = element.text || element.placeholder || element.role;
+        console.log(`   ${element.type}: "${label}" [ref=${element.ref}]`);
       });
       
       if (elements.length > 5) {
-        console.log(`[${runId}]   ... 共 ${elements.length} 个元素`);
+        console.log(`   ... 共${elements.length}个`);
       }
       
     } catch (error) {
-      console.log(`[${runId}] 📋 页面快照摘要: 解析失败 - ${error.message}`);
+      console.log(`[${runId}] 📋 页面分析: 解析失败 - ${error.message}`);
     }
   }
-  // #endregion 
+  // #endregion
+}

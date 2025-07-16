@@ -73,6 +73,33 @@ export class AITestParser {
   private async buildPrompt(description: string, testName: string, snapshot: any | null): Promise<string> {
     const pageContext = snapshot ? await this.buildPageContext(snapshot) : '页面快照不可用。';
 
+    // 获取当前URL用于导航步骤
+    let currentUrl = '';
+    try {
+      if (this.mcpClient && this.mcpClient.getCurrentUrl) {
+        currentUrl = await this.mcpClient.getCurrentUrl() || '';
+      }
+    } catch (error) {
+      console.warn(`获取当前URL失败:`, error);
+    }
+
+    // 从当前URL提取基础域名
+    let baseDomain = '';
+    if (currentUrl) {
+      try {
+        const url = new URL(currentUrl);
+        baseDomain = `${url.protocol}//${url.host}`;
+      } catch (e) {
+        baseDomain = currentUrl;
+      }
+    }
+
+    // 🔥 如果无法从当前URL获取域名，使用默认域名
+    if (!baseDomain || baseDomain === 'about:blank' || baseDomain === 'data:') {
+      baseDomain = 'https://k8s-saas-tmp.ycb51.cn';
+      console.warn(`使用默认域名: ${baseDomain}`);
+    }
+
     return `你是一个专业的MCP自动化测试专家。请将以下自然语言描述转换为结构化的测试步骤。
 
 测试用例名称: ${testName}
@@ -80,14 +107,23 @@ export class AITestParser {
 
 ${pageContext}
 
-🔥 **关键要求**:
-1. **必须基于实际页面快照**生成选择器，绝不要生成不存在的元素
-2. **使用MCP兼容的选择器格式**：
-   - 文本匹配：使用 "text=实际文本内容" 格式
-   - 占位符匹配：使用 "placeholder=实际占位符文本" 格式
-   - 类型匹配：使用 "type=实际类型值" 格式
-3. **当页面快照显示具体文本时**，直接使用该文本作为选择器
-4. **避免使用CSS选择器语法**，改用基于实际页面内容的描述
+当前页面URL: ${currentUrl}
+基础域名: ${baseDomain}
+
+🔥 **严格URL生成规则 - 仅用户指定链接时导航**:
+1. **绝对禁止自动生成URL** - 除非用户明确提供完整URL
+2. **所有中文描述都使用交互操作** - "商品管理"、"用户管理"等都使用click操作
+3. **仅当描述包含完整http/https链接时才导航**:
+   - "访问 https://example.com/login" → 使用navigate操作
+   - "打开 https://k8s-saas-tmp.ycb51.cn/product-management" → 使用navigate操作
+   - "商品管理" → 使用click操作，不导航
+   - "点击商品管理按钮" → 使用click操作，不导航
+
+🔥 **URL构建绝对规则**:
+- 任何以"/"开头的路径 → 替换为"${baseDomain}/路径"
+- 只提到页面名称 → 使用标准映射URL
+- 必须包含"https://"协议头
+- 域名部分必须是"k8s-saas-tmp.ycb51.cn"
 
 要求:
 1. 分析描述中的每个操作，转换为具体的MCP测试步骤
@@ -114,7 +150,7 @@ ${pageContext}
   "id": "step-N",
   "action": "操作类型",
   "selector": "选择器(优先使用Playwright语法)",
-  "url": "网址(navigate时使用)",
+  "url": "绝对网址(navigate时使用)",
   "value": "输入值(fill/type时使用)",
   "text": "期望文本(expect时使用)",
   "condition": "验证条件(expect时使用)",
@@ -126,9 +162,10 @@ ${pageContext}
   "order": 步骤序号
 }
 
-🔥 **重要提示**: 
-1.  **导航后必须加等待**：在 \`navigate\` 操作之后，请务必紧跟一个 \`wait\` 步骤（例如等待3秒），确保页面有足够时间加载完成，否则后续步骤会因为找不到元素而失败。
-2.  **复杂操作分解**：将包含多个动作的步骤（如"输入密码并点击登录"）分解为多个独立的步骤。
+🔥 **URL验证检查表 - 必须满足全部条件**:
+□ 包含"https://"协议
+□ 包含"k8s-saas-tmp.ycb51.cn"域名
+□ 不是相对路径(不含"/product-management"等)
 
 Playwright MCP推荐选择器策略 (按优先级排序):
 1. **文本定位器**: 
@@ -166,8 +203,8 @@ Playwright MCP推荐选择器策略 (按优先级排序):
   {
     "id": "step-1",
     "action": "navigate",
-    "url": "https://www.example.com",
-    "description": "打开示例网站",
+    "url": "https://k8s-saas-tmp.ycb51.cn/login",
+    "description": "打开登录页面",
     "order": 1
   },
   {
@@ -187,19 +224,20 @@ Playwright MCP推荐选择器策略 (按优先级排序):
   },
   {
     "id": "step-4",
-    "action": "expect",
-    "selector": ":has-text('欢迎')",
-    "condition": "visible",
-    "description": "验证登录成功",
+    "action": "navigate",
+    "url": "https://k8s-saas-tmp.ycb51.cn/product-management",
+    "description": "进入商品管理页面",
     "order": 4
   }
-]`;
+]
+
+⚠️ **绝对URL强制要求**: 所有导航步骤必须使用包含完整协议和域名的绝对URL，绝对禁止使用相对路径。`;
   }
 
   /**
    * 调用OpenRouter API
    */
-  private async callOpenRouter(
+  public async callOpenRouter(
     prompt: string, 
     runId: string, 
     max_tokens = 2000,
@@ -385,31 +423,47 @@ Playwright MCP推荐选择器策略 (按优先级排序):
   }
 
   /**
-   * 🔥 新增：解析AI返回的单步结果
+   * 🔥 专为换行符分割的测试用例设计的单步解析
    */
   private parseAINextStepResponse(content: string, runId: string): { step: TestStep; remaining: string } {
     try {
-      const step = JSON.parse(content) as TestStep;
-
-      // Manually find the step description in the original remaining steps to split them.
-      // This is a bit brittle but necessary since the AI now only returns the next step.
-      const originalRemaining = this.lastRemainingSteps || '';
-      const stepDescription = step.description;
-      
-      let remaining = '';
-      const lines = originalRemaining.split('\n');
-      const stepIndex = lines.findIndex(line => line.includes(stepDescription));
-      
-      if (stepIndex !== -1 && stepIndex + 1 < lines.length) {
-        remaining = lines.slice(stepIndex + 1).join('\n');
+      let cleanContent = content.replace(/```json\s*/gi, '').replace(/```\s*/g, '');
+      const jsonMatch = cleanContent.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        cleanContent = jsonMatch[0];
       }
 
-      this.log(runId, `📝 AI成功解析步骤: ${step.description}`);
-      return { step, remaining };
+      const step = JSON.parse(cleanContent) as TestStep;
+
+      // 🔍 调试：记录原始内容和解析的步骤
+      console.log(`[${runId}] 📋 AI返回的步骤: ${step.description}`);
+
+      // 验证步骤内容
+      if (!step.action || !step.description) {
+        throw new Error('AI返回的步骤缺少必要字段');
+      }
+
+      // 确保步骤有ID和顺序
+      step.id = step.id || 'step-auto';
+      step.order = step.order || 1;
+
+      console.log(`[${runId}] ✅ AI成功解析步骤: ${step.description}`);
+      
+      return { step, remaining: '' }; // remaining由调用方处理
     } catch (error: any) {
       this.log(runId, `❌ 解析AI的下一步响应失败: ${error.message}`, 'error');
       this.log(runId, `❌ 原始内容: ${content}`, 'error');
-      throw new Error(`解析下一步错误: ${error.message}`);
+      
+      // 返回一个默认的等待步骤
+      const fallbackStep: TestStep = {
+        id: 'fallback-step',
+        action: 'wait',
+        timeout: 1000,
+        description: '等待步骤',
+        order: 1
+      };
+      
+      return { step: fallbackStep, remaining: '' };
     }
   }
 
@@ -626,8 +680,24 @@ Playwright MCP推荐选择器策略 (按优先级排序):
     for (const step of steps) {
       switch (step.action) {
         case 'navigate':
-          if (!step.url || !step.url.startsWith('http')) {
+          if (!step.url) {
             throw new Error(`导航步骤缺少有效URL: ${step.description}`);
+          }
+          
+          // 🔥 修复相对URL为绝对URL
+          if (step.url && !step.url.startsWith('http')) {
+            console.warn(`⚠️ 检测到相对URL "${step.url}"，正在修复为绝对URL...`);
+            if (step.url.startsWith('/')) {
+              step.url = `https://k8s-saas-tmp.ycb51.cn${step.url}`;
+            } else {
+              step.url = `https://k8s-saas-tmp.ycb51.cn/${step.url}`;
+            }
+            console.warn(`✅ URL已修复为: "${step.url}"`);
+          }
+          
+          // 确保URL格式正确
+          if (!step.url.startsWith('https://k8s-saas-tmp.ycb51.cn')) {
+            console.warn(`⚠️ URL格式可能不正确: ${step.url}`);
           }
           break;
         case 'click':
@@ -724,19 +794,28 @@ ${JSON.stringify(simplifiedElements, null, 2)}
       }
       this.lastRemainingSteps = remainingStepsText; // Cache for response parsing
 
-      const prompt = await this.buildNextStepPrompt(remainingStepsText, snapshot);
+      // 🔥 获取第一行作为当前步骤
+      const lines = remainingStepsText.split('\n').filter(line => line.trim());
+      if (lines.length === 0) {
+        return { success: true, step: undefined, remaining: '' };
+      }
+
+      const currentStepText = lines[0].trim();
+      const remainingText = lines.slice(1).join('\n');
+
+      const prompt = await this.buildNextStepPrompt(currentStepText, snapshot, runId);
       const response = await this.callOpenRouter(prompt, runId, 400, 'json_object');
 
       if (!response.success || !response.content) {
         throw new Error(response.error || 'AI failed to return content for the next step.');
       }
 
-      const { step, remaining } = this.parseAINextStepResponse(response.content, runId);
+      const step = this.parseAINextStepResponse(response.content, runId);
 
       return {
         success: true,
-        step: step,
-        remaining: remaining,
+        step: step.step,
+        remaining: remainingText,
         rawResponse: response.content
       };
     } catch (error: any) {
@@ -1407,46 +1486,111 @@ Return a single JSON object for the 'expect' step.
   /**
    * @returns The generated prompt string.
    */
-  private async buildNextStepPrompt(remainingStepsText: string, snapshot: any | null): Promise<string> {
+  private async buildNextStepPrompt(remainingStepsText: string, snapshot: any | null, runId: string): Promise<string> {
     const pageContext = snapshot
       ? await this.buildPageContext(snapshot)
       : 'No page snapshot available.';
 
-    return `You are a professional Playwright MCP automation testing expert. Based on the current page context and the remaining steps, generate the JSON for the *very next* step.
+    // 获取当前URL用于导航步骤
+    let currentUrl = '';
+    try {
+      if (this.mcpClient && this.mcpClient.getCurrentUrl) {
+        currentUrl = await this.mcpClient.getCurrentUrl() || '';
+      }
+    } catch (error) {
+      console.warn(`[${runId}] 获取当前URL失败:`, error);
+    }
 
-Remaining Steps:
+    // 从当前URL提取基础域名
+    let baseDomain = '';
+    if (currentUrl) {
+      try {
+        const url = new URL(currentUrl);
+        baseDomain = `${url.protocol}//${url.host}`;
+      } catch (e) {
+        baseDomain = currentUrl;
+      }
+    }
+
+    // 🔥 如果无法从当前URL获取域名，使用默认域名
+    if (!baseDomain || baseDomain === 'about:blank' || baseDomain === 'data:') {
+      baseDomain = 'https://k8s-saas-tmp.ycb51.cn';
+      console.warn(`[${runId}] 使用默认域名: ${baseDomain}`);
+    }
+
+    return `你是一个专业的Playwright MCP自动化测试专家。基于当前页面上下文和剩余步骤，为*下一步*生成JSON。
+
+剩余步骤:
 ${remainingStepsText}
 
 ${pageContext}
 
-Requirements:
-1.  **Analyze the current page context** to find the most accurate selector for the next action.
-2.  Prioritize user-visible text, roles, and accessibility attributes for selectors.
-3.  Generate JSON for ONLY the next single step.
-4.  If the next step is an assertion (e.g., "verify the welcome message is displayed"), use the "expect" action.
-5.  Return ONLY the JSON object for the next step, nothing else.
+当前页面URL: ${currentUrl}
+基础域名: ${baseDomain}
 
-Supported Actions: "navigate", "click", "fill", "type", "expect", "wait", "screenshot", "hover", "drag", "select_option", "file_upload", "press_key", "scroll".
+🔥 **强制要求 - 所有操作类型支持**:
 
-JSON format for the next step:
+**导航步骤 (navigate)**:
+- **必须使用绝对URL** - 不要用"/product-management"，必须用"${baseDomain}/product-management"
+- **中文描述自动映射**:
+  - "商品管理" → "${baseDomain}/product-management"
+  - "用户管理" → "${baseDomain}/user-management"
+  - "登录页面" → "${baseDomain}/login"
+
+**交互步骤 (click/fill/type)**:
+- **点击操作**: 使用text=, role=, 或具体选择器
+- **输入操作**: 使用placeholder=, role=textbox[name=""], 或具体选择器
+- **选择器必须基于当前页面可见元素**
+
+**支持的action类型**:
+- navigate: 页面导航（仅当用户明确提供完整URL时使用）
+- click: 点击元素（用于所有按钮、链接、菜单点击操作）
+- fill: 输入文本（用于输入框操作）
+- type: 逐字符输入
+- expect: 验证元素
+- wait: 等待时间
+
+**严格操作规则**:
+- **所有中文描述都使用click/fill等交互操作**
+- **除非描述包含完整http/https链接，否则绝不使用navigate**
+- "商品管理" → 使用click操作，查找页面上的商品管理元素
+- "点击登录按钮" → 使用click操作
+- "输入用户名" → 使用fill操作
+- "https://example.com/login" → 使用navigate操作
+
+**选择器优先级**:
+1. 基于可见文本: text="登录"
+2. 基于角色: role=button[name="登录"]
+3. 基于占位符: placeholder="请输入用户名"
+4. 基于属性: [data-testid="submit"]
+
+**JSON格式示例**:
+导航步骤:
 {
-  "id": "step-N",
-  "action": "action_type",
-  "selector": "CSS or Playwright selector",
-  "url": "URL for navigate",
-  "value": "text to fill",
-  "description": "description of the step",
-  "order": "auto" 
+  "id": "step-1",
+  "action": "navigate",
+  "url": "${baseDomain}/login",
+  "description": "打开登录页面"
 }
 
-Example: If the next step is "click the login button", and the page context shows a button with "data-testid=login-button" and text "Log In", your response should be:
+点击步骤:
 {
   "id": "step-2",
   "action": "click",
-  "selector": "button:has-text('Log In')",
-  "description": "Click the login button",
-  "order": "auto"
-}`;
+  "selector": "text=登录",
+  "description": "点击登录按钮"
+}
+
+输入步骤:
+{
+  "id": "step-3",
+  "action": "fill",
+  "selector": "placeholder=请输入用户名",
+  "value": "admin",
+  "description": "输入用户名"
+}
+
+**重要**: 除非用户明确提供完整的http/https链接，否则绝对禁止使用navigate操作。所有中文描述（包括"商品管理"、"用户管理"、"登录"等）都必须使用click、fill等交互操作，通过页面元素进行操作。绝不自动生成任何URL路径。`;
   }
 
   private async buildPageContext(snapshot: string): Promise<string> {
