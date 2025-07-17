@@ -47,6 +47,34 @@ export function testRoutes(testExecutionService: TestExecutionService): Router {
     }
   });
 
+  // 🔥 添加：测试用例执行 - 兼容前端路径
+  router.post('/cases/execute', async (req: Request, res: Response) => {
+    try {
+      const { caseId, testCaseId, environment = 'staging' } = req.body;
+      const actualCaseId = caseId || testCaseId;
+
+      if (!actualCaseId) {
+        return res.status(400).json({
+          success: false,
+          error: '缺少 caseId 或 testCaseId 参数'
+        });
+      }
+
+      const runId = await testExecutionService.runTest(actualCaseId, environment);
+
+      res.json({
+        success: true,
+        runId,
+        message: '测试已开始执行'
+      });
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        error: error.message
+      });
+    }
+  });
+
   // 获取测试运行状态
   router.get('/runs/:runId', async (req: Request, res: Response) => {
     try {

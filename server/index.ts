@@ -13,6 +13,9 @@ import { PlaywrightMcpClient } from './services/mcpClient.js';
 import { PrismaClient } from '../src/generated/prisma';
 import crypto from 'crypto';
 import { testRunStore } from '../lib/TestRunStore.js';
+import fetch from 'node-fetch';
+import axios from 'axios';
+import os from 'os';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -25,9 +28,11 @@ const server = createServer(app);
 const wss = new WebSocketServer({ server });
 const wsManager = new WebSocketManager(wss);
 
-// 初始化AI解析器和Playwright客户端
-const aiParser = new AITestParser();
+// 初始化Playwright客户端
 const mcpClient = new PlaywrightMcpClient();
+
+// 初始化AI解析器（传入MCP客户端）
+const aiParser = new AITestParser(mcpClient);
 
 // 初始化测试执行服务
 const testExecutionService = new TestExecutionService(wsManager, aiParser, mcpClient);
@@ -203,17 +208,87 @@ app.get('/health', (req, res) => {
   res.json({ status: 'OK', timestamp: new Date().toISOString() });
 });
 
-// Start Server
-server.listen(PORT, async () => {
-  console.log(`🚀 服务器已启动，正在监听端口 ${PORT}`);
-  console.log(`WebSocket 服务器已准备就绪`);
-  
-  // 确保默认系统用户存在
-  await ensureDefaultUser();
-  
-  // 初始化定时任务
-  setupCleanupTasks();
+// 全局错误处理中间件
+app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+  console.error('未处理的错误:', err);
+  res.status(500).json({
+    success: false,
+    error: '服务器内部错误',
+    details: process.env.NODE_ENV === 'development' ? err.message : undefined
+  });
 });
+
+// 404处理
+app.use('*', (req, res) => {
+  res.status(404).json({
+    success: false,
+    error: '接口不存在'
+  });
+});
+
+// Start Server
+async function startServer() {
+  try {
+    // 确保数据库和用户已设置
+    await ensureDefaultUser();
+
+    // 设置定时清理任务
+    setupCleanupTasks();
+
+    server.listen(PORT, () => {
+      logServerInfo();
+    });
+  } catch (error) {
+    console.error('❌ 服务器启动失败:', error);
+    process.exit(1);
+  }
+}
+
+async function logServerInfo() {
+  console.log('✅ 服务器已启动');
+
+  // 获取内外网IP地址
+  const networkInterfaces = os.networkInterfaces();
+  let localIp = '';
+  for (const name of Object.keys(networkInterfaces)) {
+    const netInterface = networkInterfaces[name];
+    if (netInterface) {
+      for (const net of netInterface) {
+        // 跳过非IPv4和内部地址
+        if (net.family === 'IPv4' && !net.internal) {
+          localIp = net.address;
+          break;
+        }
+      }
+    }
+    if (localIp) break;
+  }
+
+  try {
+    const response = await axios.get('https://api.ipify.org?format=json');
+    const publicIp = response.data.ip;
+    console.log('-------------------------------------------------');
+    console.log(`🚀 服务正在运行:`);
+    console.log(`   - 本地访问: http://localhost:${PORT}`);
+    if (localIp) {
+      console.log(`   - 内网访问: http://${localIp}:${PORT}`);
+    }
+    console.log(`   - 公网访问: http://${publicIp}:${PORT}`);
+    console.log('-------------------------------------------------');
+  } catch (error) {
+    console.error('❌ 获取公网IP失败:', error);
+    console.log('-------------------------------------------------');
+    console.log(`🚀 服务正在运行:`);
+    console.log(`   - 本地访问: http://localhost:${PORT}`);
+    if (localIp) {
+      console.log(`   - 内网访问: http://${localIp}:${PORT}`);
+    }
+    console.log('   - 公网IP: 获取失败');
+    console.log('-------------------------------------------------');
+  }
+}
+
+startServer();
 
 process.on('SIGINT', () => {
   console.log('🔌 正在关闭服务器...');

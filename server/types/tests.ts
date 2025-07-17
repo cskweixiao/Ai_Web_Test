@@ -12,11 +12,13 @@ export interface TestSuite {
   status?: 'active' | 'draft' | 'disabled';
 }
 
+export type TestSuiteRunStatus = 'queued' | 'starting' | 'running' | 'completed' | 'failed' | 'cancelled';
+
 export interface TestSuiteRun {
   id: string;
   suiteId: number;
   suiteName: string;
-  status: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
+  status: TestSuiteRunStatus;
   progress: number;
   startTime: Date;
   endTime?: Date;

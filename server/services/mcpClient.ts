@@ -31,6 +31,7 @@ export class PlaywrightMcpClient {
     if (this.isInitialized) await this.close();
 
     console.log('🚀 正在启动MCP Playwright服务器...');
+    console.log('📋 启动参数:', JSON.stringify(options, null, 2));
     
     try {
       // 🎯 强制使用有头模式 - 永远显示浏览器窗口
@@ -168,6 +169,8 @@ export class PlaywrightMcpClient {
     } catch (error: any) {
       console.error('❌ MCP服务器启动失败:', error);
       console.error('❌ 错误详情:', error.stack);
+      console.error('❌ 错误类型:', error.constructor.name);
+      console.error('❌ 完整错误对象:', JSON.stringify(error, Object.getOwnPropertyNames(error), 2));
       this.isInitialized = false;
       throw new Error(`MCP服务器启动失败: ${error.message}`);
     }

@@ -13,7 +13,9 @@
       "Bash(node:*)",
       "Bash(npm install:*)",
       "Bash(curl:*)",
-      "Bash(sed:*)"
+      "Bash(sed:*)",
+      "Bash(ls:*)",
+      "Bash(true)"
     ],
     "deny": []
   }
