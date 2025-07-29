@@ -51,8 +51,17 @@ export type TestAction =
   | 'wait'
   | 'screenshot'
   | 'hover'
+  | 'drag'
   | 'select'
   | 'upload'
+  | 'press_key'
+  | 'tab_new'
+  | 'tab_close'
+  | 'tab_select'
+  | 'back'
+  | 'forward'
+  | 'pdf_save'
+  | 'wait_for_text'
   | 'scroll';
 
 export type ExpectCondition = 

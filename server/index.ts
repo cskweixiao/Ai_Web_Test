@@ -8,18 +8,68 @@ import { WebSocketServer } from 'ws';
 import { createServer } from 'http';
 import { testRoutes } from './routes/test.js';
 import { suiteRoutes } from './routes/suite.js'; // 🔥 新增
+import { screenshotRoutes } from './routes/screenshots.js';
 import { AITestParser } from './services/aiParser.js';
 import { PlaywrightMcpClient } from './services/mcpClient.js';
+import { ScreenshotService } from './services/screenshotService.js';
 import { PrismaClient } from '../src/generated/prisma';
 import crypto from 'crypto';
 import { testRunStore } from '../lib/TestRunStore.js';
 import fetch from 'node-fetch';
 import axios from 'axios';
 import os from 'os';
+import fs from 'fs';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
 const prisma = new PrismaClient();
+
+// 🔥 新增：日志收集器
+const logFile = path.join(process.cwd(), 'debug-execution.log');
+function setupLogCollection() {
+  const originalLog = console.log;
+  const originalError = console.error;
+  const originalWarn = console.warn;
+  
+  // 清空之前的日志
+  fs.writeFileSync(logFile, `=== 测试执行日志 ${new Date().toISOString()} ===\n`);
+  
+  // 拦截console输出
+  console.log = function(...args) {
+    const timestamp = new Date().toISOString();
+    const message = args.map(arg => 
+      typeof arg === 'object' ? JSON.stringify(arg, null, 2) : String(arg)
+    ).join(' ');
+    
+    fs.appendFileSync(logFile, `[${timestamp}] LOG: ${message}\n`);
+    originalLog(...args);
+  };
+  
+  console.error = function(...args) {
+    const timestamp = new Date().toISOString();
+    const message = args.map(arg => 
+      typeof arg === 'object' ? JSON.stringify(arg, null, 2) : String(arg)
+    ).join(' ');
+    
+    fs.appendFileSync(logFile, `[${timestamp}] ERROR: ${message}\n`);
+    originalError(...args);
+  };
+  
+  console.warn = function(...args) {
+    const timestamp = new Date().toISOString();
+    const message = args.map(arg => 
+      typeof arg === 'object' ? JSON.stringify(arg, null, 2) : String(arg)
+    ).join(' ');
+    
+    fs.appendFileSync(logFile, `[${timestamp}] WARN: ${message}\n`);
+    originalWarn(...args);
+  };
+  
+  console.log('📝 日志收集已启用，日志文件:', logFile);
+}
+
+// 启用日志收集
+setupLogCollection();
 
 // 创建HTTP服务器
 const server = createServer(app);
@@ -34,8 +84,11 @@ const mcpClient = new PlaywrightMcpClient();
 // 初始化AI解析器（传入MCP客户端）
 const aiParser = new AITestParser(mcpClient);
 
+// 初始化截图服务
+const screenshotService = new ScreenshotService(prisma);
+
 // 初始化测试执行服务
-const testExecutionService = new TestExecutionService(wsManager, aiParser, mcpClient);
+const testExecutionService = new TestExecutionService(wsManager, aiParser, mcpClient, screenshotService);
 
 // 🔥 初始化套件执行服务
 const suiteExecutionService = new SuiteExecutionService(wsManager, testExecutionService);
@@ -93,10 +146,58 @@ async function ensureDefaultUser() {
 }
 
 // Middleware
+const allowedOrigins = [
+  'http://localhost:3000',
+  'http://localhost:5173', 
+  'http://localhost:5174',
+  'http://localhost:5175',
+  'http://localhost:5176',
+  'http://localhost:5177',
+  'http://localhost:5178',
+  'http://192.168.10.146:5173',
+  'http://192.168.10.146:5174',
+  'http://192.168.10.146:5175',
+  'http://192.168.10.146:5176',
+  'http://192.168.10.146:5177',
+  'http://192.168.10.146:5178'
+];
+
 const corsOptions = {
-  origin: ['http://localhost:5173', 'http://localhost:3000', 'http://localhost:5174', 'http://localhost:5175', 'http://localhost:5176', 'http://localhost:5177', 'http://localhost:5178'],
+  origin: function (origin, callback) {
+    console.log('🔍 CORS检查 - 请求来源:', origin);
+    
+    // 允许没有来源的请求 (例如curl, Postman等工具)
+    if (!origin) {
+      console.log('✅ CORS允许 - 无来源请求');
+      return callback(null, true);
+    }
+    
+    // 检查来源是否在白名单中
+    if (allowedOrigins.indexOf(origin) !== -1) {
+      console.log('✅ CORS允许 - 白名单匹配:', origin);
+      callback(null, true);
+    } else {
+      // 🔥 增强的局域网IP检测，支持更多网段
+      const isLanAccess = /^https?:\/\/(192\.168\.\d{1,3}\.\d{1,3}|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}|localhost|127\.0\.0\.1):\d{4,5}$/.test(origin);
+      if (isLanAccess) {
+        console.log('✅ CORS允许 - 局域网访问:', origin);
+        return callback(null, true);
+      }
+      
+      // 🔥 开发环境下允许所有来源（可选，生产环境请移除）
+      if (process.env.NODE_ENV === 'development') {
+        console.log('✅ CORS允许 - 开发环境:', origin);
+        return callback(null, true);
+      }
+      
+      console.log('❌ CORS拒绝 - 未授权来源:', origin);
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
   credentials: true,
-  optionsSuccessStatus: 200 // For legacy browser support
+  optionsSuccessStatus: 200, // For legacy browser support
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
 };
 
 app.use(cors(corsOptions));
@@ -107,6 +208,7 @@ app.use(express.json());
 // API Routes
 app.use('/api/tests', testRoutes(testExecutionService));
 app.use('/api/suites', suiteRoutes(suiteExecutionService)); // 注意路径修正
+app.use('/api', screenshotRoutes(screenshotService)); // 截图API路由
 
 // 🔥 新增: 报告API路由
 app.get('/api/reports/:runId', async (req, res) => {
@@ -265,7 +367,7 @@ async function logServerInfo() {
   }
 
   try {
-    const response = await axios.get('https://api.ipify.org?format=json');
+    const response = await axios.get('https://api.ipify.org?format=json', { timeout: 3000 });
     const publicIp = response.data.ip;
     console.log('-------------------------------------------------');
     console.log(`🚀 服务正在运行:`);
@@ -276,14 +378,13 @@ async function logServerInfo() {
     console.log(`   - 公网访问: http://${publicIp}:${PORT}`);
     console.log('-------------------------------------------------');
   } catch (error) {
-    console.error('❌ 获取公网IP失败:', error);
     console.log('-------------------------------------------------');
     console.log(`🚀 服务正在运行:`);
     console.log(`   - 本地访问: http://localhost:${PORT}`);
     if (localIp) {
       console.log(`   - 内网访问: http://${localIp}:${PORT}`);
     }
-    console.log('   - 公网IP: 获取失败');
+    console.log('   - 公网IP: 获取失败 (网络连接问题)');
     console.log('-------------------------------------------------');
   }
 }

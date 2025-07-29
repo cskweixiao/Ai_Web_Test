@@ -117,6 +117,26 @@ model settings {
   updated_at DateTime? @default(now()) @db.Timestamp(0)
 }
 
+model step_screenshots {
+  id               Int                     @id @default(autoincrement())
+  run_id           String                  @db.VarChar(255)
+  test_case_id     Int?
+  step_index       String                  @db.VarChar(50)
+  step_description String?                 @db.Text
+  status           step_screenshots_status
+  file_path        String                  @db.VarChar(1024)
+  file_name        String                  @db.VarChar(255)
+  file_size        BigInt?
+  mime_type        String?                 @default("image/png") @db.VarChar(100)
+  created_at       DateTime?               @default(now()) @db.Timestamp(0)
+  file_exists      Boolean                 @default(true)
+  test_cases       test_cases?             @relation(fields: [test_case_id], references: [id])
+
+  @@index([created_at], map: "idx_created_at")
+  @@index([run_id], map: "idx_run_id")
+  @@index([test_case_id], map: "idx_test_case_id")
+}
+
 model suite_case_map {
   suite_id    Int
   case_id     Int
@@ -133,6 +153,7 @@ model test_cases {
   steps            Json?
   tags             Json?
   created_at       DateTime?          @default(now()) @db.Timestamp(0)
+  step_screenshots step_screenshots[]
   suite_case_map   suite_case_map[]
   test_run_results test_run_results[]
 }
@@ -223,4 +244,11 @@ enum test_runs_status {
   PASSED
   FAILED
   CANCELLED
+}
+
+enum step_screenshots_status {
+  success
+  failed
+  error
+  completed
 }

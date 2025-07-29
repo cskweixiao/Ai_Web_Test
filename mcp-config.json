@@ -9,9 +9,8 @@
         "--ignore-https-errors"
       ],
       "env": {
-        "PLAYWRIGHT_HEADLESS": "false",
-        "HEADLESS": "false",
-        "DEBUG": "pw:browser*,pw:api*"
+        "PLAYWRIGHT_HEADLESS": "true",
+        "HEADLESS": "true"
       }
     }
   },
@@ -20,6 +19,6 @@
     "retries": 2,
     "screenshot": true,
     "video": false,
-    "headless": false
+    "headless": true
   }
 } 

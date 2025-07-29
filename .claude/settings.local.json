@@ -15,7 +15,21 @@
       "Bash(curl:*)",
       "Bash(sed:*)",
       "Bash(ls:*)",
-      "Bash(true)"
+      "Bash(true)",
+      "Bash(mysql:*)",
+      "Bash(sc:*)",
+      "Bash(npm start)",
+      "Bash(timeout:*)",
+      "Bash(wmic:*)",
+      "Bash(set DEBUG=)",
+      "Bash(where:*)",
+      "Bash(net stop:*)",
+      "Bash(ping:*)",
+      "Bash(.node_modules.binprisma.cmd db seed --skip-generate)",
+      "Bash(cmd /c:*)",
+      "WebFetch(domain:executeautomation.github.io)",
+      "WebFetch(domain:mcp.programnotes.cn)",
+      "WebFetch(domain:github.com)"
     ],
     "deny": []
   }

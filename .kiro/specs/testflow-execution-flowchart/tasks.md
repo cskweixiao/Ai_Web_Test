@@ -44,7 +44,11 @@
   - 标注AI解析失败时的错误恢复机制
   - _Requirements: 2.2, 3.2_
 
-- [ ] 6. 绘制MCP执行流程图
+- [x] 6. 绘制MCP执行流程图
+
+
+
+
   - 创建executeStep()方法的详细流程图
   - 展示不同操作类型(navigate, click, fill, wait)的执行路径
   - 显示页面快照获取和元素智能匹配过程
@@ -53,6 +57,8 @@
   - _Requirements: 2.3, 3.2_
 
 - [ ] 7. 设计智能元素匹配流程图
+
+
   - 创建findBestElement()和aiMatchElement()的流程图
   - 展示页面快照解析为结构化数据的过程
   - 显示AI启发式匹配算法的决策逻辑

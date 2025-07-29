@@ -9,8 +9,8 @@ export interface WebSocketMessage {
   suiteRun?: any;
 }
 
-const API_BASE_URL = 'http://localhost:3001/api';
-const WS_URL = 'ws://localhost:3001';
+const API_BASE_URL = `http://${window.location.hostname}:3001/api`;
+const WS_URL = `ws://${window.location.hostname}:3001`;
 
 export class TestService {
   private ws: WebSocket | null = null;

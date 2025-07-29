@@ -55,21 +55,71 @@ export class AITestParser {
    */
   async parseNextStep(remainingStepsText: string, snapshot: any | null, runId: string): Promise<AINextStepParseResult> {
     try {
+      // 🔥 增强日志：打印完整的剩余步骤
+      console.log(`\n🔍 [${runId}] ===== AI解析步骤开始 =====`);
+      console.log(`📋 [${runId}] 剩余步骤文本:\n${remainingStepsText}`);
+
       if (!remainingStepsText?.trim()) {
+        console.log(`❌ [${runId}] 没有剩余步骤，解析结束`);
         return { success: false, error: "没有剩余步骤" };
       }
 
       const lines = remainingStepsText.split('\n').filter(line => line.trim());
       if (lines.length === 0) {
+        console.log(`❌ [${runId}] 没有有效步骤，解析结束`);
         return { success: false, error: "没有有效步骤" };
       }
+
+      // 🔥 增强日志：打印所有拆分的步骤
+      console.log(`📊 [${runId}] 拆分后的步骤数量: ${lines.length}`);
+      lines.forEach((line, index) => {
+        console.log(`   ${index + 1}. "${line}"`);
+      });
 
       const nextStepText = lines[0].trim();
       const remaining = lines.slice(1).join('\n');
 
+      console.log(`🎯 [${runId}] 当前解析步骤: "${nextStepText}"`);
+      console.log(`📊 [${runId}] 剩余步骤数: ${lines.length - 1}`);
+
+      // 🔥 增强日志：打印页面快照状态
+      if (snapshot) {
+        const snapshotLines = snapshot.split('\n');
+        console.log(`📸 [${runId}] 页面快照状态: ${snapshotLines.length}行`);
+
+        // 提取页面URL和标题
+        const urlMatch = snapshot.match(/Page URL: ([^\n]+)/);
+        const titleMatch = snapshot.match(/Page Title: ([^\n]+)/);
+
+        if (urlMatch) console.log(`   🌐 URL: ${urlMatch[1]}`);
+        if (titleMatch) console.log(`   📄 标题: ${titleMatch[1]}`);
+
+        // 统计元素
+        const elementTypes = ['textbox', 'button', 'link', 'input', 'checkbox', 'radio', 'combobox'];
+        const foundTypes = elementTypes
+          .map(type => {
+            const count = (snapshot.match(new RegExp(type, 'g')) || []).length;
+            return count > 0 ? `${type}(${count})` : null;
+          })
+          .filter(Boolean);
+
+        if (foundTypes.length > 0) {
+          console.log(`   🔍 页面元素: ${foundTypes.join(', ')}`);
+        } else {
+          console.log(`   ⚠️ 未在快照中发现常见交互元素`);
+        }
+      } else {
+        console.log(`⚠️ [${runId}] 无页面快照可用，将使用默认解析策略`);
+      }
+
       // AI模拟：基于当前步骤文本和快照生成MCP命令
       const mcpCommand = await this.generateMCPCommand(nextStepText, snapshot);
-      
+
+      // 🔥 增强日志：打印解析结果
+      console.log(`🤖 [${runId}] AI解析结果:`);
+      console.log(`   🎯 操作类型: ${mcpCommand.name}`);
+      console.log(`   📋 参数: ${JSON.stringify(mcpCommand.arguments, null, 2)}`);
+
       const step: TestStep = {
         id: `step-${Date.now()}`,
         action: mcpCommand.name,
@@ -77,8 +127,12 @@ export class AITestParser {
         ...mcpCommand.arguments
       };
 
+      console.log(`✅ [${runId}] AI解析步骤完成: ${step.action} - ${step.description}`);
+      console.log(`🔍 [${runId}] ===== AI解析步骤结束 =====\n`);
+
       return { success: true, step, remaining };
     } catch (error) {
+      console.error(`❌ [${runId}] AI解析步骤失败: ${error}`);
       return { success: false, error: `解析下一步骤失败: ${error}` };
     }
   }
@@ -98,7 +152,7 @@ export class AITestParser {
       for (let i = 0; i < assertionLines.length; i++) {
         const assertionText = assertionLines[i].trim();
         const mcpCommand = await this.generateAssertionCommand(assertionText, snapshot);
-        
+
         steps.push({
           id: `assertion-${i + 1}`,
           action: mcpCommand.name,
@@ -118,7 +172,7 @@ export class AITestParser {
    */
   private splitDescriptionToSteps(description: string): TestStep[] {
     if (!description?.trim()) return [];
-    
+
     const lines = description.split('\n')
       .map(line => line.trim())
       .filter(line => line.length > 0);
@@ -136,38 +190,57 @@ export class AITestParser {
    */
   private async generateMCPCommand(stepDescription: string, snapshot: any): Promise<MCPCommand> {
     const desc = stepDescription.toLowerCase();
-    
-    // 导航类指令
-    if (desc.includes('打开') || desc.includes('访问') || desc.includes('导航到')) {
-      const urlMatch = stepDescription.match(/https?:\/\/[^\s\u4e00-\u9fff]+/);
-      const url = urlMatch ? urlMatch[0] : 'https://k8s-saas-tmp.ycb51.cn';
+
+    // 首先检查是否包含URL，这比关键词检测更可靠
+    const urlMatch = stepDescription.match(/https?:\/\/[^\s]+/);
+    if (urlMatch) {
+      // 如果找到URL，优先识别为导航操作，无论步骤描述中是否包含关键词
+      const url = urlMatch[0];
+      console.log(`🌐 检测到URL: ${url}`);
+      return { name: 'navigate', arguments: { url } };
+    }
+
+    // 导航类指令 - 如果没有直接URL但有导航关键词
+    if (desc.includes('打开') || desc.includes('访问') || desc.includes('导航到') ||
+      desc.includes('进入') || desc.includes('打开网站') || desc.includes('进入网站')) {
+      // 尝试从描述中提取可能的域名
+      const domainMatch = desc.match(/([a-zA-Z0-9][-a-zA-Z0-9]*\.)+[a-zA-Z0-9][-a-zA-Z0-9]*/);
+      const url = domainMatch
+        ? `https://${domainMatch[0]}`
+        : 'https://k8s-saas-tmp.ycb51.cn';
+      console.log(`🌐 从关键词提取域名: ${url}`);
       return { name: 'navigate', arguments: { url } };
     }
 
     // 点击类指令
-    if (desc.includes('点击') || desc.includes('单击') || desc.includes('按下')) {
+    if (desc.includes('点击') || desc.includes('单击') || desc.includes('按下') || desc.includes('登入')) {
       const target = this.extractTargetFromDescription(desc);
+      console.log(`🖱️ 提取点击目标: ${target}`);
       return { name: 'click', arguments: { selector: target } };
     }
 
     // 输入类指令
     if (desc.includes('输入') || desc.includes('填写') || desc.includes('键入')) {
       const { selector, value } = this.extractInputInfo(desc);
+      console.log(`⌨️ 提取输入信息: 选择器=${selector}, 值=${value}`);
       return { name: 'fill', arguments: { selector, value } };
     }
 
     // 等待类指令
     if (desc.includes('等待') || desc.includes('暂停')) {
       const timeout = this.extractTimeout(desc);
+      console.log(`⏱️ 提取等待时间: ${timeout}ms`);
       return { name: 'wait', arguments: { timeout } };
     }
 
     // 截图类指令
     if (desc.includes('截图') || desc.includes('拍照')) {
+      console.log(`📸 识别为截图操作`);
       return { name: 'screenshot', arguments: {} };
     }
 
     // 默认等待
+    console.log(`⚠️ 无法识别操作类型，使用默认等待`);
     return { name: 'wait', arguments: { timeout: 1000 } };
   }
 
@@ -181,11 +254,11 @@ export class AITestParser {
     if (desc.includes('页面显示') || desc.includes('出现') || desc.includes('可见')) {
       const textMatch = desc.match(/['"]([^'"]+)['"]/);
       const expectedText = textMatch ? textMatch[1] : '';
-      
+
       if (expectedText) {
         return { name: 'expect', arguments: { condition: 'contains_text', text: expectedText } };
       }
-      
+
       return { name: 'expect', arguments: { condition: 'visible' } };
     }
 
@@ -227,7 +300,7 @@ export class AITestParser {
     if (description.includes('邮箱')) {
       return { selector: 'input[type="email"]', value };
     }
-    
+
     return { selector: 'input[type="text"]', value };
   }
 
