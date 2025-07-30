@@ -1,5 +1,14 @@
 import { PlaywrightMcpClient } from './mcpClient.js';
 
+// AI配置接口
+export interface LLMConfig {
+  apiKey: string;
+  baseUrl: string;
+  model: string;
+  temperature: number;
+  maxTokens: number;
+}
+
 export interface AIParseResult {
   success: boolean;
   steps: TestStep[];
@@ -23,6 +32,8 @@ export interface TestStep {
   condition?: string;
   text?: string;
   timeout?: number;
+  element?: string;  // 🔥 新增：元素的人类可读描述
+  ref?: string;      // 🔥 新增：元素的精确引用
 }
 
 export interface MCPCommand {
@@ -32,9 +43,21 @@ export interface MCPCommand {
 
 export class AITestParser {
   private mcpClient: PlaywrightMcpClient;
+  private llmConfig: LLMConfig;
 
-  constructor(mcpClient: PlaywrightMcpClient) {
+  constructor(mcpClient: PlaywrightMcpClient, llmConfig?: LLMConfig) {
     this.mcpClient = mcpClient;
+    
+    // 使用默认LLM配置
+    this.llmConfig = llmConfig || {
+      apiKey: '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',
+      baseUrl: 'https://openrouter.ai/api/v1',
+      model: 'openai/gpt-4o',
+      temperature: 0.3,
+      maxTokens: 1500
+    };
+    
+    console.log('🤖 AI解析器已启用，模型:', this.llmConfig.model);
   }
 
   /**
@@ -64,7 +87,11 @@ export class AITestParser {
         return { success: false, error: "没有剩余步骤" };
       }
 
-      const lines = remainingStepsText.split('\n').filter(line => line.trim());
+      // 🔥 修复：更智能的步骤分割，处理数字编号的步骤
+      const lines = remainingStepsText.split('\n')
+        .map(line => line.trim())
+        .filter(line => line.length > 0);
+      
       if (lines.length === 0) {
         console.log(`❌ [${runId}] 没有有效步骤，解析结束`);
         return { success: false, error: "没有有效步骤" };
@@ -76,11 +103,22 @@ export class AITestParser {
         console.log(`   ${index + 1}. "${line}"`);
       });
 
-      const nextStepText = lines[0].trim();
-      const remaining = lines.slice(1).join('\n');
+      // 🔥 修复：确保正确提取当前步骤并计算剩余步骤
+      let nextStepText = lines[0].trim();
+      
+      // 🔥 增强：移除各种步骤编号格式（中文标点、英文标点、无标点等）
+      // 匹配模式：数字 + 可选的标点符号(、。.：:) + 可选空格
+      nextStepText = nextStepText.replace(/^(?:\d+\s*[、。\.\)\:]?\s*|步骤\s*\d+\s*[、。\.\)\:]?\s*)/i, '').trim();
+      
+      console.log(`🔄 [${runId}] 原始步骤: "${lines[0]}"`);
+      console.log(`🔄 [${runId}] 清理后步骤: "${nextStepText}"`);
+      
+      // 🔥 关键修复：确保剩余步骤正确计算
+      const remaining = lines.slice(1).join('\n').trim();
 
       console.log(`🎯 [${runId}] 当前解析步骤: "${nextStepText}"`);
       console.log(`📊 [${runId}] 剩余步骤数: ${lines.length - 1}`);
+      console.log(`📋 [${runId}] 剩余步骤内容: "${remaining}"`)
 
       // 🔥 增强日志：打印页面快照状态
       if (snapshot) {
@@ -128,9 +166,11 @@ export class AITestParser {
       };
 
       console.log(`✅ [${runId}] AI解析步骤完成: ${step.action} - ${step.description}`);
+      console.log(`📋 [${runId}] 返回剩余步骤: "${remaining}"`);
       console.log(`🔍 [${runId}] ===== AI解析步骤结束 =====\n`);
 
-      return { success: true, step, remaining };
+      // 🔥 关键修复：确保返回正确的剩余步骤
+      return { success: true, step, remaining: remaining || '' };
     } catch (error) {
       console.error(`❌ [${runId}] AI解析步骤失败: ${error}`);
       return { success: false, error: `解析下一步骤失败: ${error}` };
@@ -186,133 +226,298 @@ export class AITestParser {
   }
 
   /**
-   * AI模拟：根据步骤描述和快照生成MCP命令
+   * 🔥 真正的AI解析：根据步骤描述和快照生成MCP命令
    */
   private async generateMCPCommand(stepDescription: string, snapshot: any): Promise<MCPCommand> {
-    const desc = stepDescription.toLowerCase();
-
-    // 首先检查是否包含URL，这比关键词检测更可靠
-    const urlMatch = stepDescription.match(/https?:\/\/[^\s]+/);
-    if (urlMatch) {
-      // 如果找到URL，优先识别为导航操作，无论步骤描述中是否包含关键词
-      const url = urlMatch[0];
-      console.log(`🌐 检测到URL: ${url}`);
-      return { name: 'navigate', arguments: { url } };
+    console.log(`🤖 使用AI解析: "${stepDescription}"`);
+    
+    try {
+      // 1. 提取页面元素
+      const pageElements = this.extractPageElements(snapshot);
+      
+      // 2. 构建AI提示词
+      const prompt = this.buildAIPrompt(stepDescription, pageElements);
+      
+      // 3. 调用AI模型
+      const aiResponse = await this.callLLM(prompt);
+      
+      // 4. 解析AI响应
+      const mcpCommand = this.parseAIResponse(aiResponse);
+      
+      console.log(`✅ AI解析成功: ${mcpCommand.name}`);
+      return mcpCommand;
+      
+    } catch (error: any) {
+      console.error(`❌ AI解析失败: ${error.message}`);
+      throw new Error(`AI解析失败: ${error.message}`);
     }
-
-    // 导航类指令 - 如果没有直接URL但有导航关键词
-    if (desc.includes('打开') || desc.includes('访问') || desc.includes('导航到') ||
-      desc.includes('进入') || desc.includes('打开网站') || desc.includes('进入网站')) {
-      // 尝试从描述中提取可能的域名
-      const domainMatch = desc.match(/([a-zA-Z0-9][-a-zA-Z0-9]*\.)+[a-zA-Z0-9][-a-zA-Z0-9]*/);
-      const url = domainMatch
-        ? `https://${domainMatch[0]}`
-        : 'https://k8s-saas-tmp.ycb51.cn';
-      console.log(`🌐 从关键词提取域名: ${url}`);
-      return { name: 'navigate', arguments: { url } };
-    }
-
-    // 点击类指令
-    if (desc.includes('点击') || desc.includes('单击') || desc.includes('按下') || desc.includes('登入')) {
-      const target = this.extractTargetFromDescription(desc);
-      console.log(`🖱️ 提取点击目标: ${target}`);
-      return { name: 'click', arguments: { selector: target } };
-    }
-
-    // 输入类指令
-    if (desc.includes('输入') || desc.includes('填写') || desc.includes('键入')) {
-      const { selector, value } = this.extractInputInfo(desc);
-      console.log(`⌨️ 提取输入信息: 选择器=${selector}, 值=${value}`);
-      return { name: 'fill', arguments: { selector, value } };
-    }
-
-    // 等待类指令
-    if (desc.includes('等待') || desc.includes('暂停')) {
-      const timeout = this.extractTimeout(desc);
-      console.log(`⏱️ 提取等待时间: ${timeout}ms`);
-      return { name: 'wait', arguments: { timeout } };
-    }
-
-    // 截图类指令
-    if (desc.includes('截图') || desc.includes('拍照')) {
-      console.log(`📸 识别为截图操作`);
-      return { name: 'screenshot', arguments: {} };
-    }
-
-    // 默认等待
-    console.log(`⚠️ 无法识别操作类型，使用默认等待`);
-    return { name: 'wait', arguments: { timeout: 1000 } };
   }
 
   /**
-   * AI模拟：根据断言描述和快照生成断言命令
+   * 🔥 真正的AI解析：根据断言描述和快照生成断言命令
    */
   private async generateAssertionCommand(assertionDescription: string, snapshot: any): Promise<MCPCommand> {
-    const desc = assertionDescription.toLowerCase();
+    console.log(`🤖 使用AI解析断言: "${assertionDescription}"`);
+    
+    try {
+      // 1. 提取页面元素
+      const pageElements = this.extractPageElements(snapshot);
+      
+      // 2. 构建断言专用的AI提示词
+      const prompt = this.buildAssertionPrompt(assertionDescription, pageElements);
+      
+      // 3. 调用AI模型
+      const aiResponse = await this.callLLM(prompt);
+      
+      // 4. 解析AI响应
+      const mcpCommand = this.parseAIResponse(aiResponse);
+      
+      console.log(`✅ AI断言解析成功: ${mcpCommand.name}`);
+      return mcpCommand;
+      
+    } catch (error: any) {
+      console.error(`❌ AI断言解析失败: ${error.message}`);
+      throw new Error(`AI断言解析失败: ${error.message}`);
+    }
+  }
 
-    // 页面可见性断言
-    if (desc.includes('页面显示') || desc.includes('出现') || desc.includes('可见')) {
-      const textMatch = desc.match(/['"]([^'"]+)['"]/);
-      const expectedText = textMatch ? textMatch[1] : '';
+  /**
+   * 🔥 提取页面元素用于AI分析
+   */
+  private extractPageElements(snapshot: string): Array<{ref: string, role: string, text: string}> {
+    if (!snapshot) return [];
+    
+    const elements: Array<{ref: string, role: string, text: string}> = [];
+    const lines = snapshot.split('\n');
+    
+    for (const line of lines) {
+      const trimmedLine = line.trim();
+      const refMatch = trimmedLine.match(/\[ref=([a-zA-Z0-9_-]+)\]/);
+      
+      if (refMatch) {
+        const ref = refMatch[1];
+        const textMatches = trimmedLine.match(/"([^"]*)"/g) || [];
+        const texts = textMatches.map(t => t.replace(/"/g, ''));
+        
+        let role = '';
+        if (trimmedLine.includes('textbox')) role = 'textbox';
+        else if (trimmedLine.includes('button')) role = 'button';
+        else if (trimmedLine.includes('link')) role = 'link';
+        else if (trimmedLine.includes('checkbox')) role = 'checkbox';
+        else if (trimmedLine.includes('combobox')) role = 'combobox';
+        else role = 'element';
+        
+        if (ref && texts.length > 0) {
+          elements.push({ ref, role, text: texts[0] || '' });
+        }
+      }
+    }
+    
+    return elements.slice(0, 10); // 取前10个最重要的元素
+  }
 
-      if (expectedText) {
-        return { name: 'expect', arguments: { condition: 'contains_text', text: expectedText } };
+  /**
+   * 🔥 [V3] 构建"操作"专用的AI提示词 (全面增强版)
+   */
+  private buildAIPrompt(stepDescription: string, pageElements: Array<{ref: string, role: string, text: string}>): string {
+    const elementsContext = pageElements.length > 0 
+      ? pageElements.map(el => `[ref=${el.ref}] ${el.role} "${el.text}"`).join('\n')
+      : "当前页面没有可用的交互元素。";
+
+    return `你是一个顶级的测试自动化AI专家。你的任务是将用户的自然语言【操作指令】，基于当前页面上的元素，转换为一个精确的JSON格式的MCP【操作命令】。
+
+你的思考过程必须遵循以下步骤：
+1.  **分析意图**: 理解用户的核心操作目标（如点击、输入、悬停、获取文本等）。
+2.  **定位元素**: 如果操作需要页面元素，根据指令描述在"当前页面可用元素"列表中找到最匹配的元素，并记下其ref。
+3.  **生成element描述**: 为选中的元素创建一个简洁的人类可读描述（如"用户名输入框"、"登录按钮"、"搜索框"等）。
+4.  **处理变量**: 检查指令中是否要使用变量（格式为 \${variable_name}）或要将结果存入变量。
+5.  **构建命令**: 根据分析结果，从"支持的MCP操作命令"列表中选择一个最合适的命令，并填充参数。
+6.  **输出结果**: 严格按照指定的格式输出。
+
+**重要说明**：
+- element参数：必须是简洁的中文描述，说明这个元素是什么（如"用户名输入框"、"提交按钮"）
+- ref参数：必须使用从页面元素列表中找到的确切ref值（如"e18"、"e25"）
+- 两个参数都是必需的，缺一不可
+
+---
+[当前页面可用元素]
+${elementsContext}
+
+---
+[支持的MCP操作命令]
+# 核心交互
+- 点击: {"name": "browser_click", "args": {"element": "人类可读的元素描述", "ref": "element_ref"}}
+- 双击: {"name": "browser_double_click", "args": {"element": "人类可读的元素描述", "ref": "element_ref"}}
+- 悬停: {"name": "browser_hover", "args": {"element": "人类可读的元素描述", "ref": "element_ref"}}
+- 输入: {"name": "browser_type", "args": {"element": "人类可读的输入框描述", "ref": "input_ref", "text": "content"}}
+- 清空输入框: {"name": "browser_clear_input", "args": {"element": "人类可读的输入框描述", "ref": "input_ref"}}
+- 选择下拉选项: {"name": "browser_select_option", "args": {"element": "人类可读的下拉框描述", "ref": "select_ref", "value": "option_value"}}
+- 按键: {"name": "browser_press_key", "args": {"key": "Enter"}}
+
+# 页面与滚动
+- 导航: {"name": "browser_navigate", "args": {"url": "URL"}}
+- 滚动到元素: {"name": "browser_scroll_to_element", "args": {"element": "人类可读的元素描述", "ref": "element_ref"}}
+- 滚动页面: {"name": "browser_scroll_page", "args": {"direction": "down"}}
+- 刷新: {"name": "browser_refresh", "args": {}}
+- 后退: {"name": "browser_go_back", "args": {}}
+- 前进: {"name": "browser_go_forward", "args": {}}
+
+# 数据提取 (存入变量)
+- 获取文本: {"name": "browser_get_text", "args": {"element": "人类可读的元素描述", "ref": "element_ref", "variable_name": "my_var"}}
+- 获取属性: {"name": "browser_get_attribute", "args": {"element": "人类可读的元素描述", "ref": "element_ref", "attribute": "href", "variable_name": "my_var"}}
+- 获取URL: {"name": "browser_get_url", "args": {"variable_name": "my_var"}}
+
+# 高级控制
+- 等待: {"name": "browser_wait_for", "args": {"timeout": milliseconds}}
+- 截图: {"name": "browser_screenshot", "args": {}}
+- 切换到iframe: {"name": "browser_switch_to_frame", "args": {"element": "人类可读的iframe描述", "ref": "iframe_ref"}}
+- 切换回主页面: {"name": "browser_switch_to_default", "args": {}}
+- 处理弹窗: {"name": "browser_handle_alert", "args": {"action": "accept"}}
+
+---
+[输出格式要求]
+<THOUGHTS>
+这里是你的分步思考过程。
+</THOUGHTS>
+<COMMAND>
+{
+  "name": "...",
+  "args": {...}
+}
+</COMMAND>
+
+---
+[用户操作指令]
+"${stepDescription}"
+
+请开始分析和转换：`;
+  }
+
+  /**
+   * 🔥 构建断言专用的AI提示词
+   */
+  private buildAssertionPrompt(assertionDescription: string, pageElements: Array<{ref: string, role: string, text: string}>): string {
+    return `你是一个测试自动化AI助手，需要将用户的断言描述转换为MCP断言命令。
+
+当前页面可用元素：
+${pageElements.map(el => `${el.ref}: ${el.role} "${el.text}"`).join('\n')}
+
+支持的MCP断言命令格式：
+- 文本包含: {"name": "browser_assert_text", "args": {"text": "expected_text"}}
+- 元素存在: {"name": "browser_assert_element", "args": {"element": "人类可读的元素描述", "ref": "element_ref"}}
+- URL检查: {"name": "browser_assert_url", "args": {"expected_url": "URL"}}
+- 元素可见: {"name": "browser_assert_visible", "args": {"element": "人类可读的元素描述", "ref": "element_ref"}}
+
+用户断言: "${assertionDescription}"
+
+请分析用户断言，选择合适的页面元素，生成对应的MCP断言命令。只返回JSON格式的命令：`;
+  }
+
+  /**
+   * 🔥 调用AI模型
+   */
+  private async callLLM(prompt: string): Promise<string> {
+    console.log(`🚀 调用AI模型: ${this.llmConfig.model}`);
+    
+    try {
+      const requestBody = {
+        model: this.llmConfig.model,
+        messages: [
+          {
+            role: 'user',
+            content: prompt
+          }
+        ],
+        temperature: this.llmConfig.temperature,
+        max_tokens: this.llmConfig.maxTokens
+      };
+
+      const response = await fetch(this.llmConfig.baseUrl + '/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${this.llmConfig.apiKey}`,
+          'HTTP-Referer': 'https://testflow-ai.com',
+          'X-Title': 'TestFlow AI Testing Platform',
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(requestBody)
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`AI API调用失败 (${response.status}): ${errorText}`);
       }
 
-      return { name: 'expect', arguments: { condition: 'visible' } };
-    }
+      const data = await response.json();
+      
+      if (!data.choices || !data.choices[0] || !data.choices[0].message) {
+        throw new Error(`AI API返回格式异常: ${JSON.stringify(data)}`);
+      }
 
-    // 元素存在断言
-    if (desc.includes('存在') || desc.includes('有')) {
-      const selector = this.extractSelectorFromAssertion(desc);
-      return { name: 'expect', arguments: { condition: 'element_exists', selector } };
+      const content = data.choices[0].message.content;
+      
+      if (!content || content.trim() === '') {
+        throw new Error('AI返回空响应');
+      }
+      
+      console.log(`🤖 AI响应: ${content}`);
+      return content;
+      
+    } catch (error: any) {
+      console.error(`❌ AI调用失败: ${error.message}`);
+      throw error;
     }
-
-    // URL断言
-    if (desc.includes('url') || desc.includes('地址')) {
-      const urlMatch = desc.match(/https?:\/\/[^\s]+/);
-      const expectedUrl = urlMatch ? urlMatch[0] : '';
-      return { name: 'expect', arguments: { condition: 'url_changed', url: expectedUrl } };
-    }
-
-    // 默认可见性检查
-    return { name: 'expect', arguments: { condition: 'visible' } };
   }
 
-  private extractTargetFromDescription(description: string): string {
-    if (description.includes('登录')) return 'text=登录';
-    if (description.includes('按钮')) return 'button';
-    if (description.includes('链接')) return 'a';
-    if (description.includes('输入框')) return 'input';
-    return 'body';
-  }
-
-  private extractInputInfo(description: string): { selector: string; value: string } {
-    const valueMatch = description.match(/['"]([^'"]+)['"]/);
-    const value = valueMatch ? valueMatch[1] : 'test';
-
-    if (description.includes('用户名') || description.includes('账号')) {
-      return { selector: 'input[name="username"]', value };
+  /**
+   * 🔥 解析AI响应为MCP命令 (支持V3格式)
+   */
+  private parseAIResponse(aiResponse: string): MCPCommand {
+    try {
+      console.log(`🔍 开始解析AI响应: ${aiResponse.substring(0, 200)}...`);
+      
+      let jsonText = aiResponse.trim();
+      
+      // 🔥 V3格式: 尝试提取<COMMAND>标签中的内容
+      const commandMatch = jsonText.match(/<COMMAND>\s*([\s\S]*?)\s*<\/COMMAND>/i);
+      if (commandMatch) {
+        jsonText = commandMatch[1].trim();
+        console.log(`✅ 从<COMMAND>标签中提取JSON: ${jsonText}`);
+      } else {
+        // 🔥 兼容旧格式: 如果响应包含代码块，提取其中的JSON
+        const codeBlockMatch = jsonText.match(/```(?:json)?\n?([\s\S]*?)\n?```/);
+        if (codeBlockMatch) {
+          jsonText = codeBlockMatch[1].trim();
+          console.log(`✅ 从代码块中提取JSON: ${jsonText}`);
+        } else {
+          // 🔥 兼容旧格式: 尝试提取JSON对象
+          const jsonMatch = jsonText.match(/\{[\s\S]*\}/);
+          if (jsonMatch) {
+            jsonText = jsonMatch[0];
+            console.log(`✅ 直接提取JSON对象: ${jsonText}`);
+          }
+        }
+      }
+      
+      console.log(`🔍 最终解析的JSON: ${jsonText}`);
+      
+      const parsed = JSON.parse(jsonText);
+      
+      // 验证基本结构
+      if (!parsed.name || !parsed.args) {
+        throw new Error('AI响应缺少必需的name或args字段');
+      }
+      
+      console.log(`✅ AI响应解析成功: ${parsed.name}`);
+      return {
+        name: parsed.name,
+        arguments: parsed.args
+      };
+      
+    } catch (error: any) {
+      console.error(`❌ AI响应解析失败: ${error.message}`);
+      console.error(`📄 原始响应: ${aiResponse}`);
+      throw new Error(`AI响应解析失败: ${error.message}`);
     }
-    if (description.includes('密码')) {
-      return { selector: 'input[type="password"]', value };
-    }
-    if (description.includes('邮箱')) {
-      return { selector: 'input[type="email"]', value };
-    }
-
-    return { selector: 'input[type="text"]', value };
-  }
-
-  private extractTimeout(description: string): number {
-    const match = description.match(/(\d+)秒/);
-    return match ? parseInt(match[1]) * 1000 : 2000;
-  }
-
-  private extractSelectorFromAssertion(description: string): string {
-    if (description.includes('按钮')) return 'button';
-    if (description.includes('输入框')) return 'input';
-    if (description.includes('文本')) return 'text';
-    return 'body';
   }
 }

@@ -34,8 +34,8 @@ export class PlaywrightMcpClient {
     console.log('📋 启动参数:', JSON.stringify(options, null, 2));
 
     try {
-      // 🎯 使用无头模式 - 不显示浏览器窗口
-      console.log('🎯 使用无头模式 - 浏览器窗口不可见');
+      // 🎯 使用有头模式 - 显示浏览器窗口
+      console.log('🎯 使用有头模式 - 浏览器窗口可见');
 
       // 🔥 恢复蓝色Chromium：使用临时目录但保留Playwright自带浏览器
       const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mcp-chrome-'));
@@ -242,6 +242,24 @@ export class PlaywrightMcpClient {
     try {
       console.log(`🔧 MCP工具调用: ${args.name}`, args.arguments);
       const result = await this.client.callTool(args);
+      
+      // 🔥 详细记录MCP返回结果
+      console.log(`📋 MCP工具返回结果: ${args.name}`, JSON.stringify(result, null, 2));
+      
+      // 🔥 检查返回结果中的错误信息
+      if (result && result.content) {
+        const content = Array.isArray(result.content) ? result.content : [result.content];
+        for (const item of content) {
+          if (item.type === 'text' && item.text) {
+            console.log(`📄 MCP返回内容: ${item.text}`);
+            // 检查是否包含错误信息
+            if (item.text.includes('Error:') || item.text.includes('Failed:') || item.text.includes('error')) {
+              console.error(`❌ MCP命令执行错误: ${item.text}`);
+            }
+          }
+        }
+      }
+      
       console.log(`✅ MCP工具调用成功: ${args.name}`);
       return result;
     } catch (error: any) {
@@ -424,6 +442,58 @@ export class PlaywrightMcpClient {
 
         await this.refreshSnapshot();
         console.log(`📊 [${runId}] 操作后页面快照已更新`);
+        break;
+
+      case 'browser_type':
+        console.log(`⌨️ [${runId}] 正在执行browser_type操作...`);
+        console.log(`📋 [${runId}] 目标ref: ${step.ref}, 输入文本: ${step.text}`);
+
+        // 操作前确保页面完全加载
+        await this.waitForLoad();
+
+        // 直接使用AI提供的ref，无需查找元素
+        const typeArgs = { ref: step.ref, text: step.text };
+        console.log(`🎯 [${runId}] MCP browser_type参数:`, JSON.stringify(typeArgs, null, 2));
+
+        try {
+          await this.client.callTool({ 
+            name: 'browser_type', 
+            arguments: typeArgs 
+          });
+          console.log(`✅ [${runId}] browser_type操作完成`);
+        } catch (typeError) {
+          console.error(`❌ [${runId}] browser_type操作失败:`, typeError);
+          throw typeError;
+        }
+
+        await this.refreshSnapshot();
+        console.log(`📊 [${runId}] browser_type操作后页面快照已更新`);
+        break;
+
+      case 'browser_click':
+        console.log(`🖱️ [${runId}] 正在执行browser_click操作...`);
+        console.log(`📋 [${runId}] 目标ref: ${step.ref}`);
+
+        // 操作前确保页面完全加载
+        await this.waitForLoad();
+
+        // 直接使用AI提供的ref，无需查找元素
+        const clickArgs = { ref: step.ref };
+        console.log(`🎯 [${runId}] MCP browser_click参数:`, JSON.stringify(clickArgs, null, 2));
+
+        try {
+          await this.client.callTool({ 
+            name: 'browser_click', 
+            arguments: clickArgs 
+          });
+          console.log(`✅ [${runId}] browser_click操作完成`);
+        } catch (clickError) {
+          console.error(`❌ [${runId}] browser_click操作失败:`, clickError);
+          throw clickError;
+        }
+
+        await this.refreshSnapshot();
+        console.log(`📊 [${runId}] browser_click操作后页面快照已更新`);
         break;
 
       case 'wait':

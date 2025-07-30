@@ -77,8 +77,8 @@ export class MCPToolMapper {
       'verify': 'browser_assert_element',
       
       // === 截图调试类 (4种) ===
-      'screenshot': 'browser_screenshot',
-      'capture': 'browser_screenshot',
+      'screenshot': 'browser_take_screenshot',
+      'capture': 'browser_take_screenshot',
       'screenshot_element': 'browser_screenshot_element',
       'get_text': 'browser_get_text',
       'get_attribute': 'browser_get_attribute',
@@ -164,7 +164,7 @@ export class MCPToolMapper {
       'browser_assert_title', 'browser_assert_attribute',
       
       // 截图调试类 (4种)
-      'browser_screenshot', 'browser_screenshot_element',
+      'browser_take_screenshot', 'browser_screenshot_element',
       'browser_get_text', 'browser_get_attribute',
       
       // 高级功能类
@@ -208,7 +208,7 @@ export class MCPToolMapper {
       'browser_assert_title', 'browser_assert_attribute',
       
       // 截图调试类 (4种)
-      'browser_screenshot', 'browser_screenshot_element',
+      'browser_take_screenshot', 'browser_screenshot_element',
       'browser_get_text', 'browser_get_attribute',
       
       // 高级功能类

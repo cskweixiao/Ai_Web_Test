@@ -29,7 +29,10 @@
       "Bash(cmd /c:*)",
       "WebFetch(domain:executeautomation.github.io)",
       "WebFetch(domain:mcp.programnotes.cn)",
-      "WebFetch(domain:github.com)"
+      "WebFetch(domain:github.com)",
+      "Bash(cat:*)",
+      "Bash(mv:*)",
+      "Bash(start npm run dev)"
     ],
     "deny": []
   }
