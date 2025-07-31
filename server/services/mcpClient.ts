@@ -869,8 +869,13 @@ export class PlaywrightMcpClient {
   async takeScreenshot(filename: string): Promise<void> {
     if (!this.isInitialized || !this.client) return;
     try {
-      await this.client.callTool({ name: this.getToolName('screenshot'), arguments: { filename } });
-      console.log(`📸 截图已保存: ${filename}`);
+      // 🔥 使用项目本地screenshots目录而不是Playwright临时目录
+      const { screenshotConfig } = await import('../../src/utils/screenshotConfig.js');
+      const screenshotsDir = screenshotConfig.getScreenshotsDirectory();
+      const fullPath = path.join(screenshotsDir, filename);
+      
+      await this.client.callTool({ name: this.getToolName('screenshot'), arguments: { filename: fullPath } });
+      console.log(`📸 截图已保存: ${fullPath}`);
     } catch (error) {
       console.error(`❌ 截图失败:`, error);
     }

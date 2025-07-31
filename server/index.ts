@@ -9,6 +9,7 @@ import { createServer } from 'http';
 import { testRoutes } from './routes/test.js';
 import { suiteRoutes } from './routes/suite.js'; // 🔥 新增
 import { screenshotRoutes } from './routes/screenshots.js';
+import { configRoutes } from './routes/config.js';
 import { AITestParser } from './services/aiParser.js';
 import { PlaywrightMcpClient } from './services/mcpClient.js';
 import { ScreenshotService } from './services/screenshotService.js';
@@ -209,6 +210,7 @@ app.use(express.json());
 app.use('/api/tests', testRoutes(testExecutionService));
 app.use('/api/suites', suiteRoutes(suiteExecutionService)); // 注意路径修正
 app.use('/api', screenshotRoutes(screenshotService)); // 截图API路由
+app.use('/api/config', configRoutes); // 配置API路由
 
 // 🔥 新增: 报告API路由
 app.get('/api/reports/:runId', async (req, res) => {
@@ -333,6 +335,14 @@ async function startServer() {
   try {
     // 确保数据库和用户已设置
     await ensureDefaultUser();
+
+    // 🔥 新增：初始化配置数据
+    try {
+      const { initializeConfig } = await import('../scripts/init-config.js');
+      await initializeConfig();
+    } catch (configError) {
+      console.warn('⚠️ 配置初始化失败，将使用默认配置:', configError);
+    }
 
     // 设置定时清理任务
     setupCleanupTasks();

@@ -2,6 +2,7 @@ import { PrismaClient } from '../../src/generated/prisma';
 import { ScreenshotRecord, StorageStats, ScreenshotStatus, ScreenshotQueryOptions } from '../types/screenshot';
 import * as fs from 'fs';
 import * as path from 'path';
+import { screenshotConfig } from '../../src/utils/screenshotConfig.js';
 
 export interface ScreenshotCleanupConfig {
   defaultRetentionDays: number;
@@ -25,13 +26,18 @@ export class ScreenshotService {
 
   constructor(prisma?: PrismaClient, cleanupConfig?: Partial<ScreenshotCleanupConfig>) {
     this.prisma = prisma || new PrismaClient();
+    
+    // 🔥 使用统一的截图配置
     this.cleanupConfig = {
-      defaultRetentionDays: 30,
+      defaultRetentionDays: screenshotConfig.getRetentionDays(),
       batchSize: 50,
       enableSafetyChecks: true,
-      screenshotsDirectory: 'screenshots',
+      screenshotsDirectory: screenshotConfig.getScreenshotsDirectory(),
       ...cleanupConfig,
     };
+    
+    // 确保截图目录存在
+    screenshotConfig.ensureScreenshotsDirectory();
   }
 
   /**
@@ -241,6 +247,12 @@ export class ScreenshotService {
    * @returns 文件是否存在
    */
   async verifyScreenshotFile(screenshotId: number): Promise<boolean> {
+    // 🔥 如果禁用文件验证，直接返回true
+    if (!screenshotConfig.isFileVerificationEnabled()) {
+      console.log(`🔍 文件验证已禁用，跳过验证: ID ${screenshotId}`);
+      return true;
+    }
+
     try {
       if (!screenshotId) {
         throw new Error('screenshotId is required');
@@ -300,6 +312,17 @@ export class ScreenshotService {
     screenshotIds?: number[], 
     batchSize: number = 100
   ): Promise<{ total: number; existing: number; missing: number; errors: number }> {
+    // 🔥 如果禁用文件验证，直接返回模拟的统计结果
+    if (!screenshotConfig.isFileVerificationEnabled()) {
+      console.log(`🔍 文件验证已禁用，跳过批量验证`);
+      return {
+        total: 0,
+        existing: 0,
+        missing: 0,
+        errors: 0
+      };
+    }
+
     try {
       console.log(`🔍 开始批量验证截图文件存在性`, { 
         screenshotIds: screenshotIds?.length || 'all', 

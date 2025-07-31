@@ -1,497 +1,690 @@
-import React, { useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { useState, useEffect } from 'react';
+import { motion } from 'framer-motion';
 import {
-  Settings as SettingsIcon,
-  Users,
-  Shield,
-  Bell,
-  Database,
-  Globe,
-  Key,
   Save,
+  RotateCcw,
   TestTube,
-  Server,
-  Webhook,
-  Mail,
-  Smartphone
+  CheckCircle,
+  XCircle,
+  Loader,
+  AlertCircle,
+  Cpu,
+  Zap,
+  Download,
+  Upload,
+  RefreshCw,
+  Info,
+  HelpCircle,
+  Settings as SettingsIcon,
+  Trash2,
+  Copy,
+  Eye,
+  EyeOff
 } from 'lucide-react';
-
-interface SettingsSection {
-  id: string;
-  name: string;
-  icon: React.ComponentType<any>;
-  description: string;
-}
-
-const settingsSections: SettingsSection[] = [
-  {
-    id: 'general',
-    name: '常规设置',
-    icon: SettingsIcon,
-    description: '基本系统配置'
-  },
-  {
-    id: 'users',
-    name: '用户管理',
-    icon: Users,
-    description: '管理用户账户和权限'
-  },
-  {
-    id: 'security',
-    name: '安全配置',
-    icon: Shield,
-    description: '安全策略和认证设置'
-  },
-  {
-    id: 'notifications',
-    name: '通知设置',
-    icon: Bell,
-    description: '配置通知规则和渠道'
-  },
-  {
-    id: 'database',
-    name: '数据库配置',
-    icon: Database,
-    description: '数据存储和备份设置'
-  },
-  {
-    id: 'integrations',
-    name: '集成配置',
-    icon: Globe,
-    description: 'CI/CD 和第三方服务集成'
-  }
-];
+import { 
+  modelRegistry, 
+  settingsService, 
+  llmConfigManager,
+  type ModelDefinition,
+  type LLMSettings,
+  type ValidationError,
+  type ConnectionTestResult
+} from '../services';
+import { 
+  ErrorHandler, 
+  type EnhancedError,
+  handleApiError,
+  handleStorageError,
+  handleConfigError,
+  handleValidationErrors
+} from '../utils/errorHandling';
+import {
+  ConfigChangeDetector,
+  StateManager,
+  ImportExportManager,
+  type ConfigChange,
+  type ConfirmationDialogConfig
+} from '../utils/stateManagement';
 
 export function Settings() {
-  const [activeSection, setActiveSection] = useState('general');
+  // 状态管理
+  const [availableModels, setAvailableModels] = useState<ModelDefinition[]>([]);
+  const [currentSettings, setCurrentSettings] = useState<LLMSettings | null>(null);
+  const [formData, setFormData] = useState<LLMSettings>({
+    selectedModelId: '',
+    apiKey: '',
+    customConfig: {
+      temperature: 0.3,
+      maxTokens: 1500
+    }
+  });
+  
+  // UI状态
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isTesting, setIsTesting] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
+  const [validationErrors, setValidationErrors] = useState<ValidationError[]>([]);
+  const [saveMessage, setSaveMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
+  const [connectionResult, setConnectionResult] = useState<ConnectionTestResult | null>(null);
+  const [pendingChanges, setPendingChanges] = useState<ConfigChange[]>([]);
+  const [showConfirmDialog, setShowConfirmDialog] = useState(false);
 
-  const renderGeneralSettings = () => (
-    <div className="space-y-6">
-      <div>
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">系统设置</h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              系统名称
-            </label>
-            <input
-              type="text"
-              defaultValue="TestFlow 自动化测试平台"
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              默认超时时间 (秒)
-            </label>
-            <input
-              type="number"
-              defaultValue="300"
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              最大并发数
-            </label>
-            <input
-              type="number"
-              defaultValue="10"
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              日志保留天数
-            </label>
-            <input
-              type="number"
-              defaultValue="90"
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            />
-          </div>
-        </div>
-      </div>
+  // 初始化
+  useEffect(() => {
+    initializeSettings();
+  }, []);
 
-      <div>
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">LLM 配置</h3>
-        <div className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              LLM 提供商
-            </label>
-            <select className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
-              <option value="openai">OpenAI GPT-4</option>
-              <option value="azure">Azure OpenAI</option>
-              <option value="local">本地 Llama 3</option>
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              API 密钥
-            </label>
-            <input
-              type="password"
-              placeholder="输入 API 密钥"
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              模型版本
-            </label>
-            <input
-              type="text"
-              defaultValue="gpt-4o"
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            />
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-
-  const renderUserManagement = () => (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h3 className="text-lg font-semibold text-gray-900">用户列表</h3>
-        <button className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
-          添加用户
-        </button>
-      </div>
+  const initializeSettings = async () => {
+    try {
+      setIsLoading(true);
       
-      <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-        <table className="w-full">
-          <thead className="bg-gray-50">
-            <tr>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                用户
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                角色
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                状态
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                最后登录
-              </th>
-              <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                操作
-              </th>
-            </tr>
-          </thead>
-          <tbody className="bg-white divide-y divide-gray-200">
-            {[
-              { name: '张三', email: 'zhang@example.com', role: '管理员', status: '活跃', lastLogin: '2小时前' },
-              { name: '李四', email: 'li@example.com', role: '测试工程师', status: '活跃', lastLogin: '1天前' },
-              { name: '王五', email: 'wang@example.com', role: '开发工程师', status: '不活跃', lastLogin: '7天前' },
-            ].map((user, index) => (
-              <tr key={index}>
-                <td className="px-6 py-4 whitespace-nowrap">
-                  <div>
-                    <div className="text-sm font-medium text-gray-900">{user.name}</div>
-                    <div className="text-sm text-gray-500">{user.email}</div>
-                  </div>
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap">
-                  <span className="inline-flex px-2 py-1 text-xs font-medium bg-blue-100 text-blue-800 rounded-full">
-                    {user.role}
-                  </span>
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap">
-                  <span className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${
-                    user.status === '活跃' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
-                  }`}>
-                    {user.status}
-                  </span>
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                  {user.lastLogin}
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                  <button className="text-blue-600 hover:text-blue-900 mr-4">编辑</button>
-                  <button className="text-red-600 hover:text-red-900">删除</button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-
-  const renderIntegrations = () => (
-    <div className="space-y-6">
-      <div>
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">CI/CD 集成</h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {[
-            { name: 'GitHub Actions', icon: Globe, status: '已连接', color: 'green' },
-            { name: 'GitLab CI', icon: Globe, status: '未连接', color: 'gray' },
-            { name: 'Jenkins', icon: Server, status: '已连接', color: 'green' },
-            { name: 'Azure DevOps', icon: Globe, status: '未连接', color: 'gray' },
-          ].map((integration, index) => (
-            <div key={index} className="border border-gray-200 rounded-lg p-4">
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center space-x-3">
-                  <integration.icon className="h-8 w-8 text-gray-600" />
-                  <div>
-                    <h4 className="font-medium text-gray-900">{integration.name}</h4>
-                    <span className={`text-sm ${
-                      integration.color === 'green' ? 'text-green-600' : 'text-gray-500'
-                    }`}>
-                      {integration.status}
-                    </span>
-                  </div>
-                </div>
-                <button className={`px-3 py-1 rounded text-sm ${
-                  integration.color === 'green'
-                    ? 'bg-green-100 text-green-800'
-                    : 'bg-blue-100 text-blue-800'
-                }`}>
-                  {integration.color === 'green' ? '管理' : '连接'}
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <div>
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">Webhook 配置</h3>
-        <div className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Webhook URL
-            </label>
-            <input
-              type="url"
-              placeholder="https://your-webhook-url.com/endpoint"
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              密钥
-            </label>
-            <input
-              type="password"
-              placeholder="输入 Webhook 密钥"
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              触发事件
-            </label>
-            <div className="space-y-2">
-              {[
-                { id: 'test_started', label: '测试开始' },
-                { id: 'test_completed', label: '测试完成' },
-                { id: 'test_failed', label: '测试失败' },
-                { id: 'test_timeout', label: '测试超时' },
-              ].map((event) => (
-                <label key={event.id} className="flex items-center">
-                  <input
-                    type="checkbox"
-                    defaultChecked
-                    className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                  />
-                  <span className="ml-2 text-sm text-gray-700">{event.label}</span>
-                </label>
-              ))}
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-
-  const renderNotifications = () => (
-    <div className="space-y-6">
-      <div>
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">通知渠道</h3>
-        <div className="space-y-4">
-          <div className="border border-gray-200 rounded-lg p-4">
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center space-x-3">
-                <Mail className="h-6 w-6 text-blue-600" />
-                <div>
-                  <h4 className="font-medium text-gray-900">邮件通知</h4>
-                  <p className="text-sm text-gray-500">通过邮件发送测试结果</p>
-                </div>
-              </div>
-              <label className="relative inline-flex items-center cursor-pointer">
-                <input type="checkbox" defaultChecked className="sr-only peer" />
-                <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-              </label>
-            </div>
-            <div className="ml-9 space-y-3">
-              <input
-                type="email"
-                placeholder="admin@example.com"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              />
-            </div>
-          </div>
-
-          <div className="border border-gray-200 rounded-lg p-4">
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center space-x-3">
-                <Smartphone className="h-6 w-6 text-green-600" />
-                <div>
-                  <h4 className="font-medium text-gray-900">短信通知</h4>
-                  <p className="text-sm text-gray-500">关键失败时发送短信</p>
-                </div>
-              </div>
-              <label className="relative inline-flex items-center cursor-pointer">
-                <input type="checkbox" className="sr-only peer" />
-                <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-              </label>
-            </div>
-          </div>
-
-          <div className="border border-gray-200 rounded-lg p-4">
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center space-x-3">
-                <Webhook className="h-6 w-6 text-purple-600" />
-                <div>
-                  <h4 className="font-medium text-gray-900">Slack 集成</h4>
-                  <p className="text-sm text-gray-500">发送通知到 Slack 频道</p>
-                </div>
-              </div>
-              <label className="relative inline-flex items-center cursor-pointer">
-                <input type="checkbox" defaultChecked className="sr-only peer" />
-                <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-              </label>
-            </div>
-            <div className="ml-9 space-y-3">
-              <input
-                type="text"
-                placeholder="Slack Webhook URL"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              />
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div>
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">通知规则</h3>
-        <div className="space-y-3">
-          {[
-            { label: '测试套件完成时通知', checked: true },
-            { label: '测试失败时立即通知', checked: true },
-            { label: '每日执行摘要', checked: true },
-            { label: '性能异常警报', checked: false },
-            { label: '新用户注册通知', checked: false },
-          ].map((rule, index) => (
-            <label key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-              <span className="text-sm text-gray-700">{rule.label}</span>
-              <input
-                type="checkbox"
-                defaultChecked={rule.checked}
-                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-              />
-            </label>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-
-  const renderSectionContent = () => {
-    switch (activeSection) {
-      case 'general':
-        return renderGeneralSettings();
-      case 'users':
-        return renderUserManagement();
-      case 'integrations':
-        return renderIntegrations();
-      case 'notifications':
-        return renderNotifications();
-      default:
-        return (
-          <div className="text-center py-12">
-            <SettingsIcon className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-            <p className="text-gray-500">该功能正在开发中...</p>
-          </div>
-        );
+      // 获取可用模型
+      const models = modelRegistry.getAvailableModels();
+      setAvailableModels(models);
+      
+      // 获取当前设置
+      const settings = await settingsService.getLLMSettings();
+      setCurrentSettings(settings);
+      setFormData(settings);
+      
+      console.log('✅ 设置页面初始化完成');
+    } catch (error) {
+      console.error('❌ 设置页面初始化失败:', error);
+      setSaveMessage({ type: 'error', text: '加载设置失败' });
+    } finally {
+      setIsLoading(false);
     }
   };
+
+  // 获取选中模型的信息
+  const getSelectedModel = (): ModelDefinition | null => {
+    return availableModels.find(model => model.id === formData.selectedModelId) || null;
+  };
+
+  // 处理模型选择变更
+  const handleModelChange = (modelId: string) => {
+    const model = modelRegistry.getModelById(modelId);
+    if (model) {
+      setFormData(prev => ({
+        ...prev,
+        selectedModelId: modelId,
+        customConfig: {
+          ...prev.customConfig,
+          temperature: model.defaultConfig.temperature,
+          maxTokens: model.defaultConfig.maxTokens
+        }
+      }));
+      setValidationErrors([]);
+      setConnectionResult(null);
+    }
+  };
+
+  // 处理表单字段变更
+  const handleFieldChange = (field: string, value: any) => {
+    if (field.startsWith('customConfig.')) {
+      const configField = field.replace('customConfig.', '');
+      setFormData(prev => ({
+        ...prev,
+        customConfig: {
+          ...prev.customConfig,
+          [configField]: value
+        }
+      }));
+    } else {
+      setFormData(prev => ({
+        ...prev,
+        [field]: value
+      }));
+    }
+    
+    // 清除相关的验证错误
+    setValidationErrors(prev => prev.filter(error => error.field !== field));
+    setSaveMessage(null);
+  };
+
+  // 验证表单
+  const validateForm = async (): Promise<boolean> => {
+    try {
+      const validation = await settingsService.validateLLMSettings(formData);
+      setValidationErrors(validation.errors);
+      return validation.isValid;
+    } catch (error) {
+      console.error('表单验证失败:', error);
+      return false;
+    }
+  };
+
+  // 保存设置
+  const handleSave = async () => {
+    try {
+      setIsSaving(true);
+      setSaveMessage(null);
+      
+      // 验证表单
+      const isValid = await validateForm();
+      if (!isValid) {
+        const enhancedErrors = handleValidationErrors(validationErrors);
+        const errorMessages = enhancedErrors.map(e => e.userMessage).join(', ');
+        setSaveMessage({ type: 'error', text: `配置验证失败: ${errorMessages}` });
+        return;
+      }
+      
+      // 保存设置到localStorage
+      await settingsService.saveLLMSettings(formData);
+      
+      // 更新前端配置管理器
+      await llmConfigManager.updateConfig(formData);
+      
+      // 🔥 新增：同步配置到服务器端
+      try {
+        console.log('🔄 同步配置到服务器端...');
+        console.log('📋 发送的配置数据:', formData);
+        const response = await fetch('/api/config/llm', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(formData)
+        });
+        
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.error || '服务器端配置更新失败');
+        }
+        
+        const result = await response.json();
+        console.log('✅ 服务器端配置已更新:', result.data?.summary?.modelName);
+        
+        setCurrentSettings(formData);
+        setSaveMessage({ 
+          type: 'success', 
+          text: `设置保存成功，已切换到 ${result.data?.summary?.modelName || '新模型'}` 
+        });
+        
+      } catch (serverError: any) {
+        console.warn('⚠️ 服务器端配置更新失败，但前端配置已保存:', serverError.message);
+        setCurrentSettings(formData);
+        setSaveMessage({ 
+          type: 'success', 
+          text: '前端设置保存成功，但服务器端同步失败。请重启服务器以应用新配置。' 
+        });
+      }
+      
+      console.log('✅ 设置保存成功');
+    } catch (error: any) {
+      console.error('❌ 保存设置失败:', error);
+      
+      // 使用增强的错误处理
+      let enhancedError: EnhancedError;
+      
+      if (error.validationErrors) {
+        enhancedError = handleValidationErrors(error.validationErrors)[0];
+      } else if (error.type === 'STORAGE_ERROR') {
+        enhancedError = handleStorageError(error);
+      } else if (error.type === 'CONFIG_ERROR') {
+        enhancedError = handleConfigError(error);
+      } else {
+        enhancedError = ErrorHandler.fromUnknownError(error);
+      }
+      
+      setSaveMessage({ type: 'error', text: enhancedError.userMessage });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  // 重置设置
+  const handleReset = async () => {
+    try {
+      if (currentSettings) {
+        setFormData(currentSettings);
+        setValidationErrors([]);
+        setSaveMessage(null);
+        setConnectionResult(null);
+      }
+    } catch (error) {
+      console.error('重置设置失败:', error);
+    }
+  };
+
+  // 重置到默认配置
+  const handleResetToDefaults = async () => {
+    try {
+      setIsSaving(true);
+      setSaveMessage(null);
+      
+      // 重置LLM设置到默认值
+      const defaultSettings = await settingsService.resetLLMToDefaults();
+      
+      // 更新配置管理器
+      await llmConfigManager.updateConfig(defaultSettings);
+      
+      // 更新UI状态
+      setCurrentSettings(defaultSettings);
+      setFormData(defaultSettings);
+      setValidationErrors([]);
+      setConnectionResult(null);
+      
+      setSaveMessage({ type: 'success', text: '配置已重置为默认值' });
+      console.log('✅ 配置重置为默认值成功');
+      
+    } catch (error: any) {
+      console.error('❌ 重置配置失败:', error);
+      
+      // 使用增强的错误处理
+      let enhancedError: EnhancedError;
+      
+      if (error.type === 'STORAGE_ERROR') {
+        enhancedError = handleStorageError(error);
+      } else if (error.type === 'CONFIG_ERROR') {
+        enhancedError = handleConfigError(error);
+      } else {
+        enhancedError = ErrorHandler.fromUnknownError(error);
+      }
+      
+      setSaveMessage({ type: 'error', text: enhancedError.userMessage });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  // 测试连接
+  const handleTestConnection = async () => {
+    try {
+      setIsTesting(true);
+      setConnectionResult(null);
+      
+      // 先验证表单
+      const isValid = await validateForm();
+      if (!isValid) {
+        setSaveMessage({ type: 'error', text: '请先修正配置错误' });
+        return;
+      }
+      
+      // 临时更新配置管理器进行测试
+      await llmConfigManager.updateConfig(formData);
+      
+      // 测试连接
+      const result = await llmConfigManager.testConnection();
+      setConnectionResult(result);
+      
+      if (result.success) {
+        setSaveMessage({ type: 'success', text: `连接测试成功 (${result.responseTime}ms)` });
+      } else {
+        // 使用增强的错误处理
+        const mockError = { message: result.error, type: 'API_ERROR' };
+        const enhancedError = handleApiError(mockError);
+        setSaveMessage({ type: 'error', text: enhancedError.userMessage });
+      }
+      
+    } catch (error: any) {
+      console.error('❌ 连接测试失败:', error);
+      
+      // 使用增强的错误处理
+      const enhancedError = handleApiError(error);
+      setSaveMessage({ type: 'error', text: enhancedError.userMessage });
+    } finally {
+      setIsTesting(false);
+    }
+  };
+
+  // 获取字段错误信息
+  const getFieldError = (fieldName: string): string | null => {
+    const error = validationErrors.find(err => err.field === fieldName);
+    return error ? error.message : null;
+  };
+
+  // 检查表单是否有变更
+  const hasChanges = (): boolean => {
+    if (!currentSettings) return false;
+    return JSON.stringify(formData) !== JSON.stringify(currentSettings);
+  };
+
+  // 导出配置
+  const handleExportConfig = async () => {
+    try {
+      setIsExporting(true);
+      
+      const configData = settingsService.exportSettings();
+      const timestamp = new Date().toISOString().slice(0, 19).replace(/:/g, '-');
+      const filename = `testflow-config-${timestamp}.json`;
+      
+      ImportExportManager.downloadConfig(configData, filename);
+      setSaveMessage({ type: 'success', text: '配置导出成功' });
+      
+    } catch (error: any) {
+      console.error('❌ 导出配置失败:', error);
+      setSaveMessage({ type: 'error', text: error.message || '导出配置失败' });
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  // 导入配置
+  const handleImportConfig = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    try {
+      setIsImporting(true);
+      setSaveMessage(null);
+      
+      // 读取文件内容
+      const configData = await ImportExportManager.readConfigFile(file);
+      
+      // 验证文件格式
+      const validation = ImportExportManager.validateConfigFile(configData);
+      if (!validation.isValid) {
+        setSaveMessage({ type: 'error', text: validation.error || '配置文件格式无效' });
+        return;
+      }
+      
+      // 导入设置
+      await settingsService.importSettings(configData);
+      
+      // 重新加载设置
+      await initializeSettings();
+      
+      // 更新配置管理器
+      const newSettings = await settingsService.getLLMSettings();
+      await llmConfigManager.updateConfig(newSettings);
+      
+      setSaveMessage({ type: 'success', text: '配置导入成功' });
+      
+    } catch (error: any) {
+      console.error('❌ 导入配置失败:', error);
+      
+      // 使用增强的错误处理
+      let enhancedError: EnhancedError;
+      
+      if (error.type === 'STORAGE_ERROR') {
+        enhancedError = handleStorageError(error);
+      } else if (error.type === 'CONFIG_ERROR') {
+        enhancedError = handleConfigError(error);
+      } else {
+        enhancedError = ErrorHandler.fromUnknownError(error);
+      }
+      
+      setSaveMessage({ type: 'error', text: enhancedError.userMessage });
+    } finally {
+      setIsImporting(false);
+      // 清除文件输入
+      event.target.value = '';
+    }
+  };
+
+  // 检测配置变更
+  const detectConfigChanges = (): ConfigChange[] => {
+    if (!currentSettings) return [];
+    return ConfigChangeDetector.detectChanges(currentSettings, formData);
+  };
+
+  // 处理保存前的变更确认
+  const handleSaveWithConfirmation = async () => {
+    const changes = detectConfigChanges();
+    
+    if (changes.length === 0) {
+      await handleSave();
+      return;
+    }
+
+    // 检查是否有重要变更
+    const hasSignificantChanges = ConfigChangeDetector.hasSignificantChanges(changes);
+    
+    if (hasSignificantChanges) {
+      // 显示确认对话框
+      setPendingChanges(changes);
+      setShowConfirmDialog(true);
+    } else {
+      // 直接保存
+      await handleSave();
+    }
+  };
+
+  // 处理确认对话框结果
+  const handleConfirmationResult = async (confirmed: boolean) => {
+    setShowConfirmDialog(false);
+    setPendingChanges([]);
+    
+    if (confirmed) {
+      await handleSave();
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader className="h-8 w-8 animate-spin text-blue-600" />
+        <span className="ml-2 text-gray-600">加载设置中...</span>
+      </div>
+    );
+  }
+
+  const selectedModel = getSelectedModel();
 
   return (
     <div className="space-y-6">
       {/* Header */}
       <div>
-        <h2 className="text-2xl font-bold text-gray-900">系统设置</h2>
-        <p className="text-gray-600">配置系统参数和集成设置</p>
+        <h2 className="text-2xl font-bold text-gray-900">LLM 模型配置</h2>
+        <p className="text-gray-600">配置AI模型和参数设置</p>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-        {/* Settings Navigation */}
-        <div className="lg:col-span-1">
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-2">
-            <nav className="space-y-1">
-              {settingsSections.map((section) => {
-                const Icon = section.icon;
-                return (
-                  <motion.button
-                    key={section.id}
-                    whileHover={{ scale: 1.02 }}
-                    whileTap={{ scale: 0.98 }}
-                    onClick={() => setActiveSection(section.id)}
-                    className={`w-full flex items-center px-3 py-2 text-sm font-medium rounded-lg transition-colors ${
-                      activeSection === section.id
-                        ? 'bg-blue-50 text-blue-700 border-r-2 border-blue-600'
-                        : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
-                    }`}
-                  >
-                    <Icon className="mr-3 h-5 w-5" />
-                    <div className="text-left">
-                      <div>{section.name}</div>
-                      <div className="text-xs text-gray-500 font-normal">
-                        {section.description}
-                      </div>
-                    </div>
-                  </motion.button>
-                );
-              })}
-            </nav>
+      {/* Main Content */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+        <div className="space-y-6">
+          
+          {/* 模型选择 */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              选择AI模型
+            </label>
+            <select
+              value={formData.selectedModelId}
+              onChange={(e) => handleModelChange(e.target.value)}
+              className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+                getFieldError('selectedModelId') ? 'border-red-300' : 'border-gray-300'
+              }`}
+            >
+              <option value="">请选择模型</option>
+              {availableModels.map((model) => (
+                <option key={model.id} value={model.id}>
+                  {model.name} ({model.provider}) - {model.costLevel === 'high' ? '高性能' : '高性价比'}
+                </option>
+              ))}
+            </select>
+            {getFieldError('selectedModelId') && (
+              <p className="mt-1 text-sm text-red-600">{getFieldError('selectedModelId')}</p>
+            )}
           </div>
+
+          {/* 模型信息卡片 */}
+          {selectedModel && (
+            <div className="bg-gray-50 rounded-lg p-4">
+              <div className="flex items-start space-x-3">
+                <div className="flex-shrink-0">
+                  {selectedModel.costLevel === 'high' ? (
+                    <Zap className="h-6 w-6 text-yellow-600" />
+                  ) : (
+                    <Cpu className="h-6 w-6 text-green-600" />
+                  )}
+                </div>
+                <div className="flex-1">
+                  <h4 className="font-medium text-gray-900">{selectedModel.name}</h4>
+                  <p className="text-sm text-gray-600 mt-1">{selectedModel.description}</p>
+                  <div className="flex flex-wrap gap-2 mt-2">
+                    {selectedModel.capabilities.map((capability) => (
+                      <span
+                        key={capability}
+                        className="inline-flex px-2 py-1 text-xs font-medium bg-blue-100 text-blue-800 rounded-full"
+                      >
+                        {capability}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* API密钥 */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              OpenRouter API 密钥
+            </label>
+            <input
+              type="password"
+              value={formData.apiKey}
+              onChange={(e) => handleFieldChange('apiKey', e.target.value)}
+              placeholder="sk-or-v1-..."
+              className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+                getFieldError('apiKey') ? 'border-red-300' : 'border-gray-300'
+              }`}
+            />
+            {getFieldError('apiKey') && (
+              <p className="mt-1 text-sm text-red-600">{getFieldError('apiKey')}</p>
+            )}
+            <p className="mt-1 text-sm text-gray-500">
+              从 <a href="https://openrouter.ai" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">OpenRouter</a> 获取API密钥
+            </p>
+          </div>
+
+          {/* 模型参数 */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Temperature (创造性)
+              </label>
+              <div className="space-y-2">
+                <input
+                  type="range"
+                  min="0"
+                  max="2"
+                  step="0.1"
+                  value={formData.customConfig?.temperature || 0.3}
+                  onChange={(e) => handleFieldChange('customConfig.temperature', parseFloat(e.target.value))}
+                  className="w-full"
+                />
+                <div className="flex justify-between text-sm text-gray-500">
+                  <span>保守 (0)</span>
+                  <span className="font-medium">{formData.customConfig?.temperature || 0.3}</span>
+                  <span>创新 (2)</span>
+                </div>
+              </div>
+              {getFieldError('temperature') && (
+                <p className="mt-1 text-sm text-red-600">{getFieldError('temperature')}</p>
+              )}
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Max Tokens (最大令牌数)
+              </label>
+              <input
+                type="number"
+                min="1"
+                max="8000"
+                value={formData.customConfig?.maxTokens || 1500}
+                onChange={(e) => handleFieldChange('customConfig.maxTokens', parseInt(e.target.value))}
+                className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+                  getFieldError('maxTokens') ? 'border-red-300' : 'border-gray-300'
+                }`}
+              />
+              {getFieldError('maxTokens') && (
+                <p className="mt-1 text-sm text-red-600">{getFieldError('maxTokens')}</p>
+              )}
+              <p className="mt-1 text-sm text-gray-500">控制AI响应的最大长度</p>
+            </div>
+          </div>
+
+          {/* 连接测试结果 */}
+          {connectionResult && (
+            <div className={`rounded-lg p-4 ${
+              connectionResult.success ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'
+            }`}>
+              <div className="flex items-center space-x-2">
+                {connectionResult.success ? (
+                  <CheckCircle className="h-5 w-5 text-green-600" />
+                ) : (
+                  <XCircle className="h-5 w-5 text-red-600" />
+                )}
+                <span className={`font-medium ${
+                  connectionResult.success ? 'text-green-800' : 'text-red-800'
+                }`}>
+                  {connectionResult.success ? '连接测试成功' : '连接测试失败'}
+                </span>
+                {connectionResult.success && connectionResult.responseTime && (
+                  <span className="text-green-600">({connectionResult.responseTime}ms)</span>
+                )}
+              </div>
+              {!connectionResult.success && connectionResult.error && (
+                <p className="mt-2 text-sm text-red-700">{connectionResult.error}</p>
+              )}
+            </div>
+          )}
+
+          {/* 保存消息 */}
+          {saveMessage && (
+            <div className={`rounded-lg p-4 ${
+              saveMessage.type === 'success' ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'
+            }`}>
+              <div className="flex items-center space-x-2">
+                {saveMessage.type === 'success' ? (
+                  <CheckCircle className="h-5 w-5 text-green-600" />
+                ) : (
+                  <AlertCircle className="h-5 w-5 text-red-600" />
+                )}
+                <span className={`font-medium ${
+                  saveMessage.type === 'success' ? 'text-green-800' : 'text-red-800'
+                }`}>
+                  {saveMessage.text}
+                </span>
+              </div>
+            </div>
+          )}
         </div>
 
-        {/* Settings Content */}
-        <div className="lg:col-span-3">
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-            <AnimatePresence mode="wait">
-              <motion.div
-                key={activeSection}
-                initial={{ opacity: 0, x: 20 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -20 }}
-                transition={{ duration: 0.2 }}
-              >
-                {renderSectionContent()}
-              </motion.div>
-            </AnimatePresence>
+        {/* 操作按钮 */}
+        <div className="mt-8 pt-6 border-t border-gray-200">
+          <div className="flex justify-between">
+            <button
+              onClick={handleTestConnection}
+              disabled={isTesting || !formData.selectedModelId || !formData.apiKey}
+              className="inline-flex items-center px-4 py-2 border border-gray-300 rounded-lg text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              {isTesting ? (
+                <Loader className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <TestTube className="h-4 w-4 mr-2" />
+              )}
+              {isTesting ? '测试中...' : '测试连接'}
+            </button>
 
-            {/* Save Button */}
-            <div className="mt-8 pt-6 border-t border-gray-200">
-              <div className="flex justify-end space-x-3">
-                <button className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors">
-                  重置
-                </button>
-                <motion.button
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
-                  className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                >
-                  <Save className="h-5 w-5 mr-2" />
-                  保存设置
-                </motion.button>
-              </div>
+            <div className="flex space-x-3">
+              <button
+                onClick={handleReset}
+                disabled={!hasChanges() || isSaving}
+                className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                <RotateCcw className="h-4 w-4 mr-2 inline" />
+                重置
+              </button>
+              <motion.button
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+                onClick={handleSave}
+                disabled={!hasChanges() || isSaving}
+                className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                {isSaving ? (
+                  <Loader className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <Save className="h-4 w-4 mr-2" />
+                )}
+                {isSaving ? '保存中...' : '保存设置'}
+              </motion.button>
             </div>
           </div>
         </div>

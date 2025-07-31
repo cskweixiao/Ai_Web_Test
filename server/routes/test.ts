@@ -47,6 +47,50 @@ export function testRoutes(testExecutionService: TestExecutionService): Router {
     }
   });
 
+  // AI解析器配置管理
+  router.post('/ai-parser/reload-config', async (req: Request, res: Response) => {
+    try {
+      await testExecutionService.reloadAIParserConfiguration();
+      
+      const status = testExecutionService.getAIParserStatus();
+      
+      res.json({
+        success: true,
+        message: 'AI解析器配置已重新加载',
+        data: {
+          modelInfo: status.modelInfo,
+          isConfigManagerMode: status.isConfigManagerMode,
+          timestamp: new Date().toISOString()
+        }
+      });
+    } catch (error: any) {
+      res.status(500).json({
+        success: false,
+        error: `重新加载AI解析器配置失败: ${error.message}`
+      });
+    }
+  });
+
+  // 获取AI解析器状态
+  router.get('/ai-parser/status', async (req: Request, res: Response) => {
+    try {
+      const status = testExecutionService.getAIParserStatus();
+      
+      res.json({
+        success: true,
+        data: {
+          ...status,
+          timestamp: new Date().toISOString()
+        }
+      });
+    } catch (error: any) {
+      res.status(500).json({
+        success: false,
+        error: `获取AI解析器状态失败: ${error.message}`
+      });
+    }
+  });
+
   // 🔥 添加：测试用例执行 - 兼容前端路径
   router.post('/cases/execute', async (req: Request, res: Response) => {
     try {

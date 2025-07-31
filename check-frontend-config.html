@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>前端配置调试</title>
+</head>
+<body>
+    <h1>前端配置调试</h1>
+    <div id="output"></div>
+
+    <script>
+        const output = document.getElementById('output');
+        
+        function log(message) {
+            console.log(message);
+            output.innerHTML += '<p>' + message + '</p>';
+        }
+
+        async function debugFrontendConfig() {
+            log('🔍 开始调试前端配置...');
+            
+            // 1. 检查localStorage中的配置
+            log('\n📋 检查localStorage配置:');
+            const storedConfig = localStorage.getItem('testflow_settings');
+            if (storedConfig) {
+                try {
+                    const parsed = JSON.parse(storedConfig);
+                    log('✅ localStorage配置存在:');
+                    log('   模型: ' + (parsed.llm?.selectedModelId || '未设置'));
+                    log('   温度: ' + (parsed.llm?.customConfig?.temperature || '未设置'));
+                    log('   最大令牌: ' + (parsed.llm?.customConfig?.maxTokens || '未设置'));
+                } catch (e) {
+                    log('❌ localStorage配置解析失败: ' + e.message);
+                }
+            } else {
+                log('❌ localStorage中没有配置');
+            }
+            
+            // 2. 测试API调用
+            log('\n🌐 测试API调用:');
+            try {
+                const response = await fetch('/api/config/llm');
+                log('API响应状态: ' + response.status);
+                
+                if (response.ok) {
+                    const result = await response.json();
+                    log('✅ API调用成功:');
+                    log('   Success: ' + result.success);
+                    if (result.data) {
+                        log('   模型: ' + (result.data.selectedModelId || '未设置'));
+                        log('   温度: ' + (result.data.customConfig?.temperature || '未设置'));
+                        log('   最大令牌: ' + (result.data.customConfig?.maxTokens || '未设置'));
+                    } else {
+                        log('   ⚠️ API返回数据为空');
+                    }
+                } else {
+                    const errorText = await response.text();
+                    log('❌ API调用失败: ' + errorText);
+                }
+            } catch (error) {
+                log('❌ API调用异常: ' + error.message);
+            }
+            
+            // 3. 模拟前端设置服务的行为
+            log('\n🔧 模拟前端设置服务:');
+            try {
+                // 模拟settingsService.getLLMSettings()的逻辑
+                let finalConfig = null;
+                
+                // 先尝试API
+                try {
+                    const response = await fetch('/api/config/llm');
+                    if (response.ok) {
+                        const result = await response.json();
+                        if (result.success && result.data) {
+                            finalConfig = result.data;
+                            log('✅ 使用API配置');
+                        }
+                    }
+                } catch (apiError) {
+                    log('⚠️ API调用失败，回退到localStorage');
+                }
+                
+                // API失败时使用localStorage
+                if (!finalConfig) {
+                    const storedConfig = localStorage.getItem('testflow_settings');
+                    if (storedConfig) {
+                        const parsed = JSON.parse(storedConfig);
+                        finalConfig = parsed.llm;
+                        log('✅ 使用localStorage配置');
+                    }
+                }
+                
+                if (finalConfig) {
+                    log('📋 最终配置:');
+                    log('   模型: ' + (finalConfig.selectedModelId || '未设置'));
+                    log('   温度: ' + (finalConfig.customConfig?.temperature || '未设置'));
+                    log('   最大令牌: ' + (finalConfig.customConfig?.maxTokens || '未设置'));
+                } else {
+                    log('❌ 没有找到任何配置');
+                }
+                
+            } catch (error) {
+                log('❌ 模拟设置服务失败: ' + error.message);
+            }
+        }
+
+        // 页面加载后自动运行调试
+        window.addEventListener('load', debugFrontendConfig);
+    </script>
+</body>
+</html>

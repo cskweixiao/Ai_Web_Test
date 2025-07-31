@@ -25,6 +25,67 @@ export class TestExecutionService {
     this.aiParser = aiParser;
     this.mcpClient = mcpClient;
     this.screenshotService = screenshotService || new ScreenshotService(prisma);
+    
+    // 在构造函数中记录AI解析器的模型信息
+    this.logAIParserInfo();
+  }
+
+  // 记录AI解析器信息
+  private logAIParserInfo(): void {
+    try {
+      const modelInfo = this.aiParser.getCurrentModelInfo();
+      console.log(`🤖 测试执行服务已初始化，AI解析器配置:`);
+      console.log(`   模型: ${modelInfo.modelName} (${modelInfo.provider})`);
+      console.log(`   运行模式: ${modelInfo.mode}`);
+      
+      if (this.aiParser.isConfigManagerMode()) {
+        console.log(`   配置管理器: 已启用`);
+      } else {
+        console.log(`   配置管理器: 未启用 (使用传统模式)`);
+      }
+    } catch (error) {
+      console.warn(`⚠️ 无法获取AI解析器模型信息: ${error.message}`);
+    }
+  }
+
+  // 重新加载AI解析器配置（无需重启服务）
+  public async reloadAIParserConfiguration(): Promise<void> {
+    try {
+      console.log(`🔄 测试执行服务：重新加载AI解析器配置...`);
+      
+      // 调用AI解析器的配置重载方法
+      await this.aiParser.reloadConfiguration();
+      
+      // 重新记录配置信息
+      this.logAIParserInfo();
+      
+      console.log(`✅ 测试执行服务：AI解析器配置重新加载完成`);
+    } catch (error) {
+      console.error(`❌ 测试执行服务：重新加载AI解析器配置失败:`, error);
+      throw error;
+    }
+  }
+
+  // 获取当前AI解析器状态信息
+  public getAIParserStatus(): {
+    modelInfo: { modelName: string; provider: string; mode: string };
+    isConfigManagerMode: boolean;
+    isReady: boolean;
+  } {
+    try {
+      const modelInfo = this.aiParser.getCurrentModelInfo();
+      return {
+        modelInfo,
+        isConfigManagerMode: this.aiParser.isConfigManagerMode(),
+        isReady: true
+      };
+    } catch (error) {
+      return {
+        modelInfo: { modelName: '未知', provider: '未知', mode: '未知' },
+        isConfigManagerMode: false,
+        isReady: false
+      };
+    }
   }
 
   // #region Test Case Management
@@ -171,6 +232,24 @@ export class TestExecutionService {
     }
 
     console.log(`🚀 [${runId}] 开始执行 [${testCase.name}]`);
+    
+    // 记录当前AI解析器配置信息
+    try {
+      const modelInfo = this.aiParser.getCurrentModelInfo();
+      console.log(`🤖 [${runId}] AI解析器配置信息:`);
+      console.log(`   模型: ${modelInfo.modelName} (${modelInfo.provider})`);
+      console.log(`   运行模式: ${modelInfo.mode}`);
+      this.addLog(runId, `🤖 使用AI模型: ${modelInfo.modelName} (${modelInfo.provider})`, 'info');
+      
+      if (this.aiParser.isConfigManagerMode()) {
+        this.addLog(runId, `🔧 配置管理器模式已启用，支持动态模型切换`, 'info');
+      } else {
+        this.addLog(runId, `⚙️ 传统模式运行，使用固定配置`, 'info');
+      }
+    } catch (error) {
+      console.warn(`⚠️ [${runId}] 无法获取AI解析器信息: ${error.message}`);
+      this.addLog(runId, `⚠️ 无法获取AI模型信息`, 'warning');
+    }
 
     try {
       // 🔥 初始化MCP客户端
@@ -181,7 +260,6 @@ export class TestExecutionService {
       try {
         await this.mcpClient.initialize({
           reuseSession: false,
-          headless: false,
           contextState: null
         });
         console.log(`✅ [${runId}] MCP客户端初始化成功`);
@@ -197,6 +275,19 @@ export class TestExecutionService {
       let stepIndex = 0;
       let previousStepsText = ''; // 🔥 新增：用于防止无限循环
       const maxSteps = 50; // 🔥 新增：最大步骤数限制
+
+      // 🔥 详细调试日志：显示测试用例数据
+      console.log(`🔍 [${runId}] ===== 测试执行开始调试 =====`);
+      console.log(`   测试用例ID: ${testCase.id}`);
+      console.log(`   测试用例名称: "${testCase.name}"`);
+      console.log(`   操作步骤原始数据: "${testCase.steps}"`);
+      console.log(`   断言预期原始数据: "${testCase.assertions}"`);
+      console.log(`   remainingSteps初始值: "${remainingSteps}"`);
+      console.log(`   remainingSteps类型: ${typeof remainingSteps}`);
+      console.log(`   remainingSteps长度: ${remainingSteps?.length || 0}`);
+      console.log(`🔍 [${runId}] ===== 测试执行开始调试结束 =====\n`);
+      
+      this.addLog(runId, `🔍 测试数据: 操作步骤${testCase.steps ? '有' : '无'}, 断言${testCase.assertions ? '有' : '无'}`, 'info');
 
       // 🔥 AI闭环执行 - 修复：添加步骤间延迟和无限循环保护
       while (remainingSteps?.trim()) {
@@ -226,6 +317,13 @@ export class TestExecutionService {
         this.addLog(runId, `📸 页面快照获取成功，开始AI解析`, 'info');
 
         // 🔥 增加详细日志：AI解析过程
+        console.log(`🔍 [${runId}] ===== 第${stepIndex}次循环调试 =====`);
+        console.log(`   当前remainingSteps: "${remainingSteps}"`);
+        console.log(`   remainingSteps类型: ${typeof remainingSteps}`);
+        console.log(`   remainingSteps长度: ${remainingSteps?.length || 0}`);
+        console.log(`   是否包含"登入失败": ${remainingSteps?.includes('登入失败') ? '是' : '否'}`);
+        console.log(`🔍 [${runId}] ===== 第${stepIndex}次循环调试结束 =====\n`);
+        
         this.addLog(runId, `🤖 AI正在解析下一个步骤...`, 'info');
         const aiResult = await this.aiParser.parseNextStep(remainingSteps, snapshot, runId);
 
@@ -659,6 +757,8 @@ ${elements.map((el, index) => `${index + 1}. ${el.ref}: ${el.role} "${el.text}"`
     }
   }
 
+
+
   // 🔥 计算文本相似度的辅助方法
   private calculateTextSimilarity(text1: string, text2: string): number {
     if (text1 === text2) return 1.0;
@@ -1042,47 +1142,54 @@ ${elements.map((el, index) => `${index + 1}. ${el.ref}: ${el.role} "${el.text}"`
       console.log(`📸 [${runId}] 正在截图: ${filename}`);
       this.addLog(runId, `📸 正在截图: 步骤${stepIndex} - ${description}`, 'info');
 
-      // 2. 确保截图目录存在
-      const screenshotsDir = path.join(process.cwd(), 'screenshots');
-      try {
-        await fs.promises.mkdir(screenshotsDir, { recursive: true });
-      } catch (mkdirError) {
-        console.warn(`创建截图目录失败: ${mkdirError}`);
-      }
+      // 2. 使用统一的截图配置
+      const { screenshotConfig } = await import('../../src/utils/screenshotConfig.js');
+      const screenshotsDir = screenshotConfig.getScreenshotsDirectory();
+      const configuredBackupDir = screenshotConfig.getBackupDirectory();
+      
+      // 确保截图目录存在
+      screenshotConfig.ensureScreenshotsDirectory();
 
       // 3. 调用MCP客户端截图
       await this.mcpClient.takeScreenshot(filename);
 
       // 4. 验证截图文件是否成功保存并获取文件信息
-      const filePath = path.join('screenshots', filename);
-      const fullPath = path.join(process.cwd(), filePath);
+      const filePath = path.join(screenshotsDir, filename);
+      const fullPath = filePath;
 
       let fileSize = 0;
       let fileExists = false;
 
-      // 等待文件保存（MCP可能需要一些时间）
-      const maxRetries = 8; // 增加重试次数
-      let retryCount = 0;
+      // 🔥 如果禁用文件验证，直接标记为存在
+      if (!screenshotConfig.isFileVerificationEnabled()) {
+        fileExists = true;
+        fileSize = 0; // 默认大小，不验证实际文件
+        console.log(`✅ [${runId}] 文件验证已禁用，跳过文件检查: ${filename}`);
+      } else {
+        // 等待文件保存（MCP可能需要一些时间）
+        const maxRetries = 8; // 增加重试次数
+        let retryCount = 0;
 
-      while (retryCount < maxRetries && !fileExists) {
-        try {
-          await new Promise(resolve => setTimeout(resolve, 300)); // 增加等待时间到300ms
-          const stats = await fs.promises.stat(fullPath);
-          fileSize = stats.size;
+        while (retryCount < maxRetries && !fileExists) {
+          try {
+            await new Promise(resolve => setTimeout(resolve, 300)); // 增加等待时间到300ms
+            const stats = await fs.promises.stat(fullPath);
+            fileSize = stats.size;
 
-          // 验证文件不为空
-          if (fileSize > 0) {
-            fileExists = true;
-            console.log(`✅ [${runId}] 截图文件验证成功: ${filename} (${fileSize} bytes)`);
-          } else {
-            console.warn(`⚠️ [${runId}] 截图文件为空，继续等待: ${filename}`);
+            // 验证文件不为空
+            if (fileSize > 0) {
+              fileExists = true;
+              console.log(`✅ [${runId}] 截图文件验证成功: ${filename} (${fileSize} bytes)`);
+            } else {
+              console.warn(`⚠️ [${runId}] 截图文件为空，继续等待: ${filename}`);
+              retryCount++;
+            }
+          } catch (error) {
             retryCount++;
-          }
-        } catch (error) {
-          retryCount++;
-          if (retryCount === maxRetries) {
-            console.warn(`⚠️ [${runId}] 截图文件验证失败，重试${maxRetries}次后仍未找到: ${filename}`);
-            this.addLog(runId, `⚠️ 截图可能失败: 文件 ${filename} 未找到`, 'warning');
+            if (retryCount === maxRetries) {
+              console.warn(`⚠️ [${runId}] 截图文件验证失败，重试${maxRetries}次后仍未找到: ${filename}`);
+              this.addLog(runId, `⚠️ 截图可能失败: 文件 ${filename} 未找到`, 'warning');
+            }
           }
         }
       }
@@ -1125,19 +1232,19 @@ ${elements.map((el, index) => `${index + 1}. ${el.ref}: ${el.role} "${el.text}"`
       }
 
       // 8. 创建本地备份（优化的双重保存机制）
-      if (fileExists && fileSize > 0) {
+      if (fileExists && fileSize > 0 && screenshotConfig.shouldBackup()) {
         try {
-          // 创建按日期分类的备份目录结构
+          // 使用配置的备份目录
           const now = new Date();
           const dateStr = now.toISOString().slice(0, 10); // YYYY-MM-DD
-          const backupDir = path.join(screenshotsDir, 'backup', dateStr, runId);
+          const actualBackupDir = path.join(configuredBackupDir, dateStr, runId);
 
-          await fs.promises.mkdir(backupDir, { recursive: true });
+          await fs.promises.mkdir(actualBackupDir, { recursive: true });
 
-          const backupPath = path.join(backupDir, filename);
+          const backupPath = path.join(actualBackupDir, filename);
           await fs.promises.copyFile(fullPath, backupPath);
 
-          console.log(`📂 [${runId}] 截图已备份: backup/${dateStr}/${runId}/${filename}`);
+          console.log(`📂 [${runId}] 截图已备份: ${actualBackupDir}/${filename}`);
           this.addLog(runId, `📂 截图已创建备份副本`, 'info');
 
           // 验证备份文件
@@ -1413,6 +1520,26 @@ ${elements.map((el, index) => `${index + 1}. ${el.ref}: ${el.role} "${el.text}"`
 
   private addLog(runId: string, message: string, level?: 'info' | 'success' | 'warning' | 'error') {
     const testRun = testRunStore.get(runId);
+    const timestamp = new Date().toISOString();
+    const timeStr = new Date().toLocaleTimeString('zh-CN', { hour12: false });
+    
+    // 控制台输出带时间戳
+    const consoleMessage = `[${timeStr}] ${message}`;
+    
+    switch (level) {
+      case 'error':
+        console.error(consoleMessage);
+        break;
+      case 'warning':
+        console.warn(consoleMessage);
+        break;
+      case 'success':
+        console.log(`✅ ${consoleMessage}`);
+        break;
+      default:
+        console.log(consoleMessage);
+    }
+    
     if (testRun) {
       const logEntry: TestLog = { id: uuidv4(), timestamp: new Date(), message, level: level || 'info' };
       testRun.logs.push(logEntry);
