@@ -73,6 +73,10 @@ screenshots/screenshot-*.png
 screenshots/*-failed.png
 screenshots/assertion-*-failed.png
 
+# Screenshot index files (auto-generated)
+screenshots/index/
+screenshots/*_screenshots.json
+
 # PNG files (except public assets and screenshots)
 *.png
 !public/*.png
