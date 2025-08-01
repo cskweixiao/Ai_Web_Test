@@ -24,4 +24,67 @@ dist-ssr
 *.sw?
 .env
 
+# Generated files
 /src/generated/prisma
+
+# Test and debug files
+test-*.js
+test-*.cjs
+debug-*.js
+check-*.js
+check-*.cjs
+diagnose-*.js
+verify-*.js
+simple-*.js
+simple-*.cjs
+force-*.js
+collect-*.js
+view-*.js
+start-server.js
+execute-login.js
+
+# Log files
+*.log
+server.log
+mcp.log
+pw.log
+debug-execution.log
+
+# Temp files
+temp/
+backups/
+
+# Config files (keep templates)
+mcp-config.json
+screenshot-config.json
+defaultProfile.windows
+
+# HTML test files
+*.html
+!index.html
+
+# SQL files
+*.sql
+
+# Debug and temporary screenshots
+screenshots/debug-*
+screenshots/temp-*
+screenshots/screenshot-*.png
+screenshots/*-failed.png
+screenshots/assertion-*-failed.png
+
+# PNG files (except public assets and screenshots)
+*.png
+!public/*.png
+!src/assets/*.png
+!screenshots/*.png
+
+# Cache and IDE files
+.bolt/
+.claude/
+.kiro/specs/
+
+# Documentation files that are auto-generated
+*_SUMMARY.md
+*_README.md
+*_GUIDE.md

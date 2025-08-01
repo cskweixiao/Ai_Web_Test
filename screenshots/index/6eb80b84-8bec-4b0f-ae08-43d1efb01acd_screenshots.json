@@ -1,0 +1,47 @@
+[
+  {
+    "stepIndex": "1",
+    "filename": "6eb80b84-8bec-4b0f-ae08-43d1efb01acd-step-1-success-1754028841800.png",
+    "description": "打开https://k8s-saas-tmp.ycb51.cn/supplychain_page/login",
+    "status": "success",
+    "timestamp": "2025-08-01T06:14:01.902Z",
+    "fileSize": 0,
+    "filePath": "D:\\AI_mvp\\ai_test\\project\\screenshots\\6eb80b84-8bec-4b0f-ae08-43d1efb01acd-step-1-success-1754028841800.png"
+  },
+  {
+    "stepIndex": "2",
+    "filename": "6eb80b84-8bec-4b0f-ae08-43d1efb01acd-step-2-success-1754028853745.png",
+    "description": "账号输入栏输入 admin",
+    "status": "success",
+    "timestamp": "2025-08-01T06:14:16.437Z",
+    "fileSize": 0,
+    "filePath": "D:\\AI_mvp\\ai_test\\project\\screenshots\\6eb80b84-8bec-4b0f-ae08-43d1efb01acd-step-2-success-1754028853745.png"
+  },
+  {
+    "stepIndex": "3",
+    "filename": "6eb80b84-8bec-4b0f-ae08-43d1efb01acd-step-3-success-1754028884431.png",
+    "description": "密码输入栏输入admin",
+    "status": "success",
+    "timestamp": "2025-08-01T06:14:46.984Z",
+    "fileSize": 0,
+    "filePath": "D:\\AI_mvp\\ai_test\\project\\screenshots\\6eb80b84-8bec-4b0f-ae08-43d1efb01acd-step-3-success-1754028884431.png"
+  },
+  {
+    "stepIndex": "4",
+    "filename": "6eb80b84-8bec-4b0f-ae08-43d1efb01acd-step-4-success-1754028926306.png",
+    "description": "点击登入",
+    "status": "success",
+    "timestamp": "2025-08-01T06:15:31.433Z",
+    "fileSize": 0,
+    "filePath": "D:\\AI_mvp\\ai_test\\project\\screenshots\\6eb80b84-8bec-4b0f-ae08-43d1efb01acd-step-4-success-1754028926306.png"
+  },
+  {
+    "stepIndex": "5",
+    "filename": "6eb80b84-8bec-4b0f-ae08-43d1efb01acd-step-5-success-1754028953122.png",
+    "description": "点击考核管理按钮",
+    "status": "success",
+    "timestamp": "2025-08-01T06:15:58.224Z",
+    "fileSize": 0,
+    "filePath": "D:\\AI_mvp\\ai_test\\project\\screenshots\\6eb80b84-8bec-4b0f-ae08-43d1efb01acd-step-5-success-1754028953122.png"
+  }
+]

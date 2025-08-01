@@ -417,54 +417,34 @@ export function TestCases() {
           console.log(`📣 [TestSuite] 收到WebSocket消息:`, message);
           messageReceivedFlag = true;
           
-          // 检查是否是套件更新消息
-          if (message.type === 'suiteUpdate') {
-            const status = message.data?.status;
-            console.log(`💡 套件状态更新: ${status}`);
+          // 🔥 立即重置loading状态，无论消息格式如何
+          // 🔥 任何测试相关的消息都应该重置loading状态
+          const shouldReset = 
+            message.type === 'suiteUpdate' ||
+            message.type === 'test_complete' || 
+            message.type === 'test_update' || 
+            message.type === 'test_status' ||
+            message.type === 'test_error' ||
+            (message.data && (message.data.status === 'completed' || message.data.status === 'failed' || message.data.status === 'error' || message.data.status === 'cancelled')) ||
+            (message.status && (message.status === 'completed' || message.status === 'failed' || message.status === 'error' || message.status === 'cancelled'));
+          
+          if (shouldReset) {
+            console.log(`✅ 收到测试完成通知，重置状态:`, message);
+            setRunningSuiteId(null);
+            testService.removeMessageListener(listenerId);
             
-            // 检查套件是否完成
-            if (status === 'completed' || status === 'failed' || status === 'cancelled') {
-              console.log(`✅ 套件执行完成，状态: ${status}`);
-              setRunningSuiteId(null);
-              testService.removeMessageListener(listenerId);
-              
-              // 可以导航到结果页面或显示结果
-              if (status === 'completed') {
-                const passedCases = message.data?.passedCases || 0;
-                const totalCases = message.data?.totalCases || 0;
-                showToast.success(`🎉 测试套件执行完成: ${testSuite.name}\n通过: ${passedCases}/${totalCases}`);
-              } else if (status === 'failed') {
-                showToast.error(`❌ 测试套件执行失败: ${testSuite.name}\n${message.data?.error || '未知错误'}`);
-              } else {
-                showToast.warning(`⚠️ 测试套件执行被取消: ${testSuite.name}`);
-              }
-              
-              // 导航到测试运行页面
-              navigate('/test-runs');
+            // 根据状态显示不同消息
+            const status = message.data?.status || message.status || 'completed';
+            if (status === 'failed' || status === 'error') {
+              showToast.error(`❌ 测试套件执行失败: ${testSuite.name}`);
+            } else if (status === 'cancelled') {
+              showToast.warning(`⚠️ 测试套件执行被取消: ${testSuite.name}`);
+            } else {
+              showToast.success(`🎉 测试套件执行完成: ${testSuite.name}`);
             }
-          } else if (message.type === 'test_complete' && message.data?.suiteId === testSuite.id) {
-            // 捕获测试完成消息也可能指示套件完成
-            console.log(`✅ 通过test_complete消息推断套件可能已完成`);
             
-            // 询问服务器当前套件状态
-            setTimeout(async () => {
-              try {
-                if (suiteRunId) {
-                  const suiteStatus = await testService.getSuiteRun(suiteRunId);
-                  if (suiteStatus && (suiteStatus.status === 'completed' || 
-                      suiteStatus.status === 'failed' || 
-                      suiteStatus.status === 'cancelled')) {
-                    console.log('✅ 确认套件已完成:', suiteStatus.status);
-                    setRunningSuiteId(null);
-                    testService.removeMessageListener(listenerId);
-                    showToast.success(`🎉 测试套件执行完成: ${testSuite.name}`);
-                    navigate('/test-runs');
-                  }
-                }
-              } catch (error) {
-                console.error('获取套件状态失败:', error);
-              }
-            }, 1000);
+            // 导航到测试运行页面
+            navigate('/test-runs');
           }
         });
         
@@ -581,30 +561,32 @@ export function TestCases() {
         testService.addMessageListener(listenerId, (message) => {
           console.log(`📣 [TestCase] 收到WebSocket消息:`, message);
           
-          // 检查多种可能的测试完成情况
-          const isCompleted = 
-            // 经典测试完成消息
-            (message.type === 'test_complete' && message.runId) || 
-            // 测试状态更新
-            (message.type === 'test_update' && message.data?.status === 'completed') ||
-            // 测试错误消息
-            (message.type === 'test_error' && message.runId) ||
-            // suiteUpdate类型消息
-            (message.type === 'suiteUpdate' && message.suiteRun?.status === 'completed');
+          // 立即重置loading状态，无论消息格式如何
+          // 任何测试相关的消息都应该重置loading状态
+          const shouldReset = 
+            message.type === 'test_complete' ||
+            message.type === 'test_update' || 
+            message.type === 'test_status' ||
+            message.type === 'test_error' ||
+            message.type === 'suiteUpdate' ||
+            (message.data && (message.data.status === 'completed' || message.data.status === 'failed' || message.data.status === 'error')) ||
+            (message.status && (message.status === 'completed' || message.status === 'failed' || message.status === 'error'));
+          
+          if (shouldReset) {
+            console.log(`✅ 收到测试完成通知，重置状态:`, message);
+            setRunningTestId(null);
+            testService.removeMessageListener(listenerId);
             
-          if (isCompleted) {
-            console.log(`✅ 收到测试完成通知:`, message);
-            // 只有当runId与testCase.id匹配时才处理
-            if (message.runId && message.runId.includes(testCase.id.toString())) {
-              setRunningTestId(null);
-              testService.removeMessageListener(listenerId);
-              
-              // 可以导航到结果页面或显示结果
+            // 根据状态显示不同消息
+            const status = message.data?.status || message.status || 'completed';
+            if (status === 'failed' || status === 'error') {
+              showToast.error(`❌ 测试执行失败: ${testCase.name}`);
+            } else {
               showToast.success(`🎉 测试执行完成: ${testCase.name}`);
-              
-              // 导航到测试运行页面
-              navigate('/test-runs');
             }
+            
+            // 导航到测试运行页面
+            navigate('/test-runs');
           }
         });
         

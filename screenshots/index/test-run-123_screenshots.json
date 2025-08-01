@@ -1,0 +1,20 @@
+[
+  {
+    "stepIndex": "1",
+    "filename": "test-run-123-step-1-success-1234567890.png",
+    "description": "打开页面",
+    "status": "success",
+    "timestamp": "2025-07-29T12:31:45.972Z",
+    "fileSize": 45678,
+    "filePath": "screenshots/test-run-123-step-1-success-1234567890.png"
+  },
+  {
+    "stepIndex": "2",
+    "filename": "test-run-123-step-2-success-1234567891.png",
+    "description": "输入用户名",
+    "status": "success",
+    "timestamp": "2025-07-29T12:31:45.972Z",
+    "fileSize": 46789,
+    "filePath": "screenshots/test-run-123-step-2-success-1234567891.png"
+  }
+]
