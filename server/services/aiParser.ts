@@ -35,6 +35,7 @@ export interface TestStep {
   timeout?: number;
   element?: string;  // 🔥 新增：元素的人类可读描述
   ref?: string;      // 🔥 新增：元素的精确引用
+  stepType?: 'operation' | 'assertion';  // 🔥 新增：步骤类型标记
 }
 
 export interface MCPCommand {
@@ -59,13 +60,9 @@ export class AITestParser {
       console.log('🤖 AI解析器启用 (传统模式)，模型:', llmConfig.model);
     } else {
       // 配置管理器模式：使用动态配置
-      console.log('🤖 AI解析器启用 (配置管理器模式)');
-      // 异步初始化配置管理器
-      this.initializeConfigManager().catch(error => {
-        console.error('❌ AI解析器配置管理器初始化失败:', error);
-        // 初始化失败时回退到传统模式
-        this.useConfigManager = false;
-      });
+      console.log('🤖 AI解析器启用 (配置管理器模式) - 延迟初始化');
+      // 🔥 修复：不在构造函数中进行异步初始化，避免阻塞服务启动
+      // 配置管理器将在首次使用时进行初始化
     }
   }
 
@@ -102,21 +99,29 @@ export class AITestParser {
    */
   private async getCurrentConfig(): Promise<LLMConfig> {
     if (this.useConfigManager) {
-      // 如果配置管理器还没准备好，等待初始化完成
-      if (!this.configManager.isReady()) {
-        console.log('⏳ 配置管理器未就绪，等待初始化...');
-        try {
-          await this.configManager.initialize();
-        } catch (error) {
-          console.error('❌ 配置管理器初始化失败，回退到默认配置:', error);
-          this.useConfigManager = false;
+      // 🔥 修复：添加超时和错误处理，避免配置管理器卡住整个服务
+      try {
+        // 如果配置管理器还没准备好，等待初始化完成（带超时）
+        if (!this.configManager.isReady()) {
+          console.log('⏳ 配置管理器未就绪，开始初始化...');
+          
+          // 使用Promise.race添加超时机制
+          await Promise.race([
+            this.initializeConfigManager(),
+            new Promise((_, reject) => 
+              setTimeout(() => reject(new Error('配置管理器初始化超时')), 5000)
+            )
+          ]);
         }
-      }
 
-      if (this.configManager.isReady()) {
-        const config = this.configManager.getCurrentConfig();
-        console.log(`🔧 使用配置管理器配置: ${config.model}`);
-        return config;
+        if (this.configManager.isReady()) {
+          const config = this.configManager.getCurrentConfig();
+          console.log(`🔧 使用配置管理器配置: ${config.model}`);
+          return config;
+        }
+      } catch (error) {
+        console.error('❌ 配置管理器初始化失败，回退到默认配置:', error.message);
+        this.useConfigManager = false;
       }
     }
 
@@ -279,6 +284,7 @@ export class AITestParser {
         id: `step-${Date.now()}`,
         action: mcpCommand.name,
         description: nextStepText,
+        stepType: 'operation',  // 🔥 标记为操作步骤
         ...mcpCommand.arguments
       };
 
@@ -314,6 +320,7 @@ export class AITestParser {
           id: `assertion-${i + 1}`,
           action: mcpCommand.name,
           description: assertionText,
+          stepType: 'assertion',  // 🔥 标记为断言步骤
           ...mcpCommand.arguments
         });
       }
@@ -444,6 +451,7 @@ export class AITestParser {
     return `你是一个顶级的测试自动化AI专家。你的任务是将用户的自然语言【操作指令】，基于当前页面上的元素，转换为一个精确的JSON格式的MCP【操作命令】。
 
 **⚠️ 重要提醒**：
+- 你现在处于【操作模式】，只处理明确的操作指令（如"点击登录"、"输入用户名"、"滚动页面"）
 - 如果用户的指令看起来像是断言或验证（如"登入失败"、"显示错误"、"页面跳转"等），而不是具体的操作指令，请返回错误信息
 - 只有明确的操作指令（如"点击登录"、"输入用户名"、"滚动页面"）才应该被转换为MCP命令
 
@@ -515,7 +523,7 @@ ${elementsContext}
   }
 
   /**
-   * 🔥 [V3] 构建"断言"专用的AI提示词 (全面增强版)
+   * 🔥 [V4] 构建"断言"专用的AI提示词 (修复版)
    */
   private buildAssertionPrompt(assertionDescription: string, pageElements: Array<{ ref: string, role: string, text: string }>): string {
     const elementsContext = pageElements.length > 0
@@ -526,20 +534,21 @@ ${elementsContext}
 
 **⚠️ 重要说明**：
 - 你现在处于【断言验证模式】，不是操作模式
-- 用户提供的是断言描述（如"登入失败"、"显示错误"、"页面跳转"等），这些都是有效
-1.  **分析断言类型**: 理解用户要验证什么（文本存在、元素状态、页面属性、元素属性等）。
-2.  **确定验证目标**: 明确要验证的具体内容（文本内容、元素可见性、URL地址、页面标题、元素属性值等）。
-3.  **定位相关元素**: 如果断言涉及页面元素，在"当前页面可用元素"列表中找到最匹配的元素，并记下其ref。
-4.  **生成element描述**: 为选中的元素创建一个简洁的人类可读描述（如"登录按钮"、"错误提示信息"、"用户名显示区域"等）。
-5.  **处理变量**: 检查断言中是否使用了变量（格式为 \${variable_name}）。
-6.  **构建断言命令**: 根据分析结果，从"支持的MCP断言命令"列表中选择一个最合适的命令，并填充参数。
-7.  **输出结果**: 严格按照指定的格式输出。
+- 用户提供的是断言描述（如"页面展示商品管理"、"显示错误信息"、"页面跳转成功"等），这些都是需要验证的状态
+- 断言的目标是验证页面当前状态是否符合预期，不是执行操作
 
-**重要说明**：
-- element参数：必须是简洁的中文描述，说明这个元素是什么（如"提交按钮"、"错误信息"）
-- ref参数：必须使用从页面元素列表中找到的确切ref值（如"e18"、"e25"）
-- 对于需要元素的断言，两个参数都是必需的，缺一不可
-- 对于页面级断言（URL、标题），不需要element和ref参数
+你的思考过程必须遵循以下步骤：
+1.  **分析断言类型**: 理解用户要验证什么（文本存在、元素可见性、页面内容、URL地址等）。
+2.  **确定验证策略**: 选择最合适的验证方法（快照分析、等待文本、截图验证等）。
+3.  **定位相关元素**: 如果断言涉及特定页面元素，在"当前页面可用元素"列表中找到最匹配的元素。
+4.  **构建验证命令**: 根据分析结果，选择最合适的MCP命令来实现验证。
+5.  **输出结果**: 严格按照指定的格式输出。
+
+**断言验证原则**：
+- 对于文本内容验证：使用browser_snapshot获取页面状态，在应用层检查文本
+- 对于元素可见性验证：使用browser_snapshot或browser_wait_for
+- 对于页面状态验证：使用browser_snapshot进行全面检查
+- 对于视觉验证：使用browser_take_screenshot保存证据
 
 ---
 [当前页面可用元素]
@@ -547,24 +556,23 @@ ${elementsContext}
 
 ---
 [支持的MCP断言命令]
-# 重要说明：Playwright MCP 0.0.30版本不提供专门的断言工具
-# 断言需要通过获取页面信息然后在应用层进行验证来实现
+# 重要说明：由于Playwright MCP不提供专门的断言工具，我们使用以下策略：
 
-# 基于快照的验证策略
-- 获取页面快照进行验证: {"name": "browser_snapshot", "args": {}}
+# 1. 快照验证（推荐）- 获取页面完整状态供应用层分析
+- 获取页面快照: {"name": "browser_snapshot", "args": {}}
+
+# 2. 等待验证 - 等待特定条件出现或消失
 - 等待文本出现: {"name": "browser_wait_for", "args": {"text": "期望的文本内容"}}
 - 等待文本消失: {"name": "browser_wait_for", "args": {"textGone": "不应该存在的文本"}}
-- 等待指定时间: {"name": "browser_wait_for", "args": {"time": 毫秒数}}
+- 等待元素可见: {"name": "browser_wait_for", "args": {"ref": "element_ref", "state": "visible"}}
 
-# 通过截图进行视觉验证
-- 截取页面截图: {"name": "browser_take_screenshot", "args": {"filename": "验证截图文件名.png"}}
-- 截取元素截图: {"name": "browser_take_screenshot", "args": {"element": "人类可读的元素描述", "ref": "element_ref", "filename": "元素截图.png"}}
+# 3. 截图验证 - 保存视觉证据
+- 截取页面截图: {"name": "browser_take_screenshot", "args": {"filename": "assertion_proof.png"}}
 
-# 注意：由于Playwright MCP不提供断言工具，断言验证需要：
+# 执行流程：
 # 1. 使用browser_snapshot获取页面状态
-# 2. 使用browser_wait_for等待特定条件
-# 3. 使用browser_take_screenshot进行视觉验证
-# 4. 在应用层解析快照内容进行断言判断
+# 2. 在应用层解析快照内容进行断言判断
+# 3. 可选：使用browser_take_screenshot保存验证截图
 
 ---
 [输出格式要求]

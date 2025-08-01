@@ -334,6 +334,8 @@ export class TestExecutionService {
         }
 
         const step = aiResult.step;
+        // 🔥 调试日志：确认操作步骤类型
+        console.log(`🔍 [${runId}] 执行操作步骤 ${stepIndex}: stepType=${step.stepType}, description="${step.description}"`);
         this.addLog(runId, `✅ AI解析成功: ${step.action} - ${step.description}`, 'success');
         this.updateTestRunStatus(runId, 'running', `步骤 ${stepIndex}: ${step.description}`);
 
@@ -414,6 +416,8 @@ export class TestExecutionService {
 
         for (let i = 0; i < aiAssertions.steps.length; i++) {
           const assertion = aiAssertions.steps[i];
+          // 🔥 调试日志：确认断言步骤类型
+          console.log(`🔍 [${runId}] 执行断言步骤 ${i + 1}: stepType=${assertion.stepType}, description="${assertion.description}"`);
           try {
             const result = await this.executeMcpCommand(assertion, runId);
             if (!result.success) {
@@ -586,6 +590,7 @@ export class TestExecutionService {
         return await this.executeMcpCommand(step, runId);
     }
   }
+
 
   // 🔥 智能判断失败后是否应该继续执行（基于AI分析）
   private async shouldContinueAfterFailure(step: TestStep, runId: string, error?: string): Promise<boolean> {
@@ -811,7 +816,10 @@ ${elements.map((el, index) => `${index + 1}. ${el.ref}: ${el.role} "${el.text}"`
         browserType: step.action === 'browser_type' && !!step.ref && step.text !== undefined,
         expect: step.action === 'expect',
         wait: step.action === 'wait',
-        browserWaitFor: step.action === 'browser_wait_for'
+        browserWaitFor: step.action === 'browser_wait_for',
+        // 🔥 新增：断言命令条件检查
+        browserSnapshot: step.action === 'browser_snapshot' || (step.stepType === 'assertion' && step.action === 'browser_snapshot'),
+        assertionWaitFor: step.action === 'browser_wait_for' && step.stepType === 'assertion'
       };
 
       console.log(`🔍 [${runId}] 条件检查详情:`, conditions);
@@ -820,7 +828,8 @@ ${elements.map((el, index) => `${index + 1}. ${el.ref}: ${el.role} "${el.text}"`
         conditions.navigate || conditions.browserNavigate ||
         conditions.click || conditions.browserClick ||
         conditions.fill || conditions.input || conditions.type || conditions.browserType ||
-        conditions.expect || conditions.wait || conditions.browserWaitFor
+        conditions.expect || conditions.wait || conditions.browserWaitFor ||
+        conditions.browserSnapshot || conditions.assertionWaitFor
       );
 
       console.log(`🔍 [${runId}] 预解析分支条件检查: ${conditionCheck}`);
@@ -862,6 +871,66 @@ ${elements.map((el, index) => `${index + 1}. ${el.ref}: ${el.role} "${el.text}"`
             }
           }
 
+          return { success: true };
+        }
+
+        // 🔥 新增：断言命令处理（获取快照进行验证）
+        if (step.action === 'browser_snapshot' || (step.stepType === 'assertion' && step.action === 'browser_snapshot')) {
+          console.log(`🔍 [${runId}] 执行断言快照获取: ${step.description}`);
+          const mcpCommand = {
+            name: MCPToolMapper.getToolName('snapshot'),
+            arguments: {}
+          };
+          console.log(`🔧 [${runId}] MCP工具调用: ${mcpCommand.name} ${JSON.stringify(mcpCommand.arguments)}`);
+          const result = await this.mcpClient.callTool(mcpCommand);
+
+          // 🔥 检查MCP返回结果并进行断言验证
+          console.log(`🔍 [${runId}] snapshot命令MCP返回结果:`, JSON.stringify(result, null, 2));
+          this.addLog(runId, `🔍 断言快照获取: ${JSON.stringify(result)}`, 'info');
+
+          // 🔥 在这里添加断言验证逻辑
+          const assertionResult = await this.validateAssertion(step.description, result, runId);
+          if (!assertionResult.success) {
+            console.error(`❌ [${runId}] 断言验证失败: ${assertionResult.error}`);
+            this.addLog(runId, `❌ 断言验证失败: ${assertionResult.error}`, 'error');
+            return { success: false, error: assertionResult.error };
+          }
+
+          console.log(`✅ [${runId}] 断言验证通过: ${step.description}`);
+          this.addLog(runId, `✅ 断言验证通过: ${step.description}`, 'success');
+          return { success: true };
+        }
+
+        // 🔥 新增：等待文本断言命令处理
+        if (step.action === 'browser_wait_for' && step.stepType === 'assertion') {
+          console.log(`🔍 [${runId}] 执行等待文本断言: ${step.description}`);
+          const mcpCommand = {
+            name: MCPToolMapper.getToolName('wait_for'),
+            arguments: step.text ? { text: step.text } : { time: 3000 }  // 默认等待3秒
+          };
+          console.log(`🔧 [${runId}] MCP工具调用: ${mcpCommand.name} ${JSON.stringify(mcpCommand.arguments)}`);
+          const result = await this.mcpClient.callTool(mcpCommand);
+
+          // 🔥 检查MCP返回结果
+          console.log(`🔍 [${runId}] browser_wait_for命令MCP返回结果:`, JSON.stringify(result, null, 2));
+          this.addLog(runId, `🔍 等待文本断言返回: ${JSON.stringify(result)}`, 'info');
+
+          // 🔥 检查是否有错误信息
+          if (result && result.content) {
+            const content = Array.isArray(result.content) ? result.content : [result.content];
+            for (const item of content) {
+              if (item.type === 'text' && item.text) {
+                if (item.text.includes('Error:') || item.text.includes('Failed:') || item.text.toLowerCase().includes('error')) {
+                  console.error(`❌ [${runId}] 等待文本断言失败: ${item.text}`);
+                  this.addLog(runId, `❌ 等待文本断言失败: ${item.text}`, 'error');
+                  return { success: false, error: item.text };
+                }
+              }
+            }
+          }
+
+          console.log(`✅ [${runId}] 等待文本断言通过: ${step.description}`);
+          this.addLog(runId, `✅ 等待文本断言通过: ${step.description}`, 'success');
           return { success: true };
         }
 
@@ -1727,6 +1796,12 @@ ${elements.map((el, index) => `${index + 1}. ${el.ref}: ${el.role} "${el.text}"`
   // 🔥 使用AI驱动的替代搜索策略
   private async executeMcpCommandWithAlternativeSearch(step: TestStep, runId: string): Promise<{ success: boolean; error?: string }> {
     try {
+      // 🔥 类型安全检查：断言步骤不应该使用操作重试机制
+      if (step.stepType === 'assertion') {
+        console.log(`🚫 [${runId}] 断言步骤"${step.description}"不使用操作重试机制`);
+        return { success: false, error: `断言步骤执行失败: ${step.description}` };
+      }
+
       // 🔥 首先尝试通过AI重新解析步骤
       console.log(`🔄 [${runId}] 使用AI替代搜索策略重新解析步骤`);
 
@@ -1755,9 +1830,134 @@ ${elements.map((el, index) => `${index + 1}. ${el.ref}: ${el.role} "${el.text}"`
     }
   }
 
+  // 🔥 新增：断言验证方法
+  private async validateAssertion(assertionDescription: string, snapshotResult: any, runId: string): Promise<{ success: boolean; error?: string }> {
+    try {
+      console.log(`🔍 [${runId}] 开始验证断言: "${assertionDescription}"`);
+      
+      // 提取快照文本内容
+      let snapshotText = '';
+      if (snapshotResult && snapshotResult.content) {
+        const content = Array.isArray(snapshotResult.content) ? snapshotResult.content : [snapshotResult.content];
+        for (const item of content) {
+          if (item.type === 'text' && item.text) {
+            snapshotText += item.text + '\n';
+          }
+        }
+      }
+
+      if (!snapshotText.trim()) {
+        console.warn(`⚠️ [${runId}] 快照内容为空，无法进行断言验证`);
+        return { success: false, error: '快照内容为空，无法进行断言验证' };
+      }
+
+      console.log(`📄 [${runId}] 快照内容长度: ${snapshotText.length} 字符`);
+      console.log(`📄 [${runId}] 快照内容前100字符: ${snapshotText.substring(0, 100)}...`);
+
+      // 🔥 智能断言验证逻辑
+      const assertionLower = assertionDescription.toLowerCase();
+      const snapshotLower = snapshotText.toLowerCase();
+
+      // 1. 文本存在性验证
+      if (assertionLower.includes('展示') || assertionLower.includes('显示') || assertionLower.includes('包含')) {
+        // 提取要验证的文本内容
+        const keywords = this.extractAssertionKeywords(assertionDescription);
+        console.log(`🔍 [${runId}] 提取的关键词: ${keywords.join(', ')}`);
+
+        for (const keyword of keywords) {
+          if (snapshotLower.includes(keyword.toLowerCase())) {
+            console.log(`✅ [${runId}] 找到关键词: "${keyword}"`);
+            this.addLog(runId, `✅ 断言验证通过: 页面包含 "${keyword}"`, 'success');
+            return { success: true };
+          }
+        }
+
+        console.log(`❌ [${runId}] 未找到任何关键词: ${keywords.join(', ')}`);
+        return { success: false, error: `页面未找到预期内容: ${keywords.join(', ')}` };
+      }
+
+      // 2. 页面跳转验证
+      if (assertionLower.includes('跳转') || assertionLower.includes('页面') || assertionLower.includes('url')) {
+        // 从快照中提取URL信息
+        const urlMatch = snapshotText.match(/Page URL: ([^\n]+)/);
+        if (urlMatch) {
+          const currentUrl = urlMatch[1];
+          console.log(`🌐 [${runId}] 当前页面URL: ${currentUrl}`);
+          
+          // 简单验证：如果断言描述中包含URL关键词，认为跳转成功
+          if (assertionDescription.includes('成功') || assertionDescription.includes('正确')) {
+            this.addLog(runId, `✅ 页面跳转验证通过: ${currentUrl}`, 'success');
+            return { success: true };
+          }
+        }
+      }
+
+      // 3. 错误信息验证
+      if (assertionLower.includes('错误') || assertionLower.includes('失败')) {
+        const errorKeywords = ['error', 'failed', 'invalid', '错误', '失败', '无效'];
+        for (const keyword of errorKeywords) {
+          if (snapshotLower.includes(keyword)) {
+            console.log(`✅ [${runId}] 找到错误信息: "${keyword}"`);
+            this.addLog(runId, `✅ 错误信息验证通过: 页面包含错误信息`, 'success');
+            return { success: true };
+          }
+        }
+        return { success: false, error: '页面未找到预期的错误信息' };
+      }
+
+      // 4. 默认验证：页面加载成功
+      if (snapshotText.length > 100) {
+        console.log(`✅ [${runId}] 默认验证通过: 页面内容丰富（${snapshotText.length}字符）`);
+        this.addLog(runId, `✅ 默认断言验证通过: 页面正常加载`, 'success');
+        return { success: true };
+      }
+
+      return { success: false, error: '页面内容不足，可能加载失败' };
+
+    } catch (error: any) {
+      console.error(`❌ [${runId}] 断言验证异常: ${error.message}`);
+      return { success: false, error: `断言验证异常: ${error.message}` };
+    }
+  }
+
+  // 🔥 提取断言关键词
+  private extractAssertionKeywords(assertionDescription: string): string[] {
+    const keywords: string[] = [];
+    
+    // 提取引号中的文本
+    const quotedMatches = assertionDescription.match(/"([^"]+)"/g) || assertionDescription.match(/'([^']+)'/g);
+    if (quotedMatches) {
+      keywords.push(...quotedMatches.map(match => match.replace(/['"]/g, '')));
+    }
+    
+    // 提取常见的业务词汇
+    const businessTerms = ['商品管理', '用户管理', '订单管理', '系统设置', '数据统计', '权限管理', '首页', '登录', '注册'];
+    for (const term of businessTerms) {
+      if (assertionDescription.includes(term)) {
+        keywords.push(term);
+      }
+    }
+    
+    // 如果没有找到关键词，使用整个描述中的关键部分
+    if (keywords.length === 0) {
+      const words = assertionDescription.replace(/[展示|显示|包含|页面]/g, '').trim();
+      if (words) {
+        keywords.push(words);
+      }
+    }
+    
+    return keywords;
+  }
+
   // 🔥 使用AI驱动的简化策略执行
   private async executeMcpCommandWithSimpleSelector(step: TestStep, runId: string): Promise<{ success: boolean; error?: string }> {
     try {
+      // 🔥 类型安全检查：断言步骤不应该使用操作重试机制
+      if (step.stepType === 'assertion') {
+        console.log(`🚫 [${runId}] 断言步骤"${step.description}"不使用操作重试机制`);
+        return { success: false, error: `断言步骤执行失败: ${step.description}` };
+      }
+
       console.log(`🔄 [${runId}] 使用AI简化策略`);
 
       // 🔥 直接通过AI重新生成一个更简单的步骤

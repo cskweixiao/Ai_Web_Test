@@ -13,7 +13,7 @@ import { configRoutes } from './routes/config.js';
 import { AITestParser } from './services/aiParser.js';
 import { PlaywrightMcpClient } from './services/mcpClient.js';
 import { ScreenshotService } from './services/screenshotService.js';
-import { PrismaClient } from '../src/generated/prisma';
+import { PrismaClient } from '../src/generated/prisma/index.js';
 import crypto from 'crypto';
 import { testRunStore } from '../lib/TestRunStore.js';
 import fetch from 'node-fetch';
@@ -80,19 +80,29 @@ const wss = new WebSocketServer({ server });
 const wsManager = new WebSocketManager(wss);
 
 // 初始化Playwright客户端
+console.log('🔧 开始初始化MCP客户端...');
 const mcpClient = new PlaywrightMcpClient();
+console.log('✅ MCP客户端初始化完成');
 
 // 初始化AI解析器（传入MCP客户端）
+console.log('🔧 开始初始化AI解析器...');
 const aiParser = new AITestParser(mcpClient);
+console.log('✅ AI解析器初始化完成');
 
 // 初始化截图服务
+console.log('🔧 开始初始化截图服务...');
 const screenshotService = new ScreenshotService(prisma);
+console.log('✅ 截图服务初始化完成');
 
 // 初始化测试执行服务
+console.log('🔧 开始初始化测试执行服务...');
 const testExecutionService = new TestExecutionService(wsManager, aiParser, mcpClient, screenshotService);
+console.log('✅ 测试执行服务初始化完成');
 
 // 🔥 初始化套件执行服务
+console.log('🔧 开始初始化套件执行服务...');
 const suiteExecutionService = new SuiteExecutionService(wsManager, testExecutionService);
+console.log('✅ 套件执行服务初始化完成');
 
 // 绑定WebSocket通知到Store
 testRunStore.onChange((runId, testRun) => {
@@ -345,11 +355,16 @@ async function startServer() {
     }
 
     // 设置定时清理任务
+    console.log('🔧 准备设置定时清理任务...');
     setupCleanupTasks();
+    console.log('✅ 定时清理任务设置完成');
 
+    console.log('🔧 准备启动HTTP服务器...');
     server.listen(PORT, () => {
+      console.log('✅ HTTP服务器监听回调被调用');
       logServerInfo();
     });
+    console.log('🔧 server.listen() 调用完成');
   } catch (error) {
     console.error('❌ 服务器启动失败:', error);
     process.exit(1);
@@ -399,6 +414,7 @@ async function logServerInfo() {
   }
 }
 
+console.log('🚀 准备调用startServer()函数...');
 startServer();
 
 process.on('SIGINT', () => {

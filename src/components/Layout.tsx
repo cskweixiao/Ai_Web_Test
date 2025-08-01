@@ -9,11 +9,12 @@ import {
   Bot,
   Menu,
   X,
-  TestTube,
   Factory,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { clsx } from 'clsx';
+import { Logo } from './Logo';
+import { ThemeToggle } from './ThemeToggle';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -36,7 +37,7 @@ export function Layout({ children }: LayoutProps) {
   const currentPage = navigationItems.find(item => item.href === location.pathname);
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800">
       {/* Mobile sidebar overlay */}
       <AnimatePresence>
         {sidebarOpen && (
@@ -47,46 +48,69 @@ export function Layout({ children }: LayoutProps) {
             className="fixed inset-0 z-50 lg:hidden"
           >
             <div
-              className="fixed inset-0 bg-gray-600 bg-opacity-75"
+              className="fixed inset-0 bg-black bg-opacity-50 backdrop-blur-sm"
               onClick={() => setSidebarOpen(false)}
             />
             <motion.div
               initial={{ x: -300 }}
               animate={{ x: 0 }}
               exit={{ x: -300 }}
-              className="fixed inset-y-0 left-0 flex w-64 flex-col bg-white shadow-xl"
+              className="fixed inset-y-0 left-0 flex w-72 flex-col bg-white/95 dark:bg-gray-900/95 backdrop-blur-xl shadow-2xl border-r border-gray-200/50 dark:border-gray-700/50"
             >
-              <div className="flex h-16 items-center justify-between px-6 border-b border-gray-200">
-                <div className="flex items-center space-x-2">
-                  <TestTube className="h-8 w-8 text-blue-600" />
-                  <span className="text-xl font-bold text-gray-900">TestFlow</span>
-                </div>
-                <button
+              <div className="flex h-20 items-center justify-between px-6 border-b border-gray-200/50 dark:border-gray-700/50">
+                <Logo size="md" showText={true} />
+                <motion.button
                   onClick={() => setSidebarOpen(false)}
-                  className="text-gray-400 hover:text-gray-600"
+                  className="p-2 rounded-xl text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                  whileHover={{ scale: 1.1 }}
+                  whileTap={{ scale: 0.9 }}
                 >
-                  <X className="h-6 w-6" />
-                </button>
+                  <X className="h-5 w-5" />
+                </motion.button>
               </div>
-              <nav className="flex-1 px-4 py-6 space-y-2">
-                {navigationItems.map((item) => {
+              <nav className="flex-1 px-6 py-8 space-y-3">
+                {navigationItems.map((item, index) => {
                   const Icon = item.icon;
                   const isActive = location.pathname === item.href;
                   return (
-                    <NavLink
+                    <motion.div
                       key={item.name}
-                      to={item.href}
-                      onClick={() => setSidebarOpen(false)}
-                      className={clsx(
-                        'flex items-center px-3 py-2 rounded-lg text-sm font-medium transition-colors',
-                        isActive
-                          ? 'bg-blue-50 text-blue-700 border-r-2 border-blue-600'
-                          : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
-                      )}
+                      initial={{ opacity: 0, x: -20 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ delay: index * 0.1 }}
                     >
-                      <Icon className="mr-3 h-5 w-5" />
-                      {item.name}
-                    </NavLink>
+                      <NavLink
+                        to={item.href}
+                        onClick={() => setSidebarOpen(false)}
+                        className={clsx(
+                          'group flex items-center px-4 py-3 rounded-2xl text-base font-medium transition-all duration-300 relative overflow-hidden',
+                          isActive
+                            ? 'bg-gradient-to-r from-blue-500 to-purple-600 text-white shadow-lg'
+                            : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-gray-100'
+                        )}
+                      >
+                        {/* Active indicator */}
+                        {isActive && (
+                          <motion.div
+                            className="absolute inset-0 bg-gradient-to-r from-blue-500 to-purple-600 rounded-2xl"
+                            layoutId="activeBackground"
+                            transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
+                          />
+                        )}
+                        
+                        <motion.div
+                          className="relative flex items-center"
+                          whileHover={{ x: 4 }}
+                          transition={{ duration: 0.2 }}
+                        >
+                          <Icon className={clsx(
+                            "mr-4 h-5 w-5 transition-transform group-hover:scale-110",
+                            isActive ? "text-white" : "text-gray-500 dark:text-gray-400"
+                          )} />
+                          <span className="relative">{item.name}</span>
+                        </motion.div>
+                      </NavLink>
+                    </motion.div>
                   );
                 })}
               </nav>
@@ -96,32 +120,53 @@ export function Layout({ children }: LayoutProps) {
       </AnimatePresence>
 
       {/* Desktop sidebar */}
-      <div className="hidden lg:fixed lg:inset-y-0 lg:flex lg:w-64 lg:flex-col">
-        <div className="flex min-h-0 flex-1 flex-col bg-white border-r border-gray-200">
-          <div className="flex h-16 items-center px-6 border-b border-gray-200">
-            <div className="flex items-center space-x-2">
-              <TestTube className="h-8 w-8 text-blue-600" />
-              <span className="text-xl font-bold text-gray-900">TestFlow</span>
-            </div>
+      <div className="hidden lg:fixed lg:inset-y-0 lg:flex lg:w-72 lg:flex-col">
+        <div className="flex min-h-0 flex-1 flex-col bg-white/80 dark:bg-gray-900/80 backdrop-blur-xl border-r border-gray-200/50 dark:border-gray-700/50">
+          <div className="flex h-20 items-center px-6 border-b border-gray-200/50 dark:border-gray-700/50">
+            <Logo size="lg" showText={true} />
           </div>
-          <nav className="flex-1 px-4 py-6 space-y-2">
-            {navigationItems.map((item) => {
+          <nav className="flex-1 px-6 py-8 space-y-3">
+            {navigationItems.map((item, index) => {
               const Icon = item.icon;
               const isActive = location.pathname === item.href;
               return (
-                <NavLink
+                <motion.div
                   key={item.name}
-                  to={item.href}
-                  className={clsx(
-                    'flex items-center px-3 py-2 rounded-lg text-sm font-medium transition-colors',
-                    isActive
-                      ? 'bg-blue-50 text-blue-700 border-r-2 border-blue-600'
-                      : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
-                  )}
+                  initial={{ opacity: 0, x: -20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: index * 0.1 }}
                 >
-                  <Icon className="mr-3 h-5 w-5" />
-                  {item.name}
-                </NavLink>
+                  <NavLink
+                    to={item.href}
+                    className={clsx(
+                      'group flex items-center px-4 py-3 rounded-2xl text-base font-medium transition-all duration-300 relative overflow-hidden',
+                      isActive
+                        ? 'bg-gradient-to-r from-blue-500 to-purple-600 text-white shadow-lg'
+                        : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-gray-100'
+                    )}
+                  >
+                    {/* Active indicator */}
+                    {isActive && (
+                      <motion.div
+                        className="absolute inset-0 bg-gradient-to-r from-blue-500 to-purple-600 rounded-2xl"
+                        layoutId="desktopActiveBackground"
+                        transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
+                      />
+                    )}
+                    
+                    <motion.div
+                      className="relative flex items-center"
+                      whileHover={{ x: 4 }}
+                      transition={{ duration: 0.2 }}
+                    >
+                      <Icon className={clsx(
+                        "mr-4 h-5 w-5 transition-transform group-hover:scale-110",
+                        isActive ? "text-white" : "text-gray-500 dark:text-gray-400"
+                      )} />
+                      <span className="relative">{item.name}</span>
+                    </motion.div>
+                  </NavLink>
+                </motion.div>
               );
             })}
           </nav>
@@ -129,37 +174,72 @@ export function Layout({ children }: LayoutProps) {
       </div>
 
       {/* Main content */}
-      <div className="lg:pl-64">
+      <div className="lg:pl-72">
         {/* Top navigation */}
-        <div className="sticky top-0 z-40 bg-white border-b border-gray-200">
-          <div className="flex h-16 items-center justify-between px-4 sm:px-6 lg:px-8">
+        <motion.div 
+          className="sticky top-0 z-40 bg-white/80 dark:bg-gray-900/80 backdrop-blur-xl border-b border-gray-200/50 dark:border-gray-700/50"
+          initial={{ y: -20, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          transition={{ duration: 0.3 }}
+        >
+          <div className="flex h-20 items-center justify-between px-6 sm:px-8 lg:px-10">
             <div className="flex items-center">
-              <button
+              <motion.button
                 onClick={() => setSidebarOpen(true)}
-                className="text-gray-500 hover:text-gray-600 lg:hidden"
+                className="p-2 rounded-xl text-gray-500 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-800 lg:hidden transition-colors"
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
               >
-                <Menu className="h-6 w-6" />
-              </button>
+                <Menu className="h-5 w-5" />
+              </motion.button>
               <div className="ml-4 lg:ml-0">
-                <h1 className="text-2xl font-semibold text-gray-900">
+                <motion.h1 
+                  className="text-2xl font-bold bg-gradient-to-r from-gray-900 to-gray-600 dark:from-gray-100 dark:to-gray-400 bg-clip-text text-transparent"
+                  initial={{ opacity: 0, x: -20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: 0.2 }}
+                >
                   {currentPage?.name || '系统自动化测试工具'}
-                </h1>
+                </motion.h1>
               </div>
             </div>
             <div className="flex items-center space-x-4">
-              <div className="flex items-center space-x-2">
-                <div className="h-3 w-3 bg-green-400 rounded-full animate-pulse"></div>
-                <span className="text-sm text-gray-600">系统正常</span>
-              </div>
-              <div className="h-8 w-8 bg-gray-300 rounded-full"></div>
+              <motion.div 
+                className="flex items-center space-x-2 px-3 py-2 rounded-full bg-green-50 dark:bg-green-900/30"
+                whileHover={{ scale: 1.05 }}
+                initial={{ opacity: 0, scale: 0.8 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ delay: 0.3 }}
+              >
+                <motion.div 
+                  className="h-2 w-2 bg-green-500 rounded-full"
+                  animate={{ scale: [1, 1.2, 1] }}
+                  transition={{ duration: 2, repeat: Infinity }}
+                ></motion.div>
+                <span className="text-sm font-medium text-green-700 dark:text-green-400">系统正常</span>
+              </motion.div>
+              <ThemeToggle size="md" />
+              <motion.div 
+                className="h-10 w-10 bg-gradient-to-br from-gray-300 to-gray-400 dark:from-gray-600 dark:to-gray-700 rounded-full shadow-md cursor-pointer"
+                whileHover={{ scale: 1.1, boxShadow: '0 8px 25px rgba(0, 0, 0, 0.15)' }}
+                whileTap={{ scale: 0.9 }}
+                initial={{ opacity: 0, scale: 0.8 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ delay: 0.4 }}
+              ></motion.div>
             </div>
           </div>
-        </div>
+        </motion.div>
 
         {/* Page content */}
-        <main className="flex-1 p-4 sm:p-6 lg:p-8">
+        <motion.main 
+          className="flex-1 p-6 sm:p-8 lg:p-10"
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.1, duration: 0.4 }}
+        >
           {children}
-        </main>
+        </motion.main>
       </div>
     </div>
   );

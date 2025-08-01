@@ -32,7 +32,14 @@
       "WebFetch(domain:github.com)",
       "Bash(cat:*)",
       "Bash(mv:*)",
-      "Bash(start npm run dev)"
+      "Bash(start npm run dev)",
+      "Bash(mkdir:*)",
+      "Bash(rm:*)",
+      "Bash(net start:*)",
+      "Bash(powershell:*)",
+      "Bash(tsx:*)",
+      "Bash(set PORT=3002)",
+      "Bash(# 检查3001端口占用\nnetstat -ano | grep :3001)"
     ],
     "deny": []
   }

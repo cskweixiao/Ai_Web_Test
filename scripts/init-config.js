@@ -55,15 +55,18 @@ async function initializeConfig() {
   }
 }
 
-// 直接运行初始化
-initializeConfig()
-  .then(() => {
-    console.log('🎉 配置初始化完成');
-    process.exit(0);
-  })
-  .catch((error) => {
-    console.error('💥 配置初始化失败:', error);
-    process.exit(1);
-  });
+// 🔥 修复：只有作为独立脚本运行时才执行初始化，作为模块导入时不执行
+if (import.meta.url === `file://${process.argv[1]}`) {
+  // 直接运行初始化（仅当作为脚本直接执行时）
+  initializeConfig()
+    .then(() => {
+      console.log('🎉 配置初始化完成');
+      process.exit(0);
+    })
+    .catch((error) => {
+      console.error('💥 配置初始化失败:', error);
+      process.exit(1);
+    });
+}
 
 export { initializeConfig };
