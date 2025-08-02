@@ -104,11 +104,11 @@ export class AITestParser {
         // 如果配置管理器还没准备好，等待初始化完成（带超时）
         if (!this.configManager.isReady()) {
           console.log('⏳ 配置管理器未就绪，开始初始化...');
-          
+
           // 使用Promise.race添加超时机制
           await Promise.race([
             this.initializeConfigManager(),
-            new Promise((_, reject) => 
+            new Promise((_, reject) =>
               setTimeout(() => reject(new Error('配置管理器初始化超时')), 5000)
             )
           ]);
@@ -353,27 +353,27 @@ export class AITestParser {
    * 🔥 真正的AI解析：根据步骤描述和快照生成MCP命令
    */
   private async generateMCPCommand(stepDescription: string, snapshot: any): Promise<MCPCommand> {
-    console.log(`🤖 使用AI解析: "${stepDescription}"`);
+    console.log(`🤖 使用AI解析操作: "${stepDescription}"`);
 
     try {
       // 1. 提取页面元素
       const pageElements = this.extractPageElements(snapshot);
 
-      // 2. 构建AI提示词
-      const prompt = this.buildAIPrompt(stepDescription, pageElements);
+      // 2. 构建操作专用的用户提示词
+      const userPrompt = this.buildOperationUserPrompt(stepDescription, pageElements);
 
-      // 3. 调用AI模型
-      const aiResponse = await this.callLLM(prompt);
+      // 3. 调用AI模型（操作模式）
+      const aiResponse = await this.callLLM(userPrompt, 'operation');
 
       // 4. 解析AI响应
       const mcpCommand = this.parseAIResponse(aiResponse);
 
-      console.log(`✅ AI解析成功: ${mcpCommand.name}`);
+      console.log(`✅ AI操作解析成功: ${mcpCommand.name}`);
       return mcpCommand;
 
     } catch (error: any) {
-      console.error(`❌ AI解析失败: ${error.message}`);
-      throw new Error(`AI解析失败: ${error.message}`);
+      console.error(`❌ AI操作解析失败: ${error.message}`);
+      throw new Error(`AI操作解析失败: ${error.message}`);
     }
   }
 
@@ -387,11 +387,11 @@ export class AITestParser {
       // 1. 提取页面元素
       const pageElements = this.extractPageElements(snapshot);
 
-      // 2. 构建断言专用的AI提示词
-      const prompt = this.buildAssertionPrompt(assertionDescription, pageElements);
+      // 2. 构建断言专用的用户提示词
+      const userPrompt = this.buildAssertionUserPrompt(assertionDescription, pageElements);
 
-      // 3. 调用AI模型
-      const aiResponse = await this.callLLM(prompt);
+      // 3. 调用AI模型（断言模式）
+      const aiResponse = await this.callLLM(userPrompt, 'assertion');
 
       // 4. 解析AI响应
       const mcpCommand = this.parseAIResponse(aiResponse);
@@ -441,167 +441,195 @@ export class AITestParser {
   }
 
   /**
-   * 🔥 [V3] 构建"操作"专用的AI提示词 (全面增强版)
+   * 🔥 获取操作模式的系统提示词
    */
-  private buildAIPrompt(stepDescription: string, pageElements: Array<{ ref: string, role: string, text: string }>): string {
-    const elementsContext = pageElements.length > 0
-      ? pageElements.map(el => `[ref=${el.ref}] ${el.role} "${el.text}"`).join('\n')
-      : "当前页面没有可用的交互元素。";
+  private getOperationSystemPrompt(): string {
+    return `你是一个顶级的测试自动化AI专家。你的核心职责是：
 
-    return `你是一个顶级的测试自动化AI专家。你的任务是将用户的自然语言【操作指令】，基于当前页面上的元素，转换为一个精确的JSON格式的MCP【操作命令】。
+# 身份与能力
+- 将自然语言操作指令转换为精确的JSON格式MCP命令
+- 基于页面元素快照进行智能元素定位和操作解析
+- 专注于处理明确的用户操作指令（点击、输入、滚动等）
 
-**⚠️ 重要提醒**：
-- 你现在处于【操作模式】，只处理明确的操作指令（如"点击登录"、"输入用户名"、"滚动页面"）
-- 如果用户的指令看起来像是断言或验证（如"登入失败"、"显示错误"、"页面跳转"等），而不是具体的操作指令，请返回错误信息
-- 只有明确的操作指令（如"点击登录"、"输入用户名"、"滚动页面"）才应该被转换为MCP命令
+# 操作模式原则
+- 你处于【操作模式】，只处理明确的操作指令
+- 如果指令看起来像断言或验证，请返回错误信息
+- 只有具体的操作指令才应该被转换为MCP命令
 
-你的思考过程必须遵循以下步骤：
-1.  **分析意图**: 理解用户的核心操作目标（如点击、输入、悬停、获取文本等）。如果这不是一个明确的操作指令，而是断言或状态描述，请返回错误。
-2.  **定位元素**: 如果操作需要页面元素，根据指令描述在"当前页面可用元素"列表中找到最匹配的元素，并记下其ref。
-3.  **生成element描述**: 为选中的元素创建一个简洁的人类可读描述（如"用户名输入框"、"登录按钮"、"搜索框"等）。
-4.  **处理变量**: 检查指令中是否要使用变量（格式为 \${variable_name}）或要将结果存入变量。
-5.  **构建命令**: 根据分析结果，从"支持的MCP操作命令"列表中选择一个最合适的命令，并填充参数。
-6.  **输出结果**: 严格按照指定的格式输出。
-
-**重要说明**：
-- element参数：必须是简洁的中文描述，说明这个元素是什么（如"用户名输入框"、"提交按钮"）
-- ref参数：必须使用从页面元素列表中找到的确切ref值（如"e18"、"e25"）
+# 核心参数规则
+- element参数：必须是简洁的中文描述（如"用户名输入框"、"提交按钮"）
+- ref参数：必须使用页面元素列表中的确切ref值
 - 两个参数都是必需的，缺一不可
 
----
-[当前页面可用元素]
-${elementsContext}
+# 输出格式要求
+<THOUGHTS>
+1. 分析操作意图（点击、输入、悬停等）
+2. 定位匹配的页面元素
+3. 生成element描述和ref参数
+4. 处理变量（如果需要）
+5. 构建对应的MCP命令
+</THOUGHTS>
+<COMMAND>
+{
+  "name": "命令名称",
+  "args": {...}
+}
+</COMMAND>
 
----
-[支持的MCP操作命令]
-# 核心交互
-- 点击: {"name": "browser_click", "args": {"element": "人类可读的元素描述", "ref": "element_ref"}}
-- 双击: {"name": "browser_double_click", "args": {"element": "人类可读的元素描述", "ref": "element_ref"}}
-- 悬停: {"name": "browser_hover", "args": {"element": "人类可读的元素描述", "ref": "element_ref"}}
-- 输入: {"name": "browser_type", "args": {"element": "人类可读的输入框描述", "ref": "input_ref", "text": "content"}}
-- 清空输入框: {"name": "browser_clear_input", "args": {"element": "人类可读的输入框描述", "ref": "input_ref"}}
-- 选择下拉选项: {"name": "browser_select_option", "args": {"element": "人类可读的下拉框描述", "ref": "select_ref", "value": "option_value"}}
+# 支持的MCP操作命令
+## 核心交互
+- 点击: {"name": "browser_click", "args": {"element": "元素描述", "ref": "element_ref"}}
+- 双击: {"name": "browser_double_click", "args": {"element": "元素描述", "ref": "element_ref"}}
+- 悬停: {"name": "browser_hover", "args": {"element": "元素描述", "ref": "element_ref"}}
+- 输入: {"name": "browser_type", "args": {"element": "输入框描述", "ref": "input_ref", "text": "content"}}
+- 清空: {"name": "browser_clear_input", "args": {"element": "输入框描述", "ref": "input_ref"}}
+- 选择: {"name": "browser_select_option", "args": {"element": "下拉框描述", "ref": "select_ref", "value": "option_value"}}
 - 按键: {"name": "browser_press_key", "args": {"key": "Enter"}}
 
-# 页面与滚动
+## 页面控制
 - 导航: {"name": "browser_navigate", "args": {"url": "URL"}}
-- 滚动到元素: {"name": "browser_scroll_to_element", "args": {"element": "人类可读的元素描述", "ref": "element_ref"}}
+- 滚动到元素: {"name": "browser_scroll_to_element", "args": {"element": "元素描述", "ref": "element_ref"}}
 - 滚动页面: {"name": "browser_scroll_page", "args": {"direction": "down"}}
 - 刷新: {"name": "browser_refresh", "args": {}}
 - 后退: {"name": "browser_go_back", "args": {}}
 - 前进: {"name": "browser_go_forward", "args": {}}
 
-# 数据提取 (存入变量)
-- 获取文本: {"name": "browser_get_text", "args": {"element": "人类可读的元素描述", "ref": "element_ref", "variable_name": "my_var"}}
-- 获取属性: {"name": "browser_get_attribute", "args": {"element": "人类可读的元素描述", "ref": "element_ref", "attribute": "href", "variable_name": "my_var"}}
-- 获取URL: {"name": "browser_get_url", "args": {"variable_name": "my_var"}}
+## 数据提取
+- 获取文本: {"name": "browser_get_text", "args": {"element": "元素描述", "ref": "element_ref", "variable_name": "变量名"}}
+- 获取属性: {"name": "browser_get_attribute", "args": {"element": "元素描述", "ref": "element_ref", "attribute": "属性名", "variable_name": "变量名"}}
+- 获取URL: {"name": "browser_get_url", "args": {"variable_name": "变量名"}}
 
-# 高级控制
+## 高级控制
 - 等待: {"name": "browser_wait_for", "args": {"timeout": milliseconds}}
 - 截图: {"name": "browser_screenshot", "args": {}}
-- 切换到iframe: {"name": "browser_switch_to_frame", "args": {"element": "人类可读的iframe描述", "ref": "iframe_ref"}}
+- 切换iframe: {"name": "browser_switch_to_frame", "args": {"element": "iframe描述", "ref": "iframe_ref"}}
 - 切换回主页面: {"name": "browser_switch_to_default", "args": {}}
-- 处理弹窗: {"name": "browser_handle_alert", "args": {"action": "accept"}}
-
----
-[输出格式要求]
-<THOUGHTS>
-这里是你的分步思考过程。
-</THOUGHTS>
-<COMMAND>
-{
-  "name": "...",
-  "args": {...}
-}
-</COMMAND>
-
----
-[用户操作指令]
-"${stepDescription}"
-
-请开始分析和转换：`;
+- 处理弹窗: {"name": "browser_handle_alert", "args": {"action": "accept"}}`;
   }
 
   /**
-   * 🔥 [V4] 构建"断言"专用的AI提示词 (修复版)
+   * 🔥 构建操作模式的用户提示词
    */
-  private buildAssertionPrompt(assertionDescription: string, pageElements: Array<{ ref: string, role: string, text: string }>): string {
+  private buildOperationUserPrompt(stepDescription: string, pageElements: Array<{ ref: string, role: string, text: string }>): string {
     const elementsContext = pageElements.length > 0
       ? pageElements.map(el => `[ref=${el.ref}] ${el.role} "${el.text}"`).join('\n')
       : "当前页面没有可用的交互元素。";
 
-    return `你是一个顶级的测试自动化AI专家。你的任务是将用户的自然语言【断言指令】，基于当前页面上的元素，转换为一个精确的JSON格式的MCP【断言命令】。
+    return `# 当前任务：操作模式
 
-**⚠️ 重要说明**：
-- 你现在处于【断言验证模式】，不是操作模式
-- 用户提供的是断言描述（如"页面展示商品管理"、"显示错误信息"、"页面跳转成功"等），这些都是需要验证的状态
-- 断言的目标是验证页面当前状态是否符合预期，不是执行操作
-
-你的思考过程必须遵循以下步骤：
-1.  **分析断言类型**: 理解用户要验证什么（文本存在、元素可见性、页面内容、URL地址等）。
-2.  **确定验证策略**: 选择最合适的验证方法（快照分析、等待文本、截图验证等）。
-3.  **定位相关元素**: 如果断言涉及特定页面元素，在"当前页面可用元素"列表中找到最匹配的元素。
-4.  **构建验证命令**: 根据分析结果，选择最合适的MCP命令来实现验证。
-5.  **输出结果**: 严格按照指定的格式输出。
-
-**断言验证原则**：
-- 对于文本内容验证：使用browser_snapshot获取页面状态，在应用层检查文本
-- 对于元素可见性验证：使用browser_snapshot或browser_wait_for
-- 对于页面状态验证：使用browser_snapshot进行全面检查
-- 对于视觉验证：使用browser_take_screenshot保存证据
-
----
-[当前页面可用元素]
+## 当前页面可用元素
 ${elementsContext}
 
----
-[支持的MCP断言命令]
-# 重要说明：由于Playwright MCP不提供专门的断言工具，我们使用以下策略：
+## 用户操作指令
+"${stepDescription}"
 
-# 1. 快照验证（推荐）- 获取页面完整状态供应用层分析
-- 获取页面快照: {"name": "browser_snapshot", "args": {}}
+## 分析要求
+请将上述操作指令转换为MCP命令：
+1. 确认这是一个明确的操作指令（而非断言验证）
+2. 在页面元素中找到最匹配的目标元素
+3. 生成简洁的中文element描述和准确的ref参数
+4. 选择合适的MCP命令并填充参数
 
-# 2. 等待验证 - 等待特定条件出现或消失
-- 等待文本出现: {"name": "browser_wait_for", "args": {"text": "期望的文本内容"}}
-- 等待文本消失: {"name": "browser_wait_for", "args": {"textGone": "不应该存在的文本"}}
-- 等待元素可见: {"name": "browser_wait_for", "args": {"ref": "element_ref", "state": "visible"}}
+请开始分析：`;
+  }
 
-# 3. 截图验证 - 保存视觉证据
-- 截取页面截图: {"name": "browser_take_screenshot", "args": {"filename": "assertion_proof.png"}}
+  /**
+   * 🔥 获取断言模式的系统提示词
+   */
+  private getAssertionSystemPrompt(): string {
+    return `你是一个专业的测试断言验证AI专家。你的核心职责是：
 
-# 执行流程：
-# 1. 使用browser_snapshot获取页面状态
-# 2. 在应用层解析快照内容进行断言判断
-# 3. 可选：使用browser_take_screenshot保存验证截图
+# 身份与能力
+- 将自然语言断言描述转换为精确的JSON格式MCP验证命令
+- 基于页面快照分析当前状态，选择最佳验证策略
+- 专注于验证页面状态、文本内容、元素可见性等断言需求
 
----
-[输出格式要求]
+# 断言验证原则
+- 你处于【断言验证模式】，不执行操作，只进行状态验证
+- 断言目标：验证页面当前状态是否符合预期
+- 优先使用快照分析，必要时结合等待和截图验证
+
+# 验证策略选择
+1. **文本内容验证** → 使用 browser_snapshot 获取页面状态供应用层分析
+2. **元素可见性验证** → 使用 browser_wait_for 等待元素状态
+3. **页面状态验证** → 使用 browser_snapshot 进行全面检查  
+4. **视觉证据保存** → 使用 browser_take_screenshot 保存验证截图
+
+# 输出格式要求
 <THOUGHTS>
-这里是你的分步思考过程。
+1. 分析断言类型（文本存在、元素可见性、页面内容等）
+2. 确定验证策略（快照分析、等待验证、截图验证）
+3. 定位相关元素（如果需要）
+4. 构建验证命令
 </THOUGHTS>
 <COMMAND>
 {
-  "name": "...",
+  "name": "命令名称",
   "args": {...}
 }
 </COMMAND>
 
----
-[用户断言指令]
-"${assertionDescription}"
+# 支持的MCP断言命令
+## 快照验证（推荐）
+- 获取页面快照: {"name": "browser_snapshot", "args": {}}
+  用途：获取页面完整状态供应用层分析文本内容、元素状态
 
-请开始分析和转换：`;
+## 等待验证
+- 等待文本出现: {"name": "browser_wait_for", "args": {"text": "期望的文本内容"}}
+- 等待文本消失: {"name": "browser_wait_for", "args": {"textGone": "不应该存在的文本"}}
+- 等待元素可见: {"name": "browser_wait_for", "args": {"ref": "element_ref", "state": "visible"}}
+- 等待元素隐藏: {"name": "browser_wait_for", "args": {"ref": "element_ref", "state": "hidden"}}
+
+## 截图验证
+- 截取页面截图: {"name": "browser_take_screenshot", "args": {"filename": "assertion_proof.png"}}
+  用途：保存视觉证据，用于复杂UI状态验证
+
+## 执行流程建议
+1. 首选 browser_snapshot 获取页面状态进行文本和内容分析
+2. 对于动态内容使用 browser_wait_for 等待特定状态
+3. 可选使用 browser_take_screenshot 保存验证截图作为证据
+
+# 重要提醒
+- 由于Playwright MCP不提供专门的断言工具，主要通过快照分析实现验证
+- element和ref参数规则与操作模式相同：element为中文描述，ref为页面元素的确切引用
+- 断言失败将在应用层处理，你只需提供合适的验证命令`;
   }
 
   /**
-   * 🔥 调用AI模型
+   * 🔥 构建断言模式的用户提示词
    */
-  private async callLLM(prompt: string): Promise<string> {
+  private buildAssertionUserPrompt(assertionDescription: string, pageElements: Array<{ ref: string, role: string, text: string }>): string {
+    const elementsContext = pageElements.length > 0
+      ? pageElements.map(el => `[ref=${el.ref}] ${el.role} "${el.text}"`).join('\n')
+      : "当前页面没有可用的交互元素。";
+
+    return `# 当前断言验证任务
+
+## 当前页面可用元素
+${elementsContext}
+
+## 用户断言指令
+"${assertionDescription}"
+
+## 分析要求
+请根据断言描述选择最合适的验证策略：
+- 如果是验证文本内容存在/不存在 → 使用 browser_snapshot
+- 如果是验证元素状态变化 → 使用 browser_wait_for  
+- 如果是验证复杂UI状态 → 使用 browser_snapshot + browser_take_screenshot
+- 如果需要等待动态内容加载 → 使用 browser_wait_for
+
+请开始分析并生成验证命令：`;
+  }
+
+  /**
+   * 🔥 调用AI模型（支持操作和断言两种模式）
+   */
+  private async callLLM(userPrompt: string, mode: 'operation' | 'assertion' = 'operation'): Promise<string> {
     // 获取当前配置
     const currentConfig = await this.getCurrentConfig();
     const modelInfo = this.getCurrentModelInfo();
 
-    console.log(`🚀 调用AI模型: ${modelInfo.modelName} (${modelInfo.provider})`);
+    console.log(`🚀 调用AI模型: ${modelInfo.modelName} (${mode}模式)`);
     console.log(`   模型标识: ${currentConfig.model}`);
     console.log(`   温度: ${currentConfig.temperature}, 最大令牌: ${currentConfig.maxTokens}`);
     console.log(`   运行模式: ${modelInfo.mode}`);
@@ -611,8 +639,14 @@ ${elementsContext}
         model: currentConfig.model,
         messages: [
           {
+            role: 'system',
+            content: mode === 'assertion'
+              ? this.getAssertionSystemPrompt()  // 🔥 断言专用系统提示词
+              : this.getOperationSystemPrompt()  // 🔥 操作专用系统提示词
+          },
+          {
             role: 'user',
-            content: prompt
+            content: userPrompt  // 🔥 具体任务和上下文
           }
         ],
         temperature: currentConfig.temperature,
@@ -647,12 +681,12 @@ ${elementsContext}
         throw new Error('AI返回空响应');
       }
 
-      console.log(`🤖 AI响应: ${content}`);
+      console.log(`🤖 AI响应 (${mode}模式): ${content.substring(0, 200)}...`);
       return content;
 
     } catch (error: any) {
       const modelInfo = this.getCurrentModelInfo();
-      console.error(`❌ AI调用失败: ${modelInfo.modelName} (${modelInfo.provider})`);
+      console.error(`❌ AI调用失败: ${modelInfo.modelName} (${mode}模式)`);
       console.error(`   错误详情: ${error.message}`);
       console.error(`   模型标识: ${currentConfig.model}`);
       console.error(`   运行模式: ${modelInfo.mode}`);
