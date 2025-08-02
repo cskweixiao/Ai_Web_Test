@@ -1,4 +1,4 @@
-import { PrismaClient, Prisma } from '../../src/generated/prisma';
+import { PrismaClient, Prisma } from '../../src/generated/prisma/index.js';
 import { v4 as uuidv4 } from 'uuid';
 import { WebSocketManager } from './websocket.js';
 import { PlaywrightMcpClient } from './mcpClient.js';
@@ -25,7 +25,7 @@ export class TestExecutionService {
     this.aiParser = aiParser;
     this.mcpClient = mcpClient;
     this.screenshotService = screenshotService || new ScreenshotService(prisma);
-    
+
     // 在构造函数中记录AI解析器的模型信息
     this.logAIParserInfo();
   }
@@ -37,7 +37,7 @@ export class TestExecutionService {
       console.log(`🤖 测试执行服务已初始化，AI解析器配置:`);
       console.log(`   模型: ${modelInfo.modelName} (${modelInfo.provider})`);
       console.log(`   运行模式: ${modelInfo.mode}`);
-      
+
       if (this.aiParser.isConfigManagerMode()) {
         console.log(`   配置管理器: 已启用`);
       } else {
@@ -52,13 +52,13 @@ export class TestExecutionService {
   public async reloadAIParserConfiguration(): Promise<void> {
     try {
       console.log(`🔄 测试执行服务：重新加载AI解析器配置...`);
-      
+
       // 调用AI解析器的配置重载方法
       await this.aiParser.reloadConfiguration();
-      
+
       // 重新记录配置信息
       this.logAIParserInfo();
-      
+
       console.log(`✅ 测试执行服务：AI解析器配置重新加载完成`);
     } catch (error) {
       console.error(`❌ 测试执行服务：重新加载AI解析器配置失败:`, error);
@@ -232,7 +232,7 @@ export class TestExecutionService {
     }
 
     console.log(`🚀 [${runId}] 开始执行 [${testCase.name}]`);
-    
+
     // 记录当前AI解析器配置信息
     try {
       const modelInfo = this.aiParser.getCurrentModelInfo();
@@ -240,7 +240,7 @@ export class TestExecutionService {
       console.log(`   模型: ${modelInfo.modelName} (${modelInfo.provider})`);
       console.log(`   运行模式: ${modelInfo.mode}`);
       this.addLog(runId, `🤖 使用AI模型: ${modelInfo.modelName} (${modelInfo.provider})`, 'info');
-      
+
       if (this.aiParser.isConfigManagerMode()) {
         this.addLog(runId, `🔧 配置管理器模式已启用，支持动态模型切换`, 'info');
       } else {
@@ -286,7 +286,7 @@ export class TestExecutionService {
       console.log(`   remainingSteps类型: ${typeof remainingSteps}`);
       console.log(`   remainingSteps长度: ${remainingSteps?.length || 0}`);
       console.log(`🔍 [${runId}] ===== 测试执行开始调试结束 =====\n`);
-      
+
       this.addLog(runId, `🔍 测试数据: 操作步骤${testCase.steps ? '有' : '无'}, 断言${testCase.assertions ? '有' : '无'}`, 'info');
 
       // 🔥 AI闭环执行 - 修复：添加步骤间延迟和无限循环保护
@@ -323,7 +323,7 @@ export class TestExecutionService {
         console.log(`   remainingSteps长度: ${remainingSteps?.length || 0}`);
         console.log(`   是否包含"登入失败": ${remainingSteps?.includes('登入失败') ? '是' : '否'}`);
         console.log(`🔍 [${runId}] ===== 第${stepIndex}次循环调试结束 =====\n`);
-        
+
         this.addLog(runId, `🤖 AI正在解析下一个步骤...`, 'info');
         const aiResult = await this.aiParser.parseNextStep(remainingSteps, snapshot, runId);
 
@@ -1215,7 +1215,7 @@ ${elements.map((el, index) => `${index + 1}. ${el.ref}: ${el.role} "${el.text}"`
       const { screenshotConfig } = await import('../../src/utils/screenshotConfig.js');
       const screenshotsDir = screenshotConfig.getScreenshotsDirectory();
       const configuredBackupDir = screenshotConfig.getBackupDirectory();
-      
+
       // 确保截图目录存在
       screenshotConfig.ensureScreenshotsDirectory();
 
@@ -1591,10 +1591,10 @@ ${elements.map((el, index) => `${index + 1}. ${el.ref}: ${el.role} "${el.text}"`
     const testRun = testRunStore.get(runId);
     const timestamp = new Date().toISOString();
     const timeStr = new Date().toLocaleTimeString('zh-CN', { hour12: false });
-    
+
     // 控制台输出带时间戳
     const consoleMessage = `[${timeStr}] ${message}`;
-    
+
     switch (level) {
       case 'error':
         console.error(consoleMessage);
@@ -1608,7 +1608,7 @@ ${elements.map((el, index) => `${index + 1}. ${el.ref}: ${el.role} "${el.text}"`
       default:
         console.log(consoleMessage);
     }
-    
+
     if (testRun) {
       const logEntry: TestLog = { id: uuidv4(), timestamp: new Date(), message, level: level || 'info' };
       testRun.logs.push(logEntry);
@@ -1834,7 +1834,7 @@ ${elements.map((el, index) => `${index + 1}. ${el.ref}: ${el.role} "${el.text}"`
   private async validateAssertion(assertionDescription: string, snapshotResult: any, runId: string): Promise<{ success: boolean; error?: string }> {
     try {
       console.log(`🔍 [${runId}] 开始验证断言: "${assertionDescription}"`);
-      
+
       // 提取快照文本内容
       let snapshotText = '';
       if (snapshotResult && snapshotResult.content) {
@@ -1858,7 +1858,26 @@ ${elements.map((el, index) => `${index + 1}. ${el.ref}: ${el.role} "${el.text}"`
       const assertionLower = assertionDescription.toLowerCase();
       const snapshotLower = snapshotText.toLowerCase();
 
-      // 1. 文本存在性验证
+      // 1. 否定断言验证（不展示、不显示、不包含）
+      if (assertionLower.includes('不展示') || assertionLower.includes('不显示') || assertionLower.includes('不包含')) {
+        // 提取要验证的文本内容
+        const keywords = this.extractAssertionKeywords(assertionDescription);
+        console.log(`🔍 [${runId}] 提取的关键词（否定断言）: ${keywords.join(', ')}`);
+
+        for (const keyword of keywords) {
+          if (snapshotLower.includes(keyword.toLowerCase())) {
+            console.log(`❌ [${runId}] 找到不应该存在的关键词: "${keyword}"`);
+            this.addLog(runId, `❌ 断言验证失败: 页面不应该包含 "${keyword}"`, 'error');
+            return { success: false, error: `页面不应该包含: ${keyword}` };
+          }
+        }
+
+        console.log(`✅ [${runId}] 确认页面不包含关键词: ${keywords.join(', ')}`);
+        this.addLog(runId, `✅ 断言验证通过: 页面不展示商品管理`, 'success');
+        return { success: true };
+      }
+
+      // 2. 正面断言验证（展示、显示、包含）
       if (assertionLower.includes('展示') || assertionLower.includes('显示') || assertionLower.includes('包含')) {
         // 提取要验证的文本内容
         const keywords = this.extractAssertionKeywords(assertionDescription);
@@ -1876,14 +1895,14 @@ ${elements.map((el, index) => `${index + 1}. ${el.ref}: ${el.role} "${el.text}"`
         return { success: false, error: `页面未找到预期内容: ${keywords.join(', ')}` };
       }
 
-      // 2. 页面跳转验证
+      // 3. 页面跳转验证
       if (assertionLower.includes('跳转') || assertionLower.includes('页面') || assertionLower.includes('url')) {
         // 从快照中提取URL信息
         const urlMatch = snapshotText.match(/Page URL: ([^\n]+)/);
         if (urlMatch) {
           const currentUrl = urlMatch[1];
           console.log(`🌐 [${runId}] 当前页面URL: ${currentUrl}`);
-          
+
           // 简单验证：如果断言描述中包含URL关键词，认为跳转成功
           if (assertionDescription.includes('成功') || assertionDescription.includes('正确')) {
             this.addLog(runId, `✅ 页面跳转验证通过: ${currentUrl}`, 'success');
@@ -1892,7 +1911,7 @@ ${elements.map((el, index) => `${index + 1}. ${el.ref}: ${el.role} "${el.text}"`
         }
       }
 
-      // 3. 错误信息验证
+      // 4. 错误信息验证
       if (assertionLower.includes('错误') || assertionLower.includes('失败')) {
         const errorKeywords = ['error', 'failed', 'invalid', '错误', '失败', '无效'];
         for (const keyword of errorKeywords) {
@@ -1905,7 +1924,7 @@ ${elements.map((el, index) => `${index + 1}. ${el.ref}: ${el.role} "${el.text}"`
         return { success: false, error: '页面未找到预期的错误信息' };
       }
 
-      // 4. 默认验证：页面加载成功
+      // 5. 默认验证：页面加载成功
       if (snapshotText.length > 100) {
         console.log(`✅ [${runId}] 默认验证通过: 页面内容丰富（${snapshotText.length}字符）`);
         this.addLog(runId, `✅ 默认断言验证通过: 页面正常加载`, 'success');
@@ -1923,13 +1942,13 @@ ${elements.map((el, index) => `${index + 1}. ${el.ref}: ${el.role} "${el.text}"`
   // 🔥 提取断言关键词
   private extractAssertionKeywords(assertionDescription: string): string[] {
     const keywords: string[] = [];
-    
+
     // 提取引号中的文本
     const quotedMatches = assertionDescription.match(/"([^"]+)"/g) || assertionDescription.match(/'([^']+)'/g);
     if (quotedMatches) {
       keywords.push(...quotedMatches.map(match => match.replace(/['"]/g, '')));
     }
-    
+
     // 提取常见的业务词汇
     const businessTerms = ['商品管理', '用户管理', '订单管理', '系统设置', '数据统计', '权限管理', '首页', '登录', '注册'];
     for (const term of businessTerms) {
@@ -1937,7 +1956,7 @@ ${elements.map((el, index) => `${index + 1}. ${el.ref}: ${el.role} "${el.text}"`
         keywords.push(term);
       }
     }
-    
+
     // 如果没有找到关键词，使用整个描述中的关键部分
     if (keywords.length === 0) {
       const words = assertionDescription.replace(/[展示|显示|包含|页面]/g, '').trim();
@@ -1945,7 +1964,7 @@ ${elements.map((el, index) => `${index + 1}. ${el.ref}: ${el.role} "${el.text}"`
         keywords.push(words);
       }
     }
-    
+
     return keywords;
   }
 

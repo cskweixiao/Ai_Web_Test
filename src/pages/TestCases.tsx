@@ -117,9 +117,31 @@ export function TestCases() {
       }
     }, 10000); // 每10秒检查一次
     
+    // 🔥 添加状态清理超时机制 - 防止状态永久卡住
+    const stateCleanupTimeouts = [];
+    
+    // 监听 runningTestId 变化，设置清理超时
+    if (runningTestId !== null) {
+      const timeout = setTimeout(() => {
+        console.warn('⚠️ 测试运行状态超时，强制清理');
+        setRunningTestId(null);
+      }, 10 * 60 * 1000); // 10分钟超时
+      stateCleanupTimeouts.push(timeout);
+    }
+    
+    // 监听 runningSuiteId 变化，设置清理超时  
+    if (runningSuiteId !== null) {
+      const timeout = setTimeout(() => {
+        console.warn('⚠️ 套件运行状态超时，强制清理');
+        setRunningSuiteId(null);
+      }, 15 * 60 * 1000); // 15分钟超时（套件可能运行更久）
+      stateCleanupTimeouts.push(timeout);
+    }
+    
     // 清理函数
     return () => {
       clearInterval(wsCheckInterval);
+      stateCleanupTimeouts.forEach(timeout => clearTimeout(timeout));
     };
   }, []);
 
@@ -306,7 +328,7 @@ export function TestCases() {
           ...editingTestSuite,
           name: suiteFormData.name.trim(),
           description: suiteFormData.description.trim(),
-          testCases: suiteFormData.testCases,
+          testCaseIds: suiteFormData.testCases, // 🔥 修复：使用正确的字段名
           priority: suiteFormData.priority,
           status: suiteFormData.status,
           tags: suiteFormData.tags.split(',').map(tag => tag.trim()).filter(tag => tag.length > 0)
@@ -325,7 +347,7 @@ export function TestCases() {
         const newSuite = {
           name: suiteFormData.name.trim(),
           description: suiteFormData.description.trim(),
-          testCases: suiteFormData.testCases,
+          testCaseIds: suiteFormData.testCases, // 🔥 修复：使用正确的字段名
           priority: suiteFormData.priority,
           status: suiteFormData.status,
           tags: suiteFormData.tags.split(',').map(tag => tag.trim()).filter(tag => tag.length > 0),
@@ -569,8 +591,8 @@ export function TestCases() {
             message.type === 'test_status' ||
             message.type === 'test_error' ||
             message.type === 'suiteUpdate' ||
-            (message.data && (message.data.status === 'completed' || message.data.status === 'failed' || message.data.status === 'error')) ||
-            (message.status && (message.status === 'completed' || message.status === 'failed' || message.status === 'error'));
+            (message.data && (message.data.status === 'completed' || message.data.status === 'failed' || message.data.status === 'error' || message.data.status === 'cancelled')) ||
+            (message.status && (message.status === 'completed' || message.status === 'failed' || message.status === 'error' || message.status === 'cancelled'));
           
           if (shouldReset) {
             console.log(`✅ 收到测试完成通知，重置状态:`, message);
@@ -581,6 +603,8 @@ export function TestCases() {
             const status = message.data?.status || message.status || 'completed';
             if (status === 'failed' || status === 'error') {
               showToast.error(`❌ 测试执行失败: ${testCase.name}`);
+            } else if (status === 'cancelled') {
+              showToast.warning(`⚠️ 测试执行被取消: ${testCase.name}`);
             } else {
               showToast.success(`🎉 测试执行完成: ${testCase.name}`);
             }

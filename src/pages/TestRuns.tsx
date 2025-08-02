@@ -14,7 +14,10 @@ import {
   Calendar,
   User,
   Terminal,
-  RefreshCw
+  RefreshCw,
+  Square,
+  AlertTriangle,
+  StopCircle
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { clsx } from 'clsx';
@@ -56,12 +59,20 @@ export function TestRuns() {
   const [showLogs, setShowLogs] = useState(false);
   const [loading, setLoading] = useState(false);
   const [autoRefresh, setAutoRefresh] = useState(true);
+  const [stoppingTests, setStoppingTests] = useState<Set<string>>(new Set());
+  const [showStopModal, setShowStopModal] = useState(false);
+  const [testToStop, setTestToStop] = useState<{ id: string; name: string; isSuite: boolean } | null>(null);
+  const [showStopAllModal, setShowStopAllModal] = useState(false);
+  const [stoppingAll, setStoppingAll] = useState(false);
 
   // 🔥 从后端API加载真实的测试运行数据
   const loadTestRuns = async () => {
     try {
       setLoading(true);
       console.log('📊 正在加载测试运行数据...');
+      
+      // 🔥 清理停止状态 - 与实际运行状态同步
+      // 这将在数据加载完成后执行
       
       // 同时尝试建立WebSocket连接
       testService.initializeWebSocket().catch(error => {
@@ -148,6 +159,27 @@ export function TestRuns() {
         
         setTestRuns(runs);
         console.log('📊 成功加载测试运行数据:', runs);
+        
+        // 🔥 清理停止状态 - 只保留实际还在运行的测试
+        setStoppingTests(prev => {
+          const runningIds = new Set(runs
+            .filter(run => run.status === 'running' || run.status === 'queued')
+            .map(run => run.id)
+          );
+          
+          const cleanedSet = new Set();
+          for (const testId of prev) {
+            if (runningIds.has(testId)) {
+              cleanedSet.add(testId);
+            }
+          }
+          
+          if (cleanedSet.size !== prev.size) {
+            console.log(`🧹 清理了 ${prev.size - cleanedSet.size} 个无效的停止状态`);
+          }
+          
+          return cleanedSet;
+        });
       } else {
         console.error('获取测试运行失败:', data.error);
         
@@ -301,6 +333,141 @@ export function TestRuns() {
     }
   };
 
+  // 🔥 新增：处理停止测试确认
+  const handleStopTest = (testRun: TestRun) => {
+    const isSuite = testRun.name.startsWith('Suite:');
+    setTestToStop({
+      id: testRun.id,
+      name: testRun.name,
+      isSuite
+    });
+    setShowStopModal(true);
+  };
+
+  // 🔥 新增：确认停止测试
+  const confirmStopTest = async () => {
+    if (!testToStop) return;
+
+    try {
+      // 添加到停止中的集合
+      setStoppingTests(prev => new Set([...prev, testToStop.id]));
+      setShowStopModal(false);
+
+      console.log(`🛑 停止测试: ${testToStop.name} (ID: ${testToStop.id})`);
+
+      if (testToStop.isSuite) {
+        // 停止测试套件
+        await testService.cancelSuiteRun(testToStop.id);
+        showToast.success(`已发送停止信号给测试套件: ${testToStop.name}`);
+      } else {
+        // 停止单个测试
+        await testService.cancelTest(testToStop.id);
+        showToast.success(`已发送停止信号给测试: ${testToStop.name}`);
+      }
+
+      // 立即刷新数据以获取最新状态
+      setTimeout(() => {
+        loadTestRuns();
+      }, 1000);
+
+    } catch (error: any) {
+      console.error('停止测试失败:', error);
+      showToast.error(`停止测试失败: ${error.message}`);
+    } finally {
+      // 移除停止状态（延迟一点，给用户视觉反馈）
+      setTimeout(() => {
+        setStoppingTests(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(testToStop.id);
+          return newSet;
+        });
+      }, 2000);
+      
+      setTestToStop(null);
+    }
+  };
+
+  // 🔥 新增：停止所有运行中的测试
+  const handleStopAllTests = () => {
+    const runningTests = testRuns.filter(run => 
+      run.status === 'running' || run.status === 'queued'
+    );
+    
+    if (runningTests.length === 0) {
+      showToast.warning('当前没有正在运行的测试');
+      return;
+    }
+    
+    setShowStopAllModal(true);
+  };
+
+  // 🔥 新增：确认停止所有测试
+  const confirmStopAllTests = async () => {
+    const runningTests = testRuns.filter(run => 
+      run.status === 'running' || run.status === 'queued'
+    );
+
+    if (runningTests.length === 0) {
+      showToast.warning('当前没有正在运行的测试');
+      setShowStopAllModal(false);
+      return;
+    }
+
+    try {
+      setStoppingAll(true);
+      setShowStopAllModal(false);
+
+      console.log(`🛑 批量停止 ${runningTests.length} 个测试`);
+
+      // 同时发送所有停止请求
+      const stopPromises = runningTests.map(async (run) => {
+        try {
+          // 添加到停止集合
+          setStoppingTests(prev => new Set([...prev, run.id]));
+
+          const isSuite = run.name.startsWith('Suite:');
+          if (isSuite) {
+            await testService.cancelSuiteRun(run.id);
+            console.log(`✅ 已发送停止信号给测试套件: ${run.name}`);
+          } else {
+            await testService.cancelTest(run.id);
+            console.log(`✅ 已发送停止信号给测试: ${run.name}`);
+          }
+        } catch (error: any) {
+          console.error(`❌ 停止测试失败 ${run.name}:`, error);
+          throw new Error(`${run.name}: ${error.message}`);
+        }
+      });
+
+      // 等待所有停止操作完成
+      const results = await Promise.allSettled(stopPromises);
+      
+      const successful = results.filter(r => r.status === 'fulfilled').length;
+      const failed = results.filter(r => r.status === 'rejected').length;
+
+      if (failed === 0) {
+        showToast.success(`✅ 成功发送停止信号给 ${successful} 个测试`);
+      } else {
+        showToast.warning(`⚠️ ${successful} 个测试停止成功，${failed} 个失败`);
+      }
+
+      // 刷新数据获取最新状态
+      setTimeout(() => {
+        loadTestRuns();
+      }, 1000);
+
+    } catch (error: any) {
+      console.error('批量停止测试失败:', error);
+      showToast.error(`❌ 批量停止失败: ${error.message}`);
+    } finally {
+      // 延迟清除停止状态
+      setTimeout(() => {
+        setStoppingAll(false);
+        setStoppingTests(new Set());
+      }, 3000);
+    }
+  };
+
   const getStatusIcon = (status: string) => {
     switch (status) {
       case 'running':
@@ -449,6 +616,41 @@ export function TestRuns() {
             <p className="text-gray-600">查看测试运行状态和断言结果</p>
           </div>
           <div className="flex items-center space-x-3">
+            {/* 🔥 新增：全局停止按钮 - 始终显示 */}
+            <motion.button
+              whileHover={{ scale: stats.running + stats.queued > 0 ? 1.02 : 1 }}
+              whileTap={{ scale: stats.running + stats.queued > 0 ? 0.98 : 1 }}
+              onClick={handleStopAllTests}
+              disabled={stoppingAll || stats.running + stats.queued === 0}
+              className={clsx(
+                "inline-flex items-center px-4 py-2 rounded-lg transition-colors font-medium",
+                stoppingAll
+                  ? "bg-orange-100 text-orange-700 cursor-not-allowed"
+                  : stats.running + stats.queued > 0
+                  ? "bg-red-600 text-white hover:bg-red-700"
+                  : "bg-gray-200 text-gray-500 cursor-not-allowed"
+              )}
+              title={
+                stoppingAll 
+                  ? "正在停止所有测试..." 
+                  : stats.running + stats.queued > 0
+                  ? `停止所有运行中的测试 (${stats.running + stats.queued}个)`
+                  : "当前没有正在运行的测试"
+              }
+            >
+              {stoppingAll ? (
+                <RefreshCw className="h-5 w-5 mr-2 animate-spin" />
+              ) : (
+                <StopCircle className="h-5 w-5 mr-2" />
+              )}
+              {stoppingAll 
+                ? '停止中...' 
+                : stats.running + stats.queued > 0
+                ? `停止所有 (${stats.running + stats.queued})`
+                : '停止所有'
+              }
+            </motion.button>
+            
             <motion.button
               whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.98 }}
@@ -635,6 +837,29 @@ export function TestRuns() {
                         <div className="text-xs">用时: {run.duration}</div>
                       </div>
                       
+                      {/* 🔥 停止测试按钮 - 仅在运行中时显示 */}
+                      {(run.status === 'running' || run.status === 'queued') && (
+                        <motion.button
+                          whileHover={{ scale: 1.1 }}
+                          whileTap={{ scale: 0.9 }}
+                          onClick={() => handleStopTest(run)}
+                          disabled={stoppingTests.has(run.id)}
+                          className={clsx(
+                            "p-2 transition-colors",
+                            stoppingTests.has(run.id)
+                              ? "text-orange-500 cursor-not-allowed"
+                              : "text-gray-400 hover:text-red-600"
+                          )}
+                          title={stoppingTests.has(run.id) ? "正在停止..." : "停止测试"}
+                        >
+                          {stoppingTests.has(run.id) ? (
+                            <RefreshCw className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <Square className="h-4 w-4" />
+                          )}
+                        </motion.button>
+                      )}
+
                       {/* 🔥 查看详细日志按钮 */}
                       <motion.button
                         whileHover={{ scale: 1.1 }}
@@ -766,6 +991,158 @@ export function TestRuns() {
                     className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
                   >
                     关闭
+                  </button>
+                </div>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* 🔥 新增：停止测试确认模态框 */}
+        <AnimatePresence>
+          {showStopModal && testToStop && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center p-4 z-50"
+            >
+              <motion.div
+                initial={{ scale: 0.95, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.95, opacity: 0 }}
+                className="bg-white rounded-xl shadow-xl max-w-md w-full"
+              >
+                <div className="px-6 py-4 border-b border-gray-200">
+                  <div className="flex items-center">
+                    <AlertTriangle className="h-6 w-6 text-amber-500 mr-3" />
+                    <h3 className="text-lg font-semibold text-gray-900">
+                      确认停止测试
+                    </h3>
+                  </div>
+                </div>
+                
+                <div className="px-6 py-4">
+                  <p className="text-gray-700 mb-4">
+                    您确定要停止以下{testToStop.isSuite ? '测试套件' : '测试'}吗？
+                  </p>
+                  <div className="bg-gray-50 rounded-lg p-3 mb-4">
+                    <p className="font-medium text-gray-900">{testToStop.name}</p>
+                    <p className="text-sm text-gray-600 mt-1">
+                      ID: {testToStop.id}
+                    </p>
+                  </div>
+                  <div className="text-sm text-amber-600 bg-amber-50 rounded-lg p-3">
+                    <p className="font-medium">⚠️ 注意事项：</p>
+                    <ul className="mt-1 space-y-1 list-disc list-inside">
+                      <li>测试将被立即终止</li>
+                      <li>已执行的步骤结果会保留</li>
+                      <li>测试状态将标记为"已取消"</li>
+                      {testToStop.isSuite && (
+                        <li>套件中正在执行的测试也会被停止</li>
+                      )}
+                    </ul>
+                  </div>
+                </div>
+                
+                <div className="px-6 py-4 border-t border-gray-200 flex justify-end space-x-3">
+                  <button
+                    onClick={() => {
+                      setShowStopModal(false);
+                      setTestToStop(null);
+                    }}
+                    className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+                  >
+                    取消
+                  </button>
+                  <button
+                    onClick={confirmStopTest}
+                    className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-medium"
+                  >
+                    停止测试
+                  </button>
+                </div>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* 🔥 新增：全局停止确认模态框 */}
+        <AnimatePresence>
+          {showStopAllModal && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center p-4 z-50"
+            >
+              <motion.div
+                initial={{ scale: 0.95, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.95, opacity: 0 }}
+                className="bg-white rounded-xl shadow-xl max-w-lg w-full"
+              >
+                <div className="px-6 py-4 border-b border-gray-200">
+                  <div className="flex items-center">
+                    <StopCircle className="h-6 w-6 text-red-500 mr-3" />
+                    <h3 className="text-lg font-semibold text-gray-900">
+                      批量停止所有测试
+                    </h3>
+                  </div>
+                </div>
+                
+                <div className="px-6 py-4">
+                  <p className="text-gray-700 mb-4">
+                    您确定要停止当前所有正在运行的测试吗？这将影响以下测试：
+                  </p>
+                  
+                  <div className="bg-gray-50 rounded-lg p-4 mb-4 max-h-48 overflow-y-auto">
+                    {testRuns
+                      .filter(run => run.status === 'running' || run.status === 'queued')
+                      .map((run) => (
+                        <div key={run.id} className="flex items-center justify-between py-2 border-b border-gray-200 last:border-b-0">
+                          <div className="flex-1">
+                            <p className="text-sm font-medium text-gray-900">{run.name}</p>
+                            <p className="text-xs text-gray-500">
+                              {run.status === 'running' ? '执行中' : '队列中'} | 
+                              进度: {run.progress}% | 
+                              ID: {run.id.slice(0, 8)}...
+                            </p>
+                          </div>
+                          <span className={clsx(
+                            'inline-flex px-2 py-1 rounded-full text-xs font-medium ml-2',
+                            run.status === 'running' ? 'bg-blue-100 text-blue-800' : 'bg-yellow-100 text-yellow-800'
+                          )}>
+                            {run.status === 'running' ? '执行中' : '队列中'}
+                          </span>
+                        </div>
+                      ))}
+                  </div>
+                  
+                  <div className="text-sm text-red-600 bg-red-50 rounded-lg p-3">
+                    <p className="font-medium">⚠️ 重要提醒：</p>
+                    <ul className="mt-1 space-y-1 list-disc list-inside">
+                      <li>所有正在运行和排队的测试将被立即终止</li>
+                      <li>已执行的步骤结果会保留在系统中</li>
+                      <li>所有测试状态将标记为"已取消"</li>
+                      <li>浏览器会话将被关闭，释放系统资源</li>
+                      <li>此操作无法撤销</li>
+                    </ul>
+                  </div>
+                </div>
+                
+                <div className="px-6 py-4 border-t border-gray-200 flex justify-end space-x-3">
+                  <button
+                    onClick={() => setShowStopAllModal(false)}
+                    className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+                  >
+                    取消
+                  </button>
+                  <button
+                    onClick={confirmStopAllTests}
+                    className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-medium"
+                  >
+                    确认停止所有测试
                   </button>
                 </div>
               </motion.div>
