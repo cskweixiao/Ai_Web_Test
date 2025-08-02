@@ -437,7 +437,7 @@ export class AITestParser {
       }
     }
 
-    return elements.slice(0, 10); // 取前10个最重要的元素
+    return elements.slice(0, 100); // 🔥 放宽到前100个元素
   }
 
   /**
