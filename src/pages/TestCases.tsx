@@ -147,14 +147,12 @@ export function TestCases() {
 
   const loadTestCases = async () => {
     try {
-      setLoading(true);
+      // 🔥 修复：使用独立的loading状态，避免与创建操作冲突
       const cases = await testService.getTestCases();
       setTestCases(cases || []);
     } catch (error) {
       console.error('加载测试用例失败:', error);
       setTestCases([]);
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -173,6 +171,12 @@ export function TestCases() {
   };
 
   const handleCreateTestCase = async () => {
+    // 🔥 防重复点击检查
+    if (loading) {
+      console.log('⚠️ 操作正在进行中，忽略重复点击');
+      return;
+    }
+
     if (!formData.name.trim()) {
       showToast.warning('请输入测试用例名称');
       return;
@@ -309,6 +313,12 @@ export function TestCases() {
 
   // 🔥 新增：创建/编辑测试套件
   const handleCreateTestSuite = async () => {
+    // 🔥 防重复点击检查
+    if (loading) {
+      console.log('⚠️ 操作正在进行中，忽略重复点击');
+      return;
+    }
+
     if (!suiteFormData.name.trim()) {
       showToast.warning('请输入测试套件名称');
       return;

@@ -5,13 +5,12 @@ import { PlaywrightMcpClient } from './mcpClient.js';
 import { MCPToolMapper } from '../utils/mcpToolMapper.js';
 import { AITestParser } from './aiParser.js';
 import { ScreenshotService } from './screenshotService.js';
+import { DatabaseService } from './databaseService.js';
 import { testRunStore } from '../../lib/TestRunStore.js';
 import type { TestRun, TestStep, TestLog, TestCase, TestRunStatus } from '../../src/types/test.js';
 import type { ScreenshotRecord } from '../types/screenshot.js';
 import * as fs from 'fs';
 import * as path from 'path';
-
-const prisma = new PrismaClient();
 
 // 重构后的测试执行服务：完全基于MCP的新流程
 export class TestExecutionService {
@@ -19,12 +18,28 @@ export class TestExecutionService {
   private mcpClient: PlaywrightMcpClient;
   private aiParser: AITestParser;
   private screenshotService: ScreenshotService;
+  private databaseService: DatabaseService;
+  private prisma: PrismaClient; // 保持兼容性，内部使用
 
-  constructor(wsManager: WebSocketManager, aiParser: AITestParser, mcpClient: PlaywrightMcpClient, screenshotService?: ScreenshotService) {
+  constructor(
+    wsManager: WebSocketManager, 
+    aiParser: AITestParser, 
+    mcpClient: PlaywrightMcpClient, 
+    databaseService?: DatabaseService,
+    screenshotService?: ScreenshotService
+  ) {
     this.wsManager = wsManager;
     this.aiParser = aiParser;
     this.mcpClient = mcpClient;
-    this.screenshotService = screenshotService || new ScreenshotService(prisma);
+    
+    // 🔥 使用依赖注入的数据库服务
+    this.databaseService = databaseService || DatabaseService.getInstance();
+    this.prisma = this.databaseService.getClient();
+    
+    // 创建Screenshot服务，传入数据库客户端
+    this.screenshotService = screenshotService || new ScreenshotService(this.prisma);
+
+    console.log(`🗄️ TestExecutionService已连接到数据库服务`);
 
     // 在构造函数中记录AI解析器的模型信息
     this.logAIParserInfo();
@@ -120,12 +135,12 @@ export class TestExecutionService {
   }
 
   public async findTestCaseById(id: number): Promise<TestCase | null> {
-    const testCase = await prisma.test_cases.findUnique({ where: { id } });
+    const testCase = await this.prisma.test_cases.findUnique({ where: { id } });
     return testCase ? this.dbTestCaseToApp(testCase) : null;
   }
 
   public async getTestCases(): Promise<TestCase[]> {
-    const testCases = await prisma.test_cases.findMany();
+    const testCases = await this.prisma.test_cases.findMany();
     return testCases.map(this.dbTestCaseToApp);
   }
 
@@ -135,7 +150,7 @@ export class TestExecutionService {
       assertions: testCaseData.assertions || ''
     });
 
-    const newTestCase = await prisma.test_cases.create({
+    const newTestCase = await this.prisma.test_cases.create({
       data: {
         title: testCaseData.name || 'Untitled Test Case',
         steps: stepsData,
@@ -163,7 +178,7 @@ export class TestExecutionService {
         dataToUpdate.tags = testCaseData.tags;
       }
 
-      const updatedTestCase = await prisma.test_cases.update({
+      const updatedTestCase = await this.prisma.test_cases.update({
         where: { id },
         data: dataToUpdate,
       });
@@ -176,7 +191,7 @@ export class TestExecutionService {
 
   public async deleteTestCase(id: number): Promise<boolean> {
     try {
-      await prisma.test_cases.delete({ where: { id } });
+      await this.prisma.test_cases.delete({ where: { id } });
       return true;
     } catch (error) {
       console.error(`删除测试用例 ${id} 失败:`, error);
@@ -814,12 +829,23 @@ ${elements.map((el, index) => `${index + 1}. ${el.ref}: ${el.role} "${el.text}"`
         input: step.action === 'input' && !!step.selector && step.value !== undefined,
         type: step.action === 'type' && !!step.selector && step.value !== undefined,
         browserType: step.action === 'browser_type' && !!step.ref && step.text !== undefined,
+        // 🔥 修复：添加下拉选择操作条件检查
+        browserSelectOption: step.action === 'browser_select_option' && !!step.ref && step.value !== undefined,
         expect: step.action === 'expect',
         wait: step.action === 'wait',
         browserWaitFor: step.action === 'browser_wait_for',
         // 🔥 新增：断言命令条件检查
         browserSnapshot: step.action === 'browser_snapshot' || (step.stepType === 'assertion' && step.action === 'browser_snapshot'),
-        assertionWaitFor: step.action === 'browser_wait_for' && step.stepType === 'assertion'
+        assertionWaitFor: step.action === 'browser_wait_for' && step.stepType === 'assertion',
+        // 🔥 修复：添加滚动操作条件检查
+        scrollDown: step.action === 'browser_scroll_down',
+        scrollUp: step.action === 'browser_scroll_up',
+        scrollToTop: step.action === 'browser_scroll_to_top',
+        scrollToBottom: step.action === 'browser_scroll_to_bottom',
+        scrollToElement: step.action === 'browser_scroll_to_element',
+        scrollBy: step.action === 'browser_scroll_by',
+        scrollPage: step.action === 'browser_scroll_page',
+        scroll: step.action === 'scroll'
       };
 
       console.log(`🔍 [${runId}] 条件检查详情:`, conditions);
@@ -828,8 +854,14 @@ ${elements.map((el, index) => `${index + 1}. ${el.ref}: ${el.role} "${el.text}"`
         conditions.navigate || conditions.browserNavigate ||
         conditions.click || conditions.browserClick ||
         conditions.fill || conditions.input || conditions.type || conditions.browserType ||
+        // 🔥 修复：添加下拉选择操作到条件检查
+        conditions.browserSelectOption ||
         conditions.expect || conditions.wait || conditions.browserWaitFor ||
-        conditions.browserSnapshot || conditions.assertionWaitFor
+        conditions.browserSnapshot || conditions.assertionWaitFor ||
+        // 🔥 修复：添加滚动操作条件检查
+        conditions.scrollDown || conditions.scrollUp || conditions.scrollToTop || 
+        conditions.scrollToBottom || conditions.scrollToElement || conditions.scrollBy || 
+        conditions.scrollPage || conditions.scroll
       );
 
       console.log(`🔍 [${runId}] 预解析分支条件检查: ${conditionCheck}`);
@@ -872,6 +904,15 @@ ${elements.map((el, index) => `${index + 1}. ${el.ref}: ${el.role} "${el.text}"`
           }
 
           return { success: true };
+        }
+
+        // 🔥 修复：在预解析分支中添加滚动操作处理
+        if (step.action === 'browser_scroll_down' || step.action === 'browser_scroll_up' || 
+            step.action === 'browser_scroll_to_top' || step.action === 'browser_scroll_to_bottom' ||
+            step.action === 'browser_scroll_to_element' || step.action === 'browser_scroll_by' ||
+            step.action === 'browser_scroll_page' || step.action === 'scroll') {
+          console.log(`📜 [${runId}] 预解析分支执行滚动操作: ${step.action} - ${step.description}`);
+          return await this.executeScrollCommand(step, runId);
         }
 
         // 🔥 新增：断言命令处理（获取快照进行验证）
@@ -934,6 +975,15 @@ ${elements.map((el, index) => `${index + 1}. ${el.ref}: ${el.role} "${el.text}"`
           return { success: true };
         }
 
+        // 🔥 新增：滚动操作命令处理
+        if (step.action === 'browser_scroll_down' || step.action === 'browser_scroll_up' || 
+            step.action === 'browser_scroll_to_top' || step.action === 'browser_scroll_to_bottom' ||
+            step.action === 'browser_scroll_to_element' || step.action === 'browser_scroll_by' ||
+            step.action === 'browser_scroll_page' || step.action === 'scroll') {
+          console.log(`📜 [${runId}] 执行滚动操作: ${step.action} - ${step.description}`);
+          return await this.executeScrollCommand(step, runId);
+        }
+
         // 断言命令保持原有格式
         if (step.action === 'expect') {
           const mcpCommand = {
@@ -968,9 +1018,10 @@ ${elements.map((el, index) => `${index + 1}. ${el.ref}: ${el.role} "${el.text}"`
           return { success: true };
         }
 
-        // 🔥 修复：点击和输入操作使用正确的参数格式
+        // 🔥 修复：点击、输入和下拉选择操作使用正确的参数格式
         if (step.action === 'click' || step.action === 'browser_click' ||
-          step.action === 'fill' || step.action === 'input' || step.action === 'type' || step.action === 'browser_type') {
+          step.action === 'fill' || step.action === 'input' || step.action === 'type' || step.action === 'browser_type' ||
+          step.action === 'browser_select_option') {
           try {
             console.log(`🔍 [${runId}] 处理AI解析的步骤参数`);
             console.log(`📋 [${runId}] 原始步骤信息: action=${step.action}, element=${step.element}, ref=${step.ref}, text=${step.text || step.value || 'N/A'}`);
@@ -981,7 +1032,12 @@ ${elements.map((el, index) => `${index + 1}. ${el.ref}: ${el.role} "${el.text}"`
               arguments: {
                 element: step.element || '未知元素',
                 ref: step.ref || step.selector,
-                ...(step.action.includes('type') || step.action.includes('fill') || step.action.includes('input') ? { text: step.text || step.value || '' } : {})
+                ...(step.action.includes('type') || step.action.includes('fill') || step.action.includes('input') 
+                  ? { text: step.text || step.value || '' } 
+                  : {}),
+                ...(step.action === 'browser_select_option' 
+                  ? { values: Array.isArray(step.value) ? step.value : [step.value || step.text || ''] } 
+                  : {})
               }
             };
 
@@ -1300,6 +1356,13 @@ ${elements.map((el, index) => `${index + 1}. ${el.ref}: ${el.role} "${el.text}"`
         // 不抛出错误，确保测试执行不因截图数据库保存失败而中断
       }
 
+    } catch (screenshotError: any) {
+      // 🔥 关键修复：截图失败不应该中断测试执行
+      console.error(`❌ [${runId}] 截图过程失败: ${screenshotError.message}`);
+      this.addLog(runId, `⚠️ 截图失败但测试继续: ${screenshotError.message}`, 'warning');
+      // 不抛出错误，确保测试执行继续进行
+    }
+
       // 8. 创建本地备份（优化的双重保存机制）
       if (fileExists && fileSize > 0 && screenshotConfig.shouldBackup()) {
         try {
@@ -1395,6 +1458,16 @@ ${elements.map((el, index) => `${index + 1}. ${el.ref}: ${el.role} "${el.text}"`
       case 'wait':
       case 'browser_wait_for':
         delay = 500; // 等待命令后短暂延迟
+        break;
+      case 'browser_scroll_down':
+      case 'browser_scroll_up':
+      case 'browser_scroll_to_top':
+      case 'browser_scroll_to_bottom':
+      case 'browser_scroll_to_element':
+      case 'browser_scroll_by':
+      case 'browser_scroll_page':
+      case 'scroll':
+        delay = 1000; // 滚动后等待1秒
         break;
       default:
         delay = 1000;
@@ -1968,6 +2041,183 @@ ${elements.map((el, index) => `${index + 1}. ${el.ref}: ${el.role} "${el.text}"`
     return keywords;
   }
 
+  // 🔥 新增：执行滚动操作命令
+  private async executeScrollCommand(step: TestStep, runId: string): Promise<{ success: boolean; error?: string }> {
+    try {
+      console.log(`📜 [${runId}] 开始执行滚动操作: ${step.action}`);
+      this.addLog(runId, `📜 执行滚动操作: ${step.description}`, 'info');
+
+      let mcpCommand: { name: string; arguments: any };
+
+      // 根据不同的滚动类型构建MCP命令
+      switch (step.action) {
+        case 'browser_scroll_down':
+        case 'scroll_down':
+          // 🔥 修复：使用正确的browser_evaluate工具和function参数
+          mcpCommand = {
+            name: 'browser_evaluate',
+            arguments: {
+              function: `() => { window.scrollBy(0, ${step.pixels || 500}); }`
+            }
+          };
+          break;
+
+        case 'browser_scroll_up':
+        case 'scroll_up':
+          // 🔥 修复：使用正确的browser_evaluate工具和function参数
+          mcpCommand = {
+            name: 'browser_evaluate',
+            arguments: {
+              function: `() => { window.scrollBy(0, -${step.pixels || 500}); }`
+            }
+          };
+          break;
+
+        case 'browser_scroll_to_top':
+        case 'scroll_to_top':
+          // 🔥 修复：使用正确的browser_evaluate工具和function参数
+          mcpCommand = {
+            name: 'browser_evaluate',
+            arguments: {
+              function: '() => { window.scrollTo(0, 0); }'
+            }
+          };
+          break;
+
+        case 'browser_scroll_to_bottom':
+        case 'scroll_to_bottom':
+          // 🔥 修复：使用正确的browser_evaluate工具和function参数
+          mcpCommand = {
+            name: 'browser_evaluate',
+            arguments: {
+              function: '() => { window.scrollTo(0, document.body.scrollHeight); }'
+            }
+          };
+          break;
+
+        case 'browser_scroll_to_element':
+        case 'scroll_to_element':
+          // 🔥 修复：使用browser_evaluate滚动到元素
+          if (!step.ref && !step.selector) {
+            throw new Error('滚动到元素需要指定目标元素');
+          }
+          mcpCommand = {
+            name: 'browser_evaluate',
+            arguments: {
+              function: `() => {
+                const element = document.querySelector('${step.selector}') || 
+                               document.querySelector('[ref="${step.ref}"]');
+                if (element) {
+                  element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                } else {
+                  console.warn('Element not found for scrolling: ${step.selector || step.ref}');
+                }
+              }`
+            }
+          };
+          break;
+
+        case 'browser_scroll_by':
+        case 'scroll_by':
+          // 🔥 修复：使用browser_evaluate按像素滚动
+          const xPixels = step.x || 0;
+          const yPixels = step.y || step.pixels || 500;
+          mcpCommand = {
+            name: 'browser_evaluate',
+            arguments: {
+              function: `() => { window.scrollBy(${xPixels}, ${yPixels}); }`
+            }
+          };
+          break;
+
+        case 'browser_scroll_page':
+        case 'scroll':
+          // 🔥 修复：使用browser_evaluate进行页面滚动
+          const direction = step.direction || 'down';
+          const scrollAmount = step.pixels || 500;
+          mcpCommand = {
+            name: 'browser_evaluate',
+            arguments: {
+              function: `() => { window.scrollBy(0, ${direction === 'up' ? -scrollAmount : scrollAmount}); }`
+            }
+          };
+          break;
+
+        default:
+          throw new Error(`不支持的滚动操作: ${step.action}`);
+      }
+
+      console.log(`🔧 [${runId}] MCP滚动命令: ${mcpCommand.name}`, mcpCommand.arguments);
+      this.addLog(runId, `🔧 MCP滚动命令: ${mcpCommand.name}`, 'info');
+
+      try {
+        // 执行MCP命令
+        const result = await this.mcpClient.callTool(mcpCommand);
+
+        // 检查执行结果
+        console.log(`🔍 [${runId}] 滚动命令执行结果:`, JSON.stringify(result, null, 2));
+        this.addLog(runId, `🔍 滚动执行结果: ${JSON.stringify(result)}`, 'info');
+
+        // 检查是否有错误
+        if (result && result.content) {
+          const content = Array.isArray(result.content) ? result.content : [result.content];
+          for (const item of content) {
+            if (item.type === 'text' && item.text) {
+              if (item.text.includes('Error:') || item.text.includes('Failed:') || item.text.toLowerCase().includes('error') || item.text.includes('not found')) {
+                console.warn(`⚠️ [${runId}] browser_evaluate滚动失败: ${item.text}`);
+                throw new Error(`browser_evaluate执行失败: ${item.text}`);
+              }
+            }
+          }
+        }
+
+        console.log(`✅ [${runId}] 滚动操作成功: ${step.description}`);
+        this.addLog(runId, `✅ 滚动操作成功: ${step.description}`, 'success');
+
+        // 滚动后等待页面稳定
+        await this.delay(1000);
+
+        return { success: true };
+
+      } catch (error: any) {
+        console.warn(`⚠️ [${runId}] browser_evaluate滚动失败，尝试键盘降级: ${error.message}`);
+        this.addLog(runId, `⚠️ browser_evaluate滚动失败，尝试键盘降级: ${error.message}`, 'warn');
+        
+        // 🔥 降级到键盘按键方案
+        const fallbackKey = this.getFallbackKey(step.action);
+        if (fallbackKey) {
+          try {
+            console.log(`🔄 [${runId}] 使用键盘降级方案: ${fallbackKey}`);
+            const fallbackResult = await this.mcpClient.callTool({
+              name: 'browser_press_key',
+              arguments: { key: fallbackKey }
+            });
+            console.log(`✅ [${runId}] 键盘降级滚动成功: ${step.description}`);
+            this.addLog(runId, `✅ 键盘降级滚动成功: ${step.description}`, 'success');
+            
+            // 滚动后等待页面稳定
+            await this.delay(1000);
+            
+            return { success: true };
+          } catch (fallbackError: any) {
+            console.error(`❌ [${runId}] 键盘降级也失败:`, fallbackError);
+            this.addLog(runId, `❌ 键盘降级也失败: ${fallbackError.message}`, 'error');
+            return { success: false, error: `滚动失败: ${error.message}, 降级也失败: ${fallbackError.message}` };
+          }
+        } else {
+          console.error(`❌ [${runId}] 无可用的降级方案`);
+          this.addLog(runId, `❌ 滚动操作执行失败: ${error.message}`, 'error');
+          return { success: false, error: error.message };
+        }
+      }
+
+    } catch (error: any) {
+      console.error(`❌ [${runId}] 滚动操作执行失败:`, error);
+      this.addLog(runId, `❌ 滚动操作执行失败: ${error.message}`, 'error');
+      return { success: false, error: error.message };
+    }
+  }
+
   // 🔥 使用AI驱动的简化策略执行
   private async executeMcpCommandWithSimpleSelector(step: TestStep, runId: string): Promise<{ success: boolean; error?: string }> {
     try {
@@ -2233,5 +2483,24 @@ ${elements.map((el, index) => `${index + 1}. ${el.ref}: ${el.role} "${el.text}"`
       return false;
     }
   }
+
+  // 🔥 获取滚动操作的键盘降级方案
+  private getFallbackKey(action: string): string | null {
+    const fallbackMap: Record<string, string> = {
+      'browser_scroll_down': 'Page_Down',
+      'scroll_down': 'Page_Down',
+      'browser_scroll_up': 'Page_Up', 
+      'scroll_up': 'Page_Up',
+      'browser_scroll_to_top': 'Home',
+      'scroll_to_top': 'Home',
+      'browser_scroll_to_bottom': 'End',
+      'scroll_to_bottom': 'End',
+      'browser_scroll_page': 'Page_Down', // 默认向下
+      'scroll': 'Page_Down'
+    };
+
+    return fallbackMap[action] || null;
+  }
+
   // #endregion
 }

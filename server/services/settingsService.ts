@@ -1,22 +1,33 @@
 import { PrismaClient } from '../../src/generated/prisma/index.js';
+import { DatabaseService } from './databaseService.js';
 import { modelRegistry } from '../../src/services/modelRegistry.js';
 import type { LLMSettings, AppSettings, ValidationResult, ValidationError } from '../../src/services/settingsService.js';
 
 // 后端设置服务类
 export class BackendSettingsService {
   private static instance: BackendSettingsService;
-  private prisma: PrismaClient;
+  private databaseService: DatabaseService;
+  private prisma: PrismaClient; // 保持兼容性，内部使用
 
-  private constructor() {
-    this.prisma = new PrismaClient();
+  private constructor(databaseService?: DatabaseService) {
+    // 🔥 使用依赖注入的数据库服务
+    this.databaseService = databaseService || DatabaseService.getInstance();
+    this.prisma = this.databaseService.getClient();
+
+    console.log(`🗄️ BackendSettingsService已连接到数据库服务`);
   }
 
-  // 单例模式
-  public static getInstance(): BackendSettingsService {
+  // 单例模式（支持依赖注入）
+  public static getInstance(databaseService?: DatabaseService): BackendSettingsService {
     if (!BackendSettingsService.instance) {
-      BackendSettingsService.instance = new BackendSettingsService();
+      BackendSettingsService.instance = new BackendSettingsService(databaseService);
     }
     return BackendSettingsService.instance;
+  }
+
+  // 🔥 新增：重置单例实例（主要用于测试）
+  public static resetInstance(): void {
+    BackendSettingsService.instance = null;
   }
 
   // 获取LLM设置

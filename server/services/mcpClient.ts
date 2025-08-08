@@ -20,6 +20,54 @@ export class PlaywrightMcpClient {
   private isInitialized = false;
   private snapshot: any | null = null;
   private useAlternativeToolNames = false; // 🔥 工具名称映射标志
+  
+  // 🔥 静态方法：服务器启动时预安装浏览器
+  public static async ensureBrowserInstalled(): Promise<void> {
+    console.log('🚀 正在进行浏览器预安装检查...');
+    
+    try {
+      // 检查浏览器安装路径
+      const browserPath = process.env.PLAYWRIGHT_BROWSERS_PATH || path.join(os.homedir(), 'AppData', 'Local', 'ms-playwright');
+      
+      console.log('🔍 浏览器安装路径:', browserPath);
+      
+      // 创建临时MCP连接用于安装
+      const tempTransport = new StdioClientTransport({
+        command: 'npx',
+        args: ['@playwright/mcp', '--browser', 'chromium'],
+        env: {
+          ...process.env,
+          PLAYWRIGHT_BROWSERS_PATH: browserPath,
+          PLAYWRIGHT_HEADLESS: 'false',
+          HEADLESS: 'false'
+        }
+      });
+
+      const tempClient = new Client({ name: 'browser-installer', version: '1.0.0' }, {});
+      
+      try {
+        await tempClient.connect(tempTransport);
+        
+        console.log('🔧 正在安装/验证浏览器...');
+        await tempClient.callTool({
+          name: 'browser_install',
+          arguments: {}
+        });
+        
+        console.log('✅ 浏览器预安装完成');
+      } finally {
+        // 清理临时连接
+        try {
+          await tempClient.close();
+        } catch (e) {
+          // 忽略清理错误
+        }
+      }
+    } catch (error) {
+      console.log('⚠️ 浏览器可能已安装或安装失败:', error.message);
+      // 不抛出错误，让系统继续启动
+    }
+  }
 
   async initialize(options: { reuseSession?: boolean; contextState?: any; } = {}) {
     if (this.isInitialized && options.reuseSession) {
@@ -96,17 +144,14 @@ export class PlaywrightMcpClient {
       console.log('  - MCP_LAUNCH_PERSISTENT_ARGS:', process.env.MCP_LAUNCH_PERSISTENT_ARGS);
       console.log('  - 使用Playwright自带蓝色Chromium');
 
-      console.log('🚀 使用MCP强制安装浏览器...');
+      console.log('🔧 正在连接MCP服务器...');
 
-      console.log('🔧 使用MCP的browser_install功能...');
-
-      // 🔥 先创建到MCP的连接 - 移除 --no-sandbox 参数
+      // 🔥 创建到MCP的连接（浏览器已在服务器启动时安装）
       this.transport = new StdioClientTransport({
         command: 'npx',
         args: [
           '@playwright/mcp',
           '--browser', 'chromium'
-          // 移除 --no-sandbox 和 --ignore-https-errors 参数
         ],
         env: {
           ...process.env,
@@ -116,20 +161,11 @@ export class PlaywrightMcpClient {
         }
       });
 
-      // 🔥 连接后立即使用browser_install安装浏览器
+      // 🔥 连接MCP客户端（跳过浏览器安装，已在服务器启动时完成）
       this.client = new Client({ name: 'ai-test-client', version: '1.0.0' }, {});
       await this.client.connect(this.transport);
-
-      console.log('🔧 正在使用MCP安装浏览器...');
-      try {
-        await this.client.callTool({
-          name: 'browser_install',
-          arguments: {}
-        });
-        console.log('✅ MCP浏览器安装完成');
-      } catch (installError) {
-        console.log('⚠️ 浏览器可能已安装:', installError.message);
-      }
+      
+      console.log('✅ MCP连接建立成功');
 
       this.isInitialized = true;
 
@@ -522,10 +558,12 @@ export class PlaywrightMcpClient {
 
       case 'scroll':
         console.log(`📜 [${runId}] 正在滚动页面...`);
-        // 🔥 修复：使用正确的按键操作滚动
+        // 🔥 修复：使用JavaScript执行滚动，更可靠
         await this.client.callTool({
-          name: this.getToolName('press_key'),
-          arguments: { key: 'End' }
+          name: this.getToolName('evaluate'),
+          arguments: {
+            script: 'window.scrollTo(0, document.body.scrollHeight);'
+          }
         });
         console.log(`✅ [${runId}] 页面滚动完成`);
         await this.refreshSnapshot();
@@ -896,16 +934,35 @@ export class PlaywrightMcpClient {
 
   async getCurrentUrl(): Promise<string> {
     if (!this.isInitialized || !this.client) return '';
+    
     try {
+      // 🔥 修复：使用正确的browser_evaluate工具和function参数格式
       const result = await this.client.callTool({
-        name: this.useAlternativeToolNames ? 'browser_evaluate' : 'mcp_playwright_browser_evaluate',
+        name: 'browser_evaluate',
         arguments: {
-          script: 'window.location.href'
+          function: '() => window.location.href'
         }
       });
-      return typeof result === 'string' ? result : '';
-    } catch (error) {
-      console.error(`❌ 获取当前URL失败:`, error);
+
+      // 解析结果
+      if (result && result.content) {
+        const content = Array.isArray(result.content) ? result.content : [result.content];
+        for (const item of content) {
+          if (item.type === 'text' && item.text) {
+            // 提取URL
+            const urlMatch = item.text.match(/https?:\/\/[^\s]+/) || item.text.match(/^[^\s]+$/);
+            if (urlMatch) {
+              console.log(`🔍 当前页面URL: ${urlMatch[0]}`);
+              return urlMatch[0];
+            }
+          }
+        }
+      }
+      
+      console.warn('⚠️ 无法从browser_evaluate结果中提取URL');
+      return '';
+    } catch (error: any) {
+      console.warn(`⚠️ getCurrentUrl失败: ${error.message}`);
       return '';
     }
   }
@@ -939,44 +996,35 @@ export class PlaywrightMcpClient {
         return baseName.replace('mcp_playwright_browser_', 'browser_');
       };
 
-      // 获取当前页面URL和标题
-      const currentUrl = await this.client.callTool({
-        name: 'browser_evaluate',
-        arguments: {
-          script: 'window.location.href'
-        }
-      });
-
-      const currentTitle = await this.client.callTool({
-        name: 'browser_evaluate',
-        arguments: {
-          script: 'document.title'
-        }
-      });
-
+      // 🔥 修复：使用browser_evaluate工具进行页面状态验证
       console.log(`🔍 [${runId}] 当前页面状态:`);
-      console.log(`   🌐 URL: ${currentUrl}`);
-      console.log(`   📄 标题: ${currentTitle}`);
-
-      // 检查页面是否完全加载
-      const readyState = await this.client.callTool({
-        name: 'browser_evaluate',
-        arguments: {
-          script: 'document.readyState'
+      
+      try {
+        // 获取页面基本信息
+        const urlResult = await this.getCurrentUrl();
+        console.log(`   🌐 当前URL: ${urlResult || '未知'}`);
+        
+        // 获取页面标题
+        const titleResult = await this.client.callTool({
+          name: 'browser_evaluate',
+          arguments: {
+            function: '() => document.title'
+          }
+        });
+        
+        if (titleResult && titleResult.content) {
+          const content = Array.isArray(titleResult.content) ? titleResult.content : [titleResult.content];
+          for (const item of content) {
+            if (item.type === 'text' && item.text) {
+              console.log(`   📄 页面标题: ${item.text}`);
+              break;
+            }
+          }
         }
-      });
-
-      console.log(`   ⚡ 加载状态: ${readyState}`);
-
-      // 检查是否存在网络内容
-      const bodyContent = await this.client.callTool({
-        name: 'browser_evaluate',
-        arguments: {
-          script: 'document.body ? document.body.innerHTML.length : 0'
-        }
-      });
-
-      console.log(`   📊 页面内容长度: ${bodyContent}字符`);
+      } catch (evalError: any) {
+        console.log(`   ⚠️ 页面状态检查失败: ${evalError.message}`);
+        console.log(`   📊 改为使用快照进行页面验证`);
+      }
 
       // 强制刷新快照，确保与实际浏览器状态同步
       await this.refreshSnapshot();

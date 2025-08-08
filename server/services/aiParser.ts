@@ -36,6 +36,11 @@ export interface TestStep {
   element?: string;  // 🔥 新增：元素的人类可读描述
   ref?: string;      // 🔥 新增：元素的精确引用
   stepType?: 'operation' | 'assertion';  // 🔥 新增：步骤类型标记
+  // 🔥 新增：滚动操作参数
+  pixels?: number;   // 滚动像素数
+  direction?: 'up' | 'down' | 'left' | 'right';  // 滚动方向
+  x?: number;        // 水平滚动距离
+  y?: number;        // 垂直滚动距离
 }
 
 export interface MCPCommand {
@@ -460,14 +465,21 @@ export class AITestParser {
 - element参数：必须是简洁的中文描述（如"用户名输入框"、"提交按钮"）
 - ref参数：必须使用页面元素列表中的确切ref值
 - 两个参数都是必需的，缺一不可
+- ElementUI下拉组件：包含"el-input__inner"的readonly输入框是下拉触发器
+
+# 下拉操作策略
+- 打开下拉（包含"点击"、"展开"关键词）：点击readonly输入框触发器
+- 选择下拉选项（包含"选择"、"选中"关键词）：点击已展开的listitem选项
+- 关键区别：操作意图词汇决定目标元素类型
 
 # 输出格式要求
 <THOUGHTS>
-1. 分析操作意图（点击、输入、悬停等）
-2. 定位匹配的页面元素
-3. 生成element描述和ref参数
-4. 处理变量（如果需要）
-5. 构建对应的MCP命令
+1. 分析操作意图：检查是否包含"选择"、"选中"等选择关键词，还是"点击"、"展开"等打开关键词
+2. 定位匹配的页面元素：选择操作应找listitem元素，打开操作应找textbox元素
+3. 判断操作类型：根据操作意图和元素类型选择对应命令
+4. 生成element描述和ref参数
+5. 处理变量（如果需要）
+6. 构建对应的MCP命令
 </THOUGHTS>
 <COMMAND>
 {
@@ -484,15 +496,27 @@ export class AITestParser {
 - 输入: {"name": "browser_type", "args": {"element": "输入框描述", "ref": "input_ref", "text": "content"}}
 - 清空: {"name": "browser_clear_input", "args": {"element": "输入框描述", "ref": "input_ref"}}
 - 选择: {"name": "browser_select_option", "args": {"element": "下拉框描述", "ref": "select_ref", "value": "option_value"}}
+- ElementUI下拉操作：
+  - 打开下拉（"点击下拉栏"）：点击readonly textbox触发器
+  - 选择选项（"选择XXX"）：点击展开的listitem选项
+  - 元素识别：textbox=触发器，listitem=选项
+  - 不要对自定义下拉使用browser_select_option
 - 按键: {"name": "browser_press_key", "args": {"key": "Enter"}}
 
 ## 页面控制
 - 导航: {"name": "browser_navigate", "args": {"url": "URL"}}
-- 滚动到元素: {"name": "browser_scroll_to_element", "args": {"element": "元素描述", "ref": "element_ref"}}
-- 滚动页面: {"name": "browser_scroll_page", "args": {"direction": "down"}}
 - 刷新: {"name": "browser_refresh", "args": {}}
 - 后退: {"name": "browser_go_back", "args": {}}
 - 前进: {"name": "browser_go_forward", "args": {}}
+
+## 滚动操作
+- 向下滚动: {"name": "browser_scroll_down", "args": {"pixels": 500}}
+- 向上滚动: {"name": "browser_scroll_up", "args": {"pixels": 500}}
+- 滚动到顶部: {"name": "browser_scroll_to_top", "args": {}}
+- 滚动到底部: {"name": "browser_scroll_to_bottom", "args": {}}
+- 滚动到元素: {"name": "browser_scroll_to_element", "args": {"element": "元素描述", "ref": "element_ref"}}
+- 按像素滚动: {"name": "browser_scroll_by", "args": {"x": 0, "y": 500}}
+- 滚动页面: {"name": "browser_scroll_page", "args": {"direction": "down", "pixels": 500}}
 
 ## 数据提取
 - 获取文本: {"name": "browser_get_text", "args": {"element": "元素描述", "ref": "element_ref", "variable_name": "变量名"}}
@@ -526,9 +550,17 @@ ${elementsContext}
 ## 分析要求
 请将上述操作指令转换为MCP命令：
 1. 确认这是一个明确的操作指令（而非断言验证）
-2. 在页面元素中找到最匹配的目标元素
-3. 生成简洁的中文element描述和准确的ref参数
-4. 选择合适的MCP命令并填充参数
+2. **必须严格执行的下拉选择判定**：
+   - 如果指令包含"选择"、"选中"关键词 → **必须**点击listitem选项元素，**绝不**点击textbox
+   - 如果指令包含"点击"、"展开"关键词且无"选择" → 点击textbox触发器元素
+   - 示例：
+     * "下拉栏选择生鲜" → 点击listitem[生鲜]，不是textbox
+     * "点击下拉栏" → 点击textbox触发器
+3. **强制元素类型匹配**：
+   - 选择操作：必须使用listitem元素的ref
+   - 打开操作：必须使用textbox元素的ref
+4. 在页面元素中找到最匹配的目标元素（严格按元素类型）
+5. 生成简洁的中文element描述和准确的ref参数
 
 请开始分析：`;
   }

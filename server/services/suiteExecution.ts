@@ -4,6 +4,7 @@ import { TestSuite, TestSuiteRun, SuiteExecutionOptions, TestSuiteRunStatus } fr
 import { TestExecutionService } from './testExecution.js';
 import { WebSocketManager } from './websocket.js';
 import { PrismaClient } from '../../src/generated/prisma/index.js';
+import { DatabaseService } from './databaseService.js';
 import { PlaywrightMcpClient } from './mcpClient.js';
 
 // 重构后的测试套件服务：完全基于MCP的新流程
@@ -11,14 +12,24 @@ export class SuiteExecutionService {
   private wsManager: WebSocketManager;
   private testExecutionService: TestExecutionService;
   private runningSuites: Map<string, TestSuiteRun> = new Map();
-  private prisma: PrismaClient;
+  private databaseService: DatabaseService;
+  private prisma: PrismaClient; // 保持兼容性，内部使用
   private mcpClient: PlaywrightMcpClient;
   
-  constructor(wsManager: WebSocketManager, testExecutionService: TestExecutionService) {
+  constructor(
+    wsManager: WebSocketManager, 
+    testExecutionService: TestExecutionService,
+    databaseService?: DatabaseService
+  ) {
     this.wsManager = wsManager;
     this.testExecutionService = testExecutionService;
     this.mcpClient = testExecutionService['mcpClient']; // 从testExecutionService获取mcpClient
-    this.prisma = new PrismaClient();
+    
+    // 🔥 使用依赖注入的数据库服务
+    this.databaseService = databaseService || DatabaseService.getInstance();
+    this.prisma = this.databaseService.getClient();
+
+    console.log(`🗄️ SuiteExecutionService已连接到数据库服务`);
   }
 
   // 🔥 执行整个测试套件 - 新流程实现

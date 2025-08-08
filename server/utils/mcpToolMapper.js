@@ -42,13 +42,13 @@ export class MCPToolMapper {
       'drag_and_drop': 'browser_drag_and_drop',
       'drag': 'browser_drag_and_drop',
       
-      // === 页面滚动类 (6种) ===
-      'scroll_down': 'browser_scroll_down',
-      'scroll_up': 'browser_scroll_up', 
-      'scroll_to_top': 'browser_scroll_to_top',
-      'scroll_to_bottom': 'browser_scroll_to_bottom',
-      'scroll_to_element': 'browser_scroll_to_element',
-      'scroll_by': 'browser_scroll_by',
+      // === 页面滚动类 (通过JavaScript实现) ===
+      // 注意：MCP官方不支持直接滚动工具，通过browser_evaluate + JavaScript实现
+      // 'scroll_down': 使用 evaluate + 'window.scrollBy(0, 500)'
+      // 'scroll_up': 使用 evaluate + 'window.scrollBy(0, -500)' 
+      // 'scroll_to_top': 使用 evaluate + 'window.scrollTo(0, 0)'
+      // 'scroll_to_bottom': 使用 evaluate + 'window.scrollTo(0, document.body.scrollHeight)'
+      // 'scroll_to_element': 使用 evaluate + 'element.scrollIntoView()'
       
       // === 键盘操作类 (5种) ===
       'press_key': 'browser_press_key',
@@ -148,9 +148,8 @@ export class MCPToolMapper {
       'browser_select_option', 'browser_check', 'browser_uncheck',
       'browser_upload_file', 'browser_drag_and_drop',
       
-      // 页面滚动类 (6种)
-      'browser_scroll_down', 'browser_scroll_up', 'browser_scroll_to_top',
-      'browser_scroll_to_bottom', 'browser_scroll_to_element', 'browser_scroll_by',
+      // 页面滚动类 (通过JavaScript实现，不是直接的MCP工具)
+      // 滚动功能通过 'browser_evaluate' 工具执行JavaScript代码实现
       
       // 键盘操作类 (5种)
       'browser_press_key', 'browser_key_combination', 'browser_type_with_delay',
@@ -192,9 +191,8 @@ export class MCPToolMapper {
       'browser_select_option', 'browser_check', 'browser_uncheck',
       'browser_upload_file', 'browser_drag_and_drop',
       
-      // 页面滚动类 (6种)
-      'browser_scroll_down', 'browser_scroll_up', 'browser_scroll_to_top',
-      'browser_scroll_to_bottom', 'browser_scroll_to_element', 'browser_scroll_by',
+      // 页面滚动类 (通过JavaScript实现，不是直接的MCP工具)
+      // 滚动功能通过 'browser_evaluate' 工具执行JavaScript代码实现
       
       // 键盘操作类 (5种)
       'browser_press_key', 'browser_key_combination', 'browser_type_with_delay',

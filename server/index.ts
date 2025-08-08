@@ -14,6 +14,7 @@ import { AITestParser } from './services/aiParser.js';
 import { PlaywrightMcpClient } from './services/mcpClient.js';
 import { ScreenshotService } from './services/screenshotService.js';
 import { PrismaClient } from '../src/generated/prisma/index.js';
+import { DatabaseService } from './services/databaseService.js';
 import crypto from 'crypto';
 import { testRunStore } from '../lib/TestRunStore.js';
 import fetch from 'node-fetch';
@@ -23,7 +24,14 @@ import fs from 'fs';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
-const prisma = new PrismaClient();
+
+// 🔥 使用数据库服务替代直接创建PrismaClient
+const databaseService = DatabaseService.getInstance({
+  enableLogging: process.env.NODE_ENV === 'development',
+  logLevel: 'error',
+  maxConnections: 10
+});
+const prisma = databaseService.getClient();
 
 // 🔥 新增：日志收集器
 const logFile = path.join(process.cwd(), 'debug-execution.log');
@@ -79,30 +87,12 @@ const server = createServer(app);
 const wss = new WebSocketServer({ server });
 const wsManager = new WebSocketManager(wss);
 
-// 初始化Playwright客户端
-console.log('🔧 开始初始化MCP客户端...');
-const mcpClient = new PlaywrightMcpClient();
-console.log('✅ MCP客户端初始化完成');
-
-// 初始化AI解析器（传入MCP客户端）
-console.log('🔧 开始初始化AI解析器...');
-const aiParser = new AITestParser(mcpClient);
-console.log('✅ AI解析器初始化完成');
-
-// 初始化截图服务
-console.log('🔧 开始初始化截图服务...');
-const screenshotService = new ScreenshotService(prisma);
-console.log('✅ 截图服务初始化完成');
-
-// 初始化测试执行服务
-console.log('🔧 开始初始化测试执行服务...');
-const testExecutionService = new TestExecutionService(wsManager, aiParser, mcpClient, screenshotService);
-console.log('✅ 测试执行服务初始化完成');
-
-// 🔥 初始化套件执行服务
-console.log('🔧 开始初始化套件执行服务...');
-const suiteExecutionService = new SuiteExecutionService(wsManager, testExecutionService);
-console.log('✅ 套件执行服务初始化完成');
+// 🔥 全局服务变量声明（将在startServer中初始化）
+let mcpClient: PlaywrightMcpClient;
+let aiParser: AITestParser;
+let screenshotService: ScreenshotService;
+let testExecutionService: TestExecutionService;
+let suiteExecutionService: SuiteExecutionService;
 
 // 绑定WebSocket通知到Store
 testRunStore.onChange((runId, testRun) => {
@@ -216,11 +206,7 @@ app.options('*', cors(corsOptions)); // Enable pre-flight for all routes
 
 app.use(express.json());
 
-// API Routes
-app.use('/api/tests', testRoutes(testExecutionService));
-app.use('/api/suites', suiteRoutes(suiteExecutionService)); // 注意路径修正
-app.use('/api', screenshotRoutes(screenshotService)); // 截图API路由
-app.use('/api/config', configRoutes); // 配置API路由
+// 🔥 API路由将在startServer函数中注册，因为服务需要先初始化
 
 // 🔥 新增: 报告API路由
 app.get('/api/reports/:runId', async (req, res) => {
@@ -332,19 +318,70 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
   });
 });
 
-// 404处理
-app.use('*', (req, res) => {
-  res.status(404).json({
-    success: false,
-    error: '接口不存在'
-  });
-});
+// 🔥 404处理移到了startServer函数中，确保在API路由注册后执行
 
 // Start Server
 async function startServer() {
   try {
+    // 🔥 连接数据库
+    console.log('🗄️ 开始连接数据库...');
+    await databaseService.connect();
+    console.log('✅ 数据库连接成功');
+
     // 确保数据库和用户已设置
     await ensureDefaultUser();
+
+    // 🔥 初始化所有服务
+    console.log('⚙️ 开始初始化所有服务...');
+    
+    // 🔥 预安装浏览器（一次性操作）
+    console.log('🔧 开始浏览器预安装检查...');
+    await PlaywrightMcpClient.ensureBrowserInstalled();
+    console.log('✅ 浏览器预安装检查完成');
+
+    // 初始化Playwright客户端
+    console.log('🔧 开始初始化MCP客户端...');
+    mcpClient = new PlaywrightMcpClient();
+    console.log('✅ MCP客户端初始化完成');
+
+    // 初始化AI解析器（传入MCP客户端）
+    console.log('🔧 开始初始化AI解析器...');
+    aiParser = new AITestParser(mcpClient);
+    console.log('✅ AI解析器初始化完成');
+
+    // 初始化截图服务
+    console.log('🔧 开始初始化截图服务...');
+    screenshotService = new ScreenshotService(prisma);
+    console.log('✅ 截图服务初始化完成');
+
+    // 🔥 初始化测试执行服务（使用数据库服务）
+    console.log('🔧 开始初始化测试执行服务...');
+    testExecutionService = new TestExecutionService(wsManager, aiParser, mcpClient, databaseService, screenshotService);
+    console.log('✅ 测试执行服务初始化完成');
+
+    // 🔥 初始化套件执行服务（使用数据库服务）
+    console.log('🔧 开始初始化套件执行服务...');
+    suiteExecutionService = new SuiteExecutionService(wsManager, testExecutionService, databaseService);
+    console.log('✅ 套件执行服务初始化完成');
+
+    console.log('✅ 所有服务初始化完成');
+
+    // 🔥 注册API路由（现在服务已经初始化完成）
+    console.log('🔧 开始注册API路由...');
+    app.use('/api/tests', testRoutes(testExecutionService));
+    app.use('/api/suites', suiteRoutes(suiteExecutionService));
+    app.use('/api', screenshotRoutes(screenshotService));
+    app.use('/api/config', configRoutes);
+    console.log('✅ API路由注册完成');
+
+    // 🔥 在所有API路由注册完成后，注册catch-all 404处理
+    app.use('*', (req, res) => {
+      res.status(404).json({
+        success: false,
+        error: '接口不存在'
+      });
+    });
+    console.log('✅ 404处理路由已注册');
 
     // 🔥 新增：初始化配置数据
     try {
@@ -367,6 +404,14 @@ async function startServer() {
     console.log('🔧 server.listen() 调用完成');
   } catch (error) {
     console.error('❌ 服务器启动失败:', error);
+    
+    // 清理已初始化的资源
+    try {
+      await databaseService.disconnect();
+    } catch (cleanupError) {
+      console.error('❌ 清理资源时出错:', cleanupError);
+    }
+    
     process.exit(1);
   }
 }
@@ -417,13 +462,37 @@ async function logServerInfo() {
 console.log('🚀 准备调用startServer()函数...');
 startServer();
 
-process.on('SIGINT', () => {
+// 🔥 优雅关闭服务器
+process.on('SIGINT', async () => {
   console.log('🔌 正在关闭服务器...');
-  wsManager.shutdown();
-  server.close(() => {
-    console.log('✅ 服务器已关闭');
-    process.exit(0);
-  });
+  
+  try {
+    // 关闭WebSocket连接
+    wsManager.shutdown();
+    
+    // 关闭数据库连接
+    console.log('🗄️ 正在关闭数据库连接...');
+    await databaseService.disconnect();
+    
+    // 清理TestRunStore资源
+    console.log('🧹 正在清理TestRunStore资源...');
+    testRunStore.destroy();
+    
+    // 关闭HTTP服务器
+    server.close(() => {
+      console.log('✅ 服务器已完全关闭');
+      process.exit(0);
+    });
+  } catch (error) {
+    console.error('❌ 关闭服务器时出错:', error);
+    process.exit(1);
+  }
+});
+
+// 处理其他退出信号
+process.on('SIGTERM', async () => {
+  console.log('📨 收到SIGTERM信号，优雅关闭...');
+  process.emit('SIGINT' as any);
 });
 
 export default app; 
