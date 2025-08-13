@@ -41,6 +41,9 @@ export interface TestStep {
   direction?: 'up' | 'down' | 'left' | 'right';  // 滚动方向
   x?: number;        // 水平滚动距离
   y?: number;        // 垂直滚动距离
+  // 🔥 新增：页签切换参数
+  tabTarget?: string;    // 页签目标（标题、URL片段或索引）
+  tabMatchType?: 'title' | 'url' | 'index' | 'last' | 'first';  // 匹配方式
 }
 
 export interface MCPCommand {
@@ -355,12 +358,114 @@ export class AITestParser {
   }
 
   /**
+   * 🔥 新增：检测页签切换指令
+   */
+  private detectTabSwitchCommand(stepDescription: string): MCPCommand | null {
+    const text = stepDescription.toLowerCase().trim();
+    
+    // 页签切换模式匹配
+    const patterns = [
+      // 切换到最后一个页签
+      { 
+        regex: /切换到最后一?个?页签|切换页签到最后|打开最后一?个?页签|最后一?个?页签/, 
+        type: 'last' 
+      },
+      // 切换到第一个页签
+      { 
+        regex: /切换到第一个页签|切换页签到第一|打开第一个页签|第一个页签/, 
+        type: 'first' 
+      },
+      // 切换到新页签/新开的页签
+      { 
+        regex: /切换到新页签|切换到新开的?页签|打开新页签|新页签/, 
+        type: 'last'  // 通常新页签是最后一个
+      },
+      // 切换到指定索引的页签（如：切换到第2个页签）
+      { 
+        regex: /切换到第(\d+)个页签|切换页签到第(\d+)|打开第(\d+)个页签/, 
+        type: 'index' 
+      },
+      // 切换到包含特定标题的页签
+      { 
+        regex: /切换到(.+?)页签|切换页签到(.+)|打开(.+?)页签/, 
+        type: 'title' 
+      }
+    ];
+
+    for (const pattern of patterns) {
+      const match = text.match(pattern.regex);
+      if (match) {
+        console.log(`🎯 匹配页签切换模式: ${pattern.type}, 原文: "${stepDescription}"`);
+        
+        switch (pattern.type) {
+          case 'last':
+            return {
+              name: 'browser_tab_switch',
+              arguments: {
+                tabTarget: 'last',
+                tabMatchType: 'last',
+                description: stepDescription
+              }
+            };
+            
+          case 'first':
+            return {
+              name: 'browser_tab_switch',
+              arguments: {
+                tabTarget: 'first',
+                tabMatchType: 'first',
+                description: stepDescription
+              }
+            };
+            
+          case 'index':
+            const indexMatch = match[1] || match[2] || match[3];
+            return {
+              name: 'browser_tab_switch',
+              arguments: {
+                tabTarget: indexMatch,
+                tabMatchType: 'index',
+                description: stepDescription
+              }
+            };
+            
+          case 'title':
+            // 提取页签标题
+            let titleTarget = match[1] || match[2] || match[3];
+            if (titleTarget) {
+              // 清理可能的干扰词
+              titleTarget = titleTarget.replace(/(的|到|个|页签)$/, '').trim();
+              return {
+                name: 'browser_tab_switch',
+                arguments: {
+                  tabTarget: titleTarget,
+                  tabMatchType: 'title',
+                  description: stepDescription
+                }
+              };
+            }
+            break;
+        }
+      }
+    }
+
+    return null;  // 不是页签切换指令
+  }
+
+  /**
    * 🔥 真正的AI解析：根据步骤描述和快照生成MCP命令
    */
   private async generateMCPCommand(stepDescription: string, snapshot: any): Promise<MCPCommand> {
     console.log(`🤖 使用AI解析操作: "${stepDescription}"`);
 
     try {
+      // 🔥 新增：预处理页签切换指令
+      const tabSwitchCommand = this.detectTabSwitchCommand(stepDescription);
+      if (tabSwitchCommand) {
+        console.log(`✅ 识别为页签切换指令: ${tabSwitchCommand.name}`);
+        return tabSwitchCommand;
+      }
+
       // 1. 提取页面元素
       const pageElements = this.extractPageElements(snapshot);
 

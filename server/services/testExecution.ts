@@ -380,14 +380,6 @@ export class TestExecutionService {
           }
         } else {
           this.addLog(runId, `✅ 步骤 ${stepIndex} 执行成功`, 'success');
-
-          // 🔥 Phase 1 关键修复：操作效果验证
-          if (await this.needsOperationVerification(step)) {
-            const verificationResult = await this.verifyOperationSuccess(step, runId);
-            if (!verificationResult) {
-              this.addLog(runId, `⚠️ 步骤 ${stepIndex} 执行成功但效果验证失败`, 'warning');
-            }
-          }
         }
 
         // 🔥 关键修复：操作后等待，确保页面响应
@@ -551,15 +543,9 @@ export class TestExecutionService {
           const result = await this.executeMcpCommandWithStrategy(step, runId, strategyName);
 
           if (result.success) {
-            // 🔥 成功后验证操作效果
-            const verified = await this.verifyOperationSuccess(step, runId);
-            if (verified) {
-              this.addLog(runId, `✅ 步骤执行成功并通过验证 (策略: ${strategyName}, 尝试: ${attempt})`, 'success');
-              return { success: true };
-            } else {
-              this.addLog(runId, `⚠️ 步骤执行成功但验证失败，继续重试`, 'warning');
-              throw new Error('操作成功但效果验证失败');
-            }
+            // 🔥 已禁用验证机制，避免重复执行
+            this.addLog(runId, `✅ 步骤执行成功 (策略: ${strategyName}, 尝试: ${attempt})`, 'success');
+            return { success: true };
           } else {
             throw new Error(result.error || '执行失败');
           }
@@ -845,7 +831,9 @@ ${elements.map((el, index) => `${index + 1}. ${el.ref}: ${el.role} "${el.text}"`
         scrollToElement: step.action === 'browser_scroll_to_element',
         scrollBy: step.action === 'browser_scroll_by',
         scrollPage: step.action === 'browser_scroll_page',
-        scroll: step.action === 'scroll'
+        scroll: step.action === 'scroll',
+        // 🔥 新增：页签切换操作条件检查
+        browserTabSwitch: step.action === 'browser_tab_switch' && !!step.tabTarget && !!step.tabMatchType
       };
 
       console.log(`🔍 [${runId}] 条件检查详情:`, conditions);
@@ -861,7 +849,9 @@ ${elements.map((el, index) => `${index + 1}. ${el.ref}: ${el.role} "${el.text}"`
         // 🔥 修复：添加滚动操作条件检查
         conditions.scrollDown || conditions.scrollUp || conditions.scrollToTop || 
         conditions.scrollToBottom || conditions.scrollToElement || conditions.scrollBy || 
-        conditions.scrollPage || conditions.scroll
+        conditions.scrollPage || conditions.scroll ||
+        // 🔥 新增：添加页签切换条件检查
+        conditions.browserTabSwitch
       );
 
       console.log(`🔍 [${runId}] 预解析分支条件检查: ${conditionCheck}`);
@@ -889,15 +879,18 @@ ${elements.map((el, index) => `${index + 1}. ${el.ref}: ${el.role} "${el.text}"`
           console.log(`🔍 [${runId}] wait命令MCP返回结果:`, JSON.stringify(result, null, 2));
           this.addLog(runId, `🔍 wait命令MCP返回: ${JSON.stringify(result)}`, 'info');
 
-          // 🔥 检查是否有错误信息
+          // 🔥 改进的错误检测，避免误判前端JS错误
           if (result && result.content) {
             const content = Array.isArray(result.content) ? result.content : [result.content];
             for (const item of content) {
               if (item.type === 'text' && item.text) {
-                if (item.text.includes('Error:') || item.text.includes('Failed:') || item.text.toLowerCase().includes('error')) {
+                if (this.isRealMCPError(item.text)) {
                   console.error(`❌ [${runId}] wait命令执行失败: ${item.text}`);
                   this.addLog(runId, `❌ wait命令执行失败: ${item.text}`, 'error');
                   return { success: false, error: item.text };
+                } else if (item.text.toLowerCase().includes('error')) {
+                  console.warn(`⚠️ [${runId}] wait命令检测到前端JS错误（不影响操作）: ${item.text}`);
+                  this.addLog(runId, `⚠️ 前端JS错误（不影响操作）: ${item.text}`, 'warning');
                 }
               }
             }
@@ -913,6 +906,12 @@ ${elements.map((el, index) => `${index + 1}. ${el.ref}: ${el.role} "${el.text}"`
             step.action === 'browser_scroll_page' || step.action === 'scroll') {
           console.log(`📜 [${runId}] 预解析分支执行滚动操作: ${step.action} - ${step.description}`);
           return await this.executeScrollCommand(step, runId);
+        }
+
+        // 🔥 新增：页签切换操作处理
+        if (step.action === 'browser_tab_switch') {
+          console.log(`🔄 [${runId}] 预解析分支执行页签切换: ${step.action} - ${step.description}`);
+          return await this.executeTabSwitchCommand(step, runId);
         }
 
         // 🔥 新增：断言命令处理（获取快照进行验证）
@@ -956,15 +955,18 @@ ${elements.map((el, index) => `${index + 1}. ${el.ref}: ${el.role} "${el.text}"`
           console.log(`🔍 [${runId}] browser_wait_for命令MCP返回结果:`, JSON.stringify(result, null, 2));
           this.addLog(runId, `🔍 等待文本断言返回: ${JSON.stringify(result)}`, 'info');
 
-          // 🔥 检查是否有错误信息
+          // 🔥 改进的错误检测，避免误判前端JS错误
           if (result && result.content) {
             const content = Array.isArray(result.content) ? result.content : [result.content];
             for (const item of content) {
               if (item.type === 'text' && item.text) {
-                if (item.text.includes('Error:') || item.text.includes('Failed:') || item.text.toLowerCase().includes('error')) {
+                if (this.isRealMCPError(item.text)) {
                   console.error(`❌ [${runId}] 等待文本断言失败: ${item.text}`);
                   this.addLog(runId, `❌ 等待文本断言失败: ${item.text}`, 'error');
                   return { success: false, error: item.text };
+                } else if (item.text.toLowerCase().includes('error')) {
+                  console.warn(`⚠️ [${runId}] 等待文本断言检测到前端JS错误（不影响操作）: ${item.text}`);
+                  this.addLog(runId, `⚠️ 前端JS错误（不影响操作）: ${item.text}`, 'warning');
                 }
               }
             }
@@ -1001,15 +1003,18 @@ ${elements.map((el, index) => `${index + 1}. ${el.ref}: ${el.role} "${el.text}"`
           console.log(`🔍 [${runId}] expect命令MCP返回结果:`, JSON.stringify(result, null, 2));
           this.addLog(runId, `🔍 expect命令MCP返回: ${JSON.stringify(result)}`, 'info');
 
-          // 🔥 检查是否有错误信息
+          // 🔥 改进的错误检测，避免误判前端JS错误
           if (result && result.content) {
             const content = Array.isArray(result.content) ? result.content : [result.content];
             for (const item of content) {
               if (item.type === 'text' && item.text) {
-                if (item.text.includes('Error:') || item.text.includes('Failed:') || item.text.toLowerCase().includes('error')) {
+                if (this.isRealMCPError(item.text)) {
                   console.error(`❌ [${runId}] expect命令执行失败: ${item.text}`);
                   this.addLog(runId, `❌ expect命令执行失败: ${item.text}`, 'error');
                   return { success: false, error: item.text };
+                } else if (item.text.toLowerCase().includes('error')) {
+                  console.warn(`⚠️ [${runId}] expect命令检测到前端JS错误（不影响操作）: ${item.text}`);
+                  this.addLog(runId, `⚠️ 前端JS错误（不影响操作）: ${item.text}`, 'warning');
                 }
               }
             }
@@ -1058,7 +1063,7 @@ ${elements.map((el, index) => `${index + 1}. ${el.ref}: ${el.role} "${el.text}"`
             console.log(`🔍 [${runId}] 关键操作MCP返回结果:`, JSON.stringify(result, null, 2));
             this.addLog(runId, `🔍 关键操作MCP返回: ${JSON.stringify(result)}`, 'info');
 
-            // 🔥 检查返回结果中的错误信息
+            // 🔥 改进的错误检测逻辑，避免误判前端JS错误
             let hasError = false;
             let errorMessage = '';
 
@@ -1069,24 +1074,43 @@ ${elements.map((el, index) => `${index + 1}. ${el.ref}: ${el.role} "${el.text}"`
                   console.log(`📄 [${runId}] MCP返回内容: ${item.text}`);
                   this.addLog(runId, `📄 MCP返回内容: ${item.text}`, 'info');
 
-                  // 检查错误信息
-                  if (item.text.includes('Error:') || item.text.includes('Failed:') ||
-                    item.text.toLowerCase().includes('error') ||
-                    item.text.includes('not found') ||
-                    item.text.includes('无法找到') ||
-                    item.text.includes('timeout')) {
+                  // 🔥 使用改进的错误检测方法，避免误判前端JS错误
+                  if (this.isRealMCPError(item.text)) {
                     hasError = true;
                     errorMessage = item.text;
                     console.error(`❌ [${runId}] MCP命令执行错误: ${item.text}`);
                     this.addLog(runId, `❌ MCP命令执行错误: ${item.text}`, 'error');
+                  } else if (item.text.toLowerCase().includes('error')) {
+                    // 🔥 前端JS错误不影响操作成功，只记录警告
+                    console.warn(`⚠️ [${runId}] 检测到前端JS错误（不影响操作）: ${item.text}`);
+                    this.addLog(runId, `⚠️ 前端JS错误（不影响操作）: ${item.text}`, 'warning');
                   }
                 }
               }
             }
 
-            // 🔥 如果发现错误，返回失败状态
+            // 🔥 如果发现真正的MCP错误，返回失败状态
             if (hasError) {
               return { success: false, error: errorMessage };
+            }
+
+            // 🔥 点击操作特殊处理：检测并切换到新页签
+            if (step.action === 'click' || step.action === 'browser_click') {
+              console.log(`🔄 [${runId}] 点击操作完成，检测是否需要切换新页签...`);
+              
+              const tabResult = await this.detectAndSwitchToNewTabOptimized(runId);
+              if (tabResult.success) {
+                if (tabResult.switched) {
+                  console.log(`✅ [${runId}] 已自动切换到新页签: ${tabResult.url}`);
+                  this.addLog(runId, `✅ 已自动切换到新页签: ${tabResult.title}`, 'success');
+                } else {
+                  console.log(`ℹ️ [${runId}] 保持当前页签: ${tabResult.url}`);
+                  this.addLog(runId, `ℹ️ 操作在当前页签完成`, 'info');
+                }
+              } else if (tabResult.error) {
+                console.warn(`⚠️ [${runId}] 新页签检测失败: ${tabResult.error}`);
+                this.addLog(runId, `⚠️ 新页签检测失败，但操作可能仍然成功`, 'warning');
+              }
             }
 
             // 🔥 新增：验证MCP命令是否真正执行
@@ -1356,13 +1380,6 @@ ${elements.map((el, index) => `${index + 1}. ${el.ref}: ${el.role} "${el.text}"`
         // 不抛出错误，确保测试执行不因截图数据库保存失败而中断
       }
 
-    } catch (screenshotError: any) {
-      // 🔥 关键修复：截图失败不应该中断测试执行
-      console.error(`❌ [${runId}] 截图过程失败: ${screenshotError.message}`);
-      this.addLog(runId, `⚠️ 截图失败但测试继续: ${screenshotError.message}`, 'warning');
-      // 不抛出错误，确保测试执行继续进行
-    }
-
       // 8. 创建本地备份（优化的双重保存机制）
       if (fileExists && fileSize > 0 && screenshotConfig.shouldBackup()) {
         try {
@@ -1429,10 +1446,11 @@ ${elements.map((el, index) => `${index + 1}. ${el.ref}: ${el.role} "${el.text}"`
         }
       }
 
-    } catch (error: any) {
-      console.error(`❌ [${runId}] 截图失败: ${error.message}`);
-      this.addLog(runId, `❌ 截图失败: ${error.message}`, 'warning');
-      // 不抛出错误，确保测试执行不因截图失败而中断
+    } catch (screenshotError: any) {
+      // 🔥 关键修复：截图失败不应该中断测试执行
+      console.error(`❌ [${runId}] 截图过程失败: ${screenshotError.message}`);
+      this.addLog(runId, `⚠️ 截图失败但测试继续: ${screenshotError.message}`, 'warning');
+      // 不抛出错误，确保测试执行继续进行
     }
   }
 
@@ -2158,14 +2176,17 @@ ${elements.map((el, index) => `${index + 1}. ${el.ref}: ${el.role} "${el.text}"`
         console.log(`🔍 [${runId}] 滚动命令执行结果:`, JSON.stringify(result, null, 2));
         this.addLog(runId, `🔍 滚动执行结果: ${JSON.stringify(result)}`, 'info');
 
-        // 检查是否有错误
+        // 🔥 改进的错误检测，避免误判前端JS错误
         if (result && result.content) {
           const content = Array.isArray(result.content) ? result.content : [result.content];
           for (const item of content) {
             if (item.type === 'text' && item.text) {
-              if (item.text.includes('Error:') || item.text.includes('Failed:') || item.text.toLowerCase().includes('error') || item.text.includes('not found')) {
+              if (this.isRealMCPError(item.text)) {
                 console.warn(`⚠️ [${runId}] browser_evaluate滚动失败: ${item.text}`);
                 throw new Error(`browser_evaluate执行失败: ${item.text}`);
+              } else if (item.text.toLowerCase().includes('error')) {
+                console.warn(`⚠️ [${runId}] 滚动操作检测到前端JS错误（不影响操作）: ${item.text}`);
+                this.addLog(runId, `⚠️ 前端JS错误（不影响操作）: ${item.text}`, 'warning');
               }
             }
           }
@@ -2500,6 +2521,426 @@ ${elements.map((el, index) => `${index + 1}. ${el.ref}: ${el.role} "${el.text}"`
     };
 
     return fallbackMap[action] || null;
+  }
+
+  // 🔥 新增：检测并切换新页签的通用方法
+  private async detectAndSwitchToNewTab(runId: string, timeout: number = 1200): Promise<{ 
+    success: boolean; 
+    switched: boolean; 
+    url?: string; 
+    title?: string;
+    error?: string;
+  }> {
+    try {
+      console.log(`🔍 [${runId}] 开始检测新页签...`);
+      
+      // 使用 MCP 的 browser_evaluate 工具执行新页签检测和切换逻辑
+      const mcpCommand = {
+        name: 'browser_evaluate',
+        arguments: {
+          function: `async () => {
+            const start = Date.now();
+            let target = null;
+            
+            // 等待新页签出现（最多 ${timeout}ms）
+            while (Date.now() - start < ${timeout}) {
+              const pages = page.context().pages();
+              // 策略：选择"最新的那个"当作可能的新页签
+              const last = pages[pages.length - 1];
+              // 若 last 不是当前活动页，判定为新开页签
+              if (last && last !== page) {
+                target = last;
+                break;
+              }
+              await new Promise(r => setTimeout(r, 120));
+            }
+            
+            if (target) {
+              await target.waitForLoadState('domcontentloaded');
+              await target.bringToFront(); // ✅ 自动切到新页签
+              return { 
+                ok: true, 
+                switched: true, 
+                url: target.url(), 
+                title: await target.title() 
+              };
+            }
+            
+            // 没有新页签也视为成功（同页场景），交由后续步骤自行判断页面状态
+            return { 
+              ok: true, 
+              switched: false, 
+              url: page.url(), 
+              title: await page.title() 
+            };
+          }`
+        }
+      };
+
+      console.log(`🔧 [${runId}] 执行新页签检测命令...`);
+      const result = await this.mcpClient.callTool(mcpCommand);
+
+      if (result && result.content) {
+        const content = Array.isArray(result.content) ? result.content : [result.content];
+        for (const item of content) {
+          if (item.type === 'text' && item.text) {
+            try {
+              // 尝试解析返回的JSON结果
+              const parsed = JSON.parse(item.text);
+              if (parsed.ok) {
+                console.log(`✅ [${runId}] 新页签检测完成: switched=${parsed.switched}, url=${parsed.url}`);
+                this.addLog(runId, `🔄 页签检测: ${parsed.switched ? '已切换到新页签' : '保持当前页签'}`, 'info');
+                
+                return {
+                  success: true,
+                  switched: parsed.switched,
+                  url: parsed.url,
+                  title: parsed.title
+                };
+              }
+            } catch (parseError) {
+              // 如果解析失败，检查是否包含明显的错误信息
+              if (item.text.includes('Error:') || item.text.includes('Failed:')) {
+                return {
+                  success: false,
+                  switched: false,
+                  error: item.text
+                };
+              }
+            }
+          }
+        }
+      }
+
+      // 如果没有明确的结果，默认返回成功但未切换
+      return {
+        success: true,
+        switched: false
+      };
+
+    } catch (error: any) {
+      console.error(`❌ [${runId}] 新页签检测失败: ${error.message}`);
+      return {
+        success: false,
+        switched: false,
+        error: error.message
+      };
+    }
+  }
+
+  // 🔥 重写：简化的新页签检测和切换方法
+  private async detectAndSwitchToNewTabOptimized(runId: string, timeout: number = 1200): Promise<{ 
+    success: boolean; 
+    switched: boolean; 
+    url?: string; 
+    title?: string;
+    error?: string;
+  }> {
+    try {
+      console.log(`🔍 [${runId}] 开始检测新页签（简化逻辑）...`);
+      
+      // 获取当前所有页签
+      const tabsResult = await this.mcpClient.callTool({
+        name: 'browser_tab_list',
+        arguments: {}
+      });
+      
+      const tabs = this.parseTabListResult(tabsResult);
+      if (!tabs) {
+        console.warn(`⚠️ [${runId}] 无法获取页签列表，跳过新页签检测`);
+        return { success: false, switched: false, error: '无法获取页签列表' };
+      }
+      
+      console.log(`📋 [${runId}] 当前页签数量: ${tabs.length}`);
+      tabs.forEach(tab => {
+        console.log(`   ${tab.index}. ${tab.active ? '[当前]' : ''} ${tab.title}`);
+      });
+      
+      // 🔥 新逻辑：如果有多个页签且当前页签不是最后一个，则切换到最后一个页签
+      const currentActiveTab = tabs.find(tab => tab.active);
+      const lastTab = tabs[tabs.length - 1]; // 最后一个页签
+      
+      if (tabs.length > 1 && currentActiveTab && lastTab && currentActiveTab.index !== lastTab.index) {
+        // 有多个页签，且当前不是最后一个，切换到最后一个
+        console.log(`🔄 [${runId}] 检测到新页签，切换到最后一个页签: ${lastTab.title}`);
+        
+        // 🔥 修复：browser_tab_select使用0-based索引，需要转换
+        const targetIndex = lastTab.index - 1; // 将1-based转换为0-based
+        console.log(`🔄 [${runId}] 转换索引：${lastTab.index} -> ${targetIndex} (0-based)`);
+        
+        const switchResult = await this.mcpClient.callTool({
+          name: 'browser_tab_select',
+          arguments: { index: targetIndex }
+        });
+        
+        // 🔥 修复：使用正确的方式检查MCP结果
+        if (!switchResult?.isError) {
+          // 验证切换结果
+          const finalTabsResult = await this.mcpClient.callTool({
+            name: 'browser_tab_list',
+            arguments: {}
+          });
+          
+          const finalTabs = this.parseTabListResult(finalTabsResult);
+          const activeTab = finalTabs?.find(tab => tab.active);
+          
+          if (activeTab && activeTab.index === lastTab.index) {
+            console.log(`✅ [${runId}] 已切换到新页签: ${activeTab.title} - ${activeTab.url}`);
+            return {
+              success: true,
+              switched: true,
+              url: activeTab.url,
+              title: activeTab.title
+            };
+          } else {
+            console.error(`❌ [${runId}] 页签切换验证失败`);
+            return {
+              success: false,
+              switched: false,
+              error: '页签切换验证失败'
+            };
+          }
+        } else {
+          console.error(`❌ [${runId}] 页签切换操作失败`);
+          return {
+            success: false,
+            switched: false,
+            error: '页签切换操作失败'
+          };
+        }
+      } else {
+        // 只有一个页签或当前已经是最后一个页签，保持当前状态
+        console.log(`ℹ️ [${runId}] 保持当前页签: ${currentActiveTab?.title}`);
+        return {
+          success: true,
+          switched: false,
+          url: currentActiveTab?.url,
+          title: currentActiveTab?.title
+        };
+      }
+      
+    } catch (error: any) {
+      console.error(`❌ [${runId}] 新页签检测失败: ${error.message}`);
+      return {
+        success: false,
+        switched: false,
+        error: error.message
+      };
+    }
+  }
+
+  // 🔥 新增：解析MCP Tab列表结果的辅助方法
+  private parseTabListResult(result: any): Array<{index: number, title: string, url: string, active: boolean}> | null {
+    try {
+      if (result?.content) {
+        const content = Array.isArray(result.content) ? result.content : [result.content];
+        for (const item of content) {
+          if (item.type === 'text' && item.text) {
+            const lines = item.text.split('\n').filter(line => line.trim());
+            const tabs = [];
+            
+            for (const line of lines) {
+              // 🔥 修复：解析MCP实际格式 "- 0: (current) [标题] (URL)" 或 "- 1: [标题] (URL)"
+              const match = line.match(/^-\s+(\d+):\s*(\(current\))?\s*\[([^\]]+)\]\s*\(([^)]+)\)/);
+              if (match) {
+                tabs.push({
+                  index: parseInt(match[1]) + 1, // 🔥 转换为1-based索引，MCP返回0-based，browser_tab_select需要1-based
+                  active: !!match[2], // (current) 表示当前活动页签
+                  title: match[3].trim(),
+                  url: match[4].trim()
+                });
+              }
+            }
+            
+            console.log(`🔍 解析到 ${tabs.length} 个页签:`, tabs);
+            return tabs.length > 0 ? tabs : null;
+          }
+        }
+      }
+      return null;
+    } catch (error) {
+      console.error('解析页签列表失败:', error);
+      return null;
+    }
+  }
+
+  // 🔥 新增：改进的错误检测方法，避免误判前端JS错误
+  private isRealMCPError(text: string): boolean {
+    // 排除前端JavaScript错误和常见的浏览器控制台消息
+    const frontendErrors = [
+      'getComputedStyle',
+      'TypeError: Failed to execute',
+      'SecurityError',
+      'ResizeObserver',
+      'Non-Error promise rejection',
+      'Script error',
+      'Loading chunk',
+      'ChunkLoadError',
+      'Network Error',
+      'CORS',
+      'Content Security Policy',
+      'Blocked a frame',
+      'Mixed Content',
+      'Invalid regular expression',
+      'Unexpected token'
+    ];
+
+    // 如果包含前端错误特征，不视为MCP操作失败
+    if (frontendErrors.some(pattern => text.includes(pattern))) {
+      return false;
+    }
+
+    // 只有真正的MCP操作失败才返回true
+    return (
+      text.includes('Error:') || 
+      text.includes('Failed:') || 
+      text.includes('not found') || 
+      text.includes('无法找到') || 
+      text.includes('timeout') ||
+      text.includes('Timed out') ||
+      text.includes('Element not found') ||
+      text.includes('Selector not found')
+    );
+  }
+
+  // 🔥 新增：执行页签切换命令
+  private async executeTabSwitchCommand(step: TestStep, runId: string): Promise<{ success: boolean; error?: string }> {
+    try {
+      console.log(`🔄 [${runId}] 开始执行页签切换: ${step.tabMatchType} -> ${step.tabTarget}`);
+      this.addLog(runId, `🔄 执行页签切换: ${step.description}`, 'info');
+
+      // 1. 获取当前所有页签
+      const tabListResult = await this.mcpClient.callTool({
+        name: 'browser_tab_list',
+        arguments: {}
+      });
+
+      const tabs = this.parseTabListResult(tabListResult);
+      if (!tabs || tabs.length === 0) {
+        console.error(`❌ [${runId}] 无法获取页签列表`);
+        return { success: false, error: '无法获取页签列表' };
+      }
+
+      console.log(`📋 [${runId}] 当前页签数量: ${tabs.length}`);
+      tabs.forEach(tab => {
+        console.log(`   ${tab.index}. ${tab.active ? '[当前]' : ''} ${tab.title} - ${tab.url}`);
+      });
+
+      // 2. 根据匹配类型查找目标页签
+      let targetTabIndex = -1;
+      let targetTabInfo = '';
+
+      switch (step.tabMatchType) {
+        case 'last':
+          // 切换到最后一个页签
+          targetTabIndex = tabs.length;
+          targetTabInfo = `最后一个页签 (索引${targetTabIndex})`;
+          break;
+
+        case 'first':
+          // 切换到第一个页签
+          targetTabIndex = 1;
+          targetTabInfo = `第一个页签 (索引${targetTabIndex})`;
+          break;
+
+        case 'index':
+          // 直接使用指定索引
+          targetTabIndex = parseInt(step.tabTarget || '1');
+          if (targetTabIndex < 1 || targetTabIndex > tabs.length) {
+            console.error(`❌ [${runId}] 页签索引 ${targetTabIndex} 超出范围 (1-${tabs.length})`);
+            return { success: false, error: `页签索引 ${targetTabIndex} 超出范围` };
+          }
+          targetTabInfo = `第${targetTabIndex}个页签`;
+          break;
+
+        case 'title':
+          // 按标题匹配页签
+          const titleTarget = step.tabTarget || '';
+          const matchedTab = tabs.find(tab => 
+            tab.title.includes(titleTarget) || 
+            titleTarget.includes(tab.title) ||
+            tab.title.toLowerCase().includes(titleTarget.toLowerCase())
+          );
+          
+          if (!matchedTab) {
+            console.error(`❌ [${runId}] 未找到包含"${titleTarget}"的页签`);
+            return { success: false, error: `未找到包含"${titleTarget}"的页签` };
+          }
+          
+          targetTabIndex = matchedTab.index;
+          targetTabInfo = `标题包含"${titleTarget}"的页签 (索引${targetTabIndex})`;
+          break;
+
+        case 'url':
+          // 按URL匹配页签
+          const urlTarget = step.tabTarget || '';
+          const urlMatchedTab = tabs.find(tab => tab.url.includes(urlTarget));
+          
+          if (!urlMatchedTab) {
+            console.error(`❌ [${runId}] 未找到URL包含"${urlTarget}"的页签`);
+            return { success: false, error: `未找到URL包含"${urlTarget}"的页签` };
+          }
+          
+          targetTabIndex = urlMatchedTab.index;
+          targetTabInfo = `URL包含"${urlTarget}"的页签 (索引${targetTabIndex})`;
+          break;
+
+        default:
+          console.error(`❌ [${runId}] 不支持的页签匹配类型: ${step.tabMatchType}`);
+          return { success: false, error: `不支持的页签匹配类型: ${step.tabMatchType}` };
+      }
+
+      console.log(`🎯 [${runId}] 目标页签: ${targetTabInfo}`);
+
+      // 3. 检查是否已经是当前页签
+      const currentTab = tabs.find(tab => tab.active);
+      if (currentTab && currentTab.index === targetTabIndex) {
+        console.log(`ℹ️ [${runId}] 目标页签已经是当前活动页签，无需切换`);
+        this.addLog(runId, `✅ 目标页签已经是当前页签: ${currentTab.title}`, 'success');
+        return { success: true };
+      }
+
+      // 4. 执行页签切换
+      console.log(`🔄 [${runId}] 切换到页签索引: ${targetTabIndex}`);
+      
+      // 🔥 修复：browser_tab_select使用0-based索引，需要转换
+      const mcpTabIndex = targetTabIndex - 1; // 将1-based转换为0-based
+      console.log(`🔄 [${runId}] MCP索引转换：${targetTabIndex} -> ${mcpTabIndex} (0-based)`);
+      
+      const switchResult = await this.mcpClient.callTool({
+        name: 'browser_tab_select',
+        arguments: { index: mcpTabIndex }
+      });
+
+      // 5. 验证切换结果
+      if (!switchResult?.isError) {
+        // 获取切换后的页签信息进行确认
+        const finalTabsResult = await this.mcpClient.callTool({
+          name: 'browser_tab_list',
+          arguments: {}
+        });
+
+        const finalTabs = this.parseTabListResult(finalTabsResult);
+        const activeTab = finalTabs?.find(tab => tab.active);
+
+        if (activeTab && activeTab.index === targetTabIndex) {
+          console.log(`✅ [${runId}] 页签切换成功: ${activeTab.title} - ${activeTab.url}`);
+          this.addLog(runId, `✅ 已切换到页签: ${activeTab.title}`, 'success');
+          return { success: true };
+        } else {
+          console.error(`❌ [${runId}] 页签切换验证失败`);
+          return { success: false, error: '页签切换验证失败' };
+        }
+      } else {
+        console.error(`❌ [${runId}] 页签切换操作失败`);
+        return { success: false, error: '页签切换操作失败' };
+      }
+
+    } catch (error: any) {
+      console.error(`❌ [${runId}] 页签切换异常:`, error);
+      this.addLog(runId, `❌ 页签切换失败: ${error.message}`, 'error');
+      return { success: false, error: error.message };
+    }
   }
 
   // #endregion

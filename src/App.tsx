@@ -14,6 +14,7 @@ import { ToastProvider } from './components/ui/toast';
 import { useSetupToast } from './utils/toast';
 import { antdThemeConfig } from './theme/theme';
 import { ThemeProvider, useThemeContext, darkThemeConfig } from './hooks/useTheme.tsx';
+import { testService } from './services/testService';
 import './styles/globals.css';
 
 function AppContent() {
@@ -21,6 +22,32 @@ function AppContent() {
   useSetupToast();
   // 获取主题状态
   const { isDark } = useThemeContext();
+
+  // 🚀 全局资源清理 - 修复getComputedStyle错误
+  React.useEffect(() => {
+    // 页面卸载时清理所有资源
+    const handleBeforeUnload = () => {
+      console.log('🧹 页面即将卸载，清理所有资源...');
+      testService.destroy();
+    };
+
+    const handleUnload = () => {
+      console.log('🧹 页面卸载，强制清理资源...');
+      testService.destroy();
+    };
+
+    // 监听页面卸载事件
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    window.addEventListener('unload', handleUnload);
+
+    // 组件卸载时清理
+    return () => {
+      console.log('🧹 App组件卸载，清理所有资源...');
+      testService.destroy();
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      window.removeEventListener('unload', handleUnload);
+    };
+  }, []);
 
   return (
     <ConfigProvider theme={isDark ? darkThemeConfig : antdThemeConfig}>

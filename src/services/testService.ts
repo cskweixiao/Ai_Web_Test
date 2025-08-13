@@ -133,22 +133,37 @@ export class TestService {
     });
   }
   
-  // 发送心跳包
+  // 发送心跳包 - 修复内存泄漏问题
   private setupHeartbeat() {
     // 清除现有心跳
     this.clearHeartbeat();
     
     // 设置新的心跳间隔 (每30秒)
     const heartbeatInterval = setInterval(() => {
-      if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-        console.log('💓 发送心跳包...');
-        this.ws.send(JSON.stringify({type: 'ping', timestamp: Date.now()}));
-      } else {
-        console.log('💔 心跳检测失败，WebSocket连接可能已断开');
+      try {
+        // 🚀 修复：添加额外的连接状态检查
+        if (!this.ws) {
+          console.log('💔 WebSocket实例不存在，清理心跳定时器');
+          this.clearHeartbeat();
+          return;
+        }
+        
+        if (this.ws.readyState === WebSocket.OPEN) {
+          console.log('💓 发送心跳包...');
+          this.ws.send(JSON.stringify({type: 'ping', timestamp: Date.now()}));
+        } else if (this.ws.readyState === WebSocket.CLOSED || this.ws.readyState === WebSocket.CLOSING) {
+          console.log('💔 WebSocket连接已关闭或正在关闭，清理心跳定时器');
+          this.clearHeartbeat();
+          // 🚀 修复：只在必要时尝试重连，避免无限重连
+          if (this.ws.readyState === WebSocket.CLOSED) {
+            this.initializeWebSocket().catch(error => {
+              console.error('重连WebSocket失败:', error);
+            });
+          }
+        }
+      } catch (error) {
+        console.error('💔 心跳检测出错:', error);
         this.clearHeartbeat();
-        this.initializeWebSocket().catch(error => {
-          console.error('重连WebSocket失败:', error);
-        });
       }
     }, 30000);
     
@@ -573,12 +588,40 @@ export class TestService {
     return this.ws !== null && this.ws.readyState === WebSocket.OPEN;
   }
 
-  // 关闭 WebSocket 连接
+  // 关闭 WebSocket 连接 - 修复清理问题
   closeWebSocket(): void {
+    console.log('🔌 正在关闭WebSocket连接...');
+    
+    // 清理心跳定时器
+    this.clearHeartbeat();
+    
+    // 清理消息监听器
+    this.listeners.clear();
+    
     if (this.ws) {
-      this.ws.close();
-      this.ws = null;
+      try {
+        // 🚀 修复：优雅关闭连接
+        if (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING) {
+          this.ws.close(1000, 'Normal closure');
+        }
+      } catch (error) {
+        console.error('关闭WebSocket时出错:', error);
+      } finally {
+        this.ws = null;
+        console.log('🔌 WebSocket连接已清理');
+      }
     }
+  }
+
+  // 🚀 新增：强制清理所有资源
+  destroy(): void {
+    console.log('🧹 强制清理TestService所有资源...');
+    this.closeWebSocket();
+    
+    // 移除所有事件监听器
+    this.listeners.clear();
+    
+    console.log('✅ TestService资源清理完成');
   }
 }
 

@@ -374,7 +374,58 @@ export class PlaywrightMcpClient {
     }
   }
 
-  private async executeMcpStep(step: TestStep, runId: string): Promise<any> {
+  // 🚀 修复getComputedStyle错误：公有方法，包含错误处理和重试机制
+  async executeMcpStep(step: TestStep, runId: string): Promise<any> {
+    const maxRetries = 2;
+    let lastError: any;
+    
+    for (let retry = 1; retry <= maxRetries; retry++) {
+      try {
+        console.log(`🔧 [${runId}] 执行MCP步骤 (${retry}/${maxRetries}): ${step.action}`);
+        
+        const result = await this.executeMcpStepInternal(step, runId);
+        
+        if (retry > 1) {
+          console.log(`✅ [${runId}] MCP步骤重试成功: ${step.action}`);
+        }
+        
+        return result;
+        
+      } catch (error: any) {
+        console.warn(`⚠️ [${runId}] MCP步骤执行失败 (${retry}/${maxRetries}): ${step.action}`, error.message);
+        lastError = error;
+        
+        // 🚀 专门处理getComputedStyle和DOM相关错误
+        const isComputedStyleError = error.message?.includes('getComputedStyle') ||
+                                   error.message?.includes('Element') ||
+                                   error.message?.includes('not of type') ||
+                                   error.message?.includes('parameter 1');
+        
+        if (isComputedStyleError && retry < maxRetries) {
+          console.log(`🔄 [${runId}] 检测到DOM时序错误，等待后重试...`);
+          
+          // 等待DOM稳定后重试
+          await new Promise(resolve => setTimeout(resolve, 2000));
+          await this.waitForDOMStable(1);
+          continue;
+        }
+        
+        // 其他类型的错误或已达到最大重试次数
+        if (retry >= maxRetries) {
+          console.error(`❌ [${runId}] MCP步骤最终失败: ${step.action}`);
+          throw lastError;
+        }
+        
+        // 普通错误也给一次重试机会
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+    }
+    
+    throw lastError;
+  }
+
+  // 🚀 原始执行方法，改为私有
+  private async executeMcpStepInternal(step: TestStep, runId: string): Promise<any> {
     if (!this.client) throw new Error('MCP_DISCONNECTED: Client is null.');
 
     console.log(`🎬 [${runId}] === 开始执行步骤 ===`);
@@ -484,8 +535,11 @@ export class PlaywrightMcpClient {
         console.log(`⌨️ [${runId}] 正在执行browser_type操作...`);
         console.log(`📋 [${runId}] 目标ref: ${step.ref}, 输入文本: ${step.text}`);
 
-        // 操作前确保页面完全加载
+        // 🚀 修复：操作前确保页面完全稳定
         await this.waitForLoad();
+        
+        // 🚀 新增：操作前额外检查元素是否仍然存在
+        await this.waitForElementReady(step.ref, runId);
 
         // 直接使用AI提供的ref，无需查找元素
         const typeArgs = { ref: step.ref, text: step.text };
@@ -497,6 +551,10 @@ export class PlaywrightMcpClient {
             arguments: typeArgs 
           });
           console.log(`✅ [${runId}] browser_type操作完成`);
+          
+          // 🚀 修复：输入后等待页面响应完成
+          await new Promise(resolve => setTimeout(resolve, 300));
+          
         } catch (typeError) {
           console.error(`❌ [${runId}] browser_type操作失败:`, typeError);
           throw typeError;
@@ -510,8 +568,11 @@ export class PlaywrightMcpClient {
         console.log(`🖱️ [${runId}] 正在执行browser_click操作...`);
         console.log(`📋 [${runId}] 目标ref: ${step.ref}`);
 
-        // 操作前确保页面完全加载
+        // 🚀 修复：操作前确保页面完全稳定
         await this.waitForLoad();
+        
+        // 🚀 新增：操作前额外检查元素是否仍然存在
+        await this.waitForElementReady(step.ref, runId);
 
         // 直接使用AI提供的ref，无需查找元素
         const clickArgs = { ref: step.ref };
@@ -523,6 +584,10 @@ export class PlaywrightMcpClient {
             arguments: clickArgs 
           });
           console.log(`✅ [${runId}] browser_click操作完成`);
+          
+          // 🚀 修复：点击后等待页面响应完成
+          await new Promise(resolve => setTimeout(resolve, 500));
+          
         } catch (clickError) {
           console.error(`❌ [${runId}] browser_click操作失败:`, clickError);
           throw clickError;
@@ -837,8 +902,47 @@ export class PlaywrightMcpClient {
     return null;
   }
 
+  // 🚀 修复getComputedStyle错误：增加快照刷新重试机制
   private async refreshSnapshot(): Promise<void> {
-    this.snapshot = await this.getSnapshot();
+    const maxRetries = 3;
+    let lastError: any;
+    
+    for (let retry = 1; retry <= maxRetries; retry++) {
+      try {
+        console.log(`📊 刷新页面快照 (${retry}/${maxRetries})...`);
+        
+        // 在获取快照前先等待DOM稳定
+        if (retry > 1) {
+          console.log('⏳ 重试前等待DOM稳定...');
+          await this.waitForDOMStable(1); // 快速稳定性检查
+        }
+        
+        this.snapshot = await this.getSnapshot();
+        console.log('✅ 页面快照刷新成功');
+        return;
+        
+      } catch (error: any) {
+        console.warn(`⚠️ 快照刷新失败 (${retry}/${maxRetries}):`, error.message);
+        lastError = error;
+        
+        // 如果是getComputedStyle相关错误，等待后重试
+        if (error.message?.includes('getComputedStyle') || 
+            error.message?.includes('Element') ||
+            retry < maxRetries) {
+          
+          const delay = retry * 1000; // 递增延迟
+          console.log(`🔄 ${delay}ms 后重试快照获取...`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+          continue;
+        }
+        
+        throw error;
+      }
+    }
+    
+    // 所有重试都失败了
+    console.error(`❌ 快照刷新最终失败，已重试 ${maxRetries} 次`);
+    throw new Error(`快照刷新失败: ${lastError?.message}`);
   }
 
   async getSnapshot(): Promise<any> {
@@ -922,13 +1026,88 @@ export class PlaywrightMcpClient {
   async waitForLoad(): Promise<void> {
     if (!this.isInitialized || !this.client) return;
     try {
+      // 🚀 修复getComputedStyle错误：增强页面稳定性等待
+      console.log('⏳ 开始等待页面完全稳定...');
+      
+      // 1. 等待网络空闲
       await this.client.callTool({
         name: this.useAlternativeToolNames ? 'browser_wait' : 'mcp_playwright_browser_wait',
         arguments: { state: 'networkidle' }
       });
-      console.log('⏳ 页面已完全加载');
+      
+      // 2. 等待DOM稳定（防止动态修改导致getComputedStyle错误）
+      await this.waitForDOMStable();
+      
+      console.log('✅ 页面已完全稳定');
     } catch (error) {
       console.warn('⚠️ 等待页面加载失败，继续执行:', error);
+    }
+  }
+
+  // 🚀 新增：等待DOM稳定，防止getComputedStyle错误
+  private async waitForDOMStable(maxAttempts: number = 3): Promise<void> {
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        console.log(`🔍 DOM稳定性检查 (${attempt}/${maxAttempts})...`);
+        
+        // 等待一小段时间让动态内容完成加载
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
+        // 检查页面是否还在加载
+        const isStable = await this.client.callTool({
+          name: 'browser_evaluate',
+          arguments: {
+            function: `() => {
+              // 检查页面是否有正在进行的动画或异步加载
+              return document.readyState === 'complete' && 
+                     !document.querySelector('[loading], .loading, .spinner') &&
+                     !window.requestAnimationFrame.toString().includes('native');
+            }`
+          }
+        });
+        
+        if (isStable?.content?.[0]?.text === 'true') {
+          console.log('✅ DOM已稳定');
+          return;
+        }
+        
+        console.log(`⚠️ DOM尚未稳定，等待重试...`);
+        await new Promise(resolve => setTimeout(resolve, 500));
+        
+      } catch (error) {
+        console.warn(`⚠️ DOM稳定性检查失败 (${attempt}/${maxAttempts}):`, error);
+        if (attempt === maxAttempts) {
+          console.log('⚠️ DOM稳定性检查超时，继续执行');
+        }
+      }
+    }
+  }
+
+  // 🚀 新增：等待元素准备就绪，防止操作失败
+  private async waitForElementReady(ref: string, runId: string): Promise<void> {
+    if (!ref) return;
+    
+    try {
+      console.log(`🎯 [${runId}] 检查元素是否准备就绪: ${ref}`);
+      
+      // 使用browser_wait_for确保元素可见且可交互
+      await this.client.callTool({
+        name: this.getToolName('wait'),
+        arguments: { 
+          ref: ref, 
+          state: 'visible',
+          timeout: 5000 
+        }
+      });
+      
+      // 额外等待确保元素完全稳定
+      await new Promise(resolve => setTimeout(resolve, 200));
+      
+      console.log(`✅ [${runId}] 元素已准备就绪: ${ref}`);
+      
+    } catch (error) {
+      console.warn(`⚠️ [${runId}] 元素准备检查失败: ${ref}`, error);
+      // 不抛出错误，让后续操作继续尝试
     }
   }
 

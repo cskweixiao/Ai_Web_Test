@@ -64,9 +64,20 @@ export function TestRuns() {
   const [testToStop, setTestToStop] = useState<{ id: string; name: string; isSuite: boolean } | null>(null);
   const [showStopAllModal, setShowStopAllModal] = useState(false);
   const [stoppingAll, setStoppingAll] = useState(false);
+  
+  // 🚀 组件挂载状态追踪
+  const isMountedRef = React.useRef(true);
+  
+  React.useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+      console.log('🧹 TestRuns组件卸载，设置挂载状态为false');
+    };
+  }, []);
 
-  // 🔥 从后端API加载真实的测试运行数据
-  const loadTestRuns = async () => {
+  // 🔥 从后端API加载真实的测试运行数据 - 修复异步状态更新问题
+  const loadTestRuns = React.useCallback(async () => {
     try {
       setLoading(true);
       console.log('📊 正在加载测试运行数据...');
@@ -80,6 +91,12 @@ export function TestRuns() {
       });
       
       const response = await fetch('http://localhost:3001/api/tests/runs');
+      
+      // 🚀 修复：检查请求是否被中断
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+      
       const data = await response.json();
       
       // 添加详细日志，查看原始数据
@@ -244,27 +261,43 @@ export function TestRuns() {
               return processedSuiteRun;
             });
             
-            setTestRuns(suiteRuns);
-            console.log('📊 成功加载套件运行数据:', suiteRuns);
+            // 🚀 修复：只在组件挂载时更新状态
+            if (isMountedRef.current) {
+              setTestRuns(suiteRuns);
+              console.log('📊 成功加载套件运行数据:', suiteRuns);
+            } else {
+              console.log('组件已卸载，跳过状态更新');
+            }
           } else {
             console.warn('没有可用的测试运行或套件运行数据');
-            setTestRuns([]);  // 设置为空数组，而不是null或undefined
+            if (isMountedRef.current) {
+              setTestRuns([]);  // 设置为空数组，而不是null或undefined
+            }
           }
         } catch (suiteError) {
           console.error('获取套件运行数据失败:', suiteError);
-          setTestRuns([]);  // 设置为空数组，以防错误
+          if (isMountedRef.current) {
+            setTestRuns([]);  // 设置为空数组，以防错误
+          }
         }
       }
     } catch (error) {
       console.error('加载测试运行失败:', error);
-      setTestRuns([]);  // 确保在错误情况下设置为空数组
+      if (isMountedRef.current) {
+        setTestRuns([]);  // 确保在错误情况下设置为空数组
+      }
     } finally {
-      setLoading(false);
+      // 🚀 修复：只在组件挂载时更新loading状态
+      if (isMountedRef.current) {
+        setLoading(false);
+      }
     }
-  };
+  }, []); // 空依赖数组，因为函数内部没有依赖外部变量
 
-  // 🔥 初始化WebSocket连接
+  // 🔥 初始化WebSocket连接 - 修复内存泄漏问题
   useEffect(() => {
+    let isMounted = true; // 组件挂载状态追踪
+    
     // 初始化WebSocket连接
     testService.initializeWebSocket().catch(error => {
       console.error('初始化WebSocket连接失败:', error);
@@ -273,6 +306,12 @@ export function TestRuns() {
     // 添加WebSocket消息监听器
     const listenerId = 'testRuns-page';
     testService.addMessageListener(listenerId, (message) => {
+      // 🚀 修复：检查组件是否仍然挂载
+      if (!isMounted) {
+        console.log('组件已卸载，忽略WebSocket消息');
+        return;
+      }
+      
       console.log('📨 接收到WebSocket消息:', message);
       
       // 添加消息有效性检查
@@ -286,32 +325,52 @@ export function TestRuns() {
           message.type === 'suiteUpdate' || (message as any).type === 'suiteUpdate') {
         
         console.log('收到测试/套件更新消息，将重新加载数据');
-        loadTestRuns(); // 重新加载数据
+        // 🚀 修复：确保只在组件挂载时更新数据
+        if (isMounted) {
+          loadTestRuns(); // 重新加载数据
+        }
       } else {
         console.log('收到未处理的WebSocket消息类型:', message.type);
       }
     });
     
     // 首次加载数据
-    loadTestRuns();
+    if (isMounted) {
+      loadTestRuns();
+    }
     
     // 组件卸载时清理
     return () => {
+      isMounted = false; // 标记组件已卸载
       testService.removeMessageListener(listenerId);
+      console.log('🧹 TestRuns组件已卸载，清理WebSocket监听器');
     };
   }, []);
 
-  // 🔥 实时刷新测试状态
+  // 🔥 实时刷新测试状态 - 修复定时器内存泄漏
   useEffect(() => {
     let interval: NodeJS.Timeout;
+    let isMounted = true; // 组件挂载状态追踪
+    
     if (autoRefresh) {
       interval = setInterval(() => {
-        loadTestRuns();
+        // 🚀 修复：确保只在组件挂载时执行刷新
+        if (isMounted) {
+          console.log('🔄 定时刷新测试数据...');
+          loadTestRuns();
+        } else {
+          console.log('组件已卸载，停止定时刷新');
+          if (interval) clearInterval(interval);
+        }
       }, 5000); // 每5秒刷新一次
     }
 
     return () => {
-      if (interval) clearInterval(interval);
+      isMounted = false; // 标记组件已卸载
+      if (interval) {
+        clearInterval(interval);
+        console.log('🧹 清理自动刷新定时器');
+      }
     };
   }, [autoRefresh]);
 
