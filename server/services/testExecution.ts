@@ -104,7 +104,7 @@ export class TestExecutionService {
   }
 
   // #region Test Case Management
-  private dbTestCaseToApp(dbCase: { id: number; title: string; steps: Prisma.JsonValue | null; tags: Prisma.JsonValue | null; created_at: Date | null; }): TestCase {
+  private dbTestCaseToApp(dbCase: { id: number; title: string; steps: Prisma.JsonValue | null; tags: Prisma.JsonValue | null; system: string | null; module: string | null; created_at: Date | null; }): TestCase {
     let steps = '';
     let assertions = '';
     if (typeof dbCase.steps === 'string' && dbCase.steps) {
@@ -127,6 +127,8 @@ export class TestExecutionService {
       steps: steps,
       assertions: assertions,
       tags: (Array.isArray(dbCase.tags) ? dbCase.tags : []) as string[],
+      system: dbCase.system || undefined,
+      module: dbCase.module || undefined,
       created: dbCase.created_at?.toISOString(),
       priority: 'medium',
       status: 'active',
@@ -135,12 +137,33 @@ export class TestExecutionService {
   }
 
   public async findTestCaseById(id: number): Promise<TestCase | null> {
-    const testCase = await this.prisma.test_cases.findUnique({ where: { id } });
+    const testCase = await this.prisma.test_cases.findUnique({ 
+      where: { id },
+      select: {
+        id: true,
+        title: true,
+        steps: true,
+        tags: true,
+        system: true,
+        module: true,
+        created_at: true
+      }
+    });
     return testCase ? this.dbTestCaseToApp(testCase) : null;
   }
 
   public async getTestCases(): Promise<TestCase[]> {
-    const testCases = await this.prisma.test_cases.findMany();
+    const testCases = await this.prisma.test_cases.findMany({
+      select: {
+        id: true,
+        title: true,
+        steps: true,
+        tags: true,
+        system: true,
+        module: true,
+        created_at: true
+      }
+    });
     return testCases.map(this.dbTestCaseToApp);
   }
 
@@ -155,6 +178,8 @@ export class TestExecutionService {
         title: testCaseData.name || 'Untitled Test Case',
         steps: stepsData,
         tags: (testCaseData.tags as Prisma.JsonValue) || Prisma.JsonNull,
+        system: testCaseData.system || null,
+        module: testCaseData.module || null,
       },
     });
     return this.dbTestCaseToApp(newTestCase);
@@ -172,6 +197,8 @@ export class TestExecutionService {
       const dataToUpdate: any = {
         title: testCaseData.name,
         steps: stepsData,
+        system: testCaseData.system,
+        module: testCaseData.module,
       };
 
       if (testCaseData.tags) {

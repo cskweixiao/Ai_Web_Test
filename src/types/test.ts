@@ -8,6 +8,8 @@ export interface TestCase {
   priority?: 'high' | 'medium' | 'low';
   status?: 'active' | 'draft' | 'disabled';
   tags?: string[];
+  system?: string;    // 新增系统字段
+  module?: string;    // 新增模块字段
   author?: string;
   created?: string;
   lastRun?: string;

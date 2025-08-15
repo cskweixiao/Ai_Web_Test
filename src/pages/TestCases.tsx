@@ -36,6 +36,8 @@ interface CreateTestCaseForm {
   priority: 'high' | 'medium' | 'low';
   status: 'active' | 'draft' | 'disabled';
   tags: string;
+  system: string;
+  module: string;
 }
 
 // 🔥 新增：测试套件表单接口
@@ -59,6 +61,7 @@ export function TestCases() {
   const [selectedTag, setSelectedTag] = useState('');
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [selectedPriority, setSelectedPriority] = useState('');
+  const [selectedSystem, setSelectedSystem] = useState('');
   const [runningTestId, setRunningTestId] = useState<number | null>(null);
   const [testCases, setTestCases] = useState<TestCase[]>([]);
   const [loading, setLoading] = useState(false);
@@ -78,7 +81,9 @@ export function TestCases() {
     assertions: '',
     priority: 'medium',
     status: 'draft',
-    tags: ''
+    tags: '',
+    system: '',
+    module: ''
   });
 
   // 🔥 新增：测试套件表单数据
@@ -199,7 +204,9 @@ export function TestCases() {
           assertions: formData.assertions.trim(),
           priority: formData.priority,
           status: formData.status,
-          tags: formData.tags.split(',').map(tag => tag.trim()).filter(tag => tag.length > 0)
+          tags: formData.tags.split(',').map(tag => tag.trim()).filter(tag => tag.length > 0),
+          system: formData.system.trim() || undefined,
+          module: formData.module.trim() || undefined
         };
 
         try {
@@ -219,6 +226,8 @@ export function TestCases() {
           priority: formData.priority,
           status: formData.status,
           tags: formData.tags.split(',').map(tag => tag.trim()).filter(tag => tag.length > 0),
+          system: formData.system.trim() || undefined,
+          module: formData.module.trim() || undefined,
           author: '当前用户',
           created: new Date().toISOString().split('T')[0],
           lastRun: '从未运行',
@@ -251,7 +260,9 @@ export function TestCases() {
       assertions: testCase.assertions || '',
       priority: testCase.priority || 'medium',
       status: testCase.status || 'active',
-      tags: testCase.tags ? testCase.tags.join(', ') : ''
+      tags: testCase.tags ? testCase.tags.join(', ') : '',
+      system: testCase.system || '',
+      module: testCase.module || ''
     });
     setShowCreateModal(true);
   };
@@ -291,7 +302,9 @@ export function TestCases() {
       assertions: '',
       priority: 'medium',
       status: 'draft',
-      tags: ''
+      tags: '',
+      system: '',
+      module: ''
     });
     setShowCreateModal(false);
     setEditingTestCase(null);
@@ -559,8 +572,9 @@ export function TestCases() {
                          (testCase.assertions ? testCase.assertions.toLowerCase().includes(searchTerm.toLowerCase()) : false);
     const matchesTag = selectedTag === '' || (testCase.tags && testCase.tags.includes(selectedTag));
     const matchesPriority = selectedPriority === '' || testCase.priority === selectedPriority;
+    const matchesSystem = selectedSystem === '' || testCase.system === selectedSystem;
     
-    return matchesSearch && matchesTag && matchesPriority;
+    return matchesSearch && matchesTag && matchesPriority && matchesSystem;
   });
 
   // 🔥 新增：过滤测试套件
@@ -737,7 +751,7 @@ export function TestCases() {
 
       {/* Filters */}
       <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-200">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
           {/* Search */}
           <div className="relative">
             <Search className="absolute left-3 top-3 h-5 w-5 text-gray-400" />
@@ -773,6 +787,18 @@ export function TestCases() {
             <option value="high">高</option>
             <option value="medium">中</option>
             <option value="low">低</option>
+          </select>
+
+          {/* System Filter */}
+          <select
+            value={selectedSystem}
+            onChange={(e) => setSelectedSystem(e.target.value)}
+            className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          >
+            <option value="">所有系统</option>
+            {Array.from(new Set(testCases.map(tc => tc.system).filter(Boolean))).map(system => (
+              <option key={system} value={system}>{system}</option>
+            ))}
           </select>
 
           {/* Stats */}
@@ -1153,7 +1179,7 @@ export function TestCases() {
           ? (editingTestCase ? '编辑测试用例' : '创建新测试用例')
           : (editingTestSuite ? '编辑测试套件' : '创建新测试套件')
         }
-        size="2xl"
+        size="3xl"
         footer={
           <div className="flex justify-end space-x-3">
             <Button
@@ -1217,6 +1243,32 @@ export function TestCases() {
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 placeholder="例如：&#10;• 页面成功跳转到首页&#10;• 显示用户昵称&#10;• 退出按钮可见"
               />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  系统
+                </label>
+                <input
+                  type="text"
+                  value={formData.system}
+                  onChange={(e) => setFormData(prev => ({ ...prev, system: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="如：电商系统"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  模块
+                </label>
+                <input
+                  type="text"
+                  value={formData.module}
+                  onChange={(e) => setFormData(prev => ({ ...prev, module: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="如：商品管理"
+                />
+              </div>
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
