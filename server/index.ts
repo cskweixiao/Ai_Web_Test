@@ -15,6 +15,12 @@ import { PlaywrightMcpClient } from './services/mcpClient.js';
 import { ScreenshotService } from './services/screenshotService.js';
 import { PrismaClient } from '../src/generated/prisma/index.js';
 import { DatabaseService } from './services/databaseService.js';
+import { QueueService } from './services/queueService.js';
+import { StreamService } from './services/streamService.js';
+import { EvidenceService } from './services/evidenceService.js';
+import streamRoutes, { initializeStreamService } from './routes/stream.js';
+import evidenceRoutes, { initializeEvidenceService } from './routes/evidence.js';
+import queueRoutes, { initializeQueueService } from './routes/queue.js';
 import crypto from 'crypto';
 import { testRunStore } from '../lib/TestRunStore.js';
 import fetch from 'node-fetch';
@@ -93,6 +99,9 @@ let aiParser: AITestParser;
 let screenshotService: ScreenshotService;
 let testExecutionService: TestExecutionService;
 let suiteExecutionService: SuiteExecutionService;
+let queueService: QueueService;
+let streamService: StreamService;
+let evidenceService: EvidenceService;
 
 // 绑定WebSocket通知到Store
 testRunStore.onChange((runId, testRun) => {
@@ -354,9 +363,46 @@ async function startServer() {
     screenshotService = new ScreenshotService(prisma);
     console.log('✅ 截图服务初始化完成');
 
-    // 🔥 初始化测试执行服务（使用数据库服务）
+    // 🔥 初始化新增强服务
+    console.log('🔧 开始初始化队列服务...');
+    queueService = new QueueService({
+      maxConcurrency: 6,
+      perUserLimit: 2,
+      taskTimeout: 600000, // 10分钟
+      retryAttempts: 1
+    });
+    console.log('✅ 队列服务初始化完成');
+
+    console.log('🔧 开始初始化实时流服务...');
+    streamService = new StreamService({
+      fps: 2,
+      jpegQuality: 60,
+      width: 1024,
+      height: 768,
+      maskSelectors: []
+    });
+    console.log('✅ 实时流服务初始化完成');
+
+    console.log('🔧 开始初始化证据服务...');
+    evidenceService = new EvidenceService(
+      prisma,
+      path.join(process.cwd(), 'artifacts'),
+      process.env.BASE_URL || 'http://localhost:3001'
+    );
+    console.log('✅ 证据服务初始化完成');
+
+    // 🔥 初始化测试执行服务（使用数据库服务和新增强服务）
     console.log('🔧 开始初始化测试执行服务...');
-    testExecutionService = new TestExecutionService(wsManager, aiParser, mcpClient, databaseService, screenshotService);
+    testExecutionService = new TestExecutionService(
+      wsManager, 
+      aiParser, 
+      mcpClient, 
+      databaseService, 
+      screenshotService,
+      queueService,
+      streamService,
+      evidenceService
+    );
     console.log('✅ 测试执行服务初始化完成');
 
     // 🔥 初始化套件执行服务（使用数据库服务）
@@ -368,10 +414,20 @@ async function startServer() {
 
     // 🔥 注册API路由（现在服务已经初始化完成）
     console.log('🔧 开始注册API路由...');
+    
+    // 初始化路由服务
+    initializeQueueService(queueService);
+    initializeStreamService(streamService);
+    initializeEvidenceService(evidenceService);
+    
+    // 注册所有路由
     app.use('/api/tests', testRoutes(testExecutionService));
     app.use('/api/suites', suiteRoutes(suiteExecutionService));
     app.use('/api', screenshotRoutes(screenshotService));
     app.use('/api/config', configRoutes);
+    app.use(streamRoutes);
+    app.use(evidenceRoutes);
+    app.use(queueRoutes);
     console.log('✅ API路由注册完成');
 
     // 🔥 在所有API路由注册完成后，注册catch-all 404处理

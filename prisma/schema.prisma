@@ -254,3 +254,15 @@ enum step_screenshots_status {
   error
   completed
 }
+
+model run_artifacts {
+  id         Int       @id @default(autoincrement())
+  runId      String    @db.VarChar(255)
+  type       String    @db.VarChar(50)
+  filename   String    @db.VarChar(255)
+  size       BigInt
+  createdAt  DateTime  @default(now()) @db.Timestamp(0)
+
+  @@index([runId], map: "idx_run_id")
+  @@index([createdAt], map: "idx_created_at")
+}

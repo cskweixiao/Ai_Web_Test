@@ -5,6 +5,7 @@ import { createRequire } from 'module';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { screenshotConfig } from '../../src/utils/screenshotConfig.js';
 
 const require = createRequire(import.meta.url);
 
@@ -39,7 +40,11 @@ export class PlaywrightMcpClient {
           ...process.env,
           PLAYWRIGHT_BROWSERS_PATH: browserPath,
           PLAYWRIGHT_HEADLESS: 'false',
-          HEADLESS: 'false'
+          HEADLESS: 'false',
+          // 🔥 超时配置
+          PLAYWRIGHT_TIMEOUT: '120000',
+          PLAYWRIGHT_LAUNCH_TIMEOUT: '120000',
+          PLAYWRIGHT_NAVIGATION_TIMEOUT: '120000'
         }
       });
 
@@ -119,14 +124,18 @@ export class PlaywrightMcpClient {
         console.log('⚠️ 未找到Playwright浏览器，使用默认路径');
       }
 
-      // 🔥 最小化浏览器启动参数，完全避免安全警告
+      // 🔥 最小化浏览器启动参数，完全避免安全警告，添加真正的全屏支持
       const enhancedArgs = [
         `--user-data-dir=${tmpDir}`,
         '--no-first-run',
         '--disable-extensions',
         '--disable-plugins',
         '--disable-popup-blocking',
-        '--disable-sync'
+        '--disable-sync',
+        '--start-maximized',  // 最大化窗口
+        '--window-size=1920,1080',  // 设置窗口大小
+        '--kiosk',  // 🔥 新增：真正的全屏模式（无标题栏、无工具栏）
+        '--app=data:text/html,<title>AI Test Browser</title>'  // 🔥 新增：应用模式，进一步隐藏浏览器界面
         // 完全移除 --no-sandbox, --disable-web-security 等所有可能触发警告的参数
       ];
 
@@ -137,14 +146,27 @@ export class PlaywrightMcpClient {
       process.env.PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD = '1';
       // process.env.DEBUG = 'pw:browser*,pw:api*,pw:network*,pw:protocol*'; // 禁用调试输出
       // process.env.PWDEBUG = '1'; // 禁用调试模式
-      process.env.PLAYWRIGHT_TIMEOUT = '60000';
+      process.env.PLAYWRIGHT_TIMEOUT = '120000';  // 🔥 增加到120秒
+      process.env.PLAYWRIGHT_LAUNCH_TIMEOUT = '120000';  // 🔥 浏览器启动超时
+      process.env.PLAYWRIGHT_NAVIGATION_TIMEOUT = '120000';  // 🔥 导航超时
       process.env.PLAYWRIGHT_IGNORE_HTTPS_ERRORS = 'true';
+
+      // 🔥 方案C：配置MCP输出目录
+      const screenshotDir = screenshotConfig.getScreenshotsDirectory();
 
       console.log('🔥 MCP环境配置:');
       console.log('  - MCP_LAUNCH_PERSISTENT_ARGS:', process.env.MCP_LAUNCH_PERSISTENT_ARGS);
       console.log('  - 使用Playwright自带蓝色Chromium');
+      console.log('  - 🖥️ 浏览器模式：真正全屏模式 (--kiosk + --app)');
+      console.log('  - 🎯 混合方案: 环境变量+后处理确保截图保存正确:');
+      console.log(`    - PLAYWRIGHT_MCP_OUTPUT_DIR: ${screenshotDir}`);
+      console.log(`    - MCP_OUTPUT_DIR: ${screenshotDir}`);
+      console.log(`    - PLAYWRIGHT_SCREENSHOTS_DIR: ${screenshotDir}`);
+      console.log(`    - MCP_SCREENSHOT_DIR: ${screenshotDir}`);
 
       console.log('🔧 正在连接MCP服务器...');
+      screenshotConfig.ensureScreenshotsDirectory(); // 确保目录存在
+      console.log('🎯 配置MCP截图输出目录:', screenshotDir);
 
       // 🔥 创建到MCP的连接（浏览器已在服务器启动时安装）
       this.transport = new StdioClientTransport({
@@ -157,12 +179,28 @@ export class PlaywrightMcpClient {
           ...process.env,
           PLAYWRIGHT_BROWSERS_PATH: browserPath,
           PLAYWRIGHT_HEADLESS: 'false',
-          HEADLESS: 'false'
+          HEADLESS: 'false',
+          // 🔥 超时配置
+          PLAYWRIGHT_TIMEOUT: '120000',
+          PLAYWRIGHT_LAUNCH_TIMEOUT: '120000',
+          PLAYWRIGHT_NAVIGATION_TIMEOUT: '120000',
+          // 🔥 混合方案：环境变量尝试控制+后处理确保正确位置
+          PLAYWRIGHT_MCP_OUTPUT_DIR: screenshotDir,
+          MCP_OUTPUT_DIR: screenshotDir,
+          PLAYWRIGHT_SCREENSHOTS_DIR: screenshotDir,
+          MCP_SCREENSHOT_DIR: screenshotDir,
+          PLAYWRIGHT_DOWNLOAD_DIR: screenshotDir,
+          PLAYWRIGHT_TEMP_DIR: screenshotDir
         }
       });
 
-      // 🔥 连接MCP客户端（跳过浏览器安装，已在服务器启动时完成）
-      this.client = new Client({ name: 'ai-test-client', version: '1.0.0' }, {});
+      // 🔥 连接MCP客户端
+      this.client = new Client(
+        { name: 'ai-test-client', version: '1.0.0' }, 
+        {}  // 🔥 使用默认配置，在callTool层面处理超时
+      );
+      
+      console.log('🔧 正在连接MCP客户端...');
       await this.client.connect(this.transport);
       
       console.log('✅ MCP连接建立成功');
@@ -195,45 +233,43 @@ export class PlaywrightMcpClient {
         this.useAlternativeToolNames = false;
       }
 
-      // 🔥 修复：用正确的工具名称验证
+      // 🔥 简化验证：只检查工具列表，不进行实际导航
       try {
-        // 先用about:blank测试
-        await this.callTool({
-          name: 'browser_navigate',
-          arguments: { url: 'about:blank' }
-        });
-        console.log('✅ MCP工具验证成功！浏览器已启动');
-
-        // 仅验证导航功能，但不实际导航到任何特定页面
-        // 避免强制导航影响后续测试
-        console.log('✅ MCP导航功能验证完成（跳过实际页面导航）');
-
-        // 验证当前URL（使用正确的工具名称）
-        try {
-          const currentUrl = await this.client.callTool({
-            name: 'browser_navigate',
-            arguments: { url: 'about:blank' }
-          });
-          console.log('✅ 浏览器导航功能验证完成');
-        } catch (verifyError) {
-          console.warn('⚠️ URL验证跳过，继续执行:', verifyError.message);
-        }
-
-      } catch (verifyError: any) {
-        console.error('❌ MCP工具验证失败:', verifyError.message);
-        throw new Error(`MCP工具调用失败: ${verifyError.message}`);
-      }
-
-      // 🔍 调试：打印所有可用工具名称
-      try {
+        console.log('🔍 正在验证MCP工具可用性...');
+        
+        // 🔥 只获取工具列表，不进行实际操作
         const toolsResult = await this.client.listTools();
-        console.log('🔧 MCP实际可用工具列表:');
+        console.log('🔧 MCP工具列表获取成功:');
         toolsResult.tools.forEach(function (tool, index) {
           console.log(`  ${index + 1}. ${tool.name} - ${tool.description || '无描述'}`);
         });
-      } catch (listError: any) {
-        console.error('❌ 获取工具列表失败:', listError.message);
+        
+        // 🔥 检查必要的工具是否存在
+        const requiredTools = ['browser_navigate', 'browser_click', 'browser_type', 'browser_snapshot'];
+        const availableToolNames = toolsResult.tools.map(t => t.name);
+        
+        const missingTools = requiredTools.filter(tool => 
+          !availableToolNames.includes(tool) && 
+          !availableToolNames.includes('mcp_playwright_' + tool.replace('browser_', ''))
+        );
+        
+        if (missingTools.length > 0) {
+          console.warn(`⚠️ 部分工具不可用: ${missingTools.join(', ')}`);
+          console.warn('⚠️ 将使用替代工具名称映射');
+          this.useAlternativeToolNames = true;
+        } else {
+          console.log('✅ 所有必要工具均可用');
+        }
+        
+        console.log('✅ MCP工具验证完成！');
+        
+      } catch (verifyError: any) {
+        console.error('❌ MCP工具验证失败:', verifyError.message);
+        console.warn('⚠️ 将在实际使用时重试初始化');
+        // 🔥 不抛出错误，允许继续初始化
       }
+
+      // 🔥 工具列表已在上面获取并显示，无需重复
 
       if (options.contextState) await this.setContextState(options.contextState);
 
@@ -277,7 +313,16 @@ export class PlaywrightMcpClient {
 
     try {
       console.log(`🔧 MCP工具调用: ${args.name}`, args.arguments);
-      const result = await this.client.callTool(args);
+      
+      // 🔥 增加超时保护（90秒）
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => reject(new Error('MCP工具调用超时(90秒)')), 90000);
+      });
+      
+      const result = await Promise.race([
+        this.client.callTool(args),
+        timeoutPromise
+      ]);
       
       // 🔥 详细记录MCP返回结果
       console.log(`📋 MCP工具返回结果: ${args.name}`, JSON.stringify(result, null, 2));
@@ -1011,17 +1056,47 @@ export class PlaywrightMcpClient {
   async takeScreenshot(filename: string): Promise<void> {
     if (!this.isInitialized || !this.client) return;
     try {
-      // 🔥 使用项目本地screenshots目录而不是Playwright临时目录
-      const { screenshotConfig } = await import('../../src/utils/screenshotConfig.js');
-      const screenshotsDir = screenshotConfig.getScreenshotsDirectory();
-      const fullPath = path.join(screenshotsDir, filename);
+      // 🔥 修复：只传递文件名，让MCP保存到默认位置
+      console.log(`📸 [MCP] 调用截图工具:`, { filename: filename });
       
-      await this.client.callTool({ name: this.getToolName('screenshot'), arguments: { filename: fullPath } });
-      console.log(`📸 截图已保存: ${fullPath}`);
+      const result = await this.client.callTool({ name: this.getToolName('screenshot'), arguments: { filename: filename } });
+      console.log(`📋 [MCP] 截图工具返回:`, result);
+      
+      // 🔥 处理文件移动到正确目录（如果需要）
+      await this.handleScreenshotPostProcess(filename);
+      
     } catch (error) {
       console.error(`❌ 截图失败:`, error);
     }
   }
+
+  // 🔥 修复方案：使用简单文件名+后处理移动
+  async takeScreenshotForStream(filePath: string): Promise<void> {
+    if (!this.isInitialized || !this.client) {
+      throw new Error('MCP客户端未初始化');
+    }
+    
+    // 🔥 使用简单文件名调用MCP
+    const filename = path.basename(filePath);
+    
+    console.log(`🔧 [MCP] 调用截图工具 (修复方案):`, {
+      toolName: this.getToolName('screenshot'),
+      expectedPath: filePath,
+      filename: filename,
+      arguments: { filename: filename }
+    });
+    
+    const result = await this.client.callTool({ 
+      name: this.getToolName('screenshot'), 
+      arguments: { filename: filename }  // 🔥 使用简单filename参数
+    });
+    
+    console.log(`📋 [MCP] 截图工具返回结果:`, result);
+    
+    // 🔥 修复方案：处理文件移动到正确位置
+    await this.handleScreenshotPostProcess(filename, filePath);
+  }
+
 
   async waitForLoad(): Promise<void> {
     if (!this.isInitialized || !this.client) return;
@@ -1214,5 +1289,103 @@ export class PlaywrightMcpClient {
     }
 
     console.log(`🔍 [${runId}] ===== 页面状态验证结束 =====`);
+  }
+
+  // 🔥 新增：处理截图文件的后处理（移动到正确目录）
+  private async handleScreenshotPostProcess(filename: string, targetPath?: string): Promise<void> {
+    try {
+      const fs = await import('fs');
+      const { screenshotConfig } = await import('../../src/utils/screenshotConfig.js');
+      
+      const targetDir = screenshotConfig.getScreenshotsDirectory();
+      const finalPath = targetPath || path.join(targetDir, filename);
+      
+      // 🔍 查找MCP可能保存文件的位置（增强版）
+      const possiblePaths = [
+        filename, // 当前工作目录
+        path.join(process.cwd(), filename), // 项目根目录
+        path.join(targetDir, filename), // 目标目录（可能已经在正确位置）
+        path.join(process.cwd(), 'temp-screenshots', filename), // 🔥 添加：temp-screenshots目录
+        path.join(os.tmpdir(), filename), // 临时目录
+        path.join(os.homedir(), filename), // 用户目录
+        path.join(process.cwd(), 'node_modules', '.bin', filename), // node_modules/.bin
+        path.join('screenshots', filename), // 相对路径
+        // 🔥 添加：更多可能的MCP输出位置
+        path.join(process.cwd(), 'node_modules', '@playwright', 'mcp', filename),
+        path.join(process.env.PLAYWRIGHT_BROWSERS_PATH || '', filename),
+        path.join(process.cwd(), 'playwright-report', filename),
+        path.join(process.cwd(), 'test-results', filename)
+      ].filter(p => p && p.length > 0); // 过滤空路径
+      
+      console.log(`🔍 [PostProcess] 查找截图文件: ${filename}`);
+      
+      let sourceFile: string | null = null;
+      for (const possiblePath of possiblePaths) {
+        try {
+          if (fs.existsSync(possiblePath)) {
+            const stats = fs.statSync(possiblePath);
+            if (stats.size > 0) {
+              sourceFile = possiblePath;
+              console.log(`✅ [PostProcess] 找到源文件: ${sourceFile} (${stats.size} bytes)`);
+              break;
+            }
+          }
+        } catch (error) {
+          // 忽略单个路径检查错误
+        }
+      }
+      
+      if (!sourceFile) {
+        console.warn(`⚠️ [PostProcess] 未找到截图文件: ${filename}`);
+        console.warn(`🔍 [PostProcess] 已检查路径:`, possiblePaths);
+        
+        // 🔥 额外调试：检查当前目录的所有文件
+        try {
+          const currentDirFiles = fs.readdirSync(process.cwd()).filter(file => file.includes(filename.split('-')[1]));
+          console.warn(`📂 [PostProcess] 当前目录相关文件:`, currentDirFiles);
+          
+          const screenshots = fs.readdirSync(path.join(process.cwd(), 'screenshots')).slice(-5);
+          console.warn(`📂 [PostProcess] screenshots目录最新文件:`, screenshots);
+        } catch (debugError) {
+          console.warn(`🔍 [PostProcess] 调试信息获取失败:`, debugError.message);
+        }
+        
+        throw new Error(`截图文件未找到: ${filename}`);
+      }
+      
+      // 🔥 确保目标目录存在
+      screenshotConfig.ensureScreenshotsDirectory();
+      
+      // 🔥 如果文件已在正确位置，无需移动
+      if (path.resolve(sourceFile) === path.resolve(finalPath)) {
+        console.log(`✅ [PostProcess] 文件已在正确位置: ${finalPath}`);
+        return;
+      }
+      
+      // 🔥 移动文件到正确位置
+      console.log(`🔄 [PostProcess] 移动文件: ${sourceFile} -> ${finalPath}`);
+      fs.copyFileSync(sourceFile, finalPath);
+      
+      // 🔥 验证移动是否成功
+      if (fs.existsSync(finalPath)) {
+        const stats = fs.statSync(finalPath);
+        console.log(`✅ [PostProcess] 文件移动成功: ${finalPath} (${stats.size} bytes)`);
+        
+        // 🔥 删除源文件（如果不在目标目录）
+        if (sourceFile !== finalPath) {
+          try {
+            fs.unlinkSync(sourceFile);
+            console.log(`🗑️ [PostProcess] 已删除源文件: ${sourceFile}`);
+          } catch (deleteError) {
+            console.warn(`⚠️ [PostProcess] 删除源文件失败: ${sourceFile}`, deleteError);
+          }
+        }
+      } else {
+        console.error(`❌ [PostProcess] 文件移动失败: ${finalPath}`);
+      }
+      
+    } catch (error) {
+      console.error(`❌ [PostProcess] 截图后处理失败:`, error);
+    }
   }
 }

@@ -25,6 +25,9 @@ import { clsx } from 'clsx';
 // 🔥 引入测试服务
 import { testService } from '../services/testService';
 import { showToast } from '../utils/toast';
+import { LiveView } from '../components/LiveView';
+import { EvidenceViewer } from '../components/EvidenceViewer';
+import { QueueStatus } from '../components/QueueStatus';
 
 // 🔥 使用真实的测试运行接口
 interface TestRun {
@@ -61,6 +64,7 @@ export function TestRuns() {
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [stoppingTests, setStoppingTests] = useState<Set<string>>(new Set());
   const [showStopModal, setShowStopModal] = useState(false);
+  const [activeTab, setActiveTab] = useState<'logs' | 'live' | 'evidence' | 'queue'>('logs');
   const [testToStop, setTestToStop] = useState<{ id: string; name: string; isSuite: boolean } | null>(null);
   const [showStopAllModal, setShowStopAllModal] = useState(false);
   const [stoppingAll, setStoppingAll] = useState(false);
@@ -1006,16 +1010,68 @@ export function TestRuns() {
                   </div>
                 </div>
 
-                {/* 🔥 详细日志 - 包含断言结果 */}
-                <div className="px-6 py-4 max-h-96 overflow-y-auto">
-                  <div className="space-y-2">
-                    {selectedRun.logs.length > 0 ? (
-                      selectedRun.logs.map((log, index) => (
-                        <div
-                          key={log.id || index}
-                          className={clsx(
-                            "p-3 rounded-lg text-sm font-mono",
-                            log.level === 'success' && "bg-green-50 border-l-4 border-green-400",
+                {/* 🔥 新增：实时流和证据查看器标签页 */}
+                <div className="px-6 py-4 border-b">
+                  <div className="flex space-x-4">
+                    <button
+                      onClick={() => setActiveTab('logs')}
+                      className={clsx(
+                        "px-4 py-2 rounded-lg font-medium transition-colors",
+                        activeTab === 'logs'
+                          ? "bg-blue-100 text-blue-700"
+                          : "text-gray-600 hover:text-gray-900"
+                      )}
+                    >
+                      执行日志
+                    </button>
+                    <button
+                      onClick={() => setActiveTab('live')}
+                      className={clsx(
+                        "px-4 py-2 rounded-lg font-medium transition-colors",
+                        activeTab === 'live'
+                          ? "bg-red-100 text-red-700"
+                          : "text-gray-600 hover:text-gray-900"
+                      )}
+                    >
+                      实时画面
+                    </button>
+                    <button
+                      onClick={() => setActiveTab('evidence')}
+                      className={clsx(
+                        "px-4 py-2 rounded-lg font-medium transition-colors",
+                        activeTab === 'evidence'
+                          ? "bg-green-100 text-green-700"
+                          : "text-gray-600 hover:text-gray-900"
+                      )}
+                    >
+                      测试证据
+                    </button>
+                    <button
+                      onClick={() => setActiveTab('queue')}
+                      className={clsx(
+                        "px-4 py-2 rounded-lg font-medium transition-colors",
+                        activeTab === 'queue'
+                          ? "bg-purple-100 text-purple-700"
+                          : "text-gray-600 hover:text-gray-900"
+                      )}
+                    >
+                      队列状态
+                    </button>
+                  </div>
+                </div>
+
+                {/* 标签页内容 */}
+                <div className="px-6 py-4">
+                  {activeTab === 'logs' && (
+                    <div className="max-h-96 overflow-y-auto">
+                      <div className="space-y-2">
+                        {selectedRun.logs.length > 0 ? (
+                          selectedRun.logs.map((log, index) => (
+                            <div
+                              key={log.id || index}
+                              className={clsx(
+                                "p-3 rounded-lg text-sm font-mono",
+                                log.level === 'success' && "bg-green-50 border-l-4 border-green-400",
                             log.level === 'error' && "bg-red-50 border-l-4 border-red-400",
                             log.level === 'warning' && "bg-yellow-50 border-l-4 border-yellow-400",
                             log.level === 'info' && "bg-blue-50 border-l-4 border-blue-400"
@@ -1042,6 +1098,35 @@ export function TestRuns() {
                       </div>
                     )}
                   </div>
+                </div>
+                )}
+
+                {/* 🔥 实时画面标签页 */}
+                {activeTab === 'live' && (
+                  <div className="max-h-96">
+                    <LiveView 
+                      runId={selectedRun.id}
+                      testStatus={selectedRun.status}
+                      onFrameUpdate={(timestamp) => {
+                        console.log('实时流帧更新:', timestamp);
+                      }}
+                    />
+                  </div>
+                )}
+
+                {/* 🔥 测试证据标签页 */}
+                {activeTab === 'evidence' && (
+                  <div className="max-h-96 overflow-y-auto">
+                    <EvidenceViewer runId={selectedRun.id} />
+                  </div>
+                )}
+
+                {/* 🔥 队列状态标签页 */}
+                {activeTab === 'queue' && (
+                  <div className="max-h-96 overflow-y-auto">
+                    <QueueStatus />
+                  </div>
+                )}
                 </div>
                 
                 <div className="px-6 py-4 border-t border-gray-200 flex justify-end">

@@ -11,6 +11,9 @@ import type { TestRun, TestStep, TestLog, TestCase, TestRunStatus } from '../../
 import type { ScreenshotRecord } from '../types/screenshot.js';
 import * as fs from 'fs';
 import * as path from 'path';
+import { QueueService, QueueTask } from './queueService.js';
+import { StreamService } from './streamService.js';
+import { EvidenceService } from './evidenceService.js';
 
 // 重构后的测试执行服务：完全基于MCP的新流程
 export class TestExecutionService {
@@ -20,13 +23,19 @@ export class TestExecutionService {
   private screenshotService: ScreenshotService;
   private databaseService: DatabaseService;
   private prisma: PrismaClient; // 保持兼容性，内部使用
+  private queueService: QueueService;
+  private streamService: StreamService;
+  private evidenceService: EvidenceService;
 
   constructor(
     wsManager: WebSocketManager, 
     aiParser: AITestParser, 
     mcpClient: PlaywrightMcpClient, 
     databaseService?: DatabaseService,
-    screenshotService?: ScreenshotService
+    screenshotService?: ScreenshotService,
+    queueService?: QueueService,
+    streamService?: StreamService,
+    evidenceService?: EvidenceService
   ) {
     this.wsManager = wsManager;
     this.aiParser = aiParser;
@@ -38,6 +47,28 @@ export class TestExecutionService {
     
     // 创建Screenshot服务，传入数据库客户端
     this.screenshotService = screenshotService || new ScreenshotService(this.prisma);
+
+    // 🔥 修正：初始化新增强服务
+    this.queueService = queueService || new QueueService({
+      maxConcurrency: 6,
+      perUserLimit: 2,
+      taskTimeout: 600000, // 10分钟
+      retryAttempts: 1
+    });
+
+    this.streamService = streamService || new StreamService({
+      fps: 2,
+      jpegQuality: 60,
+      width: 1024,
+      height: 768,
+      maskSelectors: []
+    });
+
+    this.evidenceService = evidenceService || new EvidenceService(
+      this.prisma,
+      path.join(process.cwd(), 'artifacts'),
+      process.env.BASE_URL || 'http://localhost:3000'
+    );
 
     console.log(`🗄️ TestExecutionService已连接到数据库服务`);
 
@@ -228,6 +259,7 @@ export class TestExecutionService {
   // #endregion
 
   // #region Test Execution - 新流程实现
+  // 🔥 修正：使用队列管理的测试执行
   public async runTest(
     testCaseId: number,
     environment: string,
@@ -235,10 +267,13 @@ export class TestExecutionService {
     options: {
       reuseBrowser?: boolean,
       suiteId?: string,
-      contextState?: any
+      contextState?: any,
+      userId?: string
     } = {}
   ): Promise<string> {
     const runId = uuidv4();
+    const userId = options.userId || 'system';
+    
     const testRun: TestRun = {
       id: runId, runId, testCaseId, environment, executionMode,
       status: 'queued',
@@ -252,22 +287,41 @@ export class TestExecutionService {
     testRunStore.set(runId, testRun);
     this.addLog(runId, `测试 #${testCaseId} 已加入队列，环境: ${environment}`);
 
-    this.executeTest(runId).catch(error => {
-      console.error(`[${runId}] 执行过程中发生错误:`, error);
-      this.updateTestRunStatus(runId, 'error', `执行过程中发生错误: ${error.message}`);
+    // 🔥 修正：创建队列任务
+    const queueTask: QueueTask = {
+      id: runId,
+      userId,
+      type: 'test',
+      priority: 'medium',
+      payload: { testCaseId, environment, executionMode, options },
+      createdAt: new Date()
+    };
+
+    // 🔥 修正：使用队列执行
+    this.queueService.enqueue(queueTask, async (task) => {
+      await this.executeTestInternal(task.id, task.payload.testCaseId);
+    }).catch(error => {
+      console.error(`[${runId}] 队列执行过程中发生错误:`, error);
+      this.updateTestRunStatus(runId, 'error', `队列执行失败: ${error.message}`);
     });
 
     return runId;
   }
 
-  private async executeTest(runId: string) {
+  // 🔥 修正：执行测试的实际逻辑（修正作用域和取消检查）
+  private async executeTestInternal(runId: string, testCaseId: number): Promise<void> {
+    // 🔥 修正：将变量声明提到外层避免作用域问题
+    let browserProcess: any = null;
+    let context: any = null;
+    let page: any = null;
+    
     const testRun = testRunStore.get(runId);
     if (!testRun) {
       console.error(`❌ [${runId}] 测试运行记录未找到`);
       return;
     }
 
-    const testCase = await this.findTestCaseById(testRun.testCaseId);
+    const testCase = await this.findTestCaseById(testCaseId);
     if (!testCase || !testCase.steps) {
       this.updateTestRunStatus(runId, 'failed', `测试用例未找到`);
       return;
@@ -294,7 +348,7 @@ export class TestExecutionService {
     }
 
     try {
-      // 🔥 初始化MCP客户端
+      // 🔥 修正：使用原有的MCP初始化流程
       console.log(`🚀 [${runId}] 正在初始化MCP客户端...`);
       this.addLog(runId, `🚀 正在初始化MCP客户端...`, 'info');
       console.log(`📊 [${runId}] MCP客户端状态: isInitialized=${this.mcpClient['isInitialized']}`);
@@ -306,6 +360,20 @@ export class TestExecutionService {
         });
         console.log(`✅ [${runId}] MCP客户端初始化成功`);
         this.addLog(runId, `✅ MCP客户端初始化成功，浏览器已启动`, 'success');
+
+        // 🔥 启动实时流服务 - 暂时只用时钟帧验证管道
+        try {
+          console.log(`🎬 [${runId}] 准备启动实时流，runId: ${runId}`);
+          
+          // 🔥 临时：只用时钟帧，不依赖MCP截图
+          this.streamService.startStreamWithMcp(runId, this.mcpClient);
+          console.log(`📺 [${runId}] 实时流已启动(时钟帧模式)，runId: ${runId}`);
+          this.addLog(runId, `📺 实时流已启动(时钟帧模式)`, 'success');
+          
+        } catch (streamError) {
+          console.error(`❌ [${runId}] 启动实时流失败:`, streamError);
+          this.addLog(runId, `⚠️ 启动实时流失败: ${streamError.message}`, 'warning');
+        }
       } catch (initError) {
         console.error(`❌ [${runId}] MCP初始化失败:`, initError);
         this.addLog(runId, `❌ MCP初始化失败: ${initError.message}`, 'error');
@@ -330,6 +398,8 @@ export class TestExecutionService {
       console.log(`🔍 [${runId}] ===== 测试执行开始调试结束 =====\n`);
 
       this.addLog(runId, `🔍 测试数据: 操作步骤${testCase.steps ? '有' : '无'}, 断言${testCase.assertions ? '有' : '无'}`, 'info');
+
+      // 🔥 修正：移除不兼容的代码，使用原有的AI闭环执行流程
 
       // 🔥 AI闭环执行 - 修复：添加步骤间延迟和无限循环保护
       while (remainingSteps?.trim()) {
@@ -467,6 +537,8 @@ export class TestExecutionService {
 
       console.log(`✅ [${runId}] 完成 [${testCase.name}]`);
 
+      // 🔥 修正：移除trace相关代码，使用原有流程
+
       // 🔥 新增：测试完成后截图
       await this.takeStepScreenshot(runId, 'final', 'completed', '测试执行完成');
 
@@ -475,9 +547,16 @@ export class TestExecutionService {
     } catch (error: any) {
       console.error(`💥 [${runId}] 测试失败:`, error.message);
       this.addLog(runId, `💥 测试执行失败: ${error.message}`, 'error');
+      
+      // 🔥 修正：移除trace相关代码
       this.updateTestRunStatus(runId, 'failed', `测试执行失败: ${error.message}`);
+      
     } finally {
       try {
+        // 🔥 停止实时流服务
+        this.streamService.stopStream(runId);
+        console.log(`📺 [${runId}] 实时流已停止`);
+
         console.log(`🧹 [${runId}] 正在清理MCP客户端...`);
         await this.mcpClient.close();
         console.log(`✅ [${runId}] MCP客户端已关闭`);
@@ -487,6 +566,8 @@ export class TestExecutionService {
       await this.finalizeTestRun(runId);
     }
   }
+
+  // 🔥 修正：移除新增的方法，保持原有结构
 
   // 🔥 解析测试步骤
   private parseTestSteps(stepsText: string): TestStep[] {
