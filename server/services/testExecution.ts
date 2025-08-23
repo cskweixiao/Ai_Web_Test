@@ -10,6 +10,7 @@ import { testRunStore } from '../../lib/TestRunStore.js';
 import type { TestRun, TestStep, TestLog, TestCase, TestRunStatus } from '../../src/types/test.js';
 import type { ScreenshotRecord } from '../types/screenshot.js';
 import * as fs from 'fs';
+import { promises as fsPromises } from 'fs';
 import * as path from 'path';
 import { QueueService, QueueTask } from './queueService.js';
 import { StreamService } from './streamService.js';
@@ -542,11 +543,17 @@ export class TestExecutionService {
       // 🔥 新增：测试完成后截图
       await this.takeStepScreenshot(runId, 'final', 'completed', '测试执行完成');
 
+      // 🔥 新增：保存测试证据
+      await this.saveTestEvidence(runId, 'completed');
+
       this.updateTestRunStatus(runId, 'completed', '测试执行完成');
 
     } catch (error: any) {
       console.error(`💥 [${runId}] 测试失败:`, error.message);
       this.addLog(runId, `💥 测试执行失败: ${error.message}`, 'error');
+      
+      // 🔥 新增：保存测试证据（即使测试失败）
+      await this.saveTestEvidence(runId, 'failed');
       
       // 🔥 修正：移除trace相关代码
       this.updateTestRunStatus(runId, 'failed', `测试执行失败: ${error.message}`);
@@ -3050,6 +3057,148 @@ ${elements.map((el, index) => `${index + 1}. ${el.ref}: ${el.role} "${el.text}"`
       return { success: false, error: error.message };
     }
   }
+
+  // #region Evidence Management
+
+  /**
+   * 检查文件是否存在
+   */
+  private async fileExists(filePath: string): Promise<boolean> {
+    try {
+      await fsPromises.access(filePath);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * 保存测试证据文件到artifacts目录
+   * @param runId 测试运行ID
+   * @param testStatus 测试状态
+   */
+  private async saveTestEvidence(runId: string, testStatus: 'completed' | 'failed'): Promise<void> {
+    try {
+      console.log(`📁 [${runId}] 开始保存测试证据...`);
+      this.addLog(runId, `📁 正在保存测试证据...`, 'info');
+
+      // 1. 保存截图证据 - 将screenshots目录中的截图复制到artifacts
+      await this.saveScreenshotEvidence(runId);
+
+      // 2. 保存测试日志
+      await this.saveLogEvidence(runId);
+
+      // 3. 尝试保存其他证据（如果存在）
+      if (testStatus === 'completed') {
+        await this.saveAdditionalEvidence(runId);
+      }
+
+      console.log(`✅ [${runId}] 测试证据保存完成`);
+      this.addLog(runId, `✅ 测试证据已保存到artifacts目录`, 'success');
+
+    } catch (error: any) {
+      console.error(`❌ [${runId}] 保存测试证据失败:`, error.message);
+      this.addLog(runId, `⚠️ 测试证据保存失败: ${error.message}`, 'warning');
+      // 不抛出错误，避免影响测试完成流程
+    }
+  }
+
+  /**
+   * 保存截图证据
+   */
+  private async saveScreenshotEvidence(runId: string): Promise<void> {
+    try {
+      // 获取该测试运行的所有截图
+      const screenshots = await this.screenshotService.getScreenshotsByRunId(runId);
+      
+      if (screenshots.length === 0) {
+        console.log(`📸 [${runId}] 没有截图需要保存`);
+        return;
+      }
+
+      let savedCount = 0;
+      for (const screenshot of screenshots) {
+        try {
+          const screenshotPath = path.join(process.cwd(), screenshot.filePath);
+          
+          // 检查截图文件是否存在
+          if (await this.fileExists(screenshotPath)) {
+            const screenshotBuffer = await fsPromises.readFile(screenshotPath);
+            await this.evidenceService.saveBufferArtifact(
+              runId,
+              'screenshot',
+              screenshotBuffer,
+              screenshot.fileName
+            );
+            savedCount++;
+          }
+        } catch (error: any) {
+          console.warn(`⚠️ [${runId}] 保存截图证据失败: ${screenshot.fileName}`, error.message);
+        }
+      }
+
+      console.log(`📸 [${runId}] 已保存 ${savedCount}/${screenshots.length} 个截图证据`);
+      
+    } catch (error: any) {
+      console.error(`❌ [${runId}] 保存截图证据失败:`, error.message);
+    }
+  }
+
+  /**
+   * 保存日志证据
+   */
+  private async saveLogEvidence(runId: string): Promise<void> {
+    try {
+      const testRun = testRunStore.get(runId);
+      if (!testRun || !testRun.logs || testRun.logs.length === 0) {
+        console.log(`📝 [${runId}] 没有日志需要保存`);
+        return;
+      }
+
+      // 生成日志内容
+      const logContent = testRun.logs
+        .map(log => {
+          const timestamp = log.timestamp ? new Date(log.timestamp).toISOString() : 'Unknown';
+          return `[${timestamp}] [${log.level.toUpperCase()}] ${log.message}`;
+        })
+        .join('\n');
+
+      // 保存为日志文件
+      const logBuffer = Buffer.from(logContent, 'utf8');
+      const logFilename = `${runId}-execution.log`;
+      
+      await this.evidenceService.saveBufferArtifact(
+        runId,
+        'log',
+        logBuffer,
+        logFilename
+      );
+
+      console.log(`📝 [${runId}] 已保存测试日志: ${logFilename}`);
+      
+    } catch (error: any) {
+      console.error(`❌ [${runId}] 保存日志证据失败:`, error.message);
+    }
+  }
+
+  /**
+   * 保存其他证据（trace、video等）
+   */
+  private async saveAdditionalEvidence(runId: string): Promise<void> {
+    try {
+      // 这里可以扩展保存trace文件、视频录制等
+      // 目前作为占位符，未来可以添加更多证据类型
+      console.log(`🔍 [${runId}] 检查其他证据类型...`);
+      
+      // TODO: 如果启用了trace录制，保存trace文件
+      // TODO: 如果启用了视频录制，保存视频文件
+      
+    } catch (error: any) {
+      console.error(`❌ [${runId}] 保存其他证据失败:`, error.message);
+    }
+  }
+
+  // #endregion
 
   // #endregion
 }

@@ -29,6 +29,19 @@ export class EvidenceService {
     this.artifactsDir = artifactsDir;
     this.baseUrl = baseUrl;
     this.secretKey = process.env.EVIDENCE_SECRET_KEY || 'default-secret-key';
+    
+    // 🔥 修复：初始化时确保artifacts目录存在
+    this.initializeArtifactsDirectory();
+  }
+
+  // 🔥 新增：初始化artifacts目录
+  private async initializeArtifactsDirectory(): Promise<void> {
+    try {
+      await fs.mkdir(this.artifactsDir, { recursive: true });
+      console.log(`✅ EvidenceService: artifacts目录已确保存在: ${this.artifactsDir}`);
+    } catch (error: any) {
+      console.error(`❌ EvidenceService: 创建artifacts目录失败: ${error.message}`);
+    }
   }
 
   // 🔥 修正：获取artifacts目录

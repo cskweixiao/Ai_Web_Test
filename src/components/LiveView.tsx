@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 
 interface LiveViewProps {
   runId: string;
@@ -6,12 +6,24 @@ interface LiveViewProps {
   onFrameUpdate?: (timestamp: Date) => void;
 }
 
-export const LiveView: React.FC<LiveViewProps> = ({ runId, testStatus, onFrameUpdate }) => {
+// 🔥 优化：使用React.memo防止不必要的重渲染
+export const LiveView: React.FC<LiveViewProps> = React.memo(({ runId, testStatus, onFrameUpdate }) => {
   const imgRef = useRef<HTMLImageElement>(null);
   const [isConnected, setIsConnected] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [frameCount, setFrameCount] = useState(0);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout>();
+  const lastFrameUpdateCallRef = useRef<number>(0);
+
+  // 🔥 优化：节流onFrameUpdate回调，避免过度调用父组件
+  const throttledOnFrameUpdate = useCallback((timestamp: Date) => {
+    const now = Date.now();
+    // 限制回调频率为最多每500ms一次，避免过度触发父组件重渲染
+    if (now - lastFrameUpdateCallRef.current >= 500) {
+      lastFrameUpdateCallRef.current = now;
+      onFrameUpdate?.(timestamp);
+    }
+  }, [onFrameUpdate]);
 
   useEffect(() => {
     if (!imgRef.current) return;
@@ -54,60 +66,89 @@ export const LiveView: React.FC<LiveViewProps> = ({ runId, testStatus, onFrameUp
 
     let frameUpdateTimer: NodeJS.Timeout;
     let lastFrameTime = Date.now();
+    let lastFrameContent: string | null = null;
+    let consecutiveIdenticalFrames = 0;
 
-    // 🔥 修复：不依赖onload判定在线状态，用帧更新计时器
+    // 🔥 简化：更宽松的帧监控，减少误判
     const startFrameMonitor = () => {
       frameUpdateTimer = setInterval(() => {
         const now = Date.now();
-        if (now - lastFrameTime > 5000) { // 5秒无帧更新认为离线
-          console.warn('⚠️ [LiveView] 长时间无帧更新，可能离线');
+        const timeSinceLastFrame = now - lastFrameTime;
+        
+        // 🔥 放宽超时阈值，只有真正长时间无响应才断开
+        const timeoutThreshold = 20000; // 20秒无更新才认为断开
+        
+        if (timeSinceLastFrame > timeoutThreshold && isConnected) {
+          console.warn(`⚠️ [LiveView] 长时间无帧更新: ${timeSinceLastFrame}ms`);
           setIsConnected(false);
-          setError('流可能已断开');
+          setError('连接可能中断');
         }
-      }, 2000);
+      }, 5000); // 降低检查频率至5秒一次
     };
 
-    // 🔥 修复MJPEG流检测：监听load事件而不是src变化
+    // 🔥 简化：基础帧更新处理，移除复杂的内容检测
     const handleImageLoad = () => {
-      lastFrameTime = Date.now();
+      const now = Date.now();
+      const timeSinceLastFrame = now - lastFrameTime;
+      
+      // 🔥 移除过严的时间检测，接受所有正常的帧更新
+      if (timeSinceLastFrame < 50) { // 只过滤过于频繁的重复触发
+        return;
+      }
+      
+      // 🔥 简化：直接更新状态，不做复杂的内容比较
+      lastFrameTime = now;
+      setFrameCount(prev => prev + 1);
+      
+      // 如果之前断开了，现在有帧更新说明恢复了
       if (!isConnected) {
-        console.log('✅ [LiveView] 检测到MJPEG帧更新，恢复在线状态');
+        console.log('✅ [LiveView] 检测到帧更新，恢复连接状态');
         setIsConnected(true);
         setError(null);
       }
-      setFrameCount(prev => prev + 1);
-      onFrameUpdate?.(new Date());
+      
+      // 🔥 节流回调
+      throttledOnFrameUpdate(new Date());
+      
+      if (frameCount % 30 === 0) { // 每30帧记录一次，减少日志
+        console.log(`📺 [LiveView] 帧更新: ${runId.substring(0,8)}, 间隔: ${timeSinceLastFrame}ms`);
+      }
     };
 
     // 🔥 MJPEG流每一帧都会触发load事件
     img.addEventListener('load', handleImageLoad);
 
+    let retryCount = 0;
+    const maxRetries = 5;
+    
     img.onerror = (e) => {
       console.error('❌ [LiveView] 图像加载错误:', {
-        runId,
-        error: e,
-        currentSrc: img.src
+        runId: runId.substring(0, 8),
+        retryCount,
+        error: e
       });
       
       setIsConnected(false);
-      setError('连接中断，正在重连...');
       
-      // 🔥 修复：更智能的重连策略
-      const maxRetries = 10;
-      const currentRetries = frameCount % maxRetries;
-      
-      if (currentRetries < maxRetries) {
-        const retryDelay = Math.min(1000 * Math.pow(1.5, currentRetries), 8000);
-        console.log(`🔄 [LiveView] 第${currentRetries + 1}次重连，${retryDelay}ms后重试`);
+      if (retryCount < maxRetries) {
+        retryCount++;
+        setError(`连接中断，重试中... (${retryCount}/${maxRetries})`);
+        
+        // 🔥 简化重连：不频繁改变src，而是延迟后简单重连
+        const retryDelay = Math.min(2000 * retryCount, 10000);
+        console.log(`🔄 [LiveView] 第${retryCount}次重连，${retryDelay}ms后重试`);
         
         reconnectTimeoutRef.current = setTimeout(() => {
-          console.log('🔄 [LiveView] 正在重新连接...');
-          // 🔥 修复：添加时间戳和重试计数避免缓存
-          img.src = streamUrl + '&t=' + Date.now() + '&retry=' + currentRetries;
+          if (imgRef.current) {
+            // 🔥 减少闪烁：只添加时间戳，不改变基础URL
+            const newUrl = streamUrl + '&_retry=' + Date.now();
+            imgRef.current.src = newUrl;
+            console.log('🔄 [LiveView] 尝试重新连接流');
+          }
         }, retryDelay);
       } else {
-        console.warn('⚠️ [LiveView] 达到最大重试次数，停止重连');
-        setError('连接失败，请刷新页面重试');
+        console.warn('⚠️ [LiveView] 达到最大重试次数');
+        setError('连接失败，请切换到其他标签页再回来重试');
       }
     };
 
@@ -126,7 +167,7 @@ export const LiveView: React.FC<LiveViewProps> = ({ runId, testStatus, onFrameUp
       if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
       // 🔥 修复：不要设置img.src=''，避免ECONNRESET
     };
-  }, [runId, testStatus]);
+  }, [runId, testStatus, throttledOnFrameUpdate]);
 
   return (
     <div className="live-view-container border rounded-lg overflow-hidden">
@@ -186,7 +227,14 @@ export const LiveView: React.FC<LiveViewProps> = ({ runId, testStatus, onFrameUp
       </div>
     </div>
   );
-};
+}, (prevProps, nextProps) => {
+  // 🔥 自定义比较函数：只有关键属性变化时才重新渲染
+  return (
+    prevProps.runId === nextProps.runId &&
+    prevProps.testStatus === nextProps.testStatus
+    // 注意：onFrameUpdate不参与比较，因为它通常是由useCallback生成的稳定引用
+  );
+});
 
 // 🔥 修正：获取认证token的辅助函数
 function getAuthToken(): string {

@@ -139,11 +139,19 @@ export class StreamService {
             if (i < maxWait - 1) {
               console.log(`⏳ [StreamService] 等待文件生成... (${i + 1}/${maxWait}) [${runId.substring(0,8)}]`);
               
-              // 🔥 修复黑屏问题：在等待期间继续推送上一帧，保持画面连续性
-              const lastFrame = this.frameBuffer.get(runId);
-              if (lastFrame) {
-                console.log(`📺 [StreamService] 等待期间推送上一帧避免黑屏: ${runId.substring(0,8)}`);
-                await this.pushFrame(runId, lastFrame);
+              // 🔥 修复：推送动态等待提示帧，不更新缓存
+              try {
+                const waitingFrame = await this.createWaitingFrame(i + 1, maxWait);
+                await this.pushFrameWithoutCache(runId, waitingFrame);
+                console.log(`📺 [StreamService] 推送等待提示帧 (${i + 1}/${maxWait}): ${runId.substring(0,8)}`);
+              } catch (waitingError) {
+                console.warn(`⚠️ [StreamService] 创建等待帧失败，使用缓存帧: ${waitingError.message}`);
+                // 降级：推送缓存帧但不更新缓存
+                const lastFrame = this.frameBuffer.get(runId);
+                if (lastFrame) {
+                  await this.pushFrameWithoutCache(runId, lastFrame);
+                  console.log(`📺 [StreamService] 等待期间推送缓存帧(不更新): ${runId.substring(0,8)}`);
+                }
               }
               
               await new Promise(resolve => setTimeout(resolve, 300));
@@ -170,7 +178,7 @@ export class StreamService {
           console.log(`✅ [StreamService] MCP截图成功: ${runId}, 处理时间: ${processingTime}ms, 成功率: ${(this.stats.successfulScreenshots / this.stats.totalAttempts * 100).toFixed(1)}%`);
           console.log(`🔄 [StreamService] 图片处理: ${imageBuffer.length}字节 -> ${jpegBuffer.length}字节`);
           
-          await this.pushFrame(runId, jpegBuffer);
+          await this.pushFrameAndUpdateCache(runId, jpegBuffer);
           console.log(`📤 [StreamService] 推送真实截图完成: ${runId}`);
           
           // 清理临时文件
@@ -223,7 +231,7 @@ export class StreamService {
             const buffer = await sharp(Buffer.from(svg)).jpeg({ quality: 70 }).toBuffer();
             console.log(`🎨 [StreamService] 生成时钟帧: ${runId.substring(0,8)}, 大小: ${buffer.length}字节`);
             
-            await this.pushFrame(runId, buffer);
+            await this.pushFrameWithoutCache(runId, buffer);
             console.log(`📤 [StreamService] 推送时钟帧完成: ${runId.substring(0,8)}`);
           } catch (clockError) {
             console.error(`❌ [StreamService] 时钟帧生成失败: ${runId}`, clockError);
@@ -233,7 +241,7 @@ export class StreamService {
             if (lastFrame) {
               console.log(`📺 [StreamService] 时钟帧失败，推送上一帧避免黑屏: ${runId.substring(0,8)}`);
               try {
-                await this.pushFrame(runId, lastFrame);
+                await this.pushFrameWithoutCache(runId, lastFrame);
               } catch (lastFrameError) {
                 console.error(`❌ [StreamService] 推送上一帧也失败: ${runId}`, lastFrameError);
               }
@@ -372,8 +380,23 @@ export class StreamService {
     console.log(`✅ [StreamService] 实时流客户端注册完成: ${runId} (用户: ${userId})`);
   }
 
-  // 推送新帧
+  // 🔥 新增：推送帧并更新缓存（真实截图用）
+  async pushFrameAndUpdateCache(runId: string, screenshotBuffer: Buffer): Promise<void> {
+    await this.pushFrameInternal(runId, screenshotBuffer, true);
+  }
+  
+  // 🔥 新增：推送帧不更新缓存（等待帧/时钟帧用）
+  async pushFrameWithoutCache(runId: string, screenshotBuffer: Buffer): Promise<void> {
+    await this.pushFrameInternal(runId, screenshotBuffer, false);
+  }
+  
+  // 🔥 保持兼容性：默认推送帧并更新缓存
   async pushFrame(runId: string, screenshotBuffer: Buffer): Promise<void> {
+    await this.pushFrameAndUpdateCache(runId, screenshotBuffer);
+  }
+
+  // 🔥 统一的帧推送逻辑
+  private async pushFrameInternal(runId: string, screenshotBuffer: Buffer, updateCache: boolean): Promise<void> {
     const clients = this.clients.get(runId);
     if (!clients || clients.size === 0) return;
 
@@ -437,8 +460,13 @@ export class StreamService {
         this.unregisterClient(runId, client.response);
       });
       
-      // 缓存最新帧（用于新连接客户端）
-      this.frameBuffer.set(runId, processedFrame);
+      // 🔥 修复：条件性缓存更新
+      if (updateCache) {
+        this.frameBuffer.set(runId, processedFrame);
+        console.log(`💾 [StreamService] 缓存已更新: ${runId}`);
+      } else {
+        console.log(`📤 [StreamService] 推送临时帧，不更新缓存: ${runId}`);
+      }
       
     } catch (error) {
       console.error(`处理实时流帧失败:`, error);
@@ -545,6 +573,92 @@ export class StreamService {
       return buffer;
     } catch (error) {
       console.error(`❌ [StreamService] 创建占位帧失败:`, error);
+      throw error;
+    }
+  }
+
+  // 🔥 新增：创建动态等待提示帧
+  private async createWaitingFrame(currentStep: number, totalSteps: number): Promise<Buffer> {
+    const text = `⏳ 正在处理截图... (${currentStep}/${totalSteps})`;
+    const width = this.config.width;
+    const height = this.config.height;
+    
+    console.log(`🎨 [StreamService] 创建等待提示帧:`, {
+      text,
+      currentStep,
+      totalSteps,
+      width,
+      height,
+      quality: this.config.jpegQuality
+    });
+    
+    try {
+      // 计算进度百分比
+      const progressPercent = (currentStep / totalSteps) * 100;
+      const progressWidth = Math.floor((width * 0.6) * (progressPercent / 100));
+      
+      // 创建带进度条的等待提示帧
+      const buffer = await sharp({
+        create: {
+          width,
+          height,
+          channels: 3,
+          background: { r: 44, g: 62, b: 80 } // 深蓝灰色背景
+        }
+      })
+      .composite([{
+        input: Buffer.from(`
+          <svg width="${width}" height="${height}">
+            <rect width="${width}" height="${height}" fill="rgb(44,62,80)"/>
+            
+            <!-- 主标题 -->
+            <text x="50%" y="40%" text-anchor="middle" dy="0.35em" 
+                  font-family="Arial, sans-serif" font-size="28" fill="#e74c3c" font-weight="bold">
+              ⏳ 正在处理截图...
+            </text>
+            
+            <!-- 进度文本 -->
+            <text x="50%" y="50%" text-anchor="middle" dy="0.35em" 
+                  font-family="Arial, sans-serif" font-size="24" fill="#ecf0f1">
+              (${currentStep}/${totalSteps})
+            </text>
+            
+            <!-- 进度条背景 -->
+            <rect x="20%" y="58%" width="60%" height="8" fill="#34495e" rx="4"/>
+            
+            <!-- 进度条 -->
+            <rect x="20%" y="58%" width="${progressWidth}" height="8" fill="#3498db" rx="4">
+              <animate attributeName="fill" values="#3498db;#2ecc71;#3498db" dur="1.5s" repeatCount="indefinite"/>
+            </rect>
+            
+            <!-- 时间戳 -->
+            <text x="50%" y="75%" text-anchor="middle" dy="0.35em" 
+                  font-family="Arial, sans-serif" font-size="18" fill="#bdc3c7">
+              ${new Date().toLocaleTimeString()}
+            </text>
+            
+            <!-- 等待动画点 -->
+            <circle cx="45%" cy="85%" r="4" fill="#95a5a6">
+              <animate attributeName="opacity" values="1;0.3;1" dur="1s" repeatCount="indefinite"/>
+            </circle>
+            <circle cx="50%" cy="85%" r="4" fill="#95a5a6">
+              <animate attributeName="opacity" values="1;0.3;1" dur="1s" begin="0.33s" repeatCount="indefinite"/>
+            </circle>
+            <circle cx="55%" cy="85%" r="4" fill="#95a5a6">
+              <animate attributeName="opacity" values="1;0.3;1" dur="1s" begin="0.66s" repeatCount="indefinite"/>
+            </circle>
+          </svg>
+        `),
+        top: 0,
+        left: 0
+      }])
+      .jpeg({ quality: this.config.jpegQuality })
+      .toBuffer();
+      
+      console.log(`✅ [StreamService] 等待提示帧创建成功，大小: ${buffer.length}字节, 进度: ${progressPercent.toFixed(1)}%`);
+      return buffer;
+    } catch (error) {
+      console.error(`❌ [StreamService] 创建等待提示帧失败:`, error);
       throw error;
     }
   }
