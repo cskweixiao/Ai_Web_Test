@@ -10,6 +10,13 @@ import { testRoutes } from './routes/test.js';
 import { suiteRoutes } from './routes/suite.js'; // 🔥 新增
 import { screenshotRoutes } from './routes/screenshots.js';
 import { configRoutes } from './routes/config.js';
+// 🔥 新增：AI批量更新相关路由
+import { createAiBulkUpdateRoutes, createVersionRoutes } from './routes/aiBulkUpdate.js';
+import { createFeatureFlagRoutes, createPublicFeatureFlagRoutes } from './routes/featureFlag.js';
+import { createSecurityRoutes } from './routes/security.js';
+// 🔥 新增：初始化功能开关和权限
+import { initializeAllFeatureFlags } from './middleware/featureFlag.js';
+import { PermissionService } from './middleware/auth.js';
 import { AITestParser } from './services/aiParser.js';
 import { PlaywrightMcpClient } from './services/mcpClient.js';
 import { ScreenshotService } from './services/screenshotService.js';
@@ -132,21 +139,13 @@ async function ensureDefaultUser() {
       
       console.log(`✅ 默认系统用户已创建: ID=${defaultUser.id}, Email=${defaultUser.email}`);
       
-      // 为系统用户添加角色（如果需要）
-      await prisma.roles.upsert({
-        where: { name: 'admin' },
-        update: {},
-        create: {
-          name: 'admin'
-        }
-      });
-      
-      await prisma.user_roles.create({
-        data: {
-          user_id: defaultUser.id,
-          role_id: 1
-        }
-      });
+      // 🔥 使用权限服务分配管理员角色
+      try {
+        await PermissionService.assignDefaultRole(defaultUser.id, 'admin');
+        console.log(`✅ 为默认用户分配管理员角色完成`);
+      } catch (roleError) {
+        console.warn('⚠️ 分配管理员角色失败，将在后续初始化中处理:', roleError);
+      }
     } else {
       console.log('✅ 系统中已有用户，无需创建默认用户');
     }
@@ -340,6 +339,12 @@ async function startServer() {
     // 确保数据库和用户已设置
     await ensureDefaultUser();
 
+    // 🔥 新增：初始化权限角色和功能开关
+    console.log('🔧 开始初始化权限角色和功能开关...');
+    await PermissionService.ensureDefaultRoles();
+    await initializeAllFeatureFlags();
+    console.log('✅ 权限角色和功能开关初始化完成');
+
     // 🔥 初始化所有服务
     console.log('⚙️ 开始初始化所有服务...');
     
@@ -428,6 +433,21 @@ async function startServer() {
     app.use(streamRoutes);
     app.use(evidenceRoutes);
     app.use(queueRoutes);
+
+    // 🔥 新增：AI批量更新相关路由
+    console.log('🔧 注册AI批量更新路由...');
+    app.use('/api/v1/ai-bulk', createAiBulkUpdateRoutes(prisma, aiParser, wsManager));
+    app.use('/api/testcases', createVersionRoutes(prisma));
+
+    // 🔥 新增：功能开关管理路由
+    console.log('🔧 注册功能开关管理路由...');
+    app.use('/api/v1/feature-flags', createFeatureFlagRoutes());
+    app.use('/api/v1/features', createPublicFeatureFlagRoutes());
+    
+    // 🔥 新增：安全监控路由
+    console.log('🔧 注册安全监控路由...');
+    app.use('/api/v1/security', createSecurityRoutes());
+    
     console.log('✅ API路由注册完成');
 
     // 🔥 在所有API路由注册完成后，注册catch-all 404处理

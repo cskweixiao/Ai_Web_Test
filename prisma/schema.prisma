@@ -158,6 +158,9 @@ model test_cases {
   step_screenshots step_screenshots[]
   suite_case_map   suite_case_map[]
   test_run_results test_run_results[]
+  // 🔥 新增：AI批量更新功能关联
+  case_versions    case_versions[]
+  patch_proposals  case_patch_proposals[]
 }
 
 model test_run_results {
@@ -226,6 +229,9 @@ model users {
   test_runs     test_runs[]
   test_suites   test_suites[]
   user_roles    user_roles[]
+  // 🔥 新增：AI批量更新功能关联
+  case_versions       case_versions[]
+  bulk_edit_sessions  bulk_edit_sessions[]
 }
 
 enum job_logs_status {
@@ -265,4 +271,90 @@ model run_artifacts {
 
   @@index([runId], map: "idx_run_id")
   @@index([createdAt], map: "idx_created_at")
+}
+
+// 🔥 新增：AI批量更新功能相关表
+
+// 用例版本表（用于版本控制与回滚）
+model case_versions {
+  id         Int       @id @default(autoincrement())
+  case_id    Int
+  version    Int
+  steps      Json?
+  tags       Json?
+  system     String?   @db.VarChar(100)
+  module     String?   @db.VarChar(100)
+  meta       Json?
+  created_by Int?
+  created_at DateTime? @default(now()) @db.Timestamp(0)
+  test_cases test_cases @relation(fields: [case_id], references: [id], onDelete: Cascade)
+  users      users?     @relation(fields: [created_by], references: [id], onDelete: SetNull)
+
+  @@unique([case_id, version])
+  @@index([case_id])
+  @@index([created_at])
+}
+
+// 批量编辑会话表
+model bulk_edit_sessions {
+  id              Int       @id @default(autoincrement())
+  system          String    @db.VarChar(100)
+  module          String    @db.VarChar(100)
+  tag_filter      Json?
+  priority_filter String?   @db.VarChar(50)
+  change_brief    String    @db.Text
+  status          bulk_edit_sessions_status @default(dry_run)
+  created_by      Int
+  created_at      DateTime? @default(now()) @db.Timestamp(0)
+  applied_at      DateTime? @db.Timestamp(0)
+  users           users     @relation(fields: [created_by], references: [id], onDelete: Cascade)
+  proposals       case_patch_proposals[]
+
+  @@index([created_by])
+  @@index([status])
+  @@index([created_at])
+}
+
+// AI提案表（存储具体的修改建议）
+model case_patch_proposals {
+  id             Int       @id @default(autoincrement())
+  session_id     Int
+  case_id        Int
+  diff_json      Json
+  ai_rationale   String?   @db.Text
+  side_effects   Json?
+  risk_level     proposal_risk_level @default(medium)
+  recall_reason  String?   @db.VarChar(255)
+  old_hash       String    @db.VarChar(255)
+  new_hash       String?   @db.VarChar(255)
+  apply_status   proposal_apply_status @default(pending)
+  created_at     DateTime? @default(now()) @db.Timestamp(0)
+  applied_at     DateTime? @db.Timestamp(0)
+  session        bulk_edit_sessions @relation(fields: [session_id], references: [id], onDelete: Cascade)
+  test_cases     test_cases @relation(fields: [case_id], references: [id], onDelete: Cascade)
+
+  @@index([session_id])
+  @@index([case_id])
+  @@index([apply_status])
+}
+
+// 新增枚举类型
+enum bulk_edit_sessions_status {
+  dry_run
+  applied
+  cancelled
+  failed
+}
+
+enum proposal_risk_level {
+  low
+  medium  
+  high
+}
+
+enum proposal_apply_status {
+  pending
+  applied
+  skipped
+  conflicted
 }

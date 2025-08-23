@@ -17,7 +17,8 @@ import {
   XCircle,
   AlertTriangle,
   FolderOpen,
-  Package
+  Package,
+  Bot
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { Layout } from '../components/Layout';
@@ -27,6 +28,8 @@ import { useNavigate } from 'react-router-dom';
 import { Modal, ConfirmModal } from '../components/ui/modal';
 import { Button } from '../components/ui/button';
 import { showToast } from '../utils/toast';
+import { AIBulkUpdateModal } from '../components/AIBulkUpdateModal';
+import { aiBulkUpdateService } from '../services/aiBulkUpdateService';
 
 // 表单数据接口
 interface CreateTestCaseForm {
@@ -75,6 +78,11 @@ export function TestCases() {
   const [deletingTestSuite, setDeletingTestSuite] = useState<TestSuiteType | null>(null);
   const [runningSuiteId, setRunningSuiteId] = useState<number | null>(null);
   
+  // 🔥 新增：AI批量更新状态管理
+  const [showAIBulkUpdateModal, setShowAIBulkUpdateModal] = useState(false);
+  const [aiFeatureAvailable, setAiFeatureAvailable] = useState(false);
+  const [checkingFeature, setCheckingFeature] = useState(true);
+  
   const [formData, setFormData] = useState<CreateTestCaseForm>({
     name: '',
     steps: '',
@@ -96,10 +104,31 @@ export function TestCases() {
     tags: ''
   });
 
+  // 🔥 新增：检查AI批量更新功能可用性
+  const checkAIBulkUpdateAvailability = async () => {
+    try {
+      setCheckingFeature(true);
+      console.log('🔍 [AI_Bulk_Update] 检查功能可用性...');
+      
+      // 调用真实的AI服务检查功能可用性
+      const available = await aiBulkUpdateService.checkFeatureAvailability();
+      setAiFeatureAvailable(available);
+      
+      console.log('✅ [AI_Bulk_Update] 功能检查完成，可用状态:', available);
+      
+    } catch (error) {
+      console.error('❌ [AI_Bulk_Update] 检查功能可用性失败:', error);
+      setAiFeatureAvailable(false);
+    } finally {
+      setCheckingFeature(false);
+    }
+  };
+
   // 加载测试用例和测试套件
   useEffect(() => {
     loadTestCases();
     loadTestSuites();
+    checkAIBulkUpdateAvailability();
     
     // 🔥 添加WebSocket连接状态检查
     const initWebSocket = async () => {
@@ -701,6 +730,21 @@ export function TestCases() {
               重置状态
             </motion.button>
           )}
+          
+          {/* 🔥 新增: AI批量更新按钮 */}
+          {activeTab === 'cases' && aiFeatureAvailable && !checkingFeature && (
+            <motion.button
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+              onClick={() => setShowAIBulkUpdateModal(true)}
+              className="inline-flex items-center px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
+              title="使用AI批量更新测试用例"
+            >
+              <Bot className="h-5 w-5 mr-2" />
+              AI批量更新
+            </motion.button>
+          )}
+          
           <motion.button
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
@@ -1462,6 +1506,14 @@ export function TestCases() {
         variant="destructive"
         isLoading={loading}
         size="sm"
+      />
+
+      {/* 🔥 新增: AI批量更新模态框 */}
+      <AIBulkUpdateModal
+        isOpen={showAIBulkUpdateModal}
+        onClose={() => setShowAIBulkUpdateModal(false)}
+        testCases={testCases}
+        onRefresh={loadTestCases}
       />
     </div>
   );

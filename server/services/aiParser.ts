@@ -671,6 +671,113 @@ ${elementsContext}
   }
 
   /**
+   * 🔥 根据模式获取系统提示词
+   */
+  private getSystemPromptByMode(mode: 'operation' | 'assertion' | 'relevance_check' | 'update_generation'): string {
+    switch (mode) {
+      case 'operation':
+        return this.getOperationSystemPrompt();
+      case 'assertion':
+        return this.getAssertionSystemPrompt();
+      case 'relevance_check':
+        return this.getRelevanceCheckSystemPrompt();
+      case 'update_generation':
+        return this.getUpdateGenerationSystemPrompt();
+      default:
+        return this.getOperationSystemPrompt();
+    }
+  }
+
+  /**
+   * 🔥 获取相关性检查的系统提示词
+   */
+  private getRelevanceCheckSystemPrompt(): string {
+    return `你是一个专业的测试用例相关性分析AI专家。你的核心职责是：
+
+# 身份与能力
+- 精确分析测试用例与变更描述之间的相关性
+- 基于功能、操作、UI元素、业务流程等多维度进行关联性判断
+- 提供可信的相关性评分和详细的分析理由
+
+# 分析原则
+- **语义理解优先**：理解变更的实际业务含义，而不仅仅是关键词匹配
+- **多维度评估**：从功能、操作、UI元素、业务流程等角度综合分析
+- **细粒度判断**：即使是间接相关的情况也要准确识别和评分
+- **准确性优先**：宁可保守评估，确保相关性判断的准确性
+
+# 评分标准
+- **0.9-1.0**: 直接相关，测试用例明确覆盖变更内容
+- **0.7-0.8**: 高度相关，测试用例涉及变更影响的主要功能  
+- **0.5-0.6**: 中度相关，测试用例可能受变更间接影响
+- **0.3-0.4**: 低度相关，测试用例与变更有轻微关联
+- **0.0-0.2**: 不相关，测试用例与变更无明显关联
+
+# 输出要求
+- 必须输出标准的JSON格式
+- is_relevant字段：当相关性评分≥0.3时为true，否则为false
+- relevance_score字段：0.0到1.0之间的数值
+- recall_reason字段：详细说明相关性分析的依据和理由
+
+# 分析思路
+1. 解析变更描述的核心要素（功能、操作、UI元素等）
+2. 分析测试用例覆盖的功能和操作流程
+3. 识别两者之间的直接和间接关联
+4. 综合评估相关性程度并给出评分
+5. 提供清晰的分析理由`;
+  }
+
+  /**
+   * 🔥 获取更新生成的系统提示词
+   */
+  private getUpdateGenerationSystemPrompt(): string {
+    return `你是一个专业的测试用例自动化更新AI专家。你的核心职责是：
+
+# 身份与能力
+- 基于变更描述精确生成测试用例的JSON Patch修改方案
+- 深度理解测试步骤的语义和业务逻辑
+- 评估修改带来的副作用和风险等级
+- 生成符合JSON Patch RFC 6902标准的修改指令
+
+# 更新原则
+- **语义保持**：确保更新后的测试步骤语义合理，逻辑连贯
+- **最小变更**：只修改必要的部分，避免过度修改
+- **风险评估**：准确评估每个修改的潜在影响和风险等级
+- **可回滚性**：生成的patch操作应该是可逆的
+
+# JSON Patch操作类型
+- **replace**: 替换现有值，格式 {"op":"replace", "path":"/steps/0/description", "value":"新描述"}
+- **add**: 添加新字段，格式 {"op":"add", "path":"/steps/0/newField", "value":"新值"}  
+- **remove**: 删除字段，格式 {"op":"remove", "path":"/steps/0/oldField"}
+
+# 路径格式规范
+- 步骤描述：/steps/索引/description
+- 预期结果：/steps/索引/expectedResult
+- 操作类型：/steps/索引/action
+- 元素定位：/steps/索引/selector
+- 输入值：/steps/索引/value
+
+# 风险等级标准
+- **low**: 简单文本修改，不影响业务逻辑
+- **medium**: 涉及步骤顺序调整或重要参数修改
+- **high**: 大幅修改测试逻辑或可能影响其他用例
+
+# 副作用评估
+- **数据依赖**: 修改是否影响后续步骤的数据流
+- **UI状态**: 修改是否改变页面状态或导航流程
+- **业务逻辑**: 修改是否影响测试覆盖的业务流程完整性
+- **用例关联**: 修改是否可能影响其他相关测试用例
+
+# 输出要求
+- 必须输出标准的JSON格式
+- reasoning字段：详细的修改理由和分析过程
+- patch字段：符合JSON Patch标准的修改操作数组
+- side_effects字段：可能的副作用描述数组
+- risk_level字段：overall风险等级评估
+
+请确保生成的修改方案准确、可执行且风险可控。`;
+  }
+
+  /**
    * 🔥 获取断言模式的系统提示词
    */
   private getAssertionSystemPrompt(): string {
@@ -759,9 +866,9 @@ ${elementsContext}
   }
 
   /**
-   * 🔥 调用AI模型（支持操作和断言两种模式）
+   * 🔥 调用AI模型（支持多种模式）
    */
-  private async callLLM(userPrompt: string, mode: 'operation' | 'assertion' = 'operation'): Promise<string> {
+  private async callLLM(userPrompt: string, mode: 'operation' | 'assertion' | 'relevance_check' | 'update_generation' = 'operation'): Promise<string> {
     // 获取当前配置
     const currentConfig = await this.getCurrentConfig();
     const modelInfo = this.getCurrentModelInfo();
@@ -777,9 +884,7 @@ ${elementsContext}
         messages: [
           {
             role: 'system',
-            content: mode === 'assertion'
-              ? this.getAssertionSystemPrompt()  // 🔥 断言专用系统提示词
-              : this.getOperationSystemPrompt()  // 🔥 操作专用系统提示词
+            content: this.getSystemPromptByMode(mode)
           },
           {
             role: 'user',
@@ -838,6 +943,67 @@ ${elementsContext}
       }
 
       throw error;
+    }
+  }
+
+  /**
+   * 🔥 AI批量更新：检查测试用例相关性
+   */
+  async checkTestCaseRelevance(changeBrief: string, testCase: any): Promise<{
+    is_relevant: boolean;
+    relevance_score: number;
+    recall_reason: string;
+  }> {
+    console.log(`🔍 [AITestParser] 检查用例相关性: ${testCase.title || testCase.id}`);
+
+    try {
+      // 构建相关性检查的用户提示词
+      const userPrompt = this.buildRelevanceCheckPrompt(changeBrief, testCase);
+
+      // 调用AI模型进行相关性分析
+      const aiResponse = await this.callLLM(userPrompt, 'relevance_check');
+
+      // 解析AI相关性分析结果
+      const result = this.parseRelevanceResponse(aiResponse);
+
+      console.log(`✅ [AITestParser] 相关性检查完成: ${result.is_relevant ? '相关' : '不相关'} (${Math.round(result.relevance_score * 100)}%)`);
+      return result;
+
+    } catch (error: any) {
+      console.error(`❌ [AITestParser] 相关性检查失败: ${error.message}`);
+      // 回退到基本的关键词匹配
+      return this.fallbackRelevanceCheck(changeBrief, testCase);
+    }
+  }
+
+  /**
+   * 🔥 AI批量更新：生成测试用例更新方案
+   */
+  async generateTestCaseUpdate(changeBrief: string, testCase: any): Promise<{
+    reasoning: string;
+    patch: Array<{ op: 'replace' | 'add' | 'remove'; path: string; value?: any; }>;
+    side_effects: Array<{ description: string; severity: 'low' | 'medium' | 'high'; }>;
+    risk_level: 'low' | 'medium' | 'high';
+  }> {
+    console.log(`🤖 [AITestParser] 生成用例更新: ${testCase.title || testCase.id}`);
+
+    try {
+      // 构建用例更新的用户提示词
+      const userPrompt = this.buildUpdateGenerationPrompt(changeBrief, testCase);
+
+      // 调用AI模型生成更新方案
+      const aiResponse = await this.callLLM(userPrompt, 'update_generation');
+
+      // 解析AI更新方案
+      const result = this.parseUpdateResponse(aiResponse);
+
+      console.log(`✅ [AITestParser] 更新方案生成完成: ${result.patch.length} 个修改`);
+      return result;
+
+    } catch (error: any) {
+      console.error(`❌ [AITestParser] 更新方案生成失败: ${error.message}`);
+      // 回退到基本的模式匹配
+      return this.fallbackUpdateGeneration(changeBrief, testCase);
     }
   }
 
@@ -920,5 +1086,343 @@ ${elementsContext}
       console.error(`📄 原始响应: ${aiResponse}`);
       throw new Error(`AI响应解析失败: ${error.message}`);
     }
+  }
+
+  /**
+   * 🔥 构建相关性检查的AI提示词
+   */
+  private buildRelevanceCheckPrompt(changeBrief: string, testCase: any): string {
+    return `# 测试用例相关性分析任务
+
+## 变更描述
+"${changeBrief}"
+
+## 待分析的测试用例
+**标题**: ${testCase.title || '未知标题'}
+**系统**: ${testCase.system || '未知系统'} 
+**模块**: ${testCase.module || '未知模块'}
+**标签**: ${testCase.tags ? JSON.stringify(testCase.tags) : '无标签'}
+**步骤**: 
+${this.formatTestStepsForAI(testCase.steps)}
+
+## 分析要求
+请分析这个测试用例是否与变更描述相关，需要根据以下维度评估：
+
+1. **功能相关性**：测试用例覆盖的功能是否与变更相关
+2. **操作相关性**：测试步骤中的操作是否与变更提及的操作相关  
+3. **UI元素相关性**：测试涉及的界面元素是否与变更相关
+4. **业务流程相关性**：测试的业务流程是否受变更影响
+
+## 输出格式
+请严格按照以下JSON格式输出：
+\`\`\`json
+{
+  "is_relevant": true/false,
+  "relevance_score": 0.0-1.0的数值,
+  "recall_reason": "详细说明相关/不相关的原因，包括具体的匹配点或分析依据"
+}
+\`\`\`
+
+请开始分析：`;
+  }
+
+  /**
+   * 🔥 构建更新生成的AI提示词
+   */
+  private buildUpdateGenerationPrompt(changeBrief: string, testCase: any): string {
+    return `# 测试用例更新生成任务
+
+## 变更描述
+"${changeBrief}"
+
+## 目标测试用例
+**标题**: ${testCase.title || '未知标题'}
+**系统**: ${testCase.system || '未知系统'}
+**模块**: ${testCase.module || '未知模块'} 
+**当前步骤**:
+${this.formatTestStepsForAI(testCase.steps)}
+
+## 任务要求
+基于变更描述，为这个测试用例生成精确的JSON Patch修改方案：
+
+1. **识别需要修改的步骤**：分析哪些测试步骤需要根据变更进行调整
+2. **生成JSON Patch操作**：为每个需要修改的地方生成对应的patch操作
+3. **评估副作用和风险**：分析修改可能带来的影响
+4. **提供修改理由**：说明为什么要进行这些修改
+
+## JSON Patch格式说明
+- 操作类型：replace(替换), add(添加), remove(删除)
+- 路径格式：\`/steps/0/description\` (修改第1个步骤的描述)
+- 路径格式：\`/steps/1/expectedResult\` (修改第2个步骤的预期结果)
+
+## 输出格式
+请严格按照以下JSON格式输出：
+\`\`\`json
+{
+  "reasoning": "详细的修改理由和分析过程",
+  "patch": [
+    {
+      "op": "replace",
+      "path": "/steps/索引/字段名", 
+      "value": "新的值"
+    }
+  ],
+  "side_effects": [
+    {
+      "description": "可能的副作用描述",
+      "severity": "low/medium/high"
+    }
+  ],
+  "risk_level": "low/medium/high"
+}
+\`\`\`
+
+请开始分析并生成更新方案：`;
+  }
+
+  /**
+   * 🔥 格式化测试步骤供AI分析
+   */
+  private formatTestStepsForAI(steps: any): string {
+    // 🔥 添加调试日志，查看步骤数据
+    console.log(`🔍 [AIParser] 调试测试步骤数据:`, {
+      steps: steps,
+      type: typeof steps,
+      isArray: Array.isArray(steps),
+      length: steps?.length,
+      stringified: JSON.stringify(steps)
+    });
+    
+    if (!steps) {
+      return "无有效步骤";
+    }
+
+    // 🔥 处理JSON字符串格式的steps数据
+    if (typeof steps === 'string') {
+      try {
+        const parsedSteps = JSON.parse(steps);
+        if (parsedSteps.steps) {
+          // 提取steps字段中的文本，按换行符分割
+          const stepsText = parsedSteps.steps.replace(/\\n/g, '\n');
+          const stepLines = stepsText.split('\n').filter(line => line.trim());
+          console.log(`🔧 [AIParser] 解析JSON字符串步骤: ${stepLines.length} 个步骤`);
+          
+          // 格式化步骤文本
+          const formattedSteps = stepLines.map((line, index) => {
+            // 清理步骤编号，统一格式
+            const cleanLine = line.replace(/^\d+[、。.]?\s*/, '').trim();
+            return `${index + 1}. ${cleanLine}`;
+          }).join('\n');
+          
+          // 如果有assertions字段，也添加进去
+          if (parsedSteps.assertions && parsedSteps.assertions.trim()) {
+            return `${formattedSteps}\n\n预期结果: ${parsedSteps.assertions}`;
+          }
+          
+          return formattedSteps;
+        }
+      } catch (error) {
+        console.warn(`⚠️ [AIParser] 解析JSON字符串步骤失败: ${error.message}`);
+        // 如果JSON解析失败，将字符串当作步骤文本处理
+        return `步骤信息: ${steps.substring(0, 200)}...`;
+      }
+    }
+    
+    // 🔥 处理数组格式的steps数据（原有逻辑）
+    if (!Array.isArray(steps)) {
+      return "无有效步骤";
+    }
+
+    return steps.map((step, index) => {
+      const stepNum = index + 1;
+      let stepText = `${stepNum}. `;
+      
+      if (step.description) {
+        stepText += step.description;
+      }
+      
+      if (step.expectedResult) {
+        stepText += ` [预期结果: ${step.expectedResult}]`;
+      }
+      
+      if (step.action) {
+        stepText += ` [操作: ${step.action}]`;
+      }
+      
+      return stepText;
+    }).join('\n');
+  }
+
+  /**
+   * 🔥 解析AI相关性分析响应
+   */
+  private parseRelevanceResponse(aiResponse: string): {
+    is_relevant: boolean;
+    relevance_score: number;
+    recall_reason: string;
+  } {
+    try {
+      console.log(`🔍 解析相关性AI响应: ${aiResponse.substring(0, 200)}...`);
+
+      let jsonText = aiResponse.trim();
+
+      // 提取JSON内容
+      const jsonMatch = jsonText.match(/```(?:json)?\n?([\s\S]*?)\n?```/) || 
+                       jsonText.match(/\{[\s\S]*\}/);
+      
+      if (jsonMatch) {
+        jsonText = jsonMatch[1] || jsonMatch[0];
+      }
+
+      const parsed = JSON.parse(jsonText);
+
+      // 验证必需字段
+      if (typeof parsed.is_relevant !== 'boolean') {
+        throw new Error('缺少is_relevant字段或类型不正确');
+      }
+
+      const result = {
+        is_relevant: parsed.is_relevant,
+        relevance_score: typeof parsed.relevance_score === 'number' ? 
+          Math.max(0, Math.min(1, parsed.relevance_score)) : 0.5,
+        recall_reason: parsed.recall_reason || '未提供原因'
+      };
+
+      console.log(`✅ 相关性解析成功: ${result.is_relevant} (${Math.round(result.relevance_score * 100)}%)`);
+      return result;
+
+    } catch (error: any) {
+      console.error(`❌ 相关性响应解析失败: ${error.message}`);
+      throw new Error(`相关性响应解析失败: ${error.message}`);
+    }
+  }
+
+  /**
+   * 🔥 解析AI更新生成响应
+   */
+  private parseUpdateResponse(aiResponse: string): {
+    reasoning: string;
+    patch: Array<{ op: 'replace' | 'add' | 'remove'; path: string; value?: any; }>;
+    side_effects: Array<{ description: string; severity: 'low' | 'medium' | 'high'; }>;
+    risk_level: 'low' | 'medium' | 'high';
+  } {
+    try {
+      console.log(`🔍 解析更新AI响应: ${aiResponse.substring(0, 200)}...`);
+
+      let jsonText = aiResponse.trim();
+
+      // 提取JSON内容
+      const jsonMatch = jsonText.match(/```(?:json)?\n?([\s\S]*?)\n?```/) || 
+                       jsonText.match(/\{[\s\S]*\}/);
+      
+      if (jsonMatch) {
+        jsonText = jsonMatch[1] || jsonMatch[0];
+      }
+
+      const parsed = JSON.parse(jsonText);
+
+      // 验证并规范化数据
+      const result = {
+        reasoning: parsed.reasoning || '未提供修改理由',
+        patch: Array.isArray(parsed.patch) ? parsed.patch.filter(p => 
+          p.op && p.path && ['replace', 'add', 'remove'].includes(p.op)
+        ) : [],
+        side_effects: Array.isArray(parsed.side_effects) ? parsed.side_effects.filter(se => 
+          se.description && ['low', 'medium', 'high'].includes(se.severity)
+        ) : [],
+        risk_level: ['low', 'medium', 'high'].includes(parsed.risk_level) ? 
+          parsed.risk_level : 'medium'
+      };
+
+      console.log(`✅ 更新方案解析成功: ${result.patch.length} 个patch操作`);
+      return result;
+
+    } catch (error: any) {
+      console.error(`❌ 更新响应解析失败: ${error.message}`);
+      throw new Error(`更新响应解析失败: ${error.message}`);
+    }
+  }
+
+  /**
+   * 🔥 回退相关性检查方法
+   */
+  private fallbackRelevanceCheck(changeBrief: string, testCase: any): {
+    is_relevant: boolean;
+    relevance_score: number;
+    recall_reason: string;
+  } {
+    console.log(`⚠️ [AITestParser] 使用回退相关性检查`);
+
+    const caseText = `${testCase.title || ''} ${JSON.stringify(testCase.steps || {})}`.toLowerCase();
+    const changeText = changeBrief.toLowerCase();
+    
+    // 基于关键词匹配的简单相关性判断
+    const keywords = changeText.split(/\s+/).filter(w => w.length > 2);
+    let matchCount = 0;
+    
+    for (const keyword of keywords) {
+      if (caseText.includes(keyword)) {
+        matchCount++;
+      }
+    }
+    
+    const relevanceScore = matchCount / Math.max(keywords.length, 1);
+    const isRelevant = relevanceScore > 0.1;
+    
+    return {
+      is_relevant: isRelevant,
+      relevance_score: relevanceScore,
+      recall_reason: isRelevant ? 
+        `关键词匹配 ${matchCount}/${keywords.length} (回退模式)` : 
+        '无关键词匹配 (回退模式)'
+    };
+  }
+
+  /**
+   * 🔥 回退更新生成方法
+   */
+  private fallbackUpdateGeneration(changeBrief: string, testCase: any): {
+    reasoning: string;
+    patch: Array<{ op: 'replace' | 'add' | 'remove'; path: string; value?: any; }>;
+    side_effects: Array<{ description: string; severity: 'low' | 'medium' | 'high'; }>;
+    risk_level: 'low' | 'medium' | 'high';
+  } {
+    console.log(`⚠️ [AITestParser] 使用回退更新生成`);
+
+    const patches: Array<{ op: 'replace' | 'add' | 'remove'; path: string; value?: any; }> = [];
+    
+    // 简单的模式匹配更新
+    if (!testCase.steps || !Array.isArray(testCase.steps)) {
+      return {
+        reasoning: `测试用例步骤格式无效 (回退模式)`,
+        patch: [],
+        side_effects: [],
+        risk_level: 'low'
+      };
+    }
+
+    // 示例：如果变更涉及"弹窗"，则修改相关步骤
+    if (changeBrief.includes('弹窗') || changeBrief.includes('模态')) {
+      for (let i = 0; i < testCase.steps.length; i++) {
+        const step = testCase.steps[i];
+        if (step.description && step.description.includes('跳转')) {
+          patches.push({
+            op: 'replace',
+            path: `/steps/${i}/description`,
+            value: step.description.replace('跳转', '显示弹窗')
+          });
+        }
+      }
+    }
+
+    return {
+      reasoning: `基于变更描述"${changeBrief}"，使用模式匹配识别并修改了相关的测试步骤 (回退模式)`,
+      patch: patches,
+      side_effects: patches.length > 0 ? [{
+        description: '可能影响页面流转逻辑 (回退模式分析)',
+        severity: 'medium' as const
+      }] : [],
+      risk_level: patches.length > 2 ? 'high' : patches.length > 0 ? 'medium' : 'low'
+    };
   }
 }
