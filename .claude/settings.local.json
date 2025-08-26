@@ -42,5 +42,9 @@
       "Bash(# 检查3001端口占用\nnetstat -ano | grep :3001)"
     ],
     "deny": []
-  }
+  },
+  "enabledMcpjsonServers": [
+    "shrimp-task-manager"
+  ],
+  "enableAllProjectMcpServers": true
 }
