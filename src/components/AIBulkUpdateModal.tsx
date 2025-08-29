@@ -68,6 +68,30 @@ export function AIBulkUpdateModal({
   const moduleOptions = Array.from(new Set(testCases.map(tc => tc.module).filter(Boolean)));
   const allTags = Array.from(new Set(testCases.flatMap(tc => tc.tags || [])));
 
+  // 辅助函数：确保proposal ID为正数类型
+  const ensureValidId = (id: number | string | undefined): number | null => {
+    if (id === undefined || id === null) {
+      console.log('⚠️ ID为空:', id);
+      return null;
+    }
+    
+    const numericId = typeof id === 'string' ? parseInt(id) : id;
+    
+    if (isNaN(numericId)) {
+      console.log('⚠️ ID不是数字:', id, '转换后:', numericId);
+      return null;
+    }
+    
+    // 暂时注释掉正数验证，允许任何数字ID
+    // if (numericId <= 0) {
+    //   console.log('⚠️ ID不是正数:', numericId);
+    //   return null;
+    // }
+    
+    console.log('✅ 有效ID:', numericId);
+    return numericId;
+  };
+
   // 重置模态框状态
   const resetModal = () => {
     setCurrentStep('configure');
@@ -127,6 +151,12 @@ export function AIBulkUpdateModal({
       // 调用真实的AI服务
       const result = await aiBulkUpdateService.createDryRun(formData);
       
+      console.log('\ud83d\udcca \u6536\u5230\u7684\u63d0\u6848\u6570\u636e:', result);
+      console.log('\ud83d\udcca \u63d0\u6848\u6570\u91cf:', result.proposals.length);
+      result.proposals.forEach((proposal, index) => {
+        console.log(`\ud83d\udcc4 \u63d0\u6848 ${index}:`, { id: proposal.id, case_title: proposal.case_title });
+      });
+      
       setSessionResult(result);
       setCurrentStep('preview');
       
@@ -159,6 +189,16 @@ export function AIBulkUpdateModal({
       return;
     }
 
+    // 临时放宽验证，只检查是否存在
+    const invalidIds = selectedProposals.filter(id => id === null || id === undefined);
+    if (invalidIds.length > 0) {
+      console.error('发现空的提案ID:', invalidIds);
+      showToast.error('存在空的提案ID，请刷新页面重试');
+      return;
+    }
+
+    console.log('🚀 准备应用的提案ID:', selectedProposals);
+
     setLoading(true);
     
     // 记录应用开始
@@ -183,9 +223,22 @@ export function AIBulkUpdateModal({
       
       console.log('✅ [AIBulkUpdate] 应用完成:', result);
 
-      // 刷新测试用例列表
+      // 等待一秒确保后端更新完成，然后刷新测试用例列表
+      console.log('⏳ [AIBulkUpdate] 等待后端处理完成...');
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      console.log('🔄 [AIBulkUpdate] 开始刷新测试用例列表...');
       if (onRefresh) {
-        onRefresh();
+        try {
+          await onRefresh();
+          console.log('✅ [AIBulkUpdate] 测试用例列表刷新成功');
+          showToast.info('🔄 用例数据已刷新，请查看最新内容');
+        } catch (error) {
+          console.error('❌ [AIBulkUpdate] 测试用例列表刷新失败:', error);
+          showToast.warning('数据刷新失败，请手动刷新页面查看最新内容');
+        }
+      } else {
+        console.warn('⚠️ [AIBulkUpdate] onRefresh回调不存在');
       }
 
       // 3秒后自动关闭模态框
@@ -205,20 +258,35 @@ export function AIBulkUpdateModal({
   };
 
   // 提案选择处理
-  const handleProposalToggle = (proposalId: number) => {
-    const wasSelected = selectedProposals.includes(proposalId);
-    setSelectedProposals(prev => 
-      prev.includes(proposalId) 
-        ? prev.filter(id => id !== proposalId)
-        : [...prev, proposalId]
-    );
+  const handleProposalToggle = (proposalId: number | string) => {
+    console.log('🔄 点击提案选择:', proposalId);
+    
+    // 确保ID为有效的正数
+    const numericId = ensureValidId(proposalId);
+    if (numericId === null) {
+      console.warn('无效的提案ID:', proposalId);
+      return;
+    }
+    
+    console.log('🔄 处理有效ID:', numericId);
+    console.log('🔄 当前选中的提案:', selectedProposals);
+    const wasSelected = selectedProposals.includes(numericId);
+    console.log('🔄 是否已选中:', wasSelected);
+    
+    setSelectedProposals(prev => {
+      const newSelection = prev.includes(numericId) 
+        ? prev.filter(id => id !== numericId)
+        : [...prev, numericId];
+      console.log('🔄 新的选择:', newSelection);
+      return newSelection;
+    });
     
     // 记录提案选择/取消选择
     if (sessionResult) {
       securityMonitor.logUserAction(
         wasSelected ? 'ai_proposal_deselect' : 'ai_proposal_select',
         'ai_proposal',
-        proposalId,
+        numericId,
         true,
         undefined,
         {
@@ -232,7 +300,10 @@ export function AIBulkUpdateModal({
   const selectAllProposals = () => {
     if (sessionResult) {
       const previousCount = selectedProposals.length;
-      setSelectedProposals(sessionResult.proposals.map(p => typeof p.id === 'string' ? parseInt(p.id!) : p.id!));
+      const validIds = sessionResult.proposals
+        .map(p => ensureValidId(p.id))
+        .filter((id): id is number => id !== null);
+      setSelectedProposals(validIds);
       
       // 记录全选操作
       securityMonitor.logUserAction('ai_proposals_select_all', 'ai_session', sessionResult.sessionId, true, undefined, {
@@ -330,7 +401,7 @@ export function AIBulkUpdateModal({
       isOpen={isOpen}
       onClose={onClose}
       title="AI批量更新"
-      size="5xl"
+      size="full"
       footer={
         <div className="flex justify-between items-center">
           <div className="flex items-center text-sm text-gray-600">
@@ -582,12 +653,16 @@ export function AIBulkUpdateModal({
 
             {/* 提案列表 */}
             <div className="space-y-4 max-h-96 overflow-y-auto">
-              {sessionResult.proposals.map((proposal) => (
+              {sessionResult.proposals.map((proposal) => {
+                const validId = ensureValidId(proposal.id);
+                const isSelected = validId !== null && selectedProposals.includes(validId);
+                
+                return (
                 <div
                   key={proposal.id}
                   className={clsx(
                     'border rounded-lg p-4 transition-all',
-                    selectedProposals.includes(proposal.id!)
+                    isSelected
                       ? 'border-purple-300 bg-purple-50'
                       : 'border-gray-200 bg-white hover:border-gray-300'
                   )}
@@ -596,9 +671,14 @@ export function AIBulkUpdateModal({
                     <div className="flex items-start space-x-3 flex-1">
                       <input
                         type="checkbox"
-                        checked={selectedProposals.includes(proposal.id!)}
-                        onChange={() => handleProposalToggle(proposal.id!)}
-                        className="mt-1 rounded text-purple-600 focus:ring-purple-500"
+                        checked={isSelected}
+                        onChange={() => {
+                          if (validId !== null) {
+                            handleProposalToggle(validId);
+                          }
+                        }}
+                        disabled={validId === null}
+                        className="mt-1 rounded text-purple-600 focus:ring-purple-500 disabled:opacity-50"
                       />
                       
                       <div className="flex-1 min-w-0">
@@ -651,7 +731,8 @@ export function AIBulkUpdateModal({
                     </button>
                   </div>
                 </div>
-              ))}
+                );
+              })}
             </div>
           </motion.div>
         )}

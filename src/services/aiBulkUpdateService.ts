@@ -190,8 +190,28 @@ export class AIBulkUpdateService {
       const sessionResult: SessionResult = {
         sessionId: result.sessionId,
         status: result.status,
-        proposals: result.proposals?.map((p: any) => ({
-          id: typeof p.id === 'string' ? parseInt(p.id) : p.id,
+        proposals: result.proposals?.map((p: any) => {
+          // 确保ID为有效的正整数
+          let proposalId: number;
+          if (typeof p.id === 'string') {
+            proposalId = parseInt(p.id);
+            if (isNaN(proposalId) || proposalId <= 0) {
+              console.warn('无效的提案ID:', p.id);
+              return null; // 标记为无效，稍后过滤
+            }
+          } else if (typeof p.id === 'number') {
+            proposalId = p.id;
+            if (proposalId <= 0) {
+              console.warn('无效的提案ID:', p.id);
+              return null; // 标记为无效，稍后过滤
+            }
+          } else {
+            console.warn('提案ID类型无效:', p.id);
+            return null; // 标记为无效，稍后过滤
+          }
+          
+          return {
+          id: proposalId,
           session_id: p.session_id,
           case_id: p.case_id,
           case_title: p.case_title,
@@ -205,7 +225,8 @@ export class AIBulkUpdateService {
           apply_status: p.apply_status as 'pending' | 'applied' | 'skipped' | 'conflicted',
           created_at: p.created_at ? new Date(p.created_at) : undefined,
           applied_at: p.applied_at ? new Date(p.applied_at) : undefined
-        })) || [],
+        };
+        }).filter(p => p !== null) || [], // 过滤掉无效的提案
         totalCases: result.totalCases || 0,
         relevantCases: result.relevantCases || 0
       };

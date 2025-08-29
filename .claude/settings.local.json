@@ -43,8 +43,8 @@
     ],
     "deny": []
   },
+  "enableAllProjectMcpServers": true,
   "enabledMcpjsonServers": [
     "shrimp-task-manager"
-  ],
-  "enableAllProjectMcpServers": true
+  ]
 }

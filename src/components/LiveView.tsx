@@ -170,7 +170,7 @@ export const LiveView: React.FC<LiveViewProps> = React.memo(({ runId, testStatus
   }, [runId, testStatus, throttledOnFrameUpdate]);
 
   return (
-    <div className="live-view-container border rounded-lg overflow-hidden">
+    <div className="live-view-container w-full h-full flex flex-col border rounded-lg overflow-hidden">
       <div className="live-view-header bg-gray-100 p-3 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <div className={`live-indicator w-3 h-3 rounded-full ${
@@ -190,7 +190,7 @@ export const LiveView: React.FC<LiveViewProps> = React.memo(({ runId, testStatus
         )}
       </div>
       
-      <div className="live-view-content bg-black flex items-center justify-center">
+      <div className="live-view-content bg-black flex-1 min-h-0 flex items-center justify-center">
         {error ? (
           <div className="text-white text-center p-8">
             <div className="text-4xl mb-4">
@@ -219,9 +219,8 @@ export const LiveView: React.FC<LiveViewProps> = React.memo(({ runId, testStatus
         ) : (
           <img 
             ref={imgRef}
-            className="max-w-full max-h-full object-contain"
+            className="w-full h-full object-contain"
             alt="实时测试画面"
-            style={{ minHeight: '300px' }}
           />
         )}
       </div>

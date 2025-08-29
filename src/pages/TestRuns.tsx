@@ -5,7 +5,6 @@ import {
   Pause,
   RotateCcw,
   Download,
-  Eye,
   Clock,
   CheckCircle,
   XCircle,
@@ -64,7 +63,19 @@ export function TestRuns() {
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [stoppingTests, setStoppingTests] = useState<Set<string>>(new Set());
   const [showStopModal, setShowStopModal] = useState(false);
-  const [activeTab, setActiveTab] = useState<'logs' | 'live' | 'evidence' | 'queue'>('logs');
+  const [activeTab, setActiveTab] = useState<'logs' | 'live' | 'evidence' | 'queue'>(() => {
+    const saved = localStorage.getItem('tr-activeTab');
+    return saved === 'logs' || saved === 'live' || saved === 'evidence' || saved === 'queue' ? saved : 'logs';
+  });
+  useEffect(() => {
+    localStorage.setItem('tr-activeTab', activeTab);
+  }, [activeTab]);
+  const [isLiveFull, setIsLiveFull] = useState(false);
+  const [logLevels, setLogLevels] = useState({ info: true, success: true, warning: true, error: true });
+  const [logSearch, setLogSearch] = useState('');
+  const [autoScrollLogs, setAutoScrollLogs] = useState(true);
+  const logsContainerRef = React.useRef<HTMLDivElement | null>(null);
+  const [showAllLogs, setShowAllLogs] = useState(false);
   const [testToStop, setTestToStop] = useState<{ id: string; name: string; isSuite: boolean } | null>(null);
   const [showStopAllModal, setShowStopAllModal] = useState(false);
   const [stoppingAll, setStoppingAll] = useState(false);
@@ -499,23 +510,6 @@ export function TestRuns() {
     };
   }, [autoRefresh]); // 移除testRuns依赖，避免频繁重新设置
 
-  // 🔥 优化：使用useCallback缓存函数，避免子组件不必要的重渲染
-  const viewTestReport = useCallback(async (runId: string) => {
-    try {
-      setLoading(true);
-      const reportData = await testService.getTestReport(runId);
-      console.log('📊 加载测试报告数据:', reportData);
-      
-      // 导航到报告页面或在弹窗中显示
-      setSelectedRun(reportData.suiteRun || reportData.testRun);
-      setShowLogs(true);
-    } catch (error: any) {
-      console.error('加载测试报告失败:', error);
-      showToast.error('加载测试报告失败: ' + (error.message || '未知错误'));
-    } finally {
-      setLoading(false);
-    }
-  }, []);
 
   // 🔥 优化：缓存停止测试处理函数
   const handleStopTest = useCallback((testRun: TestRun) => {
@@ -733,6 +727,51 @@ export function TestRuns() {
     }
   };
 
+  // 🔎 日志过滤与搜索
+  const filteredLogs = useMemo(() => {
+    if (!selectedRun) return [];
+    const enabled = new Set<string>();
+    Object.entries(logLevels).forEach(([k, v]) => {
+      if (v) enabled.add(k);
+    });
+    const keyword = logSearch.trim().toLowerCase();
+    const logs = selectedRun.logs || [];
+    return logs.filter(log => {
+      const levelOk = enabled.has(log.level as string);
+      const keywordOk = keyword === '' || (log.message || '').toLowerCase().includes(keyword);
+      return levelOk && keywordOk;
+    });
+  }, [selectedRun, logLevels, logSearch]);
+
+  // 窗口化显示：默认仅渲染最近500条，可一键展开全部
+  const displayLogs = useMemo(() => {
+    if (!filteredLogs) return [];
+    if (showAllLogs) return filteredLogs;
+    const limit = 500;
+    return filteredLogs.length > limit ? filteredLogs.slice(-limit) : filteredLogs;
+  }, [filteredLogs, showAllLogs]);
+
+  // 🔍 日志关键字高亮工具
+  const escapeRegExp = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const highlightText = (text: string, keyword: string) => {
+    if (!keyword) return text;
+    try {
+      const regex = new RegExp(`(${escapeRegExp(keyword)})`, 'gi');
+      const parts = (text || '').split(regex);
+      return parts.map((part, i) =>
+        regex.test(part) ? (
+          <React.Fragment key={i}>
+            <mark className="bg-yellow-200 px-0.5 rounded">{part}</mark>
+          </React.Fragment>
+        ) : (
+          <React.Fragment key={i}>{part}</React.Fragment>
+        )
+      );
+    } catch {
+      return text;
+    }
+  };
+
   // 🔥 加强版日期格式化函数
   const safeFormat = (date: Date | null | undefined, formatStr: string): string => {
     try {
@@ -768,14 +807,12 @@ export function TestRuns() {
     run, 
     index, 
     onStopTest, 
-    onViewReport, 
     onViewLogs,
     isStoppingTest 
   }: {
     run: TestRun;
     index: number;
     onStopTest: (run: TestRun) => void;
-    onViewReport: (runId: string) => void;
     onViewLogs: (run: TestRun) => void;
     isStoppingTest: boolean;
   }) => (
@@ -893,21 +930,20 @@ export function TestRuns() {
             <Terminal className="h-4 w-4" />
           </motion.button>
           
-          <motion.button
-            whileHover={{ scale: 1.1 }}
-            whileTap={{ scale: 0.9 }}
-            onClick={() => onViewReport(run.id)}
-            className="p-2 text-gray-400 hover:text-green-600 transition-colors"
-            title="查看测试报告"
-          >
-            <Eye className="h-4 w-4" />
-          </motion.button>
         </div>
       </div>
     </motion.div>
   ), (prevProps, nextProps) => {
     // 🔥 自定义比较函数，只有关键属性变化时才重新渲染
-    return (
+  // 🔁 日志自动滚动到底部
+  useEffect(() => {
+    if (activeTab !== 'logs' || !autoScrollLogs) return;
+    const el = logsContainerRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+  }, [selectedRun?.id, selectedRun?.logs?.length, activeTab, autoScrollLogs]);
+
+  return (
       prevProps.run.id === nextProps.run.id &&
       prevProps.run.status === nextProps.run.status &&
       prevProps.run.progress === nextProps.run.progress &&
@@ -1092,7 +1128,6 @@ export function TestRuns() {
                   run={run}
                   index={index}
                   onStopTest={handleStopTest}
-                  onViewReport={viewTestReport}
                   onViewLogs={handleViewLogs}
                   isStoppingTest={stoppingTests.has(run.id)}
                 />
@@ -1114,12 +1149,18 @@ export function TestRuns() {
                 initial={{ scale: 0.95, opacity: 0 }}
                 animate={{ scale: 1, opacity: 1 }}
                 exit={{ scale: 0.95, opacity: 0 }}
-                className="bg-white rounded-xl shadow-xl max-w-4xl w-full max-h-[80vh] overflow-hidden"
+                className={clsx(
+                  "bg-white rounded-xl shadow-xl overflow-hidden flex flex-col",
+                  isLiveFull ? "w-[98vw] h-[94vh]" : "w-[min(96vw,1280px)] h-[85vh]"
+                )}
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby={`run-log-title-${selectedRun.id}`}
               >
                 <div className="px-6 py-4 border-b border-gray-200">
                   <div className="flex items-center justify-between">
                     <div>
-                      <h3 className="text-lg font-semibold text-gray-900">
+                      <h3 id={`run-log-title-${selectedRun.id}`} className="text-lg font-semibold text-gray-900">
                         测试执行日志: {selectedRun.name}
                       </h3>
                       <p className="text-sm text-gray-600 mt-1">
@@ -1159,61 +1200,139 @@ export function TestRuns() {
 
                 {/* 🔥 新增：实时流和证据查看器标签页 */}
                 <div className="px-6 py-4 border-b">
-                  <div className="flex space-x-4">
-                    <button
-                      onClick={() => setActiveTab('logs')}
-                      className={clsx(
-                        "px-4 py-2 rounded-lg font-medium transition-colors",
-                        activeTab === 'logs'
-                          ? "bg-blue-100 text-blue-700"
-                          : "text-gray-600 hover:text-gray-900"
-                      )}
-                    >
-                      执行日志
-                    </button>
-                    <button
-                      onClick={() => setActiveTab('live')}
-                      className={clsx(
-                        "px-4 py-2 rounded-lg font-medium transition-colors",
-                        activeTab === 'live'
-                          ? "bg-red-100 text-red-700"
-                          : "text-gray-600 hover:text-gray-900"
-                      )}
-                    >
-                      实时画面
-                    </button>
-                    <button
-                      onClick={() => setActiveTab('evidence')}
-                      className={clsx(
-                        "px-4 py-2 rounded-lg font-medium transition-colors",
-                        activeTab === 'evidence'
-                          ? "bg-green-100 text-green-700"
-                          : "text-gray-600 hover:text-gray-900"
-                      )}
-                    >
-                      测试证据
-                    </button>
-                    <button
-                      onClick={() => setActiveTab('queue')}
-                      className={clsx(
-                        "px-4 py-2 rounded-lg font-medium transition-colors",
-                        activeTab === 'queue'
-                          ? "bg-purple-100 text-purple-700"
-                          : "text-gray-600 hover:text-gray-900"
-                      )}
-                    >
-                      队列状态
-                    </button>
+                  <div className="flex items-center justify-between">
+                    <div className="flex space-x-4">
+                      <button
+                        onClick={() => setActiveTab('logs')}
+                        className={clsx(
+                          "px-4 py-2 rounded-lg font-medium transition-colors",
+                          activeTab === 'logs'
+                            ? "bg-blue-100 text-blue-700"
+                            : "text-gray-600 hover:text-gray-900"
+                        )}
+                      >
+                        执行日志
+                      </button>
+                      <button
+                        onClick={() => setActiveTab('live')}
+                        className={clsx(
+                          "px-4 py-2 rounded-lg font-medium transition-colors",
+                          activeTab === 'live'
+                            ? "bg-red-100 text-red-700"
+                            : "text-gray-600 hover:text-gray-900"
+                        )}
+                      >
+                        实时画面
+                      </button>
+                      <button
+                        onClick={() => setActiveTab('evidence')}
+                        className={clsx(
+                          "px-4 py-2 rounded-lg font-medium transition-colors",
+                          activeTab === 'evidence'
+                            ? "bg-green-100 text-green-700"
+                            : "text-gray-600 hover:text-gray-900"
+                        )}
+                      >
+                        测试证据
+                      </button>
+                      <button
+                        onClick={() => setActiveTab('queue')}
+                        className={clsx(
+                          "px-4 py-2 rounded-lg font-medium transition-colors",
+                          activeTab === 'queue'
+                            ? "bg-purple-100 text-purple-700"
+                            : "text-gray-600 hover:text-gray-900"
+                        )}
+                      >
+                        队列状态
+                      </button>
+                    </div>
+                    {activeTab === 'live' && (
+                      <button
+                        onClick={() => setIsLiveFull(v => !v)}
+                        className="px-3 py-2 text-sm rounded-md border border-gray-200 hover:bg-gray-50 text-gray-700"
+                        title={isLiveFull ? "退出全屏" : "近全屏查看"}
+                        aria-pressed={isLiveFull}
+                      >
+                        {isLiveFull ? "退出全屏" : "全屏"}
+                      </button>
+                    )}
                   </div>
                 </div>
 
                 {/* 标签页内容 */}
-                <div className="px-6 py-4">
+                <div className="px-6 py-4 flex-1 min-h-0">
                   {activeTab === 'logs' && (
-                    <div className="max-h-96 overflow-y-auto">
+                    <div ref={logsContainerRef} className="h-full min-h-0 overflow-y-auto" role="log" aria-live="polite" aria-relevant="additions">
+                      <div className="mb-3 flex flex-wrap items-center gap-3">
+                        <div className="flex items-center gap-3">
+                          <label className="flex items-center gap-1 text-xs">
+                            <input type="checkbox" className="rounded border-gray-300" checked={logLevels.info} onChange={(e) => setLogLevels(v => ({ ...v, info: e.target.checked }))} />
+                            <span className="text-blue-600">Info</span>
+                          </label>
+                          <label className="flex items-center gap-1 text-xs">
+                            <input type="checkbox" className="rounded border-gray-300" checked={logLevels.success} onChange={(e) => setLogLevels(v => ({ ...v, success: e.target.checked }))} />
+                            <span className="text-green-600">Success</span>
+                          </label>
+                          <label className="flex items-center gap-1 text-xs">
+                            <input type="checkbox" className="rounded border-gray-300" checked={logLevels.warning} onChange={(e) => setLogLevels(v => ({ ...v, warning: e.target.checked }))} />
+                            <span className="text-yellow-600">Warning</span>
+                          </label>
+                          <label className="flex items-center gap-1 text-xs">
+                            <input type="checkbox" className="rounded border-gray-300" checked={logLevels.error} onChange={(e) => setLogLevels(v => ({ ...v, error: e.target.checked }))} />
+                            <span className="text-red-600">Error</span>
+                          </label>
+                        </div>
+                        <input
+                          type="text"
+                          placeholder="搜索关键字"
+                          value={logSearch}
+                          onChange={(e) => setLogSearch(e.target.value)}
+                          className="px-2 py-1 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-200"
+                        />
+                        <div className="ml-auto flex items-center gap-3">
+                          <span className="text-xs text-gray-500">
+                            显示 {displayLogs.length}/{filteredLogs.length}
+                          </span>
+                          {filteredLogs.length > displayLogs.length && (
+                            <button
+                              onClick={() => setShowAllLogs(true)}
+                              className="px-2 py-1 text-xs border border-gray-300 rounded-md hover:bg-gray-50"
+                            >
+                              展开全部
+                            </button>
+                          )}
+                          {filteredLogs.length > 500 && showAllLogs && (
+                            <button
+                              onClick={() => setShowAllLogs(false)}
+                              className="px-2 py-1 text-xs border border-gray-300 rounded-md hover:bg-gray-50"
+                            >
+                              仅显示最近500条
+                            </button>
+                          )}
+                          <label className="flex items-center gap-2 text-xs">
+                            <input
+                              type="checkbox"
+                              className="rounded border-gray-300"
+                              checked={autoScrollLogs}
+                              onChange={(e) => setAutoScrollLogs(e.target.checked)}
+                            />
+                            自动滚动
+                          </label>
+                          <button
+                            onClick={() => {
+                              const el = logsContainerRef.current;
+                              if (el) el.scrollTop = el.scrollHeight;
+                            }}
+                            className="px-2 py-1 text-xs border border-gray-300 rounded-md hover:bg-gray-50"
+                          >
+                            跳到最新
+                          </button>
+                        </div>
+                      </div>
                       <div className="space-y-2">
-                        {selectedRun.logs.length > 0 ? (
-                          selectedRun.logs.map((log, index) => (
+                        {displayLogs.length > 0 ? (
+                          displayLogs.map((log, index) => (
                             <div
                               key={log.id || index}
                               className={clsx(
@@ -1229,8 +1348,8 @@ export function TestRuns() {
                               {getLogLevelIcon(log.level)}
                             </span>
                             <div className="flex-1">
-                              <div className={clsx("font-medium", getLogLevelColor(log.level))}>
-                                {log.message}
+                              <div className={clsx("font-medium break-words", getLogLevelColor(log.level))}>
+                                {highlightText(log.message, logSearch)}
                               </div>
                               <div className="text-xs text-gray-500 mt-1">
                                 {safeFormat(log.timestamp, 'HH:mm:ss.SSS')}
@@ -1250,27 +1369,29 @@ export function TestRuns() {
 
                 {/* 🔥 实时画面标签页 */}
                 {activeTab === 'live' && (
-                  <div className="max-h-96">
-                    <LiveView 
-                      runId={selectedRun.id}
-                      testStatus={selectedRun.status}
-                      onFrameUpdate={(timestamp) => {
-                        console.log('实时流帧更新:', timestamp);
-                      }}
-                    />
+                  <div className="h-full min-h-0">
+                    <div className="h-full rounded-lg overflow-hidden bg-black/5">
+                      <LiveView 
+                        runId={selectedRun.id}
+                        testStatus={selectedRun.status}
+                        onFrameUpdate={(timestamp) => {
+                          console.log('实时流帧更新:', timestamp);
+                        }}
+                      />
+                    </div>
                   </div>
                 )}
 
                 {/* 🔥 测试证据标签页 */}
                 {activeTab === 'evidence' && (
-                  <div className="max-h-96 overflow-y-auto">
+                  <div className="h-full min-h-0 overflow-y-auto">
                     <EvidenceViewer runId={selectedRun.id} />
                   </div>
                 )}
 
                 {/* 🔥 队列状态标签页 */}
                 {activeTab === 'queue' && (
-                  <div className="max-h-96 overflow-y-auto">
+                  <div className="h-full min-h-0 overflow-y-auto">
                     <QueueStatus />
                   </div>
                 )}

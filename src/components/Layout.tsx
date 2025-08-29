@@ -37,7 +37,7 @@ export function Layout({ children }: LayoutProps) {
   const currentPage = navigationItems.find(item => item.href === location.pathname);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800">
+    <div className="min-h-screen bg-[var(--color-bg-secondary)]">
       {/* Mobile sidebar overlay */}
       <AnimatePresence>
         {sidebarOpen && (
@@ -55,9 +55,9 @@ export function Layout({ children }: LayoutProps) {
               initial={{ x: -300 }}
               animate={{ x: 0 }}
               exit={{ x: -300 }}
-              className="fixed inset-y-0 left-0 flex w-72 flex-col bg-white/95 dark:bg-gray-900/95 backdrop-blur-xl shadow-2xl border-r border-gray-200/50 dark:border-gray-700/50"
+              className="fixed inset-y-0 left-0 flex w-72 flex-col bg-[var(--color-bg-primary)] shadow-lg border-r border-[var(--color-border)]"
             >
-              <div className="flex h-20 items-center justify-between px-6 border-b border-gray-200/50 dark:border-gray-700/50">
+              <div className="flex h-20 items-center justify-between px-6 border-b border-[var(--color-border)]">
                 <Logo size="md" showText={true} />
                 <motion.button
                   onClick={() => setSidebarOpen(false)}
@@ -85,14 +85,14 @@ export function Layout({ children }: LayoutProps) {
                         className={clsx(
                           'group flex items-center px-4 py-3 rounded-2xl text-base font-medium transition-all duration-300 relative overflow-hidden',
                           isActive
-                            ? 'bg-gradient-to-r from-blue-500 to-purple-600 text-white shadow-lg'
-                            : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-gray-100'
+                            ? 'bg-purple-600 text-white shadow-md'
+                            : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-secondary)] hover:text-[var(--color-text-primary)]'
                         )}
                       >
                         {/* Active indicator */}
                         {isActive && (
                           <motion.div
-                            className="absolute inset-0 bg-gradient-to-r from-blue-500 to-purple-600 rounded-2xl"
+                            className="absolute inset-0 bg-purple-600 rounded-2xl"
                             layoutId="activeBackground"
                             transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
                           />
@@ -120,8 +120,8 @@ export function Layout({ children }: LayoutProps) {
       </AnimatePresence>
 
       {/* Desktop sidebar */}
-      <div className="hidden lg:fixed lg:inset-y-0 lg:flex lg:w-72 lg:flex-col">
-        <div className="flex min-h-0 flex-1 flex-col bg-white/80 dark:bg-gray-900/80 backdrop-blur-xl border-r border-gray-200/50 dark:border-gray-700/50">
+        <div className="hidden lg:fixed lg:inset-y-0 lg:flex lg:w-72 lg:flex-col">
+          <div className="flex min-h-0 flex-1 flex-col bg-[var(--color-bg-primary)] border-r border-[var(--color-border)]">
           <div className="flex h-20 items-center px-6 border-b border-gray-200/50 dark:border-gray-700/50">
             <Logo size="lg" showText={true} />
           </div>
@@ -141,14 +141,14 @@ export function Layout({ children }: LayoutProps) {
                     className={clsx(
                       'group flex items-center px-4 py-3 rounded-2xl text-base font-medium transition-all duration-300 relative overflow-hidden',
                       isActive
-                        ? 'bg-gradient-to-r from-blue-500 to-purple-600 text-white shadow-lg'
-                        : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-gray-100'
+                        ? 'bg-purple-600 text-white shadow-md'
+                        : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-secondary)] hover:text-[var(--color-text-primary)]'
                     )}
                   >
                     {/* Active indicator */}
                     {isActive && (
                       <motion.div
-                        className="absolute inset-0 bg-gradient-to-r from-blue-500 to-purple-600 rounded-2xl"
+                        className="absolute inset-0 bg-purple-600 rounded-2xl"
                         layoutId="desktopActiveBackground"
                         transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
                       />
@@ -177,7 +177,7 @@ export function Layout({ children }: LayoutProps) {
       <div className="lg:pl-72">
         {/* Top navigation */}
         <motion.div 
-          className="sticky top-0 z-40 bg-white/80 dark:bg-gray-900/80 backdrop-blur-xl border-b border-gray-200/50 dark:border-gray-700/50"
+          className="sticky top-0 z-40 bg-[var(--color-bg-primary)] border-b border-[var(--color-border)]"
           initial={{ y: -20, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
           transition={{ duration: 0.3 }}

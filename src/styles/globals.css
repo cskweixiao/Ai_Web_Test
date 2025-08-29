@@ -1,7 +1,4 @@
 /* 全局样式和深色模式变量 */
-@import 'tailwindcss/base';
-@import 'tailwindcss/components';
-@import 'tailwindcss/utilities';
 
 /* CSS 变量定义 */
 :root {

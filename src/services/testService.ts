@@ -219,16 +219,29 @@ export class TestService {
   // 获取所有测试用例
   async getTestCases(): Promise<TestCase[]> {
     try {
-      const response = await fetch(`${API_BASE_URL}/tests/cases`);
+      console.log('🔄 [testService] 发送测试用例请求...');
+      // 添加时间戳防止缓存
+      const timestamp = new Date().getTime();
+      const response = await fetch(`${API_BASE_URL}/tests/cases?t=${timestamp}`, {
+        headers: {
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache',
+          'Expires': '0'
+        }
+      });
+      
+      console.log('📡 [testService] API响应状态:', response.status);
       const data = await response.json();
+      console.log('📄 [testService] API返回数据:', data);
       
       if (!data.success) {
         throw new Error(data.error || '获取测试用例失败');
       }
       
+      console.log('✅ [testService] 返回测试用例数量:', data.data?.length || 0);
       return data.data;
     } catch (error) {
-      console.error('获取测试用例失败:', error);
+      console.error('❌ [testService] 获取测试用例失败:', error);
       throw error;
     }
   }

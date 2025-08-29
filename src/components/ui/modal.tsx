@@ -1,13 +1,12 @@
 "use client"
 
 import * as React from "react"
+import clsx from "clsx"
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
   DialogTitle,
+  DialogDescription,
 } from "./dialog"
 import { Button } from "./button"
 import { X } from "lucide-react"
@@ -21,7 +20,29 @@ export interface ModalProps {
   footer?: React.ReactNode
   showCloseButton?: boolean
   closeOnClickOutside?: boolean
-  size?: "sm" | "md" | "lg" | "xl" | "2xl" | "3xl" | "full"
+  // 新增：更大尺寸和移动端表现
+  size?: "sm" | "md" | "lg" | "xl" | "2xl" | "3xl" | "wide" | "full"
+  // 新增：内容内边距
+  contentPadding?: "sm" | "md" | "lg"
+}
+
+const sizeClasses: Record<NonNullable<ModalProps["size"]>, string> = {
+  sm: "sm:max-w-sm",
+  md: "sm:max-w-md",
+  lg: "sm:max-w-lg",
+  xl: "sm:max-w-xl",
+  "2xl": "sm:max-w-2xl",
+  "3xl": "sm:max-w-3xl",
+  // wide：更大但有上限，桌面不爆屏
+  wide: "sm:max-w-[min(92vw,1200px)]",
+  // full：桌面也铺满宽度（谨慎使用）
+  full: "w-[95vw] h-[90vh] max-w-none max-h-none",
+}
+
+const paddingMap: Record<NonNullable<ModalProps["contentPadding"]>, string> = {
+  sm: "p-4",
+  md: "p-6",
+  lg: "p-8",
 }
 
 export function Modal({
@@ -33,68 +54,108 @@ export function Modal({
   footer,
   showCloseButton = true,
   closeOnClickOutside = true,
-  size = "md",
+  size = "xl",
+  contentPadding = "md",
 }: ModalProps) {
-  // Handle ESC key
+  // ESC 关闭
   React.useEffect(() => {
+    if (!isOpen) return
     const handleEsc = (event: KeyboardEvent) => {
       if (event.key === "Escape") onClose()
     }
-    
-    if (isOpen) {
-      window.addEventListener("keydown", handleEsc)
-    }
-    
+    window.addEventListener("keydown", handleEsc)
+    // 打开时锁定滚动
+    const prevOverflow = document.body.style.overflow
+    document.body.style.overflow = "hidden"
     return () => {
       window.removeEventListener("keydown", handleEsc)
+      document.body.style.overflow = prevOverflow
     }
   }, [isOpen, onClose])
 
-  // Size classes
-  const sizeClasses = {
-    sm: "max-w-sm",
-    md: "max-w-md",
-    lg: "max-w-lg",
-    xl: "max-w-xl",
-    "2xl": "max-w-2xl",
-    "3xl": "max-w-3xl",
-    full: "max-w-[95vw] w-full"
-  }
-
   return (
-    <Dialog open={isOpen} onOpenChange={closeOnClickOutside ? onClose : undefined}>
-      <DialogContent 
-        className={`${sizeClasses[size]} overflow-hidden`}
+    <Dialog
+      open={isOpen}
+      // 让遮罩点击仅在允许时触发关闭（配合 onInteractOutside 防御）
+      onOpenChange={(open) => {
+        if (!open && closeOnClickOutside) {
+          onClose()
+        }
+      }}
+    >
+      <DialogContent
+        // 容器：移动端更接近全屏，桌面居中，最大高度限制在 85vh，内部滚动
+        className={clsx(
+          "p-0 overflow-hidden flex flex-col",
+          size === "full" ? "" : "w-[96vw] sm:w-auto",          // full尺寸时不使用默认宽度
+          size === "full" ? "" : "max-h-[100vh] sm:max-h-[90vh]", // full尺寸时不使用默认高度
+          "rounded-none sm:rounded-2xl shadow-2xl",
+          sizeClasses[size]
+        )}
         onInteractOutside={(e) => {
           if (!closeOnClickOutside) {
             e.preventDefault()
           }
         }}
       >
-        {title && (
-          <DialogHeader>
-            <DialogTitle>{title}</DialogTitle>
-            {description && <DialogDescription>{description}</DialogDescription>}
-          </DialogHeader>
-        )}
-        
-        {showCloseButton && (
-          <div className="absolute right-4 top-4">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={onClose}
-              className="h-6 w-6 p-0 rounded-full"
-              aria-label="关闭"
-            >
-              <X className="h-4 w-4" />
-            </Button>
+        {/* Header - sticky，操作区始终可见 */}
+        {(title || showCloseButton || description) && (
+          <div
+            className={clsx(
+              "sticky top-0 z-10 border-b border-gray-200 bg-white",
+              paddingMap[contentPadding]
+            )}
+          >
+            <div className="flex items-start sm:items-center justify-between gap-4">
+              <div className="min-w-0">
+                {title && (
+                  <DialogTitle className="text-lg sm:text-xl font-semibold text-gray-900 truncate">
+                    {title}
+                  </DialogTitle>
+                )}
+                {description && (
+                  <DialogDescription className="mt-1 text-gray-600">
+                    {description}
+                  </DialogDescription>
+                )}
+              </div>
+              {showCloseButton && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={onClose}
+                  className="h-8 w-8 p-0 rounded-md hover:bg-gray-100"
+                  aria-label="关闭"
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              )}
+            </div>
           </div>
         )}
-        
-        <div className="py-4 px-1">{children}</div>
-        
-        {footer && <DialogFooter>{footer}</DialogFooter>}
+
+        {/* Body - 可滚动内容区 */}
+        <div
+          className={clsx(
+            "min-h-0 flex-1 overflow-y-auto",
+            paddingMap[contentPadding]
+          )}
+        >
+          {children}
+        </div>
+
+        {/* Footer - sticky，操作按钮始终可触达 */}
+        {footer && (
+          <div
+            className={clsx(
+              "sticky bottom-0 z-10 border-t border-gray-200 bg-white",
+              paddingMap[contentPadding],
+              "flex justify-end gap-3"
+            )}
+          >
+            {footer}
+          </div>
+        )}
       </DialogContent>
     </Dialog>
   )
@@ -114,11 +175,15 @@ export function ConfirmModal({
   onConfirm,
   variant = "default",
   isLoading = false,
+  contentPadding = "md",
+  size = "md",
   ...props
 }: ConfirmModalProps) {
   return (
     <Modal
       {...props}
+      size={size}
+      contentPadding={contentPadding}
       footer={
         <div className="flex justify-end gap-2 w-full">
           <Button
@@ -139,4 +204,4 @@ export function ConfirmModal({
       }
     />
   )
-} 
+}
