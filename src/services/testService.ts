@@ -220,15 +220,9 @@ export class TestService {
   async getTestCases(): Promise<TestCase[]> {
     try {
       console.log('🔄 [testService] 发送测试用例请求...');
-      // 添加时间戳防止缓存
+      // 添加时间戳防止缓存（移除CORS问题的HTTP头）
       const timestamp = new Date().getTime();
-      const response = await fetch(`${API_BASE_URL}/tests/cases?t=${timestamp}`, {
-        headers: {
-          'Cache-Control': 'no-cache, no-store, must-revalidate',
-          'Pragma': 'no-cache',
-          'Expires': '0'
-        }
-      });
+      const response = await fetch(`${API_BASE_URL}/tests/cases?t=${timestamp}`);
       
       console.log('📡 [testService] API响应状态:', response.status);
       const data = await response.json();

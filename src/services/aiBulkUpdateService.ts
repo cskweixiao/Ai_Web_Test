@@ -38,10 +38,21 @@ export interface SideEffect {
   severity: 'low' | 'medium' | 'high';
 }
 
+// 🔥 新增：简化的提案数据结构，只包含用户需要的核心信息
+export interface SimplifiedProposal {
+  id: number;
+  case_id: number;
+  case_title: string;
+  original_content: string;  // 修改前的用例内容
+  modified_content: string;  // 修改后的用例内容
+  apply_status: 'pending' | 'applied' | 'skipped' | 'conflicted';
+}
+
 export interface SessionResult {
   sessionId: number;
   status: string;
-  proposals: CasePatchProposal[];
+  proposals: CasePatchProposal[];  // 保留原有接口兼容性
+  simplifiedProposals?: SimplifiedProposal[];  // 🔥 新增简化提案
   totalCases: number;
   relevantCases: number;
 }
@@ -104,6 +115,55 @@ export class AIBulkUpdateService {
   }
 
   /**
+   * 🔥 新增：生成简化的提案内容
+   * @private
+   */
+  private generateSimplifiedContent(proposal: CasePatchProposal): { original: string; modified: string } {
+    try {
+      // 获取原始内容 - 这里需要从测试用例数据重构
+      let originalContent = `测试用例：${proposal.case_title || '未知标题'}`;
+      
+      // 如果有 diff_json，尝试重构原始内容
+      if (proposal.diff_json && proposal.diff_json.length > 0) {
+        const firstPatch = proposal.diff_json[0];
+        
+        // 根据 path 判断修改的是什么内容
+        if (firstPatch.path.includes('steps')) {
+          // 这是步骤修改
+          originalContent += `\n\n原始步骤：\n`;
+          // 这里应该从原始测试用例获取，暂时用占位符
+          originalContent += `步骤内容...`;
+        }
+      }
+      
+      // 生成修改后的内容
+      let modifiedContent = originalContent;
+      
+      // 应用所有的 patch 操作
+      if (proposal.diff_json && proposal.diff_json.length > 0) {
+        modifiedContent += `\n\n修改后：\n`;
+        proposal.diff_json.forEach((patch, index) => {
+          if (patch.op === 'replace' && patch.value) {
+            modifiedContent += `${index + 1}. ${patch.path}: ${JSON.stringify(patch.value)}\n`;
+          }
+        });
+      }
+      
+      return {
+        original: originalContent,
+        modified: modifiedContent
+      };
+      
+    } catch (error) {
+      console.error('生成简化内容失败:', error);
+      return {
+        original: `测试用例：${proposal.case_title || '未知标题'}`,
+        modified: `测试用例：${proposal.case_title || '未知标题'} (修改失败)`
+      };
+    }
+  }
+
+  /**
    * 通用请求方法
    */
   private async makeRequest(
@@ -112,7 +172,8 @@ export class AIBulkUpdateService {
   ): Promise<any> {
     const url = `${this.baseUrl}${endpoint}`;
     const defaultHeaders = {
-      'Content-Type': 'application/json',
+      'Content-Type': 'application/json; charset=utf-8',
+      'Accept': 'application/json; charset=utf-8',
       'x-user-id': this.getCurrentUserId()
     };
 
@@ -201,7 +262,8 @@ export class AIBulkUpdateService {
             }
           } else if (typeof p.id === 'number') {
             proposalId = p.id;
-            if (proposalId <= 0) {
+            // 🔥 修复：移除严格的正数验证，与组件层保持一致
+            if (isNaN(proposalId)) {
               console.warn('无效的提案ID:', p.id);
               return null; // 标记为无效，稍后过滤
             }
@@ -230,6 +292,25 @@ export class AIBulkUpdateService {
         totalCases: result.totalCases || 0,
         relevantCases: result.relevantCases || 0
       };
+
+      // 🔥 新增：生成简化的提案数据
+      const simplifiedProposals: SimplifiedProposal[] = sessionResult.proposals.map(proposal => {
+        const content = this.generateSimplifiedContent(proposal);
+        
+        return {
+          id: proposal.id!,
+          case_id: proposal.case_id,
+          case_title: proposal.case_title || '未知测试用例',
+          original_content: content.original,
+          modified_content: content.modified,
+          apply_status: proposal.apply_status
+        };
+      });
+
+      // 🔥 添加简化提案到结果中
+      sessionResult.simplifiedProposals = simplifiedProposals;
+      
+      console.log(`🎯 [AIBulkUpdateService] 生成了 ${simplifiedProposals.length} 个简化提案`);
 
       return sessionResult;
 

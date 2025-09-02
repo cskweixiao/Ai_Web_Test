@@ -212,7 +212,26 @@ const corsOptions = {
 app.use(cors(corsOptions));
 app.options('*', cors(corsOptions)); // Enable pre-flight for all routes
 
-app.use(express.json());
+// 🔥 优化：明确配置JSON中间件支持UTF-8编码和合适的大小限制
+app.use(express.json({ 
+  limit: '10mb',
+  type: 'application/json',
+  verify: (req, res, buf, encoding) => {
+    // 确保接收的数据使用UTF-8编码
+    if (encoding !== 'utf8' && encoding !== 'utf-8') {
+      const err = new Error('仅支持UTF-8编码的JSON数据');
+      (err as any).status = 400;
+      throw err;
+    }
+  }
+}));
+
+// 🔥 优化：设置默认字符编码
+app.use((req, res, next) => {
+  req.setEncoding && req.setEncoding('utf8');
+  res.setHeader('Content-Type', 'application/json; charset=utf-8');
+  next();
+});
 
 // 🔥 API路由将在startServer函数中注册，因为服务需要先初始化
 

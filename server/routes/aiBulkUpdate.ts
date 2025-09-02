@@ -9,6 +9,51 @@ import { authenticateUser, requireRoles, PermissionService, AuditActions } from 
 import { requireBulkUpdateFeature } from '../middleware/featureFlag.js';
 import Joi from 'joi';
 
+// 🔥 新增：UTF-8编码验证和修复函数
+function validateAndFixUTF8(text: string): string | null {
+  try {
+    if (!text || typeof text !== 'string') {
+      return null;
+    }
+    
+    // 移除无效的UTF-8字符和控制字符
+    let cleaned = text
+      .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '') // 移除控制字符
+      .replace(/[\uFFFD\uFFF0-\uFFFF]/g, '') // 移除替换字符和其他无效Unicode
+      .replace(/[^\u0000-\u007F\u4e00-\u9fff\u3040-\u309f\u30a0-\u30ff\uff00-\uffef\u2000-\u206f\u3000-\u303f]/g, ''); // 只保留ASCII、中文、日文、标点等
+    
+    // 修复乱码模式
+    cleaned = cleaned
+      .replace(/\uFFFD+/g, '') // 移除连续的替换字符
+      .replace(/����+/g, '') // 移除常见乱码模式
+      .replace(/Â·/g, '·') // 修复常见中文标点乱码
+      .replace(/â€/g, '"') // 修复引号乱码
+      .replace(/â€™/g, "'") // 修复单引号乱码
+      .trim();
+    
+    // 检查清理后的文本是否有意义
+    if (cleaned.length < 2) {
+      return null; // 太短无意义
+    }
+    
+    // 验证UTF-8编码完整性
+    const buffer = Buffer.from(cleaned, 'utf8');
+    const reconstructed = buffer.toString('utf8');
+    
+    if (reconstructed !== cleaned) {
+      console.warn('⚠️ [UTF8-Fix] 文本编码不完整，使用重构版本');
+      return reconstructed.length >= 2 ? reconstructed : null;
+    }
+    
+    console.log(`✅ [UTF8-Fix] 文本验证通过: "${cleaned.substring(0, 50)}${cleaned.length > 50 ? '...' : ''}"`);
+    return cleaned;
+    
+  } catch (error) {
+    console.error('❌ [UTF8-Fix] 编码验证失败:', error);
+    return null;
+  }
+}
+
 // 请求验证模式
 const bulkUpdateRequestSchema = Joi.object({
   system: Joi.string().required().trim().allow('').max(100), // 允许空字符串表示"所有系统"
@@ -86,8 +131,20 @@ export function createAiBulkUpdateRoutes(
 
       // 排除请求体中的userId，使用认证状态的用户ID
       const { userId: requestUserId, ...validatedData } = value;
+      
+      // 🔥 新增：UTF-8编码验证和修复
+      const cleanChangeBrief = validateAndFixUTF8(validatedData.changeBrief);
+      if (!cleanChangeBrief) {
+        return res.status(400).json({
+          ok: false,
+          error: '变更描述包含无效字符，请使用标准中文或英文字符',
+          code: 'ENCODING_ERROR'
+        });
+      }
+      
       const params = {
         ...validatedData,
+        changeBrief: cleanChangeBrief, // 使用清理后的文本
         userId: req.user!.id
       };
 

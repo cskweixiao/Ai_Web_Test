@@ -71,6 +71,7 @@ export function TestCases() {
   const [runningTestId, setRunningTestId] = useState<number | null>(null);
   const [testCases, setTestCases] = useState<TestCase[]>([]);
   const [loading, setLoading] = useState(false);
+  const [testCasesLoading, setTestCasesLoading] = useState(false);
   const [editingTestCase, setEditingTestCase] = useState<TestCase | null>(null);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deletingTestCase, setDeletingTestCase] = useState<TestCase | null>(null);
@@ -198,7 +199,7 @@ export function TestCases() {
   const loadTestCases = async () => {
     try {
       console.log('🔄 [TestCases] 开始重新加载测试用例...');
-      // 🔥 修复：使用独立的loading状态，避免与创建操作冲突
+      setTestCasesLoading(true);
       const cases = await testService.getTestCases();
       console.log('📊 [TestCases] 获取到测试用例数量:', cases?.length || 0);
       console.log('📋 [TestCases] 测试用例列表:', cases);
@@ -207,6 +208,8 @@ export function TestCases() {
     } catch (error) {
       console.error('❌ [TestCases] 加载测试用例失败:', error);
       setTestCases([]);
+    } finally {
+      setTestCasesLoading(false);
     }
   };
 
@@ -1078,7 +1081,7 @@ export function TestCases() {
       {activeTab === 'cases' ? (
         <>
           {/* Empty State - Test Cases */}
-          {testCases.length === 0 && !loading && (
+          {testCases.length === 0 && !testCasesLoading && (
             <div className="text-center py-16">
               <div className="mx-auto w-32 h-32 mb-6 rounded-full bg-gray-100 flex items-center justify-center">
                 <FileText className="h-16 w-16 text-gray-400" />
@@ -1124,7 +1127,7 @@ export function TestCases() {
           )}
 
           {/* Loading */}
-          {loading && (
+          {testCasesLoading && (
             <div className="text-center py-16">
               <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4 text-blue-600" />
               <p className="text-gray-600">加载中...</p>
@@ -1132,7 +1135,7 @@ export function TestCases() {
           )}
 
           {/* Test Cases Grid */}
-          {!loading && filteredTestCases.length > 0 && (
+          {!testCasesLoading && filteredTestCases.length > 0 && (
             <div className="grid gap-6">
               <AnimatePresence>
                 {filteredTestCases.map((testCase, index) => (

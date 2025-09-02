@@ -25,6 +25,7 @@ import {
   aiBulkUpdateService,
   type AIBulkUpdateParams,
   type CasePatchProposal,
+  type SimplifiedProposal,
   type JsonPatch,
   type SideEffect,
   type SessionResult
@@ -325,15 +326,7 @@ export function AIBulkUpdateModal({
     }
   };
 
-  // 风险等级颜色
-  const getRiskColor = (level: string) => {
-    switch (level) {
-      case 'high': return 'bg-red-100 text-red-800';
-      case 'medium': return 'bg-yellow-100 text-yellow-800';
-      case 'low': return 'bg-green-100 text-green-800';
-      default: return 'bg-gray-100 text-gray-800';
-    }
-  };
+  // 🔥 移除风险等级颜色函数 - 简化界面不再显示风险分析
 
   // 步骤指示器
   const StepIndicator = () => (
@@ -651,10 +644,13 @@ export function AIBulkUpdateModal({
               </div>
             </div>
 
-            {/* 提案列表 */}
+            {/* 提案列表 - 使用简化的提案数据 */}
             <div className="space-y-4 max-h-96 overflow-y-auto">
-              {sessionResult.proposals.map((proposal) => {
-                const validId = ensureValidId(proposal.id);
+              {(sessionResult.simplifiedProposals || sessionResult.proposals).map((proposal) => {
+                // 🔥 适配不同的数据源
+                const isSimplified = 'original_content' in proposal;
+                const proposalId = isSimplified ? proposal.id : proposal.id;
+                const validId = ensureValidId(proposalId);
                 const isSelected = validId !== null && selectedProposals.includes(validId);
                 
                 return (
@@ -682,43 +678,52 @@ export function AIBulkUpdateModal({
                       />
                       
                       <div className="flex-1 min-w-0">
-                        <h4 className="text-sm font-medium text-gray-900 mb-2">
-                          {proposal.case_title}
+                        <h4 className="text-sm font-medium text-gray-900 mb-3">
+                          📋 {isSimplified ? proposal.case_title : proposal.case_title}
                         </h4>
                         
-                        <div className="flex items-center space-x-4 mb-3">
-                          <span className={clsx(
-                            'inline-flex px-2 py-1 rounded-full text-xs font-medium',
-                            getRiskColor(proposal.risk_level)
-                          )}>
-                            {proposal.risk_level === 'high' ? '高风险' : 
-                             proposal.risk_level === 'medium' ? '中风险' : '低风险'}
-                          </span>
-                          
-                          <span className="text-xs text-gray-500 flex items-center">
-                            <Hash className="h-3 w-3 mr-1" />
-                            用例 #{proposal.case_id}
-                          </span>
-                        </div>
-                        
-                        <p className="text-sm text-gray-700 mb-2">
-                          <strong>AI分析：</strong>{proposal.ai_rationale}
-                        </p>
-                        
-                        <p className="text-sm text-gray-600">
-                          <strong>匹配原因：</strong>{proposal.recall_reason}
-                        </p>
-                        
-                        {proposal.side_effects && proposal.side_effects.length > 0 && (
-                          <div className="mt-2 p-2 bg-yellow-50 rounded border border-yellow-200">
-                            <p className="text-xs font-medium text-yellow-800 mb-1">⚠️ 潜在影响：</p>
-                            {proposal.side_effects.map((effect, idx) => (
-                              <p key={idx} className="text-xs text-yellow-700">
-                                • {effect.description} ({effect.severity === 'high' ? '高' : effect.severity === 'medium' ? '中' : '低'}严重性)
-                              </p>
-                            ))}
+                        {/* 🔥 简化显示：只显示修改前后对比 */}
+                        {isSimplified ? (
+                          <div className="space-y-4">
+                            {/* 修改前内容 */}
+                            <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+                              <div className="flex items-center mb-2">
+                                <span className="text-xs font-medium text-red-700 bg-red-100 px-2 py-1 rounded">修改前</span>
+                              </div>
+                              <pre className="text-xs text-red-700 whitespace-pre-wrap font-mono">
+                                {(proposal as SimplifiedProposal).original_content}
+                              </pre>
+                            </div>
+                            
+                            {/* 修改后内容 */}
+                            <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+                              <div className="flex items-center mb-2">
+                                <span className="text-xs font-medium text-green-700 bg-green-100 px-2 py-1 rounded">修改后</span>
+                              </div>
+                              <pre className="text-xs text-green-700 whitespace-pre-wrap font-mono">
+                                {(proposal as SimplifiedProposal).modified_content}
+                              </pre>
+                            </div>
+                          </div>
+                        ) : (
+                          /* 保留原有复杂显示作为兜底 */
+                          <div className="space-y-2">
+                            <div className="flex items-center space-x-4 mb-3">
+                              <span className="text-xs text-gray-500 flex items-center">
+                                <Hash className="h-3 w-3 mr-1" />
+                                用例 #{proposal.case_id}
+                              </span>
+                            </div>
+                            <p className="text-sm text-gray-700 mb-2">
+                              <strong>AI分析：</strong>{(proposal as CasePatchProposal).ai_rationale}
+                            </p>
+                            <p className="text-sm text-gray-600">
+                              <strong>匹配原因：</strong>{(proposal as CasePatchProposal).recall_reason}
+                            </p>
                           </div>
                         )}
+                        
+                        {/* 🔥 移除副作用显示 - 简化界面 */}
                       </div>
                     </div>
                     
@@ -773,12 +778,12 @@ export function AIBulkUpdateModal({
           </motion.div>
         )}
 
-        {/* 提案详情预览模态框 */}
+        {/* 🔥 简化的提案预览模态框 */}
         {previewingProposal && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-white rounded-lg p-6 max-w-2xl w-full max-h-[80vh] overflow-y-auto">
+            <div className="bg-white rounded-lg p-6 max-w-4xl w-full max-h-[80vh] overflow-y-auto">
               <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-semibold">变更详情预览</h3>
+                <h3 className="text-lg font-semibold">📋 用例修改预览</h3>
                 <button
                   onClick={() => setPreviewingProposal(null)}
                   className="p-1 hover:bg-gray-100 rounded"
@@ -788,31 +793,40 @@ export function AIBulkUpdateModal({
               </div>
               
               <div className="space-y-4">
-                <div>
-                  <h4 className="font-medium text-gray-900">测试用例：</h4>
-                  <p className="text-gray-700">{previewingProposal.case_title}</p>
+                <div className="text-center mb-6">
+                  <h4 className="text-lg font-medium text-gray-900">{previewingProposal.case_title}</h4>
+                  <p className="text-sm text-gray-500">用例 #{previewingProposal.case_id}</p>
                 </div>
                 
-                <div>
-                  <h4 className="font-medium text-gray-900">具体变更：</h4>
-                  <div className="bg-gray-50 p-3 rounded font-mono text-sm">
-                    {previewingProposal.diff_json.map((patch, idx) => (
-                      <div key={idx} className="mb-2">
-                        <span className="text-blue-600">{patch.op.toUpperCase()}</span>{' '}
-                        <span className="text-green-600">{patch.path}</span>
-                        {patch.value && (
-                          <div className="mt-1 pl-4 text-gray-700">
-                            → {JSON.stringify(patch.value)}
-                          </div>
-                        )}
-                      </div>
-                    ))}
+                {/* 🔥 简化显示：只显示修改前后对比 */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {/* 修改前内容 */}
+                  <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+                    <div className="flex items-center mb-3">
+                      <span className="text-sm font-medium text-red-700 bg-red-100 px-3 py-1 rounded-full">🔴 修改前</span>
+                    </div>
+                    <pre className="text-sm text-red-700 whitespace-pre-wrap font-mono leading-relaxed">
+                      {(() => {
+                        // 🔥 查找对应的简化提案来获取原始内容
+                        const simplifiedProposal = sessionResult?.simplifiedProposals?.find(sp => sp.case_id === previewingProposal.case_id);
+                        return simplifiedProposal?.original_content || `测试用例：${previewingProposal.case_title}\n\n原始内容...`;
+                      })()}
+                    </pre>
                   </div>
-                </div>
-                
-                <div>
-                  <h4 className="font-medium text-gray-900">AI分析说明：</h4>
-                  <p className="text-gray-700">{previewingProposal.ai_rationale}</p>
+                  
+                  {/* 修改后内容 */}
+                  <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                    <div className="flex items-center mb-3">
+                      <span className="text-sm font-medium text-green-700 bg-green-100 px-3 py-1 rounded-full">🟢 修改后</span>
+                    </div>
+                    <pre className="text-sm text-green-700 whitespace-pre-wrap font-mono leading-relaxed">
+                      {(() => {
+                        // 🔥 查找对应的简化提案来获取修改后内容
+                        const simplifiedProposal = sessionResult?.simplifiedProposals?.find(sp => sp.case_id === previewingProposal.case_id);
+                        return simplifiedProposal?.modified_content || `测试用例：${previewingProposal.case_title}\n\n修改后内容...`;
+                      })()}
+                    </pre>
+                  </div>
                 </div>
               </div>
             </div>

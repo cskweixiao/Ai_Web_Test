@@ -207,8 +207,8 @@ export class AIBulkUpdateService {
 
       console.log(`🤖 [AIBulkUpdateService] 生成了 ${proposals.length} 个修改提案`);
 
-      // 6. 保存提案到数据库
-      await this.savePatchProposals(session.id, proposals);
+      // 6. 保存提案到数据库并获取带ID的完整数据
+      const savedProposalsWithIds = await this.savePatchProposals(session.id, proposals);
 
       // 7. 通知完成
       this.wsManager.broadcast({
@@ -216,7 +216,7 @@ export class AIBulkUpdateService {
         payload: {
           sessionId: session.id,
           status: 'proposals_ready',
-          proposalCount: proposals.length
+          proposalCount: savedProposalsWithIds.length
         }
       });
 
@@ -225,9 +225,9 @@ export class AIBulkUpdateService {
       return {
         sessionId: session.id,
         status: 'proposals_ready',
-        proposals: proposals,
+        proposals: savedProposalsWithIds, // 🔥 关键修复：使用带ID的提案数据
         totalCases: relevantCases.length,
-        relevantCases: proposals.length
+        relevantCases: savedProposalsWithIds.length
       };
 
     } catch (error: any) {
@@ -559,32 +559,164 @@ export class AIBulkUpdateService {
    * @private
    */
   private async applySingleProposal(proposal: any): Promise<ApplyResult['results'][0]> {
-    console.log(`🔧 [AIBulkUpdateService] 应用提案: 用例 ${proposal.case_id}`);
+    console.log(`🔧 [AIBulkUpdateService] ===== 开始应用提案 =====`);
+    console.log(`🔧 [AIBulkUpdateService] 提案ID: ${proposal.id}`);
+    console.log(`🔧 [AIBulkUpdateService] 用例ID: ${proposal.case_id}`);
+    console.log(`🔧 [AIBulkUpdateService] 用例标题: ${proposal.test_cases.title}`);
+    console.log(`🔧 [AIBulkUpdateService] Patch操作数量: ${proposal.diff_json.length}`);
+
+    let version: any = null;
+    let originalSteps: any = null;
+    let newSteps: any = null;
+    let dbUpdateSuccess = false;
+    let proposalUpdateSuccess = false;
 
     try {
-      // 1. 创建版本备份
-      const version = await this.versionService.createVersion(proposal.case_id);
+      // 1. 记录原始数据详情
+      originalSteps = proposal.test_cases.steps;
+      console.log(`📋 [AIBulkUpdateService] 原始步骤数据类型: ${typeof originalSteps}`);
+      console.log(`📋 [AIBulkUpdateService] 原始步骤数据长度: ${typeof originalSteps === 'string' ? originalSteps.length : JSON.stringify(originalSteps).length} 字符`);
+      if (typeof originalSteps === 'string') {
+        console.log(`📋 [AIBulkUpdateService] 原始步骤内容预览: ${originalSteps.substring(0, 200)}${originalSteps.length > 200 ? '...' : ''}`);
+      } else {
+        console.log(`📋 [AIBulkUpdateService] 原始步骤内容预览: ${JSON.stringify(originalSteps).substring(0, 200)}...`);
+      }
+
+      // 2. 处理并记录JSON Patch详情
+      console.log(`🔧 [AIBulkUpdateService] JSON Patch详情:`);
+      console.log(`🔧 [AIBulkUpdateService] diff_json类型: ${typeof proposal.diff_json}`);
+      console.log(`🔧 [AIBulkUpdateService] diff_json原始值: ${JSON.stringify(proposal.diff_json).substring(0, 300)}...`);
       
-      // 2. 应用JSON Patch
-      const originalSteps = proposal.test_cases.steps;
-      const newSteps = this.applyJsonPatch(originalSteps, proposal.diff_json);
-
-      // 3. 更新测试用例
-      await this.prisma.test_cases.update({
-        where: { id: proposal.case_id },
-        data: { steps: newSteps }
-      });
-
-      // 4. 更新提案状态
-      await this.prisma.case_patch_proposals.update({
-        where: { id: proposal.id },
-        data: {
-          apply_status: 'applied',
-          applied_at: new Date()
+      // 🔥 确保diff_json是数组格式
+      let patches: any[];
+      if (typeof proposal.diff_json === 'string') {
+        try {
+          patches = JSON.parse(proposal.diff_json);
+          console.log(`🔧 [AIBulkUpdateService] diff_json从字符串解析为数组: ${patches.length} 个patch操作`);
+        } catch (parseError: any) {
+          console.error(`❌ [AIBulkUpdateService] diff_json解析失败: ${parseError.message}`);
+          throw new Error(`diff_json格式错误: ${parseError.message}`);
         }
+      } else if (Array.isArray(proposal.diff_json)) {
+        patches = proposal.diff_json;
+        console.log(`✅ [AIBulkUpdateService] diff_json已是数组格式: ${patches.length} 个patch操作`);
+      } else {
+        console.error(`❌ [AIBulkUpdateService] diff_json格式不支持: ${typeof proposal.diff_json}`);
+        throw new Error(`diff_json必须是数组或JSON字符串格式`);
+      }
+      
+      // 验证patches格式
+      if (!Array.isArray(patches)) {
+        console.error(`❌ [AIBulkUpdateService] 解析后的patches不是数组: ${typeof patches}`);
+        throw new Error(`解析后的patches必须是数组格式`);
+      }
+      
+      patches.forEach((patch: any, index: number) => {
+        console.log(`   Patch[${index}]: op=${patch.op}, path=${patch.path}, value=${JSON.stringify(patch.value).substring(0, 100)}${JSON.stringify(patch.value).length > 100 ? '...' : ''}`);
       });
+      
+      // 🔥 更新proposal.diff_json为正确格式供后续使用
+      proposal.diff_json = patches;
 
-      console.log(`✅ [AIBulkUpdateService] 提案应用成功: 用例 ${proposal.case_id} -> v${version.version}`);
+      // 3. 创建版本备份
+      console.log(`💾 [AIBulkUpdateService] 创建版本备份...`);
+      version = await this.versionService.createVersion(proposal.case_id);
+      console.log(`✅ [AIBulkUpdateService] 版本备份创建成功: v${version.version} (ID: ${version.id})`);
+      
+      // 4. 应用JSON Patch
+      console.log(`🔄 [AIBulkUpdateService] 开始应用JSON Patch...`);
+      try {
+        newSteps = this.applyJsonPatch(originalSteps, proposal.diff_json);
+        console.log(`✅ [AIBulkUpdateService] JSON Patch应用成功`);
+        console.log(`📋 [AIBulkUpdateService] 修改后步骤数据类型: ${typeof newSteps}`);
+        console.log(`📋 [AIBulkUpdateService] 修改后步骤数据长度: ${typeof newSteps === 'string' ? newSteps.length : JSON.stringify(newSteps).length} 字符`);
+        if (typeof newSteps === 'string') {
+          console.log(`📋 [AIBulkUpdateService] 修改后步骤内容预览: ${newSteps.substring(0, 200)}${newSteps.length > 200 ? '...' : ''}`);
+        } else {
+          console.log(`📋 [AIBulkUpdateService] 修改后步骤内容预览: ${JSON.stringify(newSteps).substring(0, 200)}...`);
+        }
+      } catch (patchError: any) {
+        console.error(`❌ [AIBulkUpdateService] JSON Patch应用失败: ${patchError.message}`);
+        console.error(`❌ [AIBulkUpdateService] Patch错误堆栈: ${patchError.stack}`);
+        throw new Error(`JSON Patch应用失败: ${patchError.message}`);
+      }
+
+      // 5. 数据验证检查
+      console.log(`🔍 [AIBulkUpdateService] 进行数据验证检查...`);
+      try {
+        // 检查数据长度限制 (假设数据库字段有长度限制)
+        const newStepsStr = typeof newSteps === 'string' ? newSteps : JSON.stringify(newSteps);
+        if (newStepsStr.length > 65535) { // TEXT字段限制
+          throw new Error(`修改后的数据过长: ${newStepsStr.length} 字符，超过65535字符限制`);
+        }
+        
+        // 检查JSON格式有效性
+        if (typeof newSteps === 'string') {
+          try {
+            JSON.parse(newSteps);
+          } catch (jsonError: any) {
+            throw new Error(`修改后的数据不是有效的JSON格式: ${jsonError.message}`);
+          }
+        }
+        
+        console.log(`✅ [AIBulkUpdateService] 数据验证通过`);
+      } catch (validationError: any) {
+        console.error(`❌ [AIBulkUpdateService] 数据验证失败: ${validationError.message}`);
+        throw new Error(`数据验证失败: ${validationError.message}`);
+      }
+
+      // 6. 更新测试用例到数据库
+      console.log(`💾 [AIBulkUpdateService] 开始更新测试用例到数据库...`);
+      console.log(`💾 [AIBulkUpdateService] 更新目标: test_cases表, ID=${proposal.case_id}`);
+      try {
+        const updateResult = await this.prisma.test_cases.update({
+          where: { id: proposal.case_id },
+          data: { steps: newSteps }
+        });
+        dbUpdateSuccess = true;
+        console.log(`✅ [AIBulkUpdateService] 数据库更新成功: 用例 ${proposal.case_id}`);
+        console.log(`✅ [AIBulkUpdateService] 更新后记录ID: ${updateResult.id}, 标题: ${updateResult.title}`);
+      } catch (dbError: any) {
+        console.error(`❌ [AIBulkUpdateService] 数据库更新失败: ${dbError.message}`);
+        console.error(`❌ [AIBulkUpdateService] 数据库错误代码: ${dbError.code}`);
+        console.error(`❌ [AIBulkUpdateService] 数据库错误详情: ${JSON.stringify(dbError, null, 2)}`);
+        console.error(`❌ [AIBulkUpdateService] 数据库错误堆栈: ${dbError.stack}`);
+        
+        // 具体分析常见数据库错误
+        if (dbError.code === 'P2002') {
+          throw new Error(`数据库唯一性约束冲突: ${dbError.message}`);
+        } else if (dbError.code === 'P2025') {
+          throw new Error(`要更新的记录不存在: 用例ID ${proposal.case_id}`);
+        } else if (dbError.message.includes('Data too long')) {
+          throw new Error(`数据过长，超出数据库字段限制: ${dbError.message}`);
+        } else if (dbError.message.includes('Invalid JSON')) {
+          throw new Error(`JSON格式错误，数据库无法存储: ${dbError.message}`);
+        } else {
+          throw new Error(`数据库更新失败: ${dbError.message} (代码: ${dbError.code || 'UNKNOWN'})`);
+        }
+      }
+
+      // 7. 更新提案状态
+      console.log(`📝 [AIBulkUpdateService] 开始更新提案状态...`);
+      try {
+        const proposalUpdateResult = await this.prisma.case_patch_proposals.update({
+          where: { id: proposal.id },
+          data: {
+            apply_status: 'applied',
+            applied_at: new Date()
+          }
+        });
+        proposalUpdateSuccess = true;
+        console.log(`✅ [AIBulkUpdateService] 提案状态更新成功: ${proposal.id} -> applied`);
+      } catch (proposalError: any) {
+        console.error(`❌ [AIBulkUpdateService] 提案状态更新失败: ${proposalError.message}`);
+        console.error(`❌ [AIBulkUpdateService] 提案错误堆栈: ${proposalError.stack}`);
+        // 提案状态更新失败不影响主要结果，但记录警告
+        console.warn(`⚠️ [AIBulkUpdateService] 测试用例更新成功但提案状态更新失败，请手动检查提案 ${proposal.id}`);
+      }
+
+      console.log(`🎉 [AIBulkUpdateService] ===== 提案应用完成 =====`);
+      console.log(`🎉 [AIBulkUpdateService] 用例 ${proposal.case_id} -> v${version.version} 更新成功`);
 
       return {
         proposalId: proposal.id,
@@ -594,17 +726,37 @@ export class AIBulkUpdateService {
       };
 
     } catch (error: any) {
-      // 更新提案状态为冲突
-      await this.prisma.case_patch_proposals.update({
-        where: { id: proposal.id },
-        data: { apply_status: 'conflicted' }
-      });
+      console.error(`❌ [AIBulkUpdateService] ===== 提案应用失败 =====`);
+      console.error(`❌ [AIBulkUpdateService] 提案ID: ${proposal.id}`);
+      console.error(`❌ [AIBulkUpdateService] 用例ID: ${proposal.case_id}`);
+      console.error(`❌ [AIBulkUpdateService] 错误信息: ${error.message}`);
+      console.error(`❌ [AIBulkUpdateService] 错误堆栈: ${error.stack}`);
+      console.error(`❌ [AIBulkUpdateService] 执行状态: 版本备份=${version ? '成功' : '失败'}, JSON Patch=${newSteps ? '成功' : '失败'}, 数据库更新=${dbUpdateSuccess ? '成功' : '失败'}, 提案更新=${proposalUpdateSuccess ? '成功' : '失败'}`);
+      
+      // 记录上下文信息
+      if (originalSteps) {
+        console.error(`❌ [AIBulkUpdateService] 原始数据长度: ${typeof originalSteps === 'string' ? originalSteps.length : JSON.stringify(originalSteps).length} 字符`);
+      }
+      if (newSteps) {
+        console.error(`❌ [AIBulkUpdateService] 修改后数据长度: ${typeof newSteps === 'string' ? newSteps.length : JSON.stringify(newSteps).length} 字符`);
+      }
+      
+      // 尝试更新提案状态为冲突
+      try {
+        await this.prisma.case_patch_proposals.update({
+          where: { id: proposal.id },
+          data: { apply_status: 'conflicted' }
+        });
+        console.log(`📝 [AIBulkUpdateService] 提案状态已标记为冲突: ${proposal.id}`);
+      } catch (statusError: any) {
+        console.error(`❌ [AIBulkUpdateService] 标记提案为冲突状态失败: ${statusError.message}`);
+      }
 
       return {
         proposalId: proposal.id,
         caseId: proposal.case_id,
         success: false,
-        error: error.message
+        error: `${error.message} [执行阶段: ${version ? 'JSON应用' : '版本备份'}${newSteps ? '/数据库更新' : ''}]`
       };
     }
   }
@@ -709,21 +861,33 @@ export class AIBulkUpdateService {
    * @private
    */
   private applyJsonPatch(original: any, patches: JsonPatch[]): any {
+    console.log(`🔧 [AIBulkUpdateService] ===== 开始应用JSON Patch =====`);
+    console.log(`🔧 [AIBulkUpdateService] 原始数据类型: ${typeof original}`);
+    console.log(`🔧 [AIBulkUpdateService] Patch数量: ${patches.length}`);
+
     // 🔥 处理JSON字符串格式的原始数据
     let result: any;
     if (typeof original === 'string') {
       try {
+        console.log(`📥 [AIBulkUpdateService] 开始解析JSON字符串...`);
+        console.log(`📥 [AIBulkUpdateService] 原始字符串长度: ${original.length} 字符`);
         result = JSON.parse(original);
-        console.log(`🔧 [AIBulkUpdateService] 解析JSON字符串原始数据成功`);
+        console.log(`✅ [AIBulkUpdateService] JSON字符串解析成功`);
+        console.log(`📋 [AIBulkUpdateService] 解析后对象键: ${Object.keys(result).join(', ')}`);
         
         // 🔥 转换数据格式：将steps字符串转换成AI期望的数组格式
         if (result.steps && typeof result.steps === 'string') {
+          console.log(`🔄 [AIBulkUpdateService] 开始转换steps格式...`);
+          console.log(`🔄 [AIBulkUpdateService] 原始steps类型: ${typeof result.steps}, 长度: ${result.steps.length}`);
+          
           const stepsText = result.steps.replace(/\\n/g, '\n');
           const stepLines = stepsText.split('\n').filter(line => line.trim());
+          console.log(`🔄 [AIBulkUpdateService] 分割后步骤行数: ${stepLines.length}`);
           
           result.steps = stepLines.map((line, index) => {
             // 清理步骤编号，统一格式
             const cleanLine = line.replace(/^\d+[、。.]?\s*/, '').trim();
+            console.log(`   步骤[${index}]: "${line}" -> "${cleanLine}"`);
             return {
               description: cleanLine,
               expectedResult: '', // 默认为空
@@ -731,51 +895,88 @@ export class AIBulkUpdateService {
             };
           });
           
-          console.log(`🔧 [AIBulkUpdateService] 步骤格式转换完成: ${stepLines.length} 个步骤转换为数组格式`);
+          console.log(`✅ [AIBulkUpdateService] 步骤格式转换完成: ${stepLines.length} 个步骤转换为数组格式`);
         }
         
-      } catch (error) {
+      } catch (error: any) {
         console.error(`❌ [AIBulkUpdateService] 解析JSON字符串失败: ${error.message}`);
+        console.error(`❌ [AIBulkUpdateService] 原始字符串预览: ${original.substring(0, 500)}${original.length > 500 ? '...' : ''}`);
         throw new Error(`原始数据格式无效: ${error.message}`);
       }
     } else {
+      console.log(`📋 [AIBulkUpdateService] 原始数据已是对象格式，进行深拷贝`);
       result = JSON.parse(JSON.stringify(original));
     }
     
-    for (const patch of patches) {
-      const pathParts = patch.path.split('/').filter(p => p);
+    console.log(`🔧 [AIBulkUpdateService] 开始逐个应用 ${patches.length} 个patch操作...`);
+    
+    for (let i = 0; i < patches.length; i++) {
+      const patch = patches[i];
+      console.log(`🎯 [AIBulkUpdateService] 应用Patch[${i}]: ${patch.op} "${patch.path}"`);
       
-      switch (patch.op) {
-        case 'replace':
-          this.setValueByPath(result, pathParts, patch.value);
-          break;
-        case 'add':
-          // 简化处理：暂时等同于replace
-          this.setValueByPath(result, pathParts, patch.value);
-          break;
-        case 'remove':
-          this.removeValueByPath(result, pathParts);
-          break;
+      const pathParts = patch.path.split('/').filter(p => p);
+      console.log(`🎯 [AIBulkUpdateService] 路径解析: [${pathParts.join(' -> ')}]`);
+      
+      try {
+        switch (patch.op) {
+          case 'replace':
+            console.log(`🔧 [AIBulkUpdateService] 执行替换操作...`);
+            console.log(`🔧 [AIBulkUpdateService] 新值: ${JSON.stringify(patch.value).substring(0, 200)}${JSON.stringify(patch.value).length > 200 ? '...' : ''}`);
+            this.setValueByPath(result, pathParts, patch.value);
+            console.log(`✅ [AIBulkUpdateService] 替换操作完成`);
+            break;
+          case 'add':
+            console.log(`🔧 [AIBulkUpdateService] 执行添加操作...`);
+            console.log(`🔧 [AIBulkUpdateService] 添加值: ${JSON.stringify(patch.value).substring(0, 200)}${JSON.stringify(patch.value).length > 200 ? '...' : ''}`);
+            // 简化处理：暂时等同于replace
+            this.setValueByPath(result, pathParts, patch.value);
+            console.log(`✅ [AIBulkUpdateService] 添加操作完成`);
+            break;
+          case 'remove':
+            console.log(`🔧 [AIBulkUpdateService] 执行删除操作...`);
+            this.removeValueByPath(result, pathParts);
+            console.log(`✅ [AIBulkUpdateService] 删除操作完成`);
+            break;
+          default:
+            console.error(`❌ [AIBulkUpdateService] 不支持的patch操作: ${patch.op}`);
+            throw new Error(`不支持的patch操作: ${patch.op}`);
+        }
+      } catch (patchError: any) {
+        console.error(`❌ [AIBulkUpdateService] Patch[${i}]操作失败: ${patchError.message}`);
+        console.error(`❌ [AIBulkUpdateService] 失败的patch: ${JSON.stringify(patch, null, 2)}`);
+        throw new Error(`Patch操作失败 (索引${i}): ${patchError.message}`);
       }
     }
+    
+    console.log(`✅ [AIBulkUpdateService] 所有Patch操作完成`);
     
     // 🔥 如果原始数据是字符串格式，返回字符串格式（保持数据库存储格式一致）
     if (typeof original === 'string') {
+      console.log(`🔄 [AIBulkUpdateService] 开始转换回字符串格式...`);
+      
       // 🔥 将数组格式的steps转换回字符串格式
       if (result.steps && Array.isArray(result.steps)) {
+        console.log(`🔄 [AIBulkUpdateService] 转换steps数组回字符串格式: ${result.steps.length} 个步骤`);
+        
         const stepsText = result.steps.map((step, index) => {
           const stepNum = index + 1;
-          return `${stepNum}、${step.description || ''}`;
+          const stepText = `${stepNum}、${step.description || ''}`;
+          console.log(`   步骤[${index}]: "${step.description}" -> "${stepText}"`);
+          return stepText;
         }).join('\n');
         
         result.steps = stepsText;
-        console.log(`🔧 [AIBulkUpdateService] 步骤数组转换回字符串格式: ${result.steps.length} 个字符`);
+        console.log(`✅ [AIBulkUpdateService] 步骤数组转换回字符串格式: ${result.steps.length} 个字符`);
       }
       
-      console.log(`🔧 [AIBulkUpdateService] 将修改结果转换回JSON字符串格式`);
-      return JSON.stringify(result);
+      console.log(`🔄 [AIBulkUpdateService] 将修改结果转换回JSON字符串格式...`);
+      const jsonResult = JSON.stringify(result);
+      console.log(`✅ [AIBulkUpdateService] 转换完成，结果长度: ${jsonResult.length} 字符`);
+      console.log(`🔧 [AIBulkUpdateService] ===== JSON Patch应用完成 =====`);
+      return jsonResult;
     }
     
+    console.log(`🔧 [AIBulkUpdateService] ===== JSON Patch应用完成 =====`);
     return result;
   }
 
@@ -784,41 +985,84 @@ export class AIBulkUpdateService {
    * @private
    */
   private setValueByPath(obj: any, path: string[], value: any): void {
-    // 🔥 添加调试日志
-    console.log(`🔧 [AIBulkUpdateService] setValueByPath调试:`, {
-      path: path,
-      pathString: '/' + path.join('/'),
-      objType: typeof obj,
-      obj: obj,
-      value: value
-    });
+    console.log(`🎯 [AIBulkUpdateService] ===== setValueByPath开始 =====`);
+    console.log(`🎯 [AIBulkUpdateService] 目标路径: /${path.join('/')}`);
+    console.log(`🎯 [AIBulkUpdateService] 根对象类型: ${typeof obj}`);
+    console.log(`🎯 [AIBulkUpdateService] 设置值类型: ${typeof value}, 值: ${JSON.stringify(value).substring(0, 100)}${JSON.stringify(value).length > 100 ? '...' : ''}`);
     
     let current = obj;
+    let currentPath = '';
+    
+    // 遍历路径直到倒数第二个元素
     for (let i = 0; i < path.length - 1; i++) {
       const key = path[i];
+      currentPath += (currentPath ? '/' : '') + key;
       
-      console.log(`🔧 [AIBulkUpdateService] 路径遍历[${i}]: key=${key}, currentType=${typeof current}`);
+      console.log(`🎯 [AIBulkUpdateService] 路径遍历[${i}/${path.length-1}]: key="${key}", 当前路径="${currentPath}"`);
+      console.log(`🎯 [AIBulkUpdateService] 当前对象类型: ${typeof current}, 键存在: ${key in current}`);
       
       // 🔥 增强类型检查，处理字符串类型的current
       if (typeof current === 'string') {
-        throw new Error(`路径 ${path.slice(0, i+1).join('/')} 指向字符串，无法继续访问属性 ${key}`);
+        const errorMsg = `路径 "${currentPath}" 指向字符串类型，无法继续访问属性 "${key}"`;
+        console.error(`❌ [AIBulkUpdateService] ${errorMsg}`);
+        throw new Error(errorMsg);
       }
       
-      if (!(key in current)) {
-        current[key] = {};
+      // 如果当前对象不是null且不是object，也无法继续
+      if (current !== null && typeof current !== 'object') {
+        const errorMsg = `路径 "${currentPath}" 指向 ${typeof current} 类型，无法继续访问属性 "${key}"`;
+        console.error(`❌ [AIBulkUpdateService] ${errorMsg}`);
+        throw new Error(errorMsg);
       }
+      
+      // 如果键不存在，创建空对象
+      if (!(key in current)) {
+        console.log(`🔧 [AIBulkUpdateService] 键 "${key}" 不存在，创建空对象`);
+        current[key] = {};
+      } else {
+        console.log(`✓ [AIBulkUpdateService] 键 "${key}" 已存在，类型: ${typeof current[key]}`);
+      }
+      
       current = current[key];
+      console.log(`🎯 [AIBulkUpdateService] 移动到下一级: ${typeof current}`);
     }
     
+    // 设置最终值
     const finalKey = path[path.length - 1];
-    console.log(`🔧 [AIBulkUpdateService] 设置最终值: key=${finalKey}, currentType=${typeof current}`);
+    const finalPath = currentPath + (currentPath ? '/' : '') + finalKey;
+    
+    console.log(`🎯 [AIBulkUpdateService] 准备设置最终值:`);
+    console.log(`🎯 [AIBulkUpdateService] 最终路径: "${finalPath}"`);
+    console.log(`🎯 [AIBulkUpdateService] 最终键: "${finalKey}"`);
+    console.log(`🎯 [AIBulkUpdateService] 目标对象类型: ${typeof current}`);
     
     // 🔥 最终赋值前也检查类型
     if (typeof current === 'string') {
-      throw new Error(`路径 ${path.join('/')} 的目标是字符串，无法设置属性 ${finalKey}`);
+      const errorMsg = `路径 "${finalPath}" 的目标是字符串类型，无法设置属性 "${finalKey}"`;
+      console.error(`❌ [AIBulkUpdateService] ${errorMsg}`);
+      throw new Error(errorMsg);
     }
     
+    if (current !== null && typeof current !== 'object') {
+      const errorMsg = `路径 "${finalPath}" 的目标是 ${typeof current} 类型，无法设置属性 "${finalKey}"`;
+      console.error(`❌ [AIBulkUpdateService] ${errorMsg}`);
+      throw new Error(errorMsg);
+    }
+    
+    // 记录旧值（如果存在）
+    const hasOldValue = finalKey in current;
+    const oldValue = hasOldValue ? current[finalKey] : undefined;
+    if (hasOldValue) {
+      console.log(`🔄 [AIBulkUpdateService] 替换现有值: ${typeof oldValue}, ${JSON.stringify(oldValue).substring(0, 100)}${JSON.stringify(oldValue).length > 100 ? '...' : ''}`);
+    } else {
+      console.log(`➕ [AIBulkUpdateService] 添加新属性`);
+    }
+    
+    // 执行赋值
     current[finalKey] = value;
+    
+    console.log(`✅ [AIBulkUpdateService] 值设置成功`);
+    console.log(`🎯 [AIBulkUpdateService] ===== setValueByPath完成 =====`);
   }
 
   /**
@@ -826,23 +1070,85 @@ export class AIBulkUpdateService {
    * @private
    */
   private removeValueByPath(obj: any, path: string[]): void {
+    console.log(`🗑️ [AIBulkUpdateService] ===== removeValueByPath开始 =====`);
+    console.log(`🗑️ [AIBulkUpdateService] 目标路径: /${path.join('/')}`);
+    console.log(`🗑️ [AIBulkUpdateService] 根对象类型: ${typeof obj}`);
+    
     let current = obj;
+    let currentPath = '';
+    
+    // 遍历路径直到倒数第二个元素
     for (let i = 0; i < path.length - 1; i++) {
       const key = path[i];
-      if (!(key in current)) return;
+      currentPath += (currentPath ? '/' : '') + key;
+      
+      console.log(`🗑️ [AIBulkUpdateService] 路径遍历[${i}/${path.length-1}]: key="${key}", 当前路径="${currentPath}"`);
+      console.log(`🗑️ [AIBulkUpdateService] 当前对象类型: ${typeof current}, 键存在: ${key in current}`);
+      
+      // 如果路径中任何一个键不存在，直接返回
+      if (!(key in current)) {
+        console.log(`ℹ️ [AIBulkUpdateService] 路径 "${currentPath}" 不存在，跳过删除操作`);
+        console.log(`🗑️ [AIBulkUpdateService] ===== removeValueByPath结束 (路径不存在) =====`);
+        return;
+      }
+      
+      // 检查类型安全
+      if (typeof current === 'string') {
+        console.error(`❌ [AIBulkUpdateService] 路径 "${currentPath}" 指向字符串类型，无法继续访问属性 "${key}"`);
+        return;
+      }
+      
+      if (current !== null && typeof current !== 'object') {
+        console.error(`❌ [AIBulkUpdateService] 路径 "${currentPath}" 指向 ${typeof current} 类型，无法继续访问属性 "${key}"`);
+        return;
+      }
+      
       current = current[key];
+      console.log(`🗑️ [AIBulkUpdateService] 移动到下一级: ${typeof current}`);
     }
-    delete current[path[path.length - 1]];
+    
+    // 删除最终键
+    const finalKey = path[path.length - 1];
+    const finalPath = currentPath + (currentPath ? '/' : '') + finalKey;
+    
+    console.log(`🗑️ [AIBulkUpdateService] 准备删除最终值:`);
+    console.log(`🗑️ [AIBulkUpdateService] 最终路径: "${finalPath}"`);
+    console.log(`🗑️ [AIBulkUpdateService] 最终键: "${finalKey}"`);
+    console.log(`🗑️ [AIBulkUpdateService] 目标对象类型: ${typeof current}`);
+    
+    // 检查最终键是否存在
+    if (!(finalKey in current)) {
+      console.log(`ℹ️ [AIBulkUpdateService] 最终键 "${finalKey}" 不存在，跳过删除操作`);
+      console.log(`🗑️ [AIBulkUpdateService] ===== removeValueByPath结束 (键不存在) =====`);
+      return;
+    }
+    
+    // 记录要删除的值
+    const valueToDelete = current[finalKey];
+    console.log(`🗑️ [AIBulkUpdateService] 即将删除的值类型: ${typeof valueToDelete}`);
+    console.log(`🗑️ [AIBulkUpdateService] 即将删除的值: ${JSON.stringify(valueToDelete).substring(0, 100)}${JSON.stringify(valueToDelete).length > 100 ? '...' : ''}`);
+    
+    // 执行删除
+    delete current[finalKey];
+    
+    console.log(`✅ [AIBulkUpdateService] 值删除成功`);
+    console.log(`🗑️ [AIBulkUpdateService] ===== removeValueByPath完成 =====`);
   }
 
   /**
-   * 保存提案到数据库
+   * 保存提案到数据库并返回带ID的完整提案数据
    * @private
    */
-  private async savePatchProposals(sessionId: number, proposals: CasePatchProposal[]): Promise<void> {
+  private async savePatchProposals(sessionId: number, proposals: CasePatchProposal[]): Promise<CasePatchProposal[]> {
     console.log(`💾 [AIBulkUpdateService] 保存 ${proposals.length} 个提案到数据库...`);
 
     try {
+      // 🔥 修复：截断过长的字段以符合数据库约束
+      const truncateString = (str: string | null | undefined, maxLength: number): string | null => {
+        if (!str) return null;
+        return str.length > maxLength ? str.substring(0, maxLength - 3) + '...' : str;
+      };
+
       const createData = proposals.map(p => ({
         session_id: sessionId,
         case_id: p.case_id,
@@ -850,18 +1156,58 @@ export class AIBulkUpdateService {
         ai_rationale: p.ai_rationale,
         side_effects: p.side_effects ? JSON.stringify(p.side_effects) : null,
         risk_level: p.risk_level,
-        recall_reason: p.recall_reason,
+        recall_reason: truncateString(p.recall_reason, 255),
         old_hash: p.old_hash,
         new_hash: p.new_hash,
         apply_status: p.apply_status,
         created_at: new Date()
       }));
 
+      // 🔥 修复：使用 createMany 保存后，立即查询带ID的完整数据
       await this.prisma.case_patch_proposals.createMany({
         data: createData
       });
 
-      console.log(`✅ [AIBulkUpdateService] 提案保存完成`);
+      // 🔥 关键修复：查询刚保存的提案，获取数据库生成的ID
+      const savedProposals = await this.prisma.case_patch_proposals.findMany({
+        where: {
+          session_id: sessionId
+        },
+        include: {
+          test_cases: {
+            select: {
+              id: true,
+              title: true
+            }
+          }
+        },
+        orderBy: {
+          created_at: 'desc'
+        },
+        take: proposals.length // 只获取最新的提案数量
+      });
+
+      console.log(`✅ [AIBulkUpdateService] 提案保存完成，返回 ${savedProposals.length} 个带ID的提案`);
+
+      // 🔥 转换为前端期望的格式
+      const formattedProposals: CasePatchProposal[] = savedProposals.map(p => ({
+        id: p.id,
+        session_id: p.session_id,
+        case_id: p.case_id,
+        case_title: p.test_cases.title,
+        diff_json: Array.isArray(p.diff_json) ? p.diff_json : JSON.parse(p.diff_json as string || '[]'),
+        ai_rationale: p.ai_rationale,
+        side_effects: Array.isArray(p.side_effects) ? p.side_effects : JSON.parse(p.side_effects as string || '[]'),
+        risk_level: p.risk_level as 'low' | 'medium' | 'high',
+        recall_reason: p.recall_reason,
+        old_hash: p.old_hash,
+        new_hash: p.new_hash,
+        apply_status: p.apply_status as 'pending' | 'applied' | 'skipped' | 'conflicted',
+        created_at: p.created_at,
+        applied_at: p.applied_at
+      }));
+
+      return formattedProposals;
 
     } catch (error: any) {
       console.error(`❌ [AIBulkUpdateService] 保存提案失败: ${error.message}`);
