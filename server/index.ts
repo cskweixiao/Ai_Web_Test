@@ -367,10 +367,17 @@ async function startServer() {
     // 🔥 初始化所有服务
     console.log('⚙️ 开始初始化所有服务...');
     
-    // 🔥 预安装浏览器（一次性操作）
-    console.log('🔧 开始浏览器预安装检查...');
-    await PlaywrightMcpClient.ensureBrowserInstalled();
-    console.log('✅ 浏览器预安装检查完成');
+    // 🔥 Phase 7: 优化浏览器预安装 - 条件性异步执行
+    const shouldPreInstallBrowser = process.env.PLAYWRIGHT_PRE_INSTALL_BROWSER !== 'false';
+    if (shouldPreInstallBrowser) {
+      console.log('🔧 开始浏览器预安装检查 (后台异步)...');
+      // 🚀 Phase 7: 异步执行，不阻塞服务器启动
+      PlaywrightMcpClient.ensureBrowserInstalled()
+        .then(() => console.log('✅ 浏览器预安装检查完成'))
+        .catch((error) => console.warn('⚠️ 浏览器预安装检查失败:', error.message));
+    } else {
+      console.log('⚡ 跳过浏览器预安装检查 (PLAYWRIGHT_PRE_INSTALL_BROWSER=false)');
+    }
 
     // 初始化Playwright客户端
     console.log('🔧 开始初始化MCP客户端...');

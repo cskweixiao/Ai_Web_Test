@@ -89,7 +89,11 @@ export class StreamService {
     
     const timer = setInterval(async () => {
       try {
-        console.log(`📸 [StreamService] 开始生成实时帧: ${runId}`);
+        // 🔥 优化：只在开发模式或每10次尝试时输出详细日志
+        const isVerboseLogging = process.env.NODE_ENV === 'development' || this.stats.totalAttempts % 10 === 0;
+        if (isVerboseLogging) {
+          console.log(`📸 [StreamService] 生成实时帧 (${this.stats.totalAttempts + 1}): ${runId.substring(0,8)}`);
+        }
         
         // 🔥 方案C：使用优化后的MCP截图（自动文件移动）
         const startTime = Date.now();
@@ -103,11 +107,15 @@ export class StreamService {
           // 🔥 确保目录存在
           if (!fs.existsSync(tempDir)) {
             fs.mkdirSync(tempDir, { recursive: true });
-            console.log(`📁 [StreamService] 创建目录: ${tempDir}`);
+            if (process.env.NODE_ENV === 'development') {
+              console.log(`📁 [StreamService] 创建目录: ${tempDir}`);
+            }
           }
           
-          console.log(`📸 [StreamService] 开始MCP截图 (循环修复版): ${runId}, 尝试次数: ${this.stats.totalAttempts}`);
-          console.log(`📁 [StreamService] 目标路径: ${tempPath}`);
+          // 🔥 优化：减少重复的截图日志，只在开发模式或关键节点输出
+          if (isVerboseLogging) {
+            console.log(`📸 [StreamService] MCP截图尝试 #${this.stats.totalAttempts}: ${runId.substring(0,8)}`);
+          }
           
           // 🔥 调用优化后的截图方法（自动处理文件移动）
           let mcpError = null;
@@ -132,25 +140,36 @@ export class StreamService {
               const stats = fs.statSync(tempPath);
               if (stats.size > 0) {
                 fileExists = true;
-                console.log(`✅ [StreamService] 文件验证成功: ${tempPath} (${stats.size}字节, 第${i + 1}次检查)`);
+                // 🔥 优化：只在开发模式输出文件验证详情
+                if (process.env.NODE_ENV === 'development') {
+                  console.log(`✅ [StreamService] 文件验证成功: ${stats.size}字节, 第${i + 1}次检查`);
+                }
                 break;
               }
             }
             if (i < maxWait - 1) {
-              console.log(`⏳ [StreamService] 等待文件生成... (${i + 1}/${maxWait}) [${runId.substring(0,8)}]`);
+              // 🔥 优化：减少等待日志频率，只输出关键信息
+              if (i === 0 || process.env.NODE_ENV === 'development') {
+                console.log(`⏳ [StreamService] 等待截图生成... (${i + 1}/${maxWait})`);
+              }
               
               // 🔥 修复：推送动态等待提示帧，不更新缓存
               try {
                 const waitingFrame = await this.createWaitingFrame(i + 1, maxWait);
                 await this.pushFrameWithoutCache(runId, waitingFrame);
-                console.log(`📺 [StreamService] 推送等待提示帧 (${i + 1}/${maxWait}): ${runId.substring(0,8)}`);
+                // 🔥 优化：只在开发模式输出推送详情
+                if (process.env.NODE_ENV === 'development') {
+                  console.log(`📺 [StreamService] 推送等待提示帧 (${i + 1}/${maxWait})`);
+                }
               } catch (waitingError) {
-                console.warn(`⚠️ [StreamService] 创建等待帧失败，使用缓存帧: ${waitingError.message}`);
+                // 🔥 优化：简化错误日志
+                if (process.env.NODE_ENV === 'development') {
+                  console.warn(`⚠️ [StreamService] 等待帧失败，使用缓存帧`);
+                }
                 // 降级：推送缓存帧但不更新缓存
                 const lastFrame = this.frameBuffer.get(runId);
                 if (lastFrame) {
                   await this.pushFrameWithoutCache(runId, lastFrame);
-                  console.log(`📺 [StreamService] 等待期间推送缓存帧(不更新): ${runId.substring(0,8)}`);
                 }
               }
               
@@ -165,7 +184,6 @@ export class StreamService {
           
           // 读取截图文件并转换为JPEG
           const imageBuffer = fs.readFileSync(tempPath);
-          console.log(`📖 [StreamService] 读取图片文件: ${imageBuffer.length}字节`);
           
           const jpegBuffer = await sharp(imageBuffer)
             .jpeg({ quality: this.config.jpegQuality })
@@ -175,11 +193,13 @@ export class StreamService {
           this.stats.successfulScreenshots++;
           this.updateAverageProcessingTime(processingTime);
           
-          console.log(`✅ [StreamService] MCP截图成功: ${runId}, 处理时间: ${processingTime}ms, 成功率: ${(this.stats.successfulScreenshots / this.stats.totalAttempts * 100).toFixed(1)}%`);
-          console.log(`🔄 [StreamService] 图片处理: ${imageBuffer.length}字节 -> ${jpegBuffer.length}字节`);
+          // 🔥 优化：合并成功日志，减少输出频率
+          if (isVerboseLogging) {
+            const successRate = (this.stats.successfulScreenshots / this.stats.totalAttempts * 100).toFixed(1);
+            console.log(`✅ [StreamService] 截图成功: ${runId.substring(0,8)}, ${processingTime}ms, 成功率: ${successRate}%`);
+          }
           
           await this.pushFrameAndUpdateCache(runId, jpegBuffer);
-          console.log(`📤 [StreamService] 推送真实截图完成: ${runId}`);
           
           // 清理临时文件
           try {
@@ -229,10 +249,13 @@ export class StreamService {
             </svg>`;
             
             const buffer = await sharp(Buffer.from(svg)).jpeg({ quality: 70 }).toBuffer();
-            console.log(`🎨 [StreamService] 生成时钟帧: ${runId.substring(0,8)}, 大小: ${buffer.length}字节`);
+            
+            // 🔥 优化：时钟帧日志仅在开发模式或首次生成时输出
+            if (process.env.NODE_ENV === 'development' || this.stats.fallbackFrames === 1) {
+              console.log(`🎨 [StreamService] 生成时钟帧: ${runId.substring(0,8)}`);
+            }
             
             await this.pushFrameWithoutCache(runId, buffer);
-            console.log(`📤 [StreamService] 推送时钟帧完成: ${runId.substring(0,8)}`);
           } catch (clockError) {
             console.error(`❌ [StreamService] 时钟帧生成失败: ${runId}`, clockError);
             
@@ -463,9 +486,15 @@ export class StreamService {
       // 🔥 修复：条件性缓存更新
       if (updateCache) {
         this.frameBuffer.set(runId, processedFrame);
-        console.log(`💾 [StreamService] 缓存已更新: ${runId}`);
+        // 🔥 优化：缓存更新日志仅在开发模式输出
+        if (process.env.NODE_ENV === 'development') {
+          console.log(`💾 [StreamService] 缓存已更新: ${runId.substring(0,8)}`);
+        }
       } else {
-        console.log(`📤 [StreamService] 推送临时帧，不更新缓存: ${runId}`);
+        // 🔥 优化：临时帧推送日志仅在开发模式输出
+        if (process.env.NODE_ENV === 'development') {
+          console.log(`📤 [StreamService] 推送临时帧，不更新缓存: ${runId.substring(0,8)}`);
+        }
       }
       
     } catch (error) {

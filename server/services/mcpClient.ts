@@ -1098,10 +1098,29 @@ export class PlaywrightMcpClient {
   }
 
 
-  async waitForLoad(): Promise<void> {
+  async waitForLoad(isFirstStep: boolean = false): Promise<void> {
     if (!this.isInitialized || !this.client) return;
     try {
-      // 🚀 修复getComputedStyle错误：增强页面稳定性等待
+      // 🔥 优化：第一步导航使用快速模式，避免长时间等待
+      if (isFirstStep) {
+        console.log('⚡ 第一步导航：使用快速等待模式...');
+        // 只等待基本的页面就绪，不等待网络空闲
+        try {
+          await Promise.race([
+            this.client.callTool({
+              name: this.useAlternativeToolNames ? 'browser_wait' : 'mcp_playwright_browser_wait',
+              arguments: { state: 'domcontentloaded' }
+            }),
+            new Promise<void>((resolve) => setTimeout(resolve, 2000)) // 最多等待2秒
+          ]);
+        } catch (error) {
+          console.log('⚡ 第一步快速等待超时，直接继续');
+        }
+        console.log('✅ 第一步快速等待完成');
+        return;
+      }
+
+      // 🚀 非第一步：使用完整的页面稳定性等待
       console.log('⏳ 开始等待页面完全稳定...');
       
       // 1. 等待网络空闲
@@ -1155,6 +1174,69 @@ export class PlaywrightMcpClient {
           console.log('⚠️ DOM稳定性检查超时，继续执行');
         }
       }
+    }
+  }
+
+  // 🚀 修复Bug：实现缺失的页面完全加载等待方法
+  async waitForPageFullyLoaded(): Promise<void> {
+    if (!this.isInitialized || !this.client) return;
+    
+    try {
+      console.log('⏳ 等待页面完全加载...');
+      
+      // 1. 等待页面基本加载完成
+      await this.client.callTool({
+        name: this.useAlternativeToolNames ? 'browser_wait' : 'mcp_playwright_browser_wait',
+        arguments: { state: 'domcontentloaded' }
+      });
+      
+      // 2. 等待网络请求完成
+      await this.client.callTool({
+        name: this.useAlternativeToolNames ? 'browser_wait' : 'mcp_playwright_browser_wait',
+        arguments: { state: 'networkidle' }
+      });
+      
+      // 3. 额外等待，确保动态内容加载完成
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      console.log('✅ 页面完全加载完成');
+    } catch (error) {
+      console.warn('⚠️ 页面完全加载等待失败:', error);
+      // 降级：简单等待
+      await new Promise(resolve => setTimeout(resolve, 2000));
+    }
+  }
+
+  // 🚀 修复Bug：实现缺失的页面稳定性检查方法
+  async waitForPageStability(): Promise<void> {
+    if (!this.isInitialized || !this.client) return;
+    
+    try {
+      console.log('⏳ 检查页面稳定性...');
+      
+      // 检查页面URL是否稳定（防止重定向中断）
+      let previousUrl = await this.getCurrentUrl();
+      await new Promise(resolve => setTimeout(resolve, 500));
+      let currentUrl = await this.getCurrentUrl();
+      
+      // 如果URL还在变化，继续等待
+      if (previousUrl !== currentUrl) {
+        console.log(`🔄 页面正在跳转: ${previousUrl} → ${currentUrl}`);
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
+        // 再次检查
+        currentUrl = await this.getCurrentUrl();
+        console.log(`✅ 页面跳转完成: ${currentUrl}`);
+      }
+      
+      // 等待DOM稳定
+      await this.waitForDOMStable(2);
+      
+      console.log('✅ 页面稳定性检查完成');
+    } catch (error) {
+      console.warn('⚠️ 页面稳定性检查失败:', error);
+      // 降级：固定等待
+      await new Promise(resolve => setTimeout(resolve, 1500));
     }
   }
 

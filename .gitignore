@@ -77,11 +77,13 @@ screenshots/assertion-*-failed.png
 screenshots/index/
 screenshots/*_screenshots.json
 
-# PNG files (except public assets and screenshots)
+# PNG files (except public assets)
 *.png
 !public/*.png
 !src/assets/*.png
-!screenshots/*.png
+
+# Screenshots directory (completely ignored)
+screenshots/
 
 # Cache and IDE files
 .bolt/
