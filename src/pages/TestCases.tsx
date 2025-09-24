@@ -19,7 +19,8 @@ import {
   FolderOpen,
   Package,
   HelpCircle,
-  Bot
+  Bot,
+  RotateCcw
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { Layout } from '../components/Layout';
@@ -32,6 +33,7 @@ import { showToast } from '../utils/toast';
 import  {AIBulkUpdateModal}  from '../components/AIBulkUpdateModal';
 import { aiBulkUpdateService } from '../services/aiBulkUpdateService';
 import { TagInput } from '../components/ui/TagInput';
+import { TestCaseTable } from '../components/TestCaseTable';
 
 // 表单数据接口
 interface CreateTestCaseForm {
@@ -72,6 +74,14 @@ export function TestCases() {
   const [testCases, setTestCases] = useState<TestCase[]>([]);
   const [loading, setLoading] = useState(false);
   const [testCasesLoading, setTestCasesLoading] = useState(false);
+
+  // 🔥 新增：分页状态管理
+  const [pagination, setPagination] = useState({
+    page: 1,
+    pageSize: 10,
+    total: 0,
+    totalPages: 0
+  });
   const [editingTestCase, setEditingTestCase] = useState<TestCase | null>(null);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deletingTestCase, setDeletingTestCase] = useState<TestCase | null>(null);
@@ -141,9 +151,11 @@ export function TestCases() {
     }
   };
 
-  // 加载测试用例和测试套件
+  // 🔥 初始化加载 - 默认加载第一页10条数据
   useEffect(() => {
-    loadTestCases();
+    // 设置默认分页参数
+    setPagination({ page: 1, pageSize: 10, total: 0, totalPages: 0 });
+    loadTestCases({ page: 1, pageSize: 10, resetPagination: true });
     loadTestSuites();
     checkAIBulkUpdateAvailability();
     
@@ -196,18 +208,59 @@ export function TestCases() {
     };
   }, []);
 
-  const loadTestCases = async () => {
+  // 🔥 新增：分页加载测试用例
+  const loadTestCases = async (params?: {
+    page?: number;
+    pageSize?: number;
+    resetPagination?: boolean;
+  }) => {
     try {
       console.log('🔄 [TestCases] 开始重新加载测试用例...');
       setTestCasesLoading(true);
-      const cases = await testService.getTestCases();
-      console.log('📊 [TestCases] 获取到测试用例数量:', cases?.length || 0);
-      console.log('📋 [TestCases] 测试用例列表:', cases);
-      setTestCases(cases || []);
+
+      const currentPage = params?.page ?? pagination.page;
+      const currentPageSize = params?.pageSize ?? pagination.pageSize;
+
+      const result = await testService.getTestCasesPaginated({
+        page: currentPage,
+        pageSize: currentPageSize,
+        search: searchTerm, // 🔥 改为使用searchTerm而非searchQuery
+        tag: selectedTag,
+        priority: selectedPriority,
+        status: '',
+        system: selectedSystem
+      });
+
+      console.log('📊 [TestCases] 获取到分页数据:', {
+        count: result.data?.length || 0,
+        total: result.pagination.total,
+        page: result.pagination.page
+      });
+
+      setTestCases(result.data || []);
+
+      // 更新分页信息
+      if (params?.resetPagination) {
+        setPagination({
+          page: 1,
+          pageSize: currentPageSize,
+          total: result.pagination.total,
+          totalPages: result.pagination.totalPages
+        });
+      } else {
+        setPagination({
+          page: result.pagination.page,
+          pageSize: result.pagination.pageSize,
+          total: result.pagination.total,
+          totalPages: result.pagination.totalPages
+        });
+      }
+
       console.log('✅ [TestCases] 测试用例状态已更新');
     } catch (error) {
       console.error('❌ [TestCases] 加载测试用例失败:', error);
       setTestCases([]);
+      setPagination(prev => ({ ...prev, total: 0, totalPages: 0 }));
     } finally {
       setTestCasesLoading(false);
     }
@@ -681,17 +734,7 @@ export function TestCases() {
   const systemOptions = Array.from(new Set(testCases.map(tc => tc.system).filter(Boolean)));
   const moduleOptions = Array.from(new Set(testCases.map(tc => tc.module).filter(Boolean)));
 
-  // 过滤测试用例，确保处理可选字段
-  const filteredTestCases = testCases.filter(testCase => {
-    const matchesSearch = testCase.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                         testCase.steps.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                         (testCase.assertions ? testCase.assertions.toLowerCase().includes(searchQuery.toLowerCase()) : false);
-    const matchesTag = selectedTag === '' || (testCase.tags && testCase.tags.includes(selectedTag));
-    const matchesPriority = selectedPriority === '' || testCase.priority === selectedPriority;
-    const matchesSystem = selectedSystem === '' || testCase.system === selectedSystem;
-    
-    return matchesSearch && matchesTag && matchesPriority && matchesSystem;
-  });
+  // 🔥 移除前端过滤逻辑：现在由后端分页API处理所有过滤
 
   // 🔥 新增：过滤测试套件
   const filteredTestSuites = testSuites.filter(testSuite => {
@@ -853,13 +896,35 @@ export function TestCases() {
     }
   }, [showCreateModal, activeTab, stepsExpanded]);
 
-  // 搜索词去抖
-  useEffect(() => {
-    const t = setTimeout(() => {
-      setSearchQuery(searchTerm);
-    }, 250);
-    return () => clearTimeout(t);
-  }, [searchTerm]);
+  // 🔥 新增：分页控制函数
+  const handlePageChange = (page: number) => {
+    console.log('📄 [TestCases] 切换页码:', page);
+    loadTestCases({ page });
+  };
+
+  const handlePageSizeChange = (pageSize: number) => {
+    console.log('📏 [TestCases] 切换页面大小:', pageSize);
+    loadTestCases({ page: 1, pageSize, resetPagination: true });
+  };
+
+  // 🔥 新增：手动搜索功能
+  const handleSearch = () => {
+    console.log('🔍 [TestCases] 执行手动搜索:', { searchTerm, selectedTag, selectedPriority, selectedSystem });
+    loadTestCases({ page: 1, resetPagination: true });
+  };
+
+  // 🔥 新增：重置功能
+  const handleReset = () => {
+    console.log('🔄 [TestCases] 重置搜索条件');
+    setSearchTerm('');
+    setSelectedTag('');
+    setSelectedPriority('');
+    setSelectedSystem('');
+    // 延时执行以确保状态更新完成
+    setTimeout(() => loadTestCases({ page: 1, resetPagination: true }), 10);
+  };
+
+  // 🔥 移除自动搜索逻辑，改为手动搜索
 
   // 已移除自动高度，改为 CSS min-height 控制
 
@@ -1008,15 +1073,20 @@ export function TestCases() {
 
       {/* Filters */}
       <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-200">
-        <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
           {/* Search */}
-          <div className="relative">
+          <div className="relative md:col-span-2">
             <Search className="absolute left-3 top-3 h-5 w-5 text-gray-400" />
             <input
               type="text"
               placeholder={activeTab === 'cases' ? '搜索测试用例...' : '搜索测试套件...'}
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
+              onKeyPress={(e) => {
+                if (e.key === 'Enter') {
+                  handleSearch();
+                }
+              }}
               className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             />
           </div>
@@ -1058,20 +1128,40 @@ export function TestCases() {
             ))}
           </select>
 
-          {/* Stats */}
-          <div className="flex items-center justify-end text-sm text-gray-600">
-            {activeTab === 'cases' 
-              ? `显示 ${filteredTestCases.length} / ${testCases.length} 个用例`
-              : `显示 ${filteredTestSuites.length} / ${testSuites.length} 个套件`
-            }
+          {/* 🔥 新增：搜索和重置按钮 */}
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={handleSearch}
+              className="flex items-center px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors"
+            >
+              <Search className="h-4 w-4 mr-2" />
+              搜索
+            </button>
+            <button
+              type="button"
+              onClick={handleReset}
+              className="flex items-center px-4 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 transition-colors"
+            >
+              <RotateCcw className="h-4 w-4 mr-2" />
+              重置
+            </button>
+          </div>
+        </div>
+
+        {/* 🔥 新增：统计信息行 */}
+        <div className="flex items-center justify-between mt-4 pt-4 border-t border-gray-200">
+          <div className="text-sm text-gray-600">
+            {activeTab === 'cases' && pagination.total > 0 && (
+              `显示第 ${Math.min((pagination.page - 1) * pagination.pageSize + 1, pagination.total)} 到 ${Math.min(pagination.page * pagination.pageSize, pagination.total)} 条，共 ${pagination.total} 条用例`
+            )}
+            {activeTab === 'suites' && (
+              `显示 ${filteredTestSuites.length} / ${testSuites.length} 个套件`
+            )}
+          </div>
+          <div className="text-xs text-gray-500">
             {(searchTerm || selectedTag || selectedPriority || selectedSystem) && (
-              <button
-                type="button"
-                onClick={() => { setSearchTerm(''); setSelectedTag(''); setSelectedPriority(''); setSelectedSystem(''); }}
-                className="ml-3 text-xs text-blue-600 hover:underline"
-              >
-                清空筛选
-              </button>
+              `已应用 ${[searchTerm, selectedTag, selectedPriority, selectedSystem].filter(Boolean).length} 个筛选条件`
             )}
           </div>
         </div>
@@ -1134,137 +1224,19 @@ export function TestCases() {
             </div>
           )}
 
-          {/* Test Cases Grid */}
-          {!testCasesLoading && filteredTestCases.length > 0 && (
-            <div className="grid gap-6">
-              <AnimatePresence>
-                {filteredTestCases.map((testCase, index) => (
-                  <motion.div
-                    key={testCase.id}
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -20 }}
-                    transition={{ delay: index * 0.1 }}
-                    className="bg-white rounded-xl p-6 shadow-sm border border-gray-200 hover:shadow-md transition-shadow"
-                  >
-                    {/* Header */}
-                    <div className="flex items-start justify-between mb-4">
-                      <div className="flex-1">
-                        <h3 className="font-semibold text-gray-900 mb-2">{testCase.name}</h3>
-                        <div className="space-y-2">
-                          <div>
-                            <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">测试步骤</span>
-                            <p className="text-sm text-gray-600 line-clamp-2 mt-1">{testCase.steps || '暂无步骤描述'}</p>
-                          </div>
-                          {testCase.assertions && (
-                            <div>
-                              <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">断言预期</span>
-                              <p className="text-sm text-gray-600 line-clamp-2 mt-1">{testCase.assertions}</p>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                      <div className="flex items-center space-x-2 ml-4">
-                        <motion.button
-                          whileHover={{ scale: 1.1 }}
-                          whileTap={{ scale: 0.9 }}
-                          onClick={() => handleRunTest(testCase)}
-                          disabled={runningTestId === testCase.id}
-                          className={clsx(
-                            "p-1 transition-colors",
-                            runningTestId === testCase.id 
-                              ? "text-blue-600 cursor-not-allowed" 
-                              : "text-gray-400 hover:text-blue-600"
-                          )}
-                          title={runningTestId === testCase.id ? "执行中..." : "运行测试"}
-                        >
-                          {runningTestId === testCase.id ? (
-                            <Loader2 className="h-4 w-4 animate-spin" />
-                          ) : (
-                            <Play className="h-4 w-4" />
-                          )}
-                        </motion.button>
-                        <motion.button
-                          whileHover={{ scale: 1.1 }}
-                          whileTap={{ scale: 0.9 }}
-                          onClick={() => handleEditTestCase(testCase)}
-                          className="p-1 text-gray-400 hover:text-green-600 transition-colors"
-                          title="编辑测试用例"
-                        >
-                          <Edit3 className="h-4 w-4" />
-                        </motion.button>
-                        <motion.button
-                          whileHover={{ scale: 1.1 }}
-                          whileTap={{ scale: 0.9 }}
-                          onClick={() => handleDeleteTestCase(testCase)}
-                          className="p-1 text-gray-400 hover:text-red-600 transition-colors"
-                          title="删除测试用例"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </motion.button>
-                      </div>
-                    </div>
-
-                    {/* Tags */}
-                    <div className="flex flex-wrap gap-2 mb-4">
-                      {(testCase.tags || []).map((tag, tagIndex) => (
-                        <span
-                          key={tagIndex}
-                          className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800"
-                        >
-                          <Tag className="h-3 w-3 mr-1" />
-                          {tag}
-                        </span>
-                      ))}
-                    </div>
-
-                    {/* Status and Priority */}
-                    <div className="flex items-center justify-between mb-4">
-                      <span className={clsx(
-                        'inline-flex px-2 py-1 rounded-full text-xs font-medium',
-                        getPriorityColor(testCase.priority)
-                      )}>
-                        优先级: {testCase.priority === 'high' ? '高' : testCase.priority === 'medium' ? '中' : '低'}
-                      </span>
-                      <span className={clsx(
-                        'inline-flex px-2 py-1 rounded-full text-xs font-medium',
-                        getStatusColor(testCase.status)
-                      )}>
-                        {testCase.status === 'active' ? '活跃' : testCase.status === 'draft' ? '草稿' : '禁用'}
-                      </span>
-                    </div>
-
-                    {/* Success Rate */}
-                    {testCase.success_rate !== undefined && testCase.success_rate > 0 && (
-                      <div className="mb-4">
-                        <div className="flex items-center justify-between text-sm mb-2">
-                          <span className="text-gray-600">成功率</span>
-                          <span className="font-medium text-gray-900">{testCase.success_rate}%</span>
-                        </div>
-                        <div className="w-full bg-gray-200 rounded-full h-2">
-                          <div
-                            className="bg-green-600 h-2 rounded-full transition-all"
-                            style={{ width: `${testCase.success_rate || 0}%` }}
-                          ></div>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Footer */}
-                    <div className="flex items-center justify-between text-xs text-gray-500 pt-4 border-t border-gray-100">
-                      <div className="flex items-center">
-                        <User className="h-3 w-3 mr-1" />
-                        {testCase.author || '未知作者'}
-                      </div>
-                      <div className="flex items-center">
-                        <Clock className="h-3 w-3 mr-1" />
-                        {testCase.lastRun || '从未运行'}
-                      </div>
-                    </div>
-                  </motion.div>
-                ))}
-              </AnimatePresence>
-            </div>
+          {/* Test Cases Table */}
+          {!testCasesLoading && testCases.length > 0 && (
+            <TestCaseTable
+              testCases={testCases}
+              onRunTest={handleRunTest}
+              onEditTestCase={handleEditTestCase}
+              onDeleteTestCase={handleDeleteTestCase}
+              runningTestId={runningTestId}
+              loading={loading}
+              pagination={pagination}
+              onPageChange={handlePageChange}
+              onPageSizeChange={handlePageSizeChange}
+            />
           )}
         </>
       ) : (

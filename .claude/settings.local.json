@@ -64,7 +64,9 @@
       "Read(/D:\\AI_mvp\\ai_test\\project\\server\\services/**)",
       "Read(/D:\\AI_mvp\\ai_test\\project\\server\\services/**)",
       "Bash(git rm:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(findstr:*)",
+      "Bash(netstat:*)"
     ],
     "deny": []
   },

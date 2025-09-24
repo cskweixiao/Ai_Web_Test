@@ -70,6 +70,27 @@ export function TestRuns() {
   useEffect(() => {
     localStorage.setItem('tr-activeTab', activeTab);
   }, [activeTab]);
+  useEffect(() => {
+    if (!selectedRun) return;
+
+    const latest = testRuns.find(run => run.id === selectedRun.id);
+    if (!latest) return;
+
+    const logsChanged =
+      (latest.logs?.length || 0) !== (selectedRun.logs?.length || 0);
+
+    if (
+      latest.status !== selectedRun.status ||
+      latest.progress !== selectedRun.progress ||
+      latest.completedSteps !== selectedRun.completedSteps ||
+      latest.failedSteps !== selectedRun.failedSteps ||
+      latest.passedSteps !== selectedRun.passedSteps ||
+      logsChanged
+    ) {
+      setSelectedRun({ ...latest });
+    }
+  }, [testRuns, selectedRun]);
+
   const [isLiveFull, setIsLiveFull] = useState(false);
   const [logLevels, setLogLevels] = useState({ info: true, success: true, warning: true, error: true });
   const [logSearch, setLogSearch] = useState('');

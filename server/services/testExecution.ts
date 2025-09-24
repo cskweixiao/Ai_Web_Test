@@ -251,6 +251,122 @@ export class TestExecutionService {
     return testCases.map(this.dbTestCaseToApp);
   }
 
+  // 🔥 新增：支持分页和过滤的测试用例查询
+  public async getTestCasesPaginated(params: {
+    page: number;
+    pageSize: number;
+    search?: string;
+    tag?: string;
+    priority?: string;
+    status?: string;
+    system?: string;
+  }): Promise<{data: TestCase[], total: number}> {
+    const { page, pageSize, search, tag, priority, status, system } = params;
+
+    // 构建查询条件
+    const where: any = {};
+
+    // 搜索条件（标题和步骤）
+    if (search && search.trim()) {
+      where.OR = [
+        { title: { contains: search, mode: 'insensitive' } },
+        { steps: { contains: search, mode: 'insensitive' } }
+      ];
+    }
+
+    // 系统过滤 - 🔥 修复：使用equals而非contains避免特殊字符问题
+    if (system && system.trim()) {
+      where.system = { equals: system };
+    }
+
+    // 标签过滤（Prisma JSON字段查询）
+    if (tag && tag.trim()) {
+      where.tags = {
+        path: [],
+        array_contains: [tag]
+      };
+    }
+
+    // 计算偏移量
+    const skip = (page - 1) * pageSize;
+
+    // 获取总数和数据
+    const [total, testCases] = await Promise.all([
+      this.prisma.test_cases.count({ where }),
+      this.prisma.test_cases.findMany({
+        where,
+        select: {
+          id: true,
+          title: true,
+          steps: true,
+          tags: true,
+          system: true,
+          module: true,
+          created_at: true
+        },
+        skip,
+        take: pageSize,
+        orderBy: { created_at: 'desc' }
+      })
+    ]);
+
+    // 🔥 应用层过滤 priority 和 status（因为这些字段在数据库中不存在）
+    let filteredData = testCases.map(this.dbTestCaseToApp);
+
+    // Priority过滤（应用层）
+    if (priority && priority.trim()) {
+      filteredData = filteredData.filter(testCase => testCase.priority === priority);
+    }
+
+    // Status过滤（应用层）
+    if (status && status.trim()) {
+      filteredData = filteredData.filter(testCase => testCase.status === status);
+    }
+
+    // 如果应用了应用层过滤，需要重新计算总数和分页
+    if ((priority && priority.trim()) || (status && status.trim())) {
+      // 重新获取所有数据进行应用层过滤统计
+      const allTestCases = await this.prisma.test_cases.findMany({
+        where,
+        select: {
+          id: true,
+          title: true,
+          steps: true,
+          tags: true,
+          system: true,
+          module: true,
+          created_at: true
+        }
+      });
+
+      let allFilteredData = allTestCases.map(this.dbTestCaseToApp);
+
+      if (priority && priority.trim()) {
+        allFilteredData = allFilteredData.filter(testCase => testCase.priority === priority);
+      }
+
+      if (status && status.trim()) {
+        allFilteredData = allFilteredData.filter(testCase => testCase.status === status);
+      }
+
+      // 手动分页
+      const newTotal = allFilteredData.length;
+      const startIndex = skip;
+      const endIndex = skip + pageSize;
+      filteredData = allFilteredData.slice(startIndex, endIndex);
+
+      return {
+        data: filteredData,
+        total: newTotal
+      };
+    }
+
+    return {
+      data: filteredData,
+      total
+    };
+  }
+
   public async addTestCase(testCaseData: Partial<TestCase>): Promise<TestCase> {
     const stepsData = JSON.stringify({
       steps: testCaseData.steps || '',

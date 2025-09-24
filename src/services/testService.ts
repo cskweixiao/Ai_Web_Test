@@ -216,26 +216,103 @@ export class TestService {
     }
   }
 
-  // 获取所有测试用例
+  // 获取所有测试用例（旧方法，保持兼容性）
   async getTestCases(): Promise<TestCase[]> {
     try {
       console.log('🔄 [testService] 发送测试用例请求...');
-      // 添加时间戳防止缓存（移除CORS问题的HTTP头）
-      const timestamp = new Date().getTime();
-      const response = await fetch(`${API_BASE_URL}/tests/cases?t=${timestamp}`);
-      
-      console.log('📡 [testService] API响应状态:', response.status);
+      // 使用分页API获取所有数据
+      const result = await this.getTestCasesPaginated({
+        page: 1,
+        pageSize: 1000, // 获取大量数据以保持向后兼容
+        search: '',
+        tag: '',
+        priority: '',
+        status: '',
+        system: ''
+      });
+
+      console.log('✅ [testService] 返回测试用例数量:', result.data?.length || 0);
+      return result.data;
+    } catch (error) {
+      console.error('❌ [testService] 获取测试用例失败:', error);
+      throw error;
+    }
+  }
+
+  // 🔥 新增：分页查询测试用例
+  async getTestCasesPaginated(params: {
+    page: number;
+    pageSize: number;
+    search?: string;
+    tag?: string;
+    priority?: string;
+    status?: string;
+    system?: string;
+  }): Promise<{
+    data: TestCase[];
+    pagination: {
+      page: number;
+      pageSize: number;
+      total: number;
+      totalPages: number;
+    };
+  }> {
+    try {
+      console.log('🔄 [testService] 发送分页测试用例请求:', params);
+
+      // 构建查询参数
+      const queryParams = new URLSearchParams({
+        page: params.page.toString(),
+        pageSize: params.pageSize.toString(),
+      });
+
+      // 添加可选的过滤参数
+      if (params.search && params.search.trim()) {
+        queryParams.append('search', params.search);
+      }
+      if (params.tag && params.tag.trim()) {
+        queryParams.append('tag', params.tag);
+      }
+      if (params.priority && params.priority.trim()) {
+        queryParams.append('priority', params.priority);
+      }
+      if (params.status && params.status.trim()) {
+        queryParams.append('status', params.status);
+      }
+      if (params.system && params.system.trim()) {
+        queryParams.append('system', params.system);
+      }
+
+      // 添加时间戳防止缓存
+      queryParams.append('t', new Date().getTime().toString());
+
+      const response = await fetch(`${API_BASE_URL}/tests/cases?${queryParams.toString()}`);
+
+      console.log('📡 [testService] 分页API响应状态:', response.status);
       const data = await response.json();
-      console.log('📄 [testService] API返回数据:', data);
-      
+      console.log('📄 [testService] 分页API返回数据:', data);
+
       if (!data.success) {
         throw new Error(data.error || '获取测试用例失败');
       }
-      
-      console.log('✅ [testService] 返回测试用例数量:', data.data?.length || 0);
-      return data.data;
+
+      console.log('✅ [testService] 返回分页数据:', {
+        count: data.data?.length || 0,
+        total: data.pagination?.total || 0,
+        page: data.pagination?.page || 1
+      });
+
+      return {
+        data: data.data || [],
+        pagination: data.pagination || {
+          page: params.page,
+          pageSize: params.pageSize,
+          total: 0,
+          totalPages: 0
+        }
+      };
     } catch (error) {
-      console.error('❌ [testService] 获取测试用例失败:', error);
+      console.error('❌ [testService] 获取分页测试用例失败:', error);
       throw error;
     }
   }

@@ -2,15 +2,13 @@ import { Response } from 'express';
 import { Page } from 'playwright';
 import sharp from 'sharp';
 import { PlaywrightMcpClient } from './mcpClient.js';
-import * as fs from 'fs';
-import * as path from 'path';
 
 interface StreamConfig {
   fps: number;                 // 默认2FPS
   jpegQuality: number;         // 60
   width: number;               // 1024
   height: number;              // 768
-  maskSelectors: string[];     // 脱敏选择器
+  maskSelectors: string[];     // 脱敏选择�?
 }
 
 interface StreamClient {
@@ -25,7 +23,8 @@ export class StreamService {
   private config: StreamConfig;
   private frameBuffer: Map<string, Buffer>;
   private timers: Map<string, NodeJS.Timeout>;        // 🔥 修正：定时器管理
-  private mcpClients: Map<string, PlaywrightMcpClient>; // 🔥 MCP客户端缓存
+  private mcpClients: Map<string, PlaywrightMcpClient>; // 🔥 MCP客户端缓�?
+  private activeScreenshotTasks: Set<string>;
   
   // 🔥 方案C性能统计
   private stats = {
@@ -42,6 +41,7 @@ export class StreamService {
     this.frameBuffer = new Map();
     this.timers = new Map();
     this.mcpClients = new Map();
+    this.activeScreenshotTasks = new Set();
   }
 
   // 🔥 修正：基于fps定时取帧
@@ -52,7 +52,7 @@ export class StreamService {
     
     const timer = setInterval(async () => {
       try {
-        console.log(`📸 [StreamService] 开始截图: ${runId}`);
+        console.log(`📸 [StreamService] 开始截�? ${runId}`);
         
         // 🔥 临时禁用mask避免黑屏
         const buffer = await page.screenshot({
@@ -61,11 +61,11 @@ export class StreamService {
           // mask: maskLocators.length > 0 ? maskLocators : undefined  // 🔥 临时注释
         });
         
-        console.log(`✅ [StreamService] 截图成功: ${runId}, 大小: ${buffer.length}字节`);
+        console.log(`�?[StreamService] 截图成功: ${runId}, 大小: ${buffer.length}字节`);
         await this.pushFrame(runId, buffer);
         console.log(`📤 [StreamService] 推送帧完成: ${runId}`);
       } catch (error) {
-        console.error(`❌ [StreamService] 截图失败: ${runId}`, error);
+        console.error(`�?[StreamService] 截图失败: ${runId}`, error);
       }
     }, interval);
     
@@ -73,223 +73,87 @@ export class StreamService {
     console.log(`📺 实时流已启动: ${runId}, fps: ${this.config.fps}, interval: ${interval}ms`);
   }
 
-  // 🔥 新增：使用MCP客户端的实时流
+  // 🔥 新增：使用MCP客户端的实时�?
   startStreamWithMcp(runId: string, mcpClient: PlaywrightMcpClient): void {
-    console.log(`🎬 [StreamService] startStreamWithMcp被调用: ${runId}`);
-    
     if (this.timers.has(runId)) {
-      console.log(`⚠️ [StreamService] 定时器已存在，跳过: ${runId}`);
       return;
     }
-    
-    const interval = Math.max(500, Math.floor(1000 / Math.min(2, this.config.fps || 1)));
+
+    const fps = this.config.fps > 0 ? this.config.fps : 1;
+    const interval = Math.max(200, Math.floor(1000 / fps));
     this.mcpClients.set(runId, mcpClient);
-    
-    console.log(`⏰ [StreamService] 创建定时器: ${runId}, 间隔: ${interval}ms`);
-    
+
     const timer = setInterval(async () => {
+      if (this.activeScreenshotTasks.has(runId)) {
+        return;
+      }
+
+      this.activeScreenshotTasks.add(runId);
+      this.stats.totalAttempts += 1;
+      const startedAt = Date.now();
+
       try {
-        // 🔥 优化：只在开发模式或每10次尝试时输出详细日志
-        const isVerboseLogging = process.env.NODE_ENV === 'development' || this.stats.totalAttempts % 10 === 0;
-        if (isVerboseLogging) {
-          console.log(`📸 [StreamService] 生成实时帧 (${this.stats.totalAttempts + 1}): ${runId.substring(0,8)}`);
-        }
-        
-        // 🔥 方案C：使用优化后的MCP截图（自动文件移动）
-        const startTime = Date.now();
-        this.stats.totalAttempts++;
-        
-        try {
-          const tempFilename = `stream-${runId}-${Date.now()}.png`;
-          const tempDir = path.join(process.cwd(), 'temp-screenshots');
-          const tempPath = path.join(tempDir, tempFilename);
-          
-          // 🔥 确保目录存在
-          if (!fs.existsSync(tempDir)) {
-            fs.mkdirSync(tempDir, { recursive: true });
-            if (process.env.NODE_ENV === 'development') {
-              console.log(`📁 [StreamService] 创建目录: ${tempDir}`);
-            }
-          }
-          
-          // 🔥 优化：减少重复的截图日志，只在开发模式或关键节点输出
-          if (isVerboseLogging) {
-            console.log(`📸 [StreamService] MCP截图尝试 #${this.stats.totalAttempts}: ${runId.substring(0,8)}`);
-          }
-          
-          // 🔥 调用优化后的截图方法（自动处理文件移动）
-          let mcpError = null;
-          try {
-            await mcpClient.takeScreenshotForStream(tempPath);
-          } catch (error: any) {
-            mcpError = error;
-            console.warn(`⚠️ [StreamService] MCP截图调用失败: ${error.message}`);
-          }
-          
-          // 🔥 如果是"无页面"错误，立即跳过等待循环，直接生成时钟帧
-          if (mcpError && mcpError.message && mcpError.message.includes('No open pages available')) {
-            console.warn(`🚫 [StreamService] 浏览器无活动页面，跳过等待循环: ${runId}`);
-            throw new Error('浏览器无活动页面，无法截图');
-          }
-          
-          // 🔥 其他错误或成功情况，进行文件验证（但减少等待次数避免循环）
-          let fileExists = false;
-          const maxWait = 3; // 🔥 减少到3次，避免循环堆积
-          for (let i = 0; i < maxWait; i++) {
-            if (fs.existsSync(tempPath)) {
-              const stats = fs.statSync(tempPath);
-              if (stats.size > 0) {
-                fileExists = true;
-                // 🔥 优化：只在开发模式输出文件验证详情
-                if (process.env.NODE_ENV === 'development') {
-                  console.log(`✅ [StreamService] 文件验证成功: ${stats.size}字节, 第${i + 1}次检查`);
-                }
-                break;
-              }
-            }
-            if (i < maxWait - 1) {
-              // 🔥 优化：减少等待日志频率，只输出关键信息
-              if (i === 0 || process.env.NODE_ENV === 'development') {
-                console.log(`⏳ [StreamService] 等待截图生成... (${i + 1}/${maxWait})`);
-              }
-              
-              // 🔥 修复：推送动态等待提示帧，不更新缓存
-              try {
-                const waitingFrame = await this.createWaitingFrame(i + 1, maxWait);
-                await this.pushFrameWithoutCache(runId, waitingFrame);
-                // 🔥 优化：只在开发模式输出推送详情
-                if (process.env.NODE_ENV === 'development') {
-                  console.log(`📺 [StreamService] 推送等待提示帧 (${i + 1}/${maxWait})`);
-                }
-              } catch (waitingError) {
-                // 🔥 优化：简化错误日志
-                if (process.env.NODE_ENV === 'development') {
-                  console.warn(`⚠️ [StreamService] 等待帧失败，使用缓存帧`);
-                }
-                // 降级：推送缓存帧但不更新缓存
-                const lastFrame = this.frameBuffer.get(runId);
-                if (lastFrame) {
-                  await this.pushFrameWithoutCache(runId, lastFrame);
-                }
-              }
-              
-              await new Promise(resolve => setTimeout(resolve, 300));
-            }
-          }
-          
-          if (!fileExists) {
-            console.warn(`🔍 [StreamService] 截图文件验证失败: ${tempPath}`);
-            throw new Error(`截图文件未生成或为空: ${tempPath}`);
-          }
-          
-          // 读取截图文件并转换为JPEG
-          const imageBuffer = fs.readFileSync(tempPath);
-          
-          const jpegBuffer = await sharp(imageBuffer)
-            .jpeg({ quality: this.config.jpegQuality })
-            .toBuffer();
-          
-          const processingTime = Date.now() - startTime;
-          this.stats.successfulScreenshots++;
-          this.updateAverageProcessingTime(processingTime);
-          
-          // 🔥 优化：合并成功日志，减少输出频率
-          if (isVerboseLogging) {
-            const successRate = (this.stats.successfulScreenshots / this.stats.totalAttempts * 100).toFixed(1);
-            console.log(`✅ [StreamService] 截图成功: ${runId.substring(0,8)}, ${processingTime}ms, 成功率: ${successRate}%`);
-          }
-          
-          await this.pushFrameAndUpdateCache(runId, jpegBuffer);
-          
-          // 清理临时文件
-          try {
-            fs.unlinkSync(tempPath);
-          } catch (cleanupError) {
-            console.warn(`🧹 [StreamService] 清理临时文件失败: ${tempPath}`, cleanupError);
-          }
-          
-        } catch (mcpError: any) {
-          // 🔥 统计失败次数
-          this.stats.fallbackFrames++;
-          const failureRate = (this.stats.fallbackFrames / this.stats.totalAttempts * 100).toFixed(1);
-          
-          // 🔥 循环保护：如果失败率超过90%且尝试次数大于20，暂时停止定时器
-          if (this.stats.totalAttempts > 20 && parseFloat(failureRate) > 90) {
-            console.error(`🚨 [StreamService] 失败率过高 (${failureRate}%)，暂停实时流避免循环: ${runId}`);
-            this.pauseStreamTemporarily(runId, 10000); // 暂停10秒
-            return; // 立即返回，不生成时钟帧
-          }
-          
-          // 🔥 优化：更详细的错误分类和处理
-          const errorMessage = mcpError.message || '未知错误';
-          
-          if (errorMessage.includes('浏览器无活动页面')) {
-            console.warn(`🚫 [StreamService] 浏览器无活动页面: ${runId}, 失败率: ${failureRate}%`);
-          } else if (errorMessage.includes('无法从MCP返回结果中提取实际文件路径')) {
-            console.warn(`⚠️ [StreamService] MCP路径提取失败，使用时钟帧: ${runId}, 失败率: ${failureRate}%`);
-          } else if (errorMessage.includes('截图文件处理失败')) {
-            console.warn(`⚠️ [StreamService] MCP文件处理失败，使用时钟帧: ${runId}, 失败率: ${failureRate}%`);
-          } else {
-            console.warn(`⚠️ [StreamService] MCP截图失败，使用时钟帧: ${runId}, 失败率: ${failureRate}%`, errorMessage.substring(0, 100));
-          }
-          
-          // 🔥 生成时钟帧（带错误保护）
-          try {
-            const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="768">
-              <rect width="100%" height="100%" fill="#2c3e50"/>
-              <text x="50%" y="35%" fill="#e74c3c" font-size="36" text-anchor="middle" dominant-baseline="middle">
-                📷 截图处理中...
-              </text>
-              <text x="50%" y="50%" fill="#ecf0f1" font-size="28" text-anchor="middle" dominant-baseline="middle">
-                测试正在执行
-              </text>
-              <text x="50%" y="65%" fill="#3498db" font-size="24" text-anchor="middle" dominant-baseline="middle">
-                ${new Date().toLocaleTimeString()}
-              </text>
-            </svg>`;
-            
-            const buffer = await sharp(Buffer.from(svg)).jpeg({ quality: 70 }).toBuffer();
-            
-            // 🔥 优化：时钟帧日志仅在开发模式或首次生成时输出
-            if (process.env.NODE_ENV === 'development' || this.stats.fallbackFrames === 1) {
-              console.log(`🎨 [StreamService] 生成时钟帧: ${runId.substring(0,8)}`);
-            }
-            
-            await this.pushFrameWithoutCache(runId, buffer);
-          } catch (clockError) {
-            console.error(`❌ [StreamService] 时钟帧生成失败: ${runId}`, clockError);
-            
-            // 🔥 修复黑屏问题：时钟帧失败时也要推送上一帧，避免完全黑屏
-            const lastFrame = this.frameBuffer.get(runId);
-            if (lastFrame) {
-              console.log(`📺 [StreamService] 时钟帧失败，推送上一帧避免黑屏: ${runId.substring(0,8)}`);
-              try {
-                await this.pushFrameWithoutCache(runId, lastFrame);
-              } catch (lastFrameError) {
-                console.error(`❌ [StreamService] 推送上一帧也失败: ${runId}`, lastFrameError);
-              }
-            }
-          }
-        }
+        const result = await mcpClient.takeScreenshotForStream({ runId });
+        await this.pushFrameAndUpdateCache(runId, result.buffer);
+        const duration = result.durationMs ?? (Date.now() - startedAt);
+        this.stats.successfulScreenshots += 1;
+        this.updateAverageProcessingTime(duration);
       } catch (error) {
-        console.error(`❌ [StreamService] MCP流截图失败 (${runId}):`, error);
+        await this.handleStreamFailure(runId, error);
+      } finally {
+        this.activeScreenshotTasks.delete(runId);
       }
     }, interval);
-    
+
     this.timers.set(runId, timer);
-    console.log(`✅ [StreamService] MCP实时流已启动: ${runId}, fps: ${this.config.fps}, interval: ${interval}ms`);
+    console.log(`[StreamService] MCP stream started: ${runId}, interval=${interval}ms`);
   }
 
   // 🔥 新增：暂时暂停实时流，避免死循环
+
+  private async handleStreamFailure(runId: string, rawError: unknown): Promise<void> {
+    const message = rawError instanceof Error ? rawError.message : String(rawError ?? 'Unknown error');
+    const shortId = runId.substring(0, 8);
+
+    this.stats.fallbackFrames += 1;
+    console.warn(`[StreamService] MCP screenshot failed (${shortId}): ${message}`);
+
+    const cachedFrame = this.frameBuffer.get(runId);
+    if (cachedFrame) {
+      try {
+        await this.pushFrameWithoutCache(runId, cachedFrame);
+      } catch (pushError) {
+        console.error(`[StreamService] failed to resend cached frame: ${runId}`, pushError);
+      }
+    } else {
+      try {
+        const placeholder = await this.createPlaceholderFrame();
+        await this.pushFrameWithoutCache(runId, placeholder);
+      } catch (placeholderError) {
+        console.error(`[StreamService] failed to push placeholder frame: ${runId}`, placeholderError);
+      }
+    }
+
+    const failureRate = this.stats.totalAttempts > 0
+      ? (this.stats.fallbackFrames / this.stats.totalAttempts) * 100
+      : 0;
+
+    if (this.stats.totalAttempts > 20 && failureRate > 90) {
+      console.error(`[StreamService] failure rate ${failureRate.toFixed(1)}%, pausing stream: ${runId}`);
+      this.pauseStreamTemporarily(runId, 10000);
+    }
+  }
+  // ?? ��������ʱ��ͣʵʱ����������ѭ��
   private pauseStreamTemporarily(runId: string, pauseDurationMs: number): void {
     const timer = this.timers.get(runId);
     if (timer) {
-      console.log(`⏸️ [StreamService] 暂停实时流: ${runId}, 持续时间: ${pauseDurationMs}ms`);
+      console.log(`⏸️ [StreamService] 暂停实时�? ${runId}, 持续时间: ${pauseDurationMs}ms`);
       
       clearInterval(timer);
       this.timers.delete(runId);
+      this.activeScreenshotTasks.delete(runId);
       
-      // 重置统计信息以给系统一个新的机会
+      // 重置统计信息以给系统一个新的机�?
       this.stats.totalAttempts = 0;
       this.stats.fallbackFrames = 0;
       this.stats.successfulScreenshots = 0;
@@ -298,24 +162,25 @@ export class StreamService {
       setTimeout(() => {
         const mcpClient = this.mcpClients.get(runId);
         if (mcpClient && !this.timers.has(runId)) {
-          console.log(`▶️ [StreamService] 恢复实时流: ${runId}`);
+          console.log(`▶️ [StreamService] 恢复实时�? ${runId}`);
           this.startStreamWithMcp(runId, mcpClient);
         }
       }, pauseDurationMs);
     }
   }
 
-  // 🔥 修正：停止实时流，清理所有资源
+  // 🔥 修正：停止实时流，清理所有资�?
   stopStream(runId: string): void {
-    console.log(`🛑 [StreamService] 停止实时流: ${runId}`);
+    console.log(`🛑 [StreamService] 停止实时�? ${runId}`);
     
     const timer = this.timers.get(runId);
     if (timer) {
       clearInterval(timer);
       this.timers.delete(runId);
+      this.activeScreenshotTasks.delete(runId);
     }
     
-    // 清理MCP客户端缓存
+    // 清理MCP客户端缓�?
     this.mcpClients.delete(runId);
     
     // 关闭所有客户端连接
@@ -335,7 +200,7 @@ export class StreamService {
     console.log(`📺 实时流已停止: ${runId}`);
   }
 
-  // 注册客户端
+  // 注册客户�?
   async registerClient(runId: string, response: Response, userId: string): Promise<void> {
     console.log(`🔍 [StreamService] 开始注册客户端:`, {
       runId,
@@ -346,7 +211,7 @@ export class StreamService {
 
     if (!this.clients.has(runId)) {
       this.clients.set(runId, new Set());
-      console.log(`🆕 [StreamService] 创建新的客户端集合: ${runId}`);
+      console.log(`🆕 [StreamService] 创建新的客户端集�? ${runId}`);
     }
     
     const client: StreamClient = {
@@ -359,13 +224,13 @@ export class StreamService {
     this.clients.get(runId)!.add(client);
     console.log(`👥 [StreamService] 客户端已添加，当前客户端数量: ${this.clients.get(runId)!.size}`);
     
-    // 初始化MJPEG流
-    console.log(`🔧 [StreamService] 初始化MJPEG流: ${runId}`);
+    // 初始化MJPEG�?
+    console.log(`🔧 [StreamService] 初始化MJPEG�? ${runId}`);
     this.initializeMjpegStream(response);
     
-    // 🔥 修正：新连接立刻推送最后一帧或占位帧
+    // 🔥 修正：新连接立刻推送最后一帧或占位�?
     const lastFrame = this.frameBuffer.get(runId);
-    console.log(`🖼️ [StreamService] 检查缓存帧:`, {
+    console.log(`🖼�?[StreamService] 检查缓存帧:`, {
       runId,
       hasLastFrame: !!lastFrame,
       frameSize: lastFrame ? lastFrame.length : 0
@@ -379,12 +244,12 @@ export class StreamService {
         response.write(`Content-Length: ${lastFrame.length}\r\n\r\n`);
         response.write(lastFrame);
         response.write(`\r\n`);
-        console.log(`✅ [StreamService] 推送缓存帧成功: ${runId}, 大小: ${lastFrame.length}字节`);
+        console.log(`�?[StreamService] 推送缓存帧成功: ${runId}, 大小: ${lastFrame.length}字节`);
       } catch (error) {
-        console.error(`❌ [StreamService] 推送缓存帧失败:`, { runId, error });
+        console.error(`�?[StreamService] 推送缓存帧失败:`, { runId, error });
       }
     } else {
-      // 🔥 发送占位帧避免客户端超时
+      // 🔥 发送占位帧避免客户端超�?
       try {
         console.log(`🎨 [StreamService] 开始创建占位帧: ${runId}`);
         const placeholderFrame = await this.createPlaceholderFrame();
@@ -394,13 +259,13 @@ export class StreamService {
         response.write(`Content-Length: ${placeholderFrame.length}\r\n\r\n`);
         response.write(placeholderFrame);
         response.write(`\r\n`);
-        console.log(`✅ [StreamService] 发送占位帧成功: ${runId}, 大小: ${placeholderFrame.length}字节`);
+        console.log(`�?[StreamService] 发送占位帧成功: ${runId}, 大小: ${placeholderFrame.length}字节`);
       } catch (error) {
-        console.error(`❌ [StreamService] 发送占位帧失败:`, { runId, error });
+        console.error(`�?[StreamService] 发送占位帧失败:`, { runId, error });
       }
     }
     
-    console.log(`✅ [StreamService] 实时流客户端注册完成: ${runId} (用户: ${userId})`);
+    console.log(`�?[StreamService] 实时流客户端注册完成: ${runId} (用户: ${userId})`);
   }
 
   // 🔥 新增：推送帧并更新缓存（真实截图用）
@@ -408,12 +273,12 @@ export class StreamService {
     await this.pushFrameInternal(runId, screenshotBuffer, true);
   }
   
-  // 🔥 新增：推送帧不更新缓存（等待帧/时钟帧用）
+  // 🔥 新增：推送帧不更新缓存（等待�?时钟帧用�?
   async pushFrameWithoutCache(runId: string, screenshotBuffer: Buffer): Promise<void> {
     await this.pushFrameInternal(runId, screenshotBuffer, false);
   }
   
-  // 🔥 保持兼容性：默认推送帧并更新缓存
+  // 🔥 保持兼容性：默认推送帧并更新缓�?
   async pushFrame(runId: string, screenshotBuffer: Buffer): Promise<void> {
     await this.pushFrameAndUpdateCache(runId, screenshotBuffer);
   }
@@ -427,12 +292,12 @@ export class StreamService {
       // 处理截图：调整大小、压缩（脱敏已在截图时处理）
       const processedFrame = await this.processScreenshot(screenshotBuffer);
       
-      // 🔥 修复：按标准格式逐步写入MJPEG帧
+      // 🔥 修复：按标准格式逐步写入MJPEG�?
       const failedClients: StreamClient[] = [];
       
       for (const client of clients) {
         try {
-          // 🔥 修复：检查连接状态
+          // 🔥 修复：检查连接状�?
           if (client.response.destroyed || client.response.socket?.destroyed) {
             console.log(`🚮 [StreamService] 检测到已断开的客户端: ${runId}`);
             failedClients.push(client);
@@ -448,13 +313,13 @@ export class StreamService {
               if (errorCode === 'ECONNRESET' || errorCode === 'EPIPE' || errorCode === 'ENOTFOUND') {
                 console.log(`🔌 [StreamService] 客户端连接已断开 (${errorCode}): ${runId}`);
               } else {
-                console.warn(`❌ [StreamService] 写入错误 (${errorCode}): ${runId}`, error.message);
+                console.warn(`�?[StreamService] 写入错误 (${errorCode}): ${runId}`, error.message);
               }
               return false;
             }
           };
           
-          // 严格按照MJPEG标准格式写入，每步检查结果
+          // 严格按照MJPEG标准格式写入，每步检查结�?
           let written = safeWrite(`--frame\r\n`);
           if (written) written = safeWrite(`Content-Type: image/jpeg\r\n`);
           if (written) written = safeWrite(`Content-Length: ${processedFrame.length}\r\n\r\n`);
@@ -468,7 +333,7 @@ export class StreamService {
         } catch (error: any) {
           // 🔥 修复：详细记录不同类型的连接错误
           const errorCode = error.code || 'UNKNOWN';
-          console.warn(`❌ [StreamService] 推送帧异常 (${errorCode}):`, { 
+          console.warn(`�?[StreamService] 推送帧异常 (${errorCode}):`, { 
             runId, 
             errorCode, 
             errorMessage: error.message,
@@ -483,15 +348,15 @@ export class StreamService {
         this.unregisterClient(runId, client.response);
       });
       
-      // 🔥 修复：条件性缓存更新
+      // 🔥 修复：条件性缓存更�?
       if (updateCache) {
         this.frameBuffer.set(runId, processedFrame);
-        // 🔥 优化：缓存更新日志仅在开发模式输出
+        // 🔥 优化：缓存更新日志仅在开发模式输�?
         if (process.env.NODE_ENV === 'development') {
-          console.log(`💾 [StreamService] 缓存已更新: ${runId.substring(0,8)}`);
+          console.log(`💾 [StreamService] 缓存已更�? ${runId.substring(0,8)}`);
         }
       } else {
-        // 🔥 优化：临时帧推送日志仅在开发模式输出
+        // 🔥 优化：临时帧推送日志仅在开发模式输�?
         if (process.env.NODE_ENV === 'development') {
           console.log(`📤 [StreamService] 推送临时帧，不更新缓存: ${runId.substring(0,8)}`);
         }
@@ -502,7 +367,7 @@ export class StreamService {
     }
   }
 
-  // 移除客户端
+  // 移除客户�?
   unregisterClient(runId: string, response: Response): void {
     const clients = this.clients.get(runId);
     if (!clients) return;
@@ -510,7 +375,7 @@ export class StreamService {
     const toRemove = Array.from(clients).find(c => c.response === response);
     if (toRemove) {
       clients.delete(toRemove);
-      console.log(`📺 实时流客户端已移除: ${runId}`);
+      console.log(`📺 实时流客户端已移�? ${runId}`);
     }
     
     if (clients.size === 0) {
@@ -528,7 +393,7 @@ export class StreamService {
     response.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
     response.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
     
-    // 🔥 关键：HTTP/1.1长连接设置
+    // 🔥 关键：HTTP/1.1长连接设�?
     (response as any).flushHeaders?.();
     response.setTimeout(0);
     if (response.socket) {
@@ -546,7 +411,7 @@ export class StreamService {
   }
 
   private async processScreenshot(buffer: Buffer): Promise<Buffer> {
-    // 使用sharp处理图片：调整大小、压缩
+    // 使用sharp处理图片：调整大小、压�?
     return await sharp(buffer)
       .resize(this.config.width, this.config.height, { 
         fit: 'inside',
@@ -556,13 +421,13 @@ export class StreamService {
       .toBuffer();
   }
 
-  // 🔥 新增：创建占位帧避免客户端超时
+  // 🔥 新增：创建占位帧避免客户端超�?
   private async createPlaceholderFrame(): Promise<Buffer> {
-    const text = '等待测试开始...';
+    const text = '等待测试开�?..';
     const width = this.config.width;
     const height = this.config.height;
     
-    console.log(`🎨 [StreamService] 创建占位帧:`, {
+    console.log(`🎨 [StreamService] 创建占位�?`, {
       text,
       width,
       height,
@@ -570,13 +435,13 @@ export class StreamService {
     });
     
     try {
-      // 创建纯色背景图片，并在中间添加文字
+      // 创建纯色背景图片，并在中间添加文�?
       const buffer = await sharp({
         create: {
           width,
           height,
           channels: 3,
-          background: { r: 45, g: 55, b: 72 } // 深灰色背景
+          background: { r: 45, g: 55, b: 72 } // 深灰色背�?
         }
       })
       .composite([{
@@ -598,21 +463,21 @@ export class StreamService {
       .jpeg({ quality: this.config.jpegQuality })
       .toBuffer();
       
-      console.log(`✅ [StreamService] 占位帧创建成功，大小: ${buffer.length}字节`);
+      console.log(`�?[StreamService] 占位帧创建成功，大小: ${buffer.length}字节`);
       return buffer;
     } catch (error) {
-      console.error(`❌ [StreamService] 创建占位帧失败:`, error);
+      console.error(`�?[StreamService] 创建占位帧失�?`, error);
       throw error;
     }
   }
 
   // 🔥 新增：创建动态等待提示帧
   private async createWaitingFrame(currentStep: number, totalSteps: number): Promise<Buffer> {
-    const text = `⏳ 正在处理截图... (${currentStep}/${totalSteps})`;
+    const text = `�?正在处理截图... (${currentStep}/${totalSteps})`;
     const width = this.config.width;
     const height = this.config.height;
     
-    console.log(`🎨 [StreamService] 创建等待提示帧:`, {
+    console.log(`🎨 [StreamService] 创建等待提示�?`, {
       text,
       currentStep,
       totalSteps,
@@ -622,7 +487,7 @@ export class StreamService {
     });
     
     try {
-      // 计算进度百分比
+      // 计算进度百分�?
       const progressPercent = (currentStep / totalSteps) * 100;
       const progressWidth = Math.floor((width * 0.6) * (progressPercent / 100));
       
@@ -640,10 +505,10 @@ export class StreamService {
           <svg width="${width}" height="${height}">
             <rect width="${width}" height="${height}" fill="rgb(44,62,80)"/>
             
-            <!-- 主标题 -->
+            <!-- 主标�?-->
             <text x="50%" y="40%" text-anchor="middle" dy="0.35em" 
                   font-family="Arial, sans-serif" font-size="28" fill="#e74c3c" font-weight="bold">
-              ⏳ 正在处理截图...
+              �?正在处理截图...
             </text>
             
             <!-- 进度文本 -->
@@ -652,21 +517,21 @@ export class StreamService {
               (${currentStep}/${totalSteps})
             </text>
             
-            <!-- 进度条背景 -->
+            <!-- 进度条背�?-->
             <rect x="20%" y="58%" width="60%" height="8" fill="#34495e" rx="4"/>
             
-            <!-- 进度条 -->
+            <!-- 进度�?-->
             <rect x="20%" y="58%" width="${progressWidth}" height="8" fill="#3498db" rx="4">
               <animate attributeName="fill" values="#3498db;#2ecc71;#3498db" dur="1.5s" repeatCount="indefinite"/>
             </rect>
             
-            <!-- 时间戳 -->
+            <!-- 时间�?-->
             <text x="50%" y="75%" text-anchor="middle" dy="0.35em" 
                   font-family="Arial, sans-serif" font-size="18" fill="#bdc3c7">
               ${new Date().toLocaleTimeString()}
             </text>
             
-            <!-- 等待动画点 -->
+            <!-- 等待动画�?-->
             <circle cx="45%" cy="85%" r="4" fill="#95a5a6">
               <animate attributeName="opacity" values="1;0.3;1" dur="1s" repeatCount="indefinite"/>
             </circle>
@@ -684,10 +549,10 @@ export class StreamService {
       .jpeg({ quality: this.config.jpegQuality })
       .toBuffer();
       
-      console.log(`✅ [StreamService] 等待提示帧创建成功，大小: ${buffer.length}字节, 进度: ${progressPercent.toFixed(1)}%`);
+      console.log(`�?[StreamService] 等待提示帧创建成功，大小: ${buffer.length}字节, 进度: ${progressPercent.toFixed(1)}%`);
       return buffer;
     } catch (error) {
-      console.error(`❌ [StreamService] 创建等待提示帧失败:`, error);
+      console.error(`�?[StreamService] 创建等待提示帧失�?`, error);
       throw error;
     }
   }
@@ -726,3 +591,9 @@ export class StreamService {
 }
 
 export { StreamConfig, StreamClient };
+
+
+
+
+
+

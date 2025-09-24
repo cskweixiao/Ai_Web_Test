@@ -54,6 +54,8 @@ export const LiveView: React.FC<LiveViewProps> = React.memo(({ runId, testStatus
     }
 
     const img = imgRef.current;
+    img.style.transition = 'opacity 200ms ease-in-out';
+    img.style.opacity = '0.15';
     const token = getAuthToken();
     const streamUrl = `http://localhost:3001/api/stream/live/${runId}?token=${token}`;
     
@@ -89,6 +91,9 @@ export const LiveView: React.FC<LiveViewProps> = React.memo(({ runId, testStatus
     // 🔥 简化：基础帧更新处理，移除复杂的内容检测
     const handleImageLoad = () => {
       const now = Date.now();
+      if (imgRef.current) {
+        imgRef.current.style.opacity = '1';
+      }
       const timeSinceLastFrame = now - lastFrameTime;
       
       // 🔥 移除过严的时间检测，接受所有正常的帧更新
@@ -122,6 +127,7 @@ export const LiveView: React.FC<LiveViewProps> = React.memo(({ runId, testStatus
     const maxRetries = 5;
     
     img.onerror = (e) => {
+    if (imgRef.current) { imgRef.current.style.opacity = '0.35'; }
       console.error('❌ [LiveView] 图像加载错误:', {
         runId: runId.substring(0, 8),
         retryCount,
@@ -142,6 +148,7 @@ export const LiveView: React.FC<LiveViewProps> = React.memo(({ runId, testStatus
           if (imgRef.current) {
             // 🔥 减少闪烁：只添加时间戳，不改变基础URL
             const newUrl = streamUrl + '&_retry=' + Date.now();
+            imgRef.current.style.opacity = '0.2';
             imgRef.current.src = newUrl;
             console.log('🔄 [LiveView] 尝试重新连接流');
           }
@@ -161,6 +168,7 @@ export const LiveView: React.FC<LiveViewProps> = React.memo(({ runId, testStatus
     setError(null);
     
     return () => {
+      if (imgRef.current) { imgRef.current.style.opacity = '0.15'; }
       console.log('🧹 [LiveView] 清理连接:', runId);
       img.removeEventListener('load', handleImageLoad);
       if (frameUpdateTimer) clearInterval(frameUpdateTimer);
@@ -190,7 +198,7 @@ export const LiveView: React.FC<LiveViewProps> = React.memo(({ runId, testStatus
         )}
       </div>
       
-      <div className="live-view-content bg-black flex-1 min-h-0 flex items-center justify-center">
+      <div className="live-view-content bg-slate-100 flex-1 min-h-0 flex items-center justify-center">
         {error ? (
           <div className="text-white text-center p-8">
             <div className="text-4xl mb-4">
@@ -217,10 +225,11 @@ export const LiveView: React.FC<LiveViewProps> = React.memo(({ runId, testStatus
             )}
           </div>
         ) : (
-          <img 
+          <img
             ref={imgRef}
-            className="w-full h-full object-contain"
-            alt="实时测试画面"
+            className="w-full h-full object-contain bg-black transition-opacity duration-200 ease-in-out"
+            style={{ opacity: 0.15 }}
+            alt="??????"
           />
         )}
       </div>

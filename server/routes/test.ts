@@ -4,13 +4,42 @@ import { TestExecutionService } from '../services/testExecution.js';
 export function testRoutes(testExecutionService: TestExecutionService): Router {
   const router = Router();
 
-  // 获取所有测试用例
+  // 获取所有测试用例（支持分页和过滤）
   router.get('/cases', async (req: Request, res: Response) => {
     try {
-      const testCases = await testExecutionService.getTestCases();
+      const {
+        page = '1',
+        pageSize = '10',
+        search = '',
+        tag = '',
+        priority = '',
+        status = '',
+        system = ''
+      } = req.query;
+
+      const pageNum = parseInt(page as string);
+      const sizePer = parseInt(pageSize as string);
+
+      // 获取过滤后的测试用例
+      const result = await testExecutionService.getTestCasesPaginated({
+        page: pageNum,
+        pageSize: sizePer,
+        search: search as string,
+        tag: tag as string,
+        priority: priority as string,
+        status: status as string,
+        system: system as string
+      });
+
       res.json({
         success: true,
-        data: testCases
+        data: result.data,
+        pagination: {
+          page: pageNum,
+          pageSize: sizePer,
+          total: result.total,
+          totalPages: Math.ceil(result.total / sizePer)
+        }
       });
     } catch (error: any) {
       res.status(500).json({

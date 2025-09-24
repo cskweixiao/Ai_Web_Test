@@ -57,33 +57,30 @@ function setupLogCollection() {
   fs.writeFileSync(logFile, `=== 测试执行日志 ${new Date().toISOString()} ===\n`);
   
   // 拦截console输出
-  console.log = function(...args) {
+  const appendLog = (level: string, args: unknown[]) => {
     const timestamp = new Date().toISOString();
-    const message = args.map(arg => 
+    const message = args.map(arg =>
       typeof arg === 'object' ? JSON.stringify(arg, null, 2) : String(arg)
     ).join(' ');
-    
-    fs.appendFileSync(logFile, `[${timestamp}] LOG: ${message}\n`);
+
+    fs.promises.appendFile(logFile, `[${timestamp}] ${level}: ${message}
+`).catch(logError => {
+      originalError('?? ??????:', logError);
+    });
+  };
+
+  console.log = function(...args) {
+    appendLog('LOG', args);
     originalLog(...args);
   };
-  
+
   console.error = function(...args) {
-    const timestamp = new Date().toISOString();
-    const message = args.map(arg => 
-      typeof arg === 'object' ? JSON.stringify(arg, null, 2) : String(arg)
-    ).join(' ');
-    
-    fs.appendFileSync(logFile, `[${timestamp}] ERROR: ${message}\n`);
+    appendLog('ERROR', args);
     originalError(...args);
   };
-  
+
   console.warn = function(...args) {
-    const timestamp = new Date().toISOString();
-    const message = args.map(arg => 
-      typeof arg === 'object' ? JSON.stringify(arg, null, 2) : String(arg)
-    ).join(' ');
-    
-    fs.appendFileSync(logFile, `[${timestamp}] WARN: ${message}\n`);
+    appendLog('WARN', args);
     originalWarn(...args);
   };
   

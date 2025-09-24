@@ -1071,31 +1071,138 @@ export class PlaywrightMcpClient {
   }
 
   // 🔥 修复方案：使用简单文件名+后处理移动
-  async takeScreenshotForStream(filePath: string): Promise<void> {
+  async takeScreenshotForStream(options: { runId?: string; filename?: string } = {}): Promise<{ buffer: Buffer; source: 'mcp-direct' | 'filesystem'; durationMs: number }> {
     if (!this.isInitialized || !this.client) {
       throw new Error('MCP客户端未初始化');
     }
-    
-    // 🔥 使用简单文件名调用MCP
-    const filename = path.basename(filePath);
-    
-    console.log(`🔧 [MCP] 调用截图工具 (修复方案):`, {
+
+    const startedAt = Date.now();
+    const runTag = options.runId?.slice(0, 12) ?? 'stream';
+    const filename = options.filename ?? `stream-${runTag}-${Date.now()}.png`;
+    const tempDir = path.join(process.cwd(), 'temp-screenshots');
+
+    try {
+      if (!fs.existsSync(tempDir)) {
+        fs.mkdirSync(tempDir, { recursive: true });
+      }
+    } catch (dirError) {
+      console.warn('[MCP] Failed to ensure temp screenshot directory:', this.normaliseError(dirError).message);
+    }
+
+    const fallbackPath = path.join(tempDir, filename);
+
+    console.log('[MCP] invoking screenshot tool (stream):', {
       toolName: this.getToolName('screenshot'),
-      expectedPath: filePath,
-      filename: filename,
-      arguments: { filename: filename }
+      filename
     });
-    
-    const result = await this.client.callTool({ 
-      name: this.getToolName('screenshot'), 
-      arguments: { filename: filename }  // 🔥 使用简单filename参数
+
+    const result = await this.client.callTool({
+      name: this.getToolName('screenshot'),
+      arguments: { filename }
     });
-    
-    console.log(`📋 [MCP] 截图工具返回结果:`, result);
-    
-    // 🔥 修复方案：处理文件移动到正确位置
-    await this.handleScreenshotPostProcess(filename, filePath);
+
+    console.log('[MCP] screenshot tool result:', result);
+
+    const directBuffer = this.extractImageBuffer(result);
+    if (directBuffer) {
+      const duration = Date.now() - startedAt;
+      console.log(`[MCP] screenshot returned buffer: ${directBuffer.length} bytes, ${duration}ms`);
+      return { buffer: directBuffer, source: 'mcp-direct', durationMs: duration };
+    }
+
+    await this.handleScreenshotPostProcess(filename, fallbackPath);
+
+    try {
+      const buffer = await fs.promises.readFile(fallbackPath);
+      await fs.promises.unlink(fallbackPath).catch(() => undefined);
+      const duration = Date.now() - startedAt;
+      console.log(`[MCP] screenshot fallback buffer: ${buffer.length} bytes, ${duration}ms`);
+      return { buffer, source: 'filesystem', durationMs: duration };
+    } catch (fsError) {
+      const details = this.normaliseError(fsError);
+      throw new Error(`读取回退截图失败: ${details.message}`);
+    }
   }
+
+  private extractImageBuffer(result: unknown): Buffer | null {
+    if (!result || typeof result !== 'object') {
+      return null;
+    }
+
+    const content = (result as { content?: unknown }).content;
+    if (Array.isArray(content)) {
+      for (const entry of content) {
+        const decoded = this.decodeImagePayload(entry);
+        if (decoded) {
+          return decoded;
+        }
+      }
+    }
+
+    const topLevelData = (result as { data?: unknown }).data;
+    if (typeof topLevelData === 'string') {
+      try {
+        return Buffer.from(topLevelData, 'base64');
+      } catch {
+        return null;
+      }
+    }
+
+    return null;
+  }
+
+  private decodeImagePayload(payload: unknown): Buffer | null {
+    if (!payload || typeof payload !== 'object') {
+      return null;
+    }
+
+    const item = payload as {
+      type?: unknown;
+      data?: unknown;
+      base64Data?: unknown;
+      body?: unknown;
+      mimeType?: unknown;
+      mime_type?: unknown;
+    };
+
+    const base64Candidate =
+      (typeof item.data === 'string' && item.data) ||
+      (typeof item.base64Data === 'string' && item.base64Data) ||
+      (typeof item.body === 'string' && item.body) ||
+      undefined;
+
+    if (!base64Candidate) {
+      return null;
+    }
+
+    const mime = item.mimeType ?? item.mime_type;
+    const declaredType = item.type;
+
+    if (declaredType === 'image' || (typeof mime === 'string' && mime.startsWith('image/'))) {
+      try {
+        return Buffer.from(base64Candidate, 'base64');
+      } catch {
+        return null;
+      }
+    }
+
+    return null;
+  }
+
+  private normaliseError(error: unknown): Error {
+    if (error instanceof Error) {
+      return error;
+    }
+    if (typeof error === 'string') {
+      return new Error(error);
+    }
+    try {
+      return new Error(JSON.stringify(error));
+    } catch {
+      return new Error('Unknown error');
+    }
+  }
+
 
 
   async waitForLoad(isFirstStep: boolean = false): Promise<void> {
