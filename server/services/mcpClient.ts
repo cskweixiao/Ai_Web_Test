@@ -1079,17 +1079,17 @@ export class PlaywrightMcpClient {
     const startedAt = Date.now();
     const runTag = options.runId?.slice(0, 12) ?? 'stream';
     const filename = options.filename ?? `stream-${runTag}-${Date.now()}.png`;
-    const tempDir = path.join(process.cwd(), 'temp-screenshots');
+    const screenshotDir = screenshotConfig.getScreenshotsDirectory();
 
     try {
-      if (!fs.existsSync(tempDir)) {
-        fs.mkdirSync(tempDir, { recursive: true });
+      if (!fs.existsSync(screenshotDir)) {
+        fs.mkdirSync(screenshotDir, { recursive: true });
       }
     } catch (dirError) {
-      console.warn('[MCP] Failed to ensure temp screenshot directory:', this.normaliseError(dirError).message);
+      console.warn('[MCP] Failed to ensure screenshot directory:', this.normaliseError(dirError).message);
     }
 
-    const fallbackPath = path.join(tempDir, filename);
+    const fallbackPath = path.join(screenshotDir, filename);
 
     console.log('[MCP] invoking screenshot tool (stream):', {
       toolName: this.getToolName('screenshot'),
@@ -1110,18 +1110,112 @@ export class PlaywrightMcpClient {
       return { buffer: directBuffer, source: 'mcp-direct', durationMs: duration };
     }
 
-    await this.handleScreenshotPostProcess(filename, fallbackPath);
+    const toolError = this.extractScreenshotError(result);
+    if (toolError) {
+      throw new Error(toolError);
+    }
+
+    const resolvedPath = (await this.handleScreenshotPostProcess(filename, fallbackPath)) ?? this.locateScreenshotFile(filename, fallbackPath);
+    if (!resolvedPath) {
+      throw new Error(`未找到截图文件: ${filename}`);
+    }
 
     try {
-      const buffer = await fs.promises.readFile(fallbackPath);
-      await fs.promises.unlink(fallbackPath).catch(() => undefined);
+      const buffer = await this.readScreenshotWithRetries(resolvedPath);
+      if (filename.startsWith('stream-')) {
+        await fs.promises.unlink(resolvedPath).catch(() => undefined);
+      }
       const duration = Date.now() - startedAt;
-      console.log(`[MCP] screenshot fallback buffer: ${buffer.length} bytes, ${duration}ms`);
+      console.log(`[MCP] screenshot fallback buffer: ${buffer.length} bytes, ${duration}ms (path=${resolvedPath})`);
       return { buffer, source: 'filesystem', durationMs: duration };
     } catch (fsError) {
       const details = this.normaliseError(fsError);
       throw new Error(`读取回退截图失败: ${details.message}`);
     }
+  }
+
+  private async readScreenshotWithRetries(filePath: string, attempts = 4, delayMs = 30): Promise<Buffer> {
+    let lastError: unknown;
+
+    for (let attempt = 1; attempt <= attempts; attempt += 1) {
+      try {
+        return await fs.promises.readFile(filePath);
+      } catch (error) {
+        lastError = error;
+        if (attempt === attempts) {
+          break;
+        }
+        await new Promise(resolve => setTimeout(resolve, delayMs * attempt));
+      }
+    }
+
+    if (lastError instanceof Error) {
+      throw lastError;
+    }
+
+    throw new Error(String(lastError ?? 'Unknown error'));
+  }
+
+  private extractScreenshotError(result: unknown): string | null {
+    if (!result || typeof result !== 'object') {
+      return null;
+    }
+
+    const payload = result as { isError?: boolean; error?: unknown; errors?: unknown; message?: unknown; content?: unknown };
+
+    if (typeof payload.error === 'string' && payload.error.trim().length > 0) {
+      return `MCP_SCREENSHOT_ERROR: ${payload.error.trim()}`;
+    }
+
+    if (Array.isArray(payload.errors)) {
+      const combined = payload.errors
+        .map(entry => typeof entry === 'string' ? entry.trim() : '')
+        .filter(Boolean)
+        .join('; ');
+      if (combined.length > 0) {
+        return `MCP_SCREENSHOT_ERROR: ${combined}`;
+      }
+    }
+
+    if (typeof payload.message === 'string' && payload.message.trim().length > 0 && payload.isError) {
+      return `MCP_SCREENSHOT_ERROR: ${payload.message.trim()}`;
+    }
+
+    const contentText = this.extractTextContent(payload.content);
+    if (contentText) {
+      const lower = contentText.toLowerCase();
+      if (payload.isError || lower.startsWith('error')) {
+        return `MCP_SCREENSHOT_ERROR: ${contentText}`;
+      }
+    }
+
+    return null;
+  }
+
+  private extractTextContent(content: unknown): string | null {
+    if (!content) {
+      return null;
+    }
+
+    const entries = Array.isArray(content) ? content : [content];
+    for (const entry of entries) {
+      if (!entry || typeof entry !== 'object') {
+        continue;
+      }
+
+      const candidate = entry as { text?: unknown; message?: unknown; content?: unknown };
+      if (typeof candidate.text === 'string' && candidate.text.trim().length > 0) {
+        return candidate.text.trim();
+      }
+      if (typeof candidate.message === 'string' && candidate.message.trim().length > 0) {
+        return candidate.message.trim();
+      }
+      if (typeof candidate.content === 'string' && candidate.content.trim().length > 0) {
+        return candidate.content.trim();
+      }
+    }
+
+    return null;
   }
 
   private extractImageBuffer(result: unknown): Buffer | null {
@@ -1481,100 +1575,136 @@ export class PlaywrightMcpClient {
   }
 
   // 🔥 新增：处理截图文件的后处理（移动到正确目录）
-  private async handleScreenshotPostProcess(filename: string, targetPath?: string): Promise<void> {
+  private buildScreenshotCandidatePaths(filename: string, preferredPath?: string): string[] {
+    const candidates = new Set<string>();
+    if (preferredPath) {
+      candidates.add(path.normalize(preferredPath));
+    }
+
+    const screenshotDir = screenshotConfig.getScreenshotsDirectory();
+
+    const staticPaths = [
+      filename,
+      path.join(process.cwd(), filename),
+      path.join(screenshotDir, filename),
+      path.join(process.cwd(), 'temp-screenshots', filename),
+      path.join(process.cwd(), 'screenshots', filename),
+      path.join(process.cwd(), 'node_modules', '@playwright', 'mcp', filename),
+      path.join(process.cwd(), 'node_modules', '.bin', filename),
+      path.join(process.cwd(), 'playwright-report', filename),
+      path.join(process.cwd(), 'test-results', filename),
+      path.join(os.tmpdir(), filename),
+      path.join(os.homedir(), filename)
+    ];
+
+    for (const candidate of staticPaths) {
+      if (candidate && candidate.trim().length > 0) {
+        candidates.add(path.normalize(candidate));
+      }
+    }
+
+    const envDirectories = [
+      process.env.PLAYWRIGHT_MCP_OUTPUT_DIR,
+      process.env.MCP_OUTPUT_DIR,
+      process.env.PLAYWRIGHT_SCREENSHOTS_DIR,
+      process.env.MCP_SCREENSHOT_DIR,
+      process.env.PLAYWRIGHT_DOWNLOAD_DIR,
+      process.env.PLAYWRIGHT_TEMP_DIR,
+      process.env.PLAYWRIGHT_BROWSERS_PATH
+    ].filter((value): value is string => Boolean(value && value.trim().length > 0));
+
+    for (const directory of envDirectories) {
+      candidates.add(path.normalize(path.join(directory, filename)));
+    }
+
+    return Array.from(candidates);
+  }
+
+  private locateScreenshotFile(filename: string, preferredPath?: string): string | null {
+    const candidates = this.buildScreenshotCandidatePaths(filename, preferredPath);
+
+    for (const candidate of candidates) {
+      try {
+        if (fs.existsSync(candidate)) {
+          const stats = fs.statSync(candidate);
+          if (stats.isFile() && stats.size > 0) {
+            return candidate;
+          }
+        }
+      } catch (error) {
+        // 忽略单个路径检查错误
+      }
+    }
+
+    return null;
+  }
+
+  private async handleScreenshotPostProcess(filename: string, targetPath?: string): Promise<string | null> {
     try {
-      const fs = await import('fs');
-      const { screenshotConfig } = await import('../../src/utils/screenshotConfig.js');
-      
+      console.log(`🔍 [PostProcess] 查找截图文件: ${filename}`);
+
       const targetDir = screenshotConfig.getScreenshotsDirectory();
       const finalPath = targetPath || path.join(targetDir, filename);
-      
-      // 🔍 查找MCP可能保存文件的位置（增强版）
-      const possiblePaths = [
-        filename, // 当前工作目录
-        path.join(process.cwd(), filename), // 项目根目录
-        path.join(targetDir, filename), // 目标目录（可能已经在正确位置）
-        path.join(process.cwd(), 'temp-screenshots', filename), // 🔥 添加：temp-screenshots目录
-        path.join(os.tmpdir(), filename), // 临时目录
-        path.join(os.homedir(), filename), // 用户目录
-        path.join(process.cwd(), 'node_modules', '.bin', filename), // node_modules/.bin
-        path.join('screenshots', filename), // 相对路径
-        // 🔥 添加：更多可能的MCP输出位置
-        path.join(process.cwd(), 'node_modules', '@playwright', 'mcp', filename),
-        path.join(process.env.PLAYWRIGHT_BROWSERS_PATH || '', filename),
-        path.join(process.cwd(), 'playwright-report', filename),
-        path.join(process.cwd(), 'test-results', filename)
-      ].filter(p => p && p.length > 0); // 过滤空路径
-      
-      console.log(`🔍 [PostProcess] 查找截图文件: ${filename}`);
-      
-      let sourceFile: string | null = null;
-      for (const possiblePath of possiblePaths) {
-        try {
-          if (fs.existsSync(possiblePath)) {
-            const stats = fs.statSync(possiblePath);
-            if (stats.size > 0) {
-              sourceFile = possiblePath;
-              console.log(`✅ [PostProcess] 找到源文件: ${sourceFile} (${stats.size} bytes)`);
-              break;
-            }
-          }
-        } catch (error) {
-          // 忽略单个路径检查错误
-        }
-      }
-      
+      const sourceFile = this.locateScreenshotFile(filename, finalPath);
+
       if (!sourceFile) {
         console.warn(`⚠️ [PostProcess] 未找到截图文件: ${filename}`);
-        console.warn(`🔍 [PostProcess] 已检查路径:`, possiblePaths);
-        
-        // 🔥 额外调试：检查当前目录的所有文件
+        const candidates = this.buildScreenshotCandidatePaths(filename, finalPath);
+        console.warn('🔍 [PostProcess] 已检查路径:', candidates);
+
         try {
-          const currentDirFiles = fs.readdirSync(process.cwd()).filter(file => file.includes(filename.split('-')[1]));
-          console.warn(`📂 [PostProcess] 当前目录相关文件:`, currentDirFiles);
-          
-          const screenshots = fs.readdirSync(path.join(process.cwd(), 'screenshots')).slice(-5);
-          console.warn(`📂 [PostProcess] screenshots目录最新文件:`, screenshots);
+          const parts = filename.split('-');
+          const token = parts.length > 1 ? parts[1] : filename;
+          const currentDirFiles = fs.readdirSync(process.cwd()).filter(file => file.includes(token));
+          console.warn('📂 [PostProcess] 当前目录相关文件:', currentDirFiles);
+
+          const screenshotFiles = fs.readdirSync(screenshotConfig.getScreenshotsDirectory()).slice(-5);
+          console.warn('📂 [PostProcess] screenshots目录最新文件:', screenshotFiles);
         } catch (debugError) {
-          console.warn(`🔍 [PostProcess] 调试信息获取失败:`, debugError.message);
+          console.warn('🔍 [PostProcess] 调试信息获取失败:', (debugError as Error).message);
         }
-        
-        throw new Error(`截图文件未找到: ${filename}`);
+
+        return null;
       }
-      
-      // 🔥 确保目标目录存在
+
       screenshotConfig.ensureScreenshotsDirectory();
-      
-      // 🔥 如果文件已在正确位置，无需移动
+
       if (path.resolve(sourceFile) === path.resolve(finalPath)) {
         console.log(`✅ [PostProcess] 文件已在正确位置: ${finalPath}`);
-        return;
+        return finalPath;
       }
-      
-      // 🔥 移动文件到正确位置
+
+      try {
+        await fs.promises.mkdir(path.dirname(finalPath), { recursive: true });
+      } catch (mkdirError) {
+        console.warn('⚠️ [PostProcess] 创建目标目录失败:', this.normaliseError(mkdirError as Error).message);
+      }
+
       console.log(`🔄 [PostProcess] 移动文件: ${sourceFile} -> ${finalPath}`);
       fs.copyFileSync(sourceFile, finalPath);
-      
-      // 🔥 验证移动是否成功
+
       if (fs.existsSync(finalPath)) {
         const stats = fs.statSync(finalPath);
         console.log(`✅ [PostProcess] 文件移动成功: ${finalPath} (${stats.size} bytes)`);
-        
-        // 🔥 删除源文件（如果不在目标目录）
+
         if (sourceFile !== finalPath) {
           try {
             fs.unlinkSync(sourceFile);
             console.log(`🗑️ [PostProcess] 已删除源文件: ${sourceFile}`);
           } catch (deleteError) {
-            console.warn(`⚠️ [PostProcess] 删除源文件失败: ${sourceFile}`, deleteError);
+            console.warn('⚠️ [PostProcess] 删除源文件失败:', deleteError);
           }
         }
-      } else {
-        console.error(`❌ [PostProcess] 文件移动失败: ${finalPath}`);
+
+        return finalPath;
       }
-      
+
+      console.error(`❌ [PostProcess] 文件移动失败: ${finalPath}`);
+      return null;
     } catch (error) {
-      console.error(`❌ [PostProcess] 截图后处理失败:`, error);
+      console.error('❌ [PostProcess] 截图后处理失败', error);
+      return null;
     }
   }
+
 }
