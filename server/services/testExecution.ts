@@ -2285,6 +2285,12 @@ ${elements.map((el, index) => `${index + 1}. ${el.ref}: ${el.role} "${el.text}"`
   private updateTestRunStatus(runId: string, status: TestRunStatus, message?: string) {
     const testRun = testRunStore.get(runId);
     if (testRun) {
+      // 🔥 新增：首次变为running状态时，记录实际开始执行时间
+      if (status === 'running' && testRun.status !== 'running' && !testRun.actualStartedAt) {
+        testRun.actualStartedAt = new Date();
+        console.log(`⏱️ [${runId}] 记录实际开始执行时间: ${testRun.actualStartedAt.toISOString()}`);
+      }
+
       testRun.status = status;
       const logLevel = (status === 'failed' || status === 'error') ? 'error' : 'info';
       if (message) {
@@ -2384,7 +2390,10 @@ ${elements.map((el, index) => `${index + 1}. ${el.ref}: ${el.role} "${el.text}"`
     const testRun = testRunStore.get(runId);
     if (testRun) {
       testRun.endedAt = new Date();
-      const duration = this.calculateDuration(testRun.startedAt, testRun.endedAt);
+      // 🔥 优化：优先使用actualStartedAt计算实际执行时长，回退到startedAt保证兼容性
+      const effectiveStartTime = testRun.actualStartedAt || testRun.startedAt;
+      const duration = this.calculateDuration(effectiveStartTime, testRun.endedAt);
+      console.log(`⏱️ [${runId}] 计算执行时长: ${duration} (${testRun.actualStartedAt ? '实际' : '入队'}开始时间)`);
       this.wsManager.broadcast({ type: 'test_update', runId, data: { status: testRun.status, endedAt: testRun.endedAt, duration } });
     }
   }

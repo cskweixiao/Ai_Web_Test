@@ -72,18 +72,14 @@ export function TestRuns() {
   useEffect(() => {
     localStorage.setItem('tr-activeTab', activeTab);
   }, [activeTab]);
-  // 🔥 优化：使用 useRef 避免频繁更新 selectedRun 触发 LiveView 重连
-  const selectedRunIdRef = useRef<string | null>(null);
-  const lastUpdateTimeRef = useRef<number>(0);
-
-  // 🔥 新增：只在关键状态变化时更新 selectedRun
+  // 🔥 核心修复3：简化 selectedRun 同步逻辑，直接复用 testRuns 中的对象
   useEffect(() => {
     if (!selectedRun) return;
 
     const latest = testRuns.find(run => run.id === selectedRun.id);
     if (!latest) return;
 
-    // 🔥 关键优化：只有status或progress等关键字段变化时才更新
+    // 🔥 关键优化：只检查关键字段，日志已经被隔离
     const hasSignificantChange = (
       latest.status !== selectedRun.status ||
       latest.progress !== selectedRun.progress ||
@@ -92,29 +88,17 @@ export function TestRuns() {
       latest.failedSteps !== selectedRun.failedSteps
     );
 
-    // 🔥 日志变化不触发 selectedRun 更新，避免 LiveView 重连
-    // 日志会通过批量消息直接更新到 testRuns 中
-
     if (hasSignificantChange) {
-      // 🚀 节流更新：避免过于频繁的状态更新
-      const now = Date.now();
-      if (now - lastUpdateTimeRef.current < 1000) {
-        return; // 静默跳过，不输出日志
-      }
-
-      lastUpdateTimeRef.current = now;
-
-      // 🔥 只更新关键字段，不包含 logs
-      setSelectedRun({
-        ...selectedRun,
-        status: latest.status,
-        progress: latest.progress,
-        completedSteps: latest.completedSteps,
-        passedSteps: latest.passedSteps,
-        failedSteps: latest.failedSteps,
-        endTime: latest.endTime,
-        duration: latest.duration
+      // 🔥 输出调试日志
+      console.log('🔄 [TestRuns] selectedRun 更新:', {
+        runId: selectedRun.id.substring(0, 8),
+        statusChange: latest.status !== selectedRun.status,
+        progressChange: latest.progress !== selectedRun.progress
       });
+
+      // 🔥 核心优化：直接复用 testRuns 中的对象引用
+      // 这样即使 testRuns 数组引用变化，selectedRun 的引用也保持稳定
+      setSelectedRun(latest);
     }
   }, [testRuns, selectedRun]);
 
@@ -487,39 +471,42 @@ export function TestRuns() {
     };
   }, [updateTestRunIncrementally]);
 
-  // 🔥 新增：批量处理日志消息
-  const handleBatchLogs = useCallback((message: any) => {
+  // 🔥 核心修复2：使用独立的日志缓冲区，避免频繁更新 testRuns 对象引用
+  const logsBufferRef = useRef<Map<string, any[]>>(new Map());
+
+  // 🔥 新增：批量处理日志消息 - 使用 useRef 避免依赖问题
+  const handleBatchLogsRef = useRef((message: any) => {
     const { runId, logs } = message;
     if (!runId || !logs || !Array.isArray(logs) || logs.length === 0) {
       return;
     }
 
-    // 🔥 批量更新日志，一次性添加所有日志
-    setTestRuns(prevRuns => {
-      const runIndex = prevRuns.findIndex(run => run.id === runId);
-      if (runIndex < 0) return prevRuns;
+    // 🔥 核心优化：日志存储到独立缓冲区，不触发 testRuns 更新
+    if (!logsBufferRef.current.has(runId)) {
+      logsBufferRef.current.set(runId, []);
+    }
 
-      const updatedRuns = [...prevRuns];
-      const currentRun = updatedRuns[runIndex];
+    const buffer = logsBufferRef.current.get(runId)!;
 
-      // 合并新日志，转换格式
-      const formattedLogs = logs.map((log: any) => ({
-        id: log.id || `log-${Date.now()}-${Math.random()}`,
-        timestamp: log.timestamp ? new Date(log.timestamp) : new Date(),
-        level: log.level || 'info',
-        message: log.message || '',
-        stepId: log.stepId
-      }));
+    // 转换并添加到缓冲区
+    const formattedLogs = logs.map((log: any) => ({
+      id: log.id || `log-${Date.now()}-${Math.random()}`,
+      timestamp: log.timestamp ? new Date(log.timestamp) : new Date(),
+      level: log.level || 'info',
+      message: log.message || '',
+      stepId: log.stepId
+    }));
 
-      updatedRuns[runIndex] = {
-        ...currentRun,
-        logs: [...(currentRun.logs || []), ...formattedLogs]
-      };
+    buffer.push(...formattedLogs);
 
-      console.log(`📦 [TestRuns] 批量添加日志: ${logs.length}条, runId=${runId.substring(0, 8)}`);
-      return updatedRuns;
-    });
-  }, []);
+    // 🔥 只在开发模式输出日志
+    if (process.env.NODE_ENV === 'development' && logs.length % 40 === 0) {
+      console.log(`📦 [TestRuns] 日志缓存: ${formattedLogs.length}条, 总计: ${buffer.length}, runId=${runId.substring(0, 8)}`);
+    }
+
+    // 🔥 关键：不更新 testRuns，避免触发 selectedRun 同步和 LiveView 重渲染
+    // 日志会在 filteredLogs 的 useMemo 中从缓冲区读取并合并
+  });
 
   // 🔥 稳定的WebSocket连接管理 - 减少重复初始化
   useEffect(() => {
@@ -542,9 +529,9 @@ export function TestRuns() {
         console.log('📨 WebSocket消息:', message.type, messageCount);
       }
 
-      // 🔥 新增：处理批量日志
+      // 🔥 新增：处理批量日志 - 使用 ref 避免依赖
       if (message.type === 'logs_batch') {
-        handleBatchLogs(message);
+        handleBatchLogsRef.current(message);
         return;
       }
 
@@ -564,7 +551,7 @@ export function TestRuns() {
       testService.removeMessageListener(listenerId);
       console.log('🧹 WebSocket监听器已清理');
     };
-  }, [handleBatchLogs, debouncedUpdate]); // 🔥 添加依赖
+  }, []); // 🔥 空依赖数组，只初始化一次
 
   // 🔥 完全依赖 WebSocket 实时更新，无需定时刷新
   // WebSocket 会自动推送测试状态变化，用户也可以手动点击"刷新数据"按钮
@@ -713,8 +700,55 @@ export function TestRuns() {
   // 🔥 修复灰屏问题：使用 useCallback 稳定 onFrameUpdate 函数引用
   // 避免 WebSocket 消息触发的重新渲染导致 LiveView 重新连接
   const handleFrameUpdate = useCallback((timestamp: Date) => {
-    console.log('实时流帧更新:', timestamp);
+    // 🔥 减少日志输出，避免控制台污染
+    if (timestamp.getSeconds() % 10 === 0) {
+      console.log('实时流帧更新:', timestamp);
+    }
   }, []);
+
+  // 🔥 核心修复4：使用独立的 ref 存储 LiveView 关键属性
+  const liveViewRunIdRef = useRef<string | null>(null);
+  const liveViewStatusRef = useRef<'running' | 'completed' | 'failed' | 'queued' | 'cancelled' | null>(null);
+  const [liveViewPropsVersion, setLiveViewPropsVersion] = useState(0);
+
+  // 🔥 监听 selectedRun 变化，只在 id 或 status 真正变化时更新 ref 和触发重渲染
+  useEffect(() => {
+    if (!selectedRun) {
+      if (liveViewRunIdRef.current !== null || liveViewStatusRef.current !== null) {
+        liveViewRunIdRef.current = null;
+        liveViewStatusRef.current = null;
+        setLiveViewPropsVersion(v => v + 1);
+      }
+      return;
+    }
+
+    const idChanged = liveViewRunIdRef.current !== selectedRun.id;
+    const statusChanged = liveViewStatusRef.current !== selectedRun.status;
+
+    if (idChanged || statusChanged) {
+      liveViewRunIdRef.current = selectedRun.id;
+      liveViewStatusRef.current = selectedRun.status;
+      setLiveViewPropsVersion(v => v + 1);
+
+      console.log('🎬 [TestRuns] LiveView props 更新:', {
+        runId: selectedRun.id.substring(0, 8),
+        status: selectedRun.status,
+        idChanged,
+        statusChanged
+      });
+    }
+  }, [selectedRun, selectedRun?.id, selectedRun?.status]);
+
+  // 🔥 liveViewProps 完全基于 ref，不依赖 selectedRun 对象
+  const liveViewProps = useMemo(() => {
+    if (!liveViewRunIdRef.current) return null;
+
+    return {
+      runId: liveViewRunIdRef.current,
+      testStatus: liveViewStatusRef.current || 'queued',
+      onFrameUpdate: handleFrameUpdate
+    };
+  }, [liveViewPropsVersion, handleFrameUpdate]);
 
   const getStatusIcon = (status: string) => {
     switch (status) {
@@ -791,21 +825,27 @@ export function TestRuns() {
     }
   };
 
-  // 🔎 日志过滤与搜索
+  // 🔎 日志过滤与搜索 - 核心修复：从缓冲区合并日志
   const filteredLogs = useMemo(() => {
     if (!selectedRun) return [];
+
     const enabled = new Set<string>();
     Object.entries(logLevels).forEach(([k, v]) => {
       if (v) enabled.add(k);
     });
     const keyword = logSearch.trim().toLowerCase();
-    const logs = selectedRun.logs || [];
-    return logs.filter(log => {
+
+    // 🔥 核心优化：合并 selectedRun.logs 和缓冲区的日志
+    const baseLogs = selectedRun.logs || [];
+    const bufferedLogs = logsBufferRef.current.get(selectedRun.id) || [];
+    const allLogs = [...baseLogs, ...bufferedLogs];
+
+    return allLogs.filter(log => {
       const levelOk = enabled.has(log.level as string);
       const keywordOk = keyword === '' || (log.message || '').toLowerCase().includes(keyword);
       return levelOk && keywordOk;
     });
-  }, [selectedRun, logLevels, logSearch]);
+  }, [selectedRun, selectedRun?.id, logLevels, logSearch]);
 
   // 窗口化显示：默认仅渲染最近500条，可一键展开全部
   const displayLogs = useMemo(() => {
@@ -934,7 +974,6 @@ export function TestRuns() {
         <div className="flex items-center space-x-2 ml-4">
           <div className="text-right text-sm text-gray-600 mr-4">
             <div>{safeFormat(run.startTime, 'MM-dd HH:mm')}</div>
-            <div className="text-xs">用时: {run.duration}</div>
           </div>
           
           {(run.status === 'running' || run.status === 'queued') && (
@@ -1178,7 +1217,7 @@ export function TestRuns() {
                 exit={{ scale: 0.95, opacity: 0 }}
                 className={clsx(
                   "bg-white rounded-xl shadow-xl overflow-hidden flex flex-col",
-                  isLiveFull ? "w-[98vw] h-[94vh]" : "w-[min(96vw,1280px)] h-[85vh]"
+                  isLiveFull ? "w-[98vw] h-[96vh]" : "w-[92vw] h-[90vh]"
                 )}
                 role="dialog"
                 aria-modal="true"
@@ -1202,61 +1241,9 @@ export function TestRuns() {
                     </button>
                   </div>
                 </div>
-                
-                {/* 🔥 执行摘要 - 显示执行次数而非步骤数 */}
-                <div className="px-6 py-4 bg-gray-50 border-b">
-                  <div className="grid grid-cols-3 gap-6 text-center">
-                    <div>
-                      <div className="text-3xl font-bold text-gray-900">1</div>
-                      <div className="text-sm text-gray-600 mt-1">执行总数</div>
-                      <div className="text-xs text-gray-500 mt-0.5">当前查看单个测试用例</div>
-                    </div>
-                    <div>
-                      <div className="text-3xl font-bold text-green-600">
-                        {selectedRun.status === 'completed' ? '1' : '0'}
-                      </div>
-                      <div className="text-sm text-gray-600 mt-1">成功</div>
-                      <div className="text-xs text-gray-500 mt-0.5">
-                        {selectedRun.status === 'completed' ? '测试已完成' : '测试进行中'}
-                      </div>
-                    </div>
-                    <div>
-                      <div className="text-3xl font-bold text-red-600">
-                        {selectedRun.status === 'failed' ? '1' : '0'}
-                      </div>
-                      <div className="text-sm text-gray-600 mt-1">失败</div>
-                      <div className="text-xs text-gray-500 mt-0.5">
-                        {selectedRun.status === 'failed' ? '测试执行失败' : '暂无失败'}
-                      </div>
-                    </div>
-                  </div>
 
-                  {/* 步骤级别统计 - 作为补充信息 */}
-                  <div className="mt-4 pt-4 border-t border-gray-200">
-                    <div className="text-xs text-gray-500 mb-2 text-center">步骤执行详情</div>
-                    <div className="grid grid-cols-4 gap-3 text-center">
-                      <div className="bg-white rounded-lg py-2 px-3">
-                        <div className="text-lg font-semibold text-gray-900">{selectedRun.totalSteps}</div>
-                        <div className="text-xs text-gray-600">总步骤</div>
-                      </div>
-                      <div className="bg-white rounded-lg py-2 px-3">
-                        <div className="text-lg font-semibold text-blue-600">{selectedRun.completedSteps}</div>
-                        <div className="text-xs text-gray-600">已完成</div>
-                      </div>
-                      <div className="bg-white rounded-lg py-2 px-3">
-                        <div className="text-lg font-semibold text-green-600">{selectedRun.passedSteps}</div>
-                        <div className="text-xs text-gray-600">通过</div>
-                      </div>
-                      <div className="bg-white rounded-lg py-2 px-3">
-                        <div className="text-lg font-semibold text-red-600">{selectedRun.failedSteps}</div>
-                        <div className="text-xs text-gray-600">失败</div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* 🔥 新增：实时流和证据查看器标签页 */}
-                <div className="px-6 py-4 border-b">
+                {/* 🔥 标签页导航 - 紧凑设计，为内容区腾出空间 */}
+                <div className="px-6 py-3 border-b bg-gray-50">
                   <div className="flex items-center justify-between">
                     <div className="flex space-x-4">
                       <button
@@ -1425,13 +1412,13 @@ export function TestRuns() {
                 )}
 
                 {/* 🔥 实时画面标签页 */}
-                {activeTab === 'live' && (
+                {activeTab === 'live' && liveViewProps && (
                   <div className="h-full min-h-0">
                     <div className="h-full rounded-lg overflow-hidden bg-black/5">
                       <LiveView
-                        runId={selectedRun.id}
-                        testStatus={selectedRun.status}
-                        onFrameUpdate={handleFrameUpdate}
+                        runId={liveViewProps.runId}
+                        testStatus={liveViewProps.testStatus}
+                        onFrameUpdate={liveViewProps.onFrameUpdate}
                       />
                     </div>
                   </div>

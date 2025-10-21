@@ -36,27 +36,46 @@ export const LiveView: React.FC<LiveViewProps> = React.memo(({ runId, testStatus
     }
   }, []); // 空依赖数组，函数引用永不变化
 
+  // 🔥 新增：防抖保护 ref
+  const lastEffectTimeRef = useRef<number>(0);
+  const cleanupPendingRef = useRef(false);
+
   useEffect(() => {
-    // 🔥 防止重复连接：如果runId没变且已经连接，直接返回
-    if (currentRunIdRef.current === runId && isConnectingRef.current) {
-      console.log('🔒 [LiveView] 已经连接中，跳过重复初始化:', runId.substring(0, 8));
+    // 🔥 核心修复1：在最开头立即设置连接标志，防止清理函数重置后才检查
+    const now = Date.now();
+    const timeSinceLastEffect = now - lastEffectTimeRef.current;
+
+    // 🔥 防抖保护：300ms 内不重复初始化（除非 runId 变化）
+    if (
+      currentRunIdRef.current === runId &&
+      isConnectingRef.current &&
+      timeSinceLastEffect < 300 &&
+      !cleanupPendingRef.current
+    ) {
+      console.log('✅ [LiveView] 已连接，跳过重复初始化:', runId.substring(0, 8));
       return;
     }
 
-    // 🚀 优化：只在非运行状态或有错误时输出日志
+    // 🔥 立即标记正在连接，防止重复触发
+    lastEffectTimeRef.current = now;
+    cleanupPendingRef.current = false;
+    isConnectingRef.current = true;
+    currentRunIdRef.current = runId;
+
+    // 🔥 新增：输出 useEffect 触发原因（仅在状态变化时）
     if (testStatus && testStatus !== 'running') {
       console.log('🔍 [LiveView] 状态变化:', { runId: runId.substring(0, 8), testStatus });
+    } else {
+      console.log('🔄 [LiveView] 初始化连接:', runId.substring(0, 8));
     }
 
     if (!imgRef.current) return;
 
     // 检查测试状态，如果不是运行中，显示相应消息
     if (testStatus && testStatus !== 'running') {
-      // 日志已在上方输出，此处不重复
       setIsConnected(false);
       setFrameCount(0);
-      isConnectingRef.current = false;
-      currentRunIdRef.current = null;
+      // 🔥 注意：不重置连接标志，避免影响防抖逻辑
 
       switch (testStatus) {
         case 'completed':
@@ -76,10 +95,6 @@ export const LiveView: React.FC<LiveViewProps> = React.memo(({ runId, testStatus
       }
       return;
     }
-
-    // 🔥 标记正在连接
-    isConnectingRef.current = true;
-    currentRunIdRef.current = runId;
 
     const img = imgRef.current;
     const token = getAuthToken();
@@ -192,14 +207,20 @@ export const LiveView: React.FC<LiveViewProps> = React.memo(({ runId, testStatus
 
     return () => {
       isCleanedUp = true; // 🚀 标记已清理，避免定时器和错误处理继续执行
+      cleanupPendingRef.current = true; // 🔥 标记清理待定，允许下次重新连接
 
       if (imgRef.current) { imgRef.current.style.opacity = '0.15'; }
       // 🚀 优化：简化清理日志
       console.log('🧹 [LiveView] 清理:', runId.substring(0, 8));
 
-      // 🔥 重置连接状态
-      isConnectingRef.current = false;
-      currentRunIdRef.current = null;
+      // 🔥 核心修复：延迟重置连接状态，给防抖保护时间
+      // 只有在真正切换 runId 或卸载组件时才重置
+      setTimeout(() => {
+        if (cleanupPendingRef.current) {
+          isConnectingRef.current = false;
+          currentRunIdRef.current = null;
+        }
+      }, 100);
 
       // 🚀 先清理事件监听器
       img.removeEventListener('load', handleImageLoad);
@@ -273,20 +294,11 @@ export const LiveView: React.FC<LiveViewProps> = React.memo(({ runId, testStatus
   );
 }, (prevProps, nextProps) => {
   // 🔥 自定义比较函数：只有关键属性变化时才重新渲染
-  const shouldSkipRender = (
+  // 忽略 onFrameUpdate 的变化，因为已经用 useCallback([]) 稳定
+  return (
     prevProps.runId === nextProps.runId &&
     prevProps.testStatus === nextProps.testStatus
   );
-
-  console.log('🔍 [LiveView React.memo] 比较 props:', {
-    runIdSame: prevProps.runId === nextProps.runId,
-    statusSame: prevProps.testStatus === nextProps.testStatus,
-    prevStatus: prevProps.testStatus,
-    nextStatus: nextProps.testStatus,
-    shouldSkipRender
-  });
-
-  return shouldSkipRender;
 });
 
 // 🔥 修正：获取认证token的辅助函数

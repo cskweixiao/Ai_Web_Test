@@ -87,6 +87,7 @@ export interface TestRun {
   status: TestRunStatus;
   logs: TestLog[];
   startedAt: Date;
+  actualStartedAt?: Date; // 🔥 新增：实际开始执行时间（首次变为running状态时）
   environment: string;
   suiteId?: string;
   reuseBrowser?: boolean;
