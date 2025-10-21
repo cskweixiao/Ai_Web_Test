@@ -2361,21 +2361,24 @@ ${elements.map((el, index) => `${index + 1}. ${el.ref}: ${el.role} "${el.text}"`
     const queue = this.logQueue.get(runId);
     if (!queue || queue.logs.length === 0) return;
 
+    // 🔥 核心修复：复制日志数组，避免异步发送时数组已被清空
+    const logsToSend = [...queue.logs];
+
+    // 🔥 立即清理队列，为下一批日志做准备
+    queue.logs = [];
+
     // 异步广播，不阻塞主流程
     setImmediate(() => {
       try {
-        this.wsManager.broadcast({ 
-          type: 'logs_batch', 
-          runId, 
-          data: { logs: queue.logs } 
+        this.wsManager.broadcast({
+          type: 'logs_batch',
+          runId,
+          data: { logs: logsToSend }  // 🔥 使用复制的数组
         });
       } catch (error) {
         console.warn(`WebSocket日志广播失败:`, error);
       }
     });
-
-    // 清理队列
-    queue.logs = [];
     if (queue.timer) {
       clearTimeout(queue.timer);
       queue.timer = undefined;

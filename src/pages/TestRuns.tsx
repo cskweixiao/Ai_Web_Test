@@ -88,7 +88,8 @@ export function TestRuns() {
       latest.failedSteps !== selectedRun.failedSteps
     );
 
-    if (hasSignificantChange) {
+    // 🔥 核心修复：只有在字段变化且对象引用也变化时才更新
+    if (hasSignificantChange && latest !== selectedRun) {
       // 🔥 输出调试日志
       console.log('🔄 [TestRuns] selectedRun 更新:', {
         runId: selectedRun.id.substring(0, 8),
@@ -96,8 +97,7 @@ export function TestRuns() {
         progressChange: latest.progress !== selectedRun.progress
       });
 
-      // 🔥 核心优化：直接复用 testRuns 中的对象引用
-      // 这样即使 testRuns 数组引用变化，selectedRun 的引用也保持稳定
+      // 🔥 直接复用 testRuns 中的对象引用
       setSelectedRun(latest);
     }
   }, [testRuns, selectedRun]);
@@ -474,10 +474,18 @@ export function TestRuns() {
   // 🔥 核心修复2：使用独立的日志缓冲区，避免频繁更新 testRuns 对象引用
   const logsBufferRef = useRef<Map<string, any[]>>(new Map());
 
-  // 🔥 新增：批量处理日志消息 - 使用 useRef 避免依赖问题
-  const handleBatchLogsRef = useRef((message: any) => {
-    const { runId, logs } = message;
-    if (!runId || !logs || !Array.isArray(logs) || logs.length === 0) {
+  // 🔥 核心修复：使用 useCallback 而不是 useRef，确保函数能访问最新的 ref
+  const handleBatchLogs = useCallback((message: any) => {
+    const { runId, logs, data } = message;
+
+    // 🔥 核心修复：兼容两种消息格式（logs 可能在顶层或 data 里）
+    const actualLogs = logs || data?.logs;
+
+    // 🔥 添加详细日志验证函数是否被调用
+    console.log(`🔵 [handleBatchLogs] 被调用, runId=${runId?.substring(0, 8)}, logs数量=${actualLogs?.length}, 原始logs=${logs?.length}, data.logs=${data?.logs?.length}`);
+
+    if (!runId || !actualLogs || !Array.isArray(actualLogs) || actualLogs.length === 0) {
+      console.warn(`⚠️ [handleBatchLogs] 参数无效, runId=${runId}, actualLogs=${actualLogs}`);
       return;
     }
 
@@ -488,8 +496,8 @@ export function TestRuns() {
 
     const buffer = logsBufferRef.current.get(runId)!;
 
-    // 转换并添加到缓冲区
-    const formattedLogs = logs.map((log: any) => ({
+    // 🔥 核心修复：使用 actualLogs 而不是 logs
+    const formattedLogs = actualLogs.map((log: any) => ({
       id: log.id || `log-${Date.now()}-${Math.random()}`,
       timestamp: log.timestamp ? new Date(log.timestamp) : new Date(),
       level: log.level || 'info',
@@ -499,14 +507,12 @@ export function TestRuns() {
 
     buffer.push(...formattedLogs);
 
-    // 🔥 只在开发模式输出日志
-    if (process.env.NODE_ENV === 'development' && logs.length % 40 === 0) {
-      console.log(`📦 [TestRuns] 日志缓存: ${formattedLogs.length}条, 总计: ${buffer.length}, runId=${runId.substring(0, 8)}`);
-    }
+    // 🔥 总是输出日志，移除环境检查
+    console.log(`📦 [TestRuns] 日志缓存: ${formattedLogs.length}条, 总计: ${buffer.length}, runId=${runId.substring(0, 8)}`);
 
     // 🔥 关键：不更新 testRuns，避免触发 selectedRun 同步和 LiveView 重渲染
     // 日志会在 filteredLogs 的 useMemo 中从缓冲区读取并合并
-  });
+  }, []);  // 空依赖数组，但可以访问 ref
 
   // 🔥 稳定的WebSocket连接管理 - 减少重复初始化
   useEffect(() => {
@@ -529,9 +535,9 @@ export function TestRuns() {
         console.log('📨 WebSocket消息:', message.type, messageCount);
       }
 
-      // 🔥 新增：处理批量日志 - 使用 ref 避免依赖
+      // 🔥 核心修复：处理批量日志 - 使用 useCallback
       if (message.type === 'logs_batch') {
-        handleBatchLogsRef.current(message);
+        handleBatchLogs(message);  // 🔥 修复：调用 handleBatchLogs 而不是 .current
         return;
       }
 
@@ -737,7 +743,7 @@ export function TestRuns() {
         statusChanged
       });
     }
-  }, [selectedRun, selectedRun?.id, selectedRun?.status]);
+  }, [selectedRun?.id, selectedRun?.status]);  // 🔥 核心修复：移除 selectedRun 对象，只依赖 id 和 status
 
   // 🔥 liveViewProps 完全基于 ref，不依赖 selectedRun 对象
   const liveViewProps = useMemo(() => {
@@ -827,7 +833,12 @@ export function TestRuns() {
 
   // 🔎 日志过滤与搜索 - 核心修复：从缓冲区合并日志
   const filteredLogs = useMemo(() => {
-    if (!selectedRun) return [];
+    const runId = selectedRun?.id;
+    if (!runId) return [];
+
+    // 🔥 核心修复：不访问 selectedRun 对象，通过 runId 从 testRuns 查找
+    const run = testRuns.find(r => r.id === runId);
+    if (!run) return [];
 
     const enabled = new Set<string>();
     Object.entries(logLevels).forEach(([k, v]) => {
@@ -835,9 +846,9 @@ export function TestRuns() {
     });
     const keyword = logSearch.trim().toLowerCase();
 
-    // 🔥 核心优化：合并 selectedRun.logs 和缓冲区的日志
-    const baseLogs = selectedRun.logs || [];
-    const bufferedLogs = logsBufferRef.current.get(selectedRun.id) || [];
+    // 🔥 核心优化：合并 run.logs 和缓冲区的日志
+    const baseLogs = run.logs || [];
+    const bufferedLogs = logsBufferRef.current.get(runId) || [];
     const allLogs = [...baseLogs, ...bufferedLogs];
 
     return allLogs.filter(log => {
@@ -845,7 +856,7 @@ export function TestRuns() {
       const keywordOk = keyword === '' || (log.message || '').toLowerCase().includes(keyword);
       return levelOk && keywordOk;
     });
-  }, [selectedRun, selectedRun?.id, logLevels, logSearch]);
+  }, [selectedRun?.id, testRuns, logLevels, logSearch]);  // 🔥 添加 testRuns 依赖
 
   // 窗口化显示：默认仅渲染最近500条，可一键展开全部
   const displayLogs = useMemo(() => {
