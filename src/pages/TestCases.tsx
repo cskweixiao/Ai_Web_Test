@@ -20,12 +20,14 @@ import {
   Package,
   HelpCircle,
   Bot,
-  RotateCcw
+  RotateCcw,
+  Table,
+  AlignLeft
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { Layout } from '../components/Layout';
 import { testService } from '../services/testService';
-import type { TestCase, TestSuite as TestSuiteType } from '../types/test';
+import type { TestCase, TestSuite as TestSuiteType, TestStepRow } from '../types/test';
 import { useNavigate } from 'react-router-dom';
 import { Modal, ConfirmModal } from '../components/ui/modal';
 import { Button } from '../components/ui/button';
@@ -34,6 +36,8 @@ import  {AIBulkUpdateModal}  from '../components/AIBulkUpdateModal';
 import { aiBulkUpdateService } from '../services/aiBulkUpdateService';
 import { TagInput } from '../components/ui/TagInput';
 import { TestCaseTable } from '../components/TestCaseTable';
+import { StepTableEditor } from '../components/StepTableEditor';
+import { parseStepsText, serializeStepsToText } from '../utils/stepConverter';
 
 // 表单数据接口
 interface CreateTestCaseForm {
@@ -131,16 +135,42 @@ export function TestCases() {
   const [stepsHelpOpen, setStepsHelpOpen] = useState(false);
   const [showUnsavedConfirm, setShowUnsavedConfirm] = useState(false);
 
+  // 🔥 新增：步骤编辑器模式和结构化数据
+  const [stepsEditorMode, setStepsEditorMode] = useState<'text' | 'table'>('table'); // 默认表格模式
+  const [stepsData, setStepsData] = useState<TestStepRow[]>([]);
+
+  // 🔥 新增：初始化时加载用户偏好的编辑器模式
+  useEffect(() => {
+    const savedMode = localStorage.getItem('stepsEditorMode') as 'text' | 'table' | null;
+    if (savedMode) {
+      setStepsEditorMode(savedMode);
+    }
+  }, []);
+
+  // 🔥 新增：当编辑现有用例时，解析步骤数据
+  useEffect(() => {
+    if (editingTestCase && showCreateModal) {
+      // 如果是表格模式，解析文本为结构化数据
+      if (stepsEditorMode === 'table') {
+        const parsed = parseStepsText(editingTestCase.steps);
+        setStepsData(parsed);
+      }
+    } else if (!showCreateModal) {
+      // 关闭弹窗时清空数据
+      setStepsData([]);
+    }
+  }, [editingTestCase, showCreateModal, stepsEditorMode]);
+
   // 🔥 新增：检查AI批量更新功能可用性
   const checkAIBulkUpdateAvailability = async () => {
     try {
       setCheckingFeature(true);
       console.log('🔍 [AI_Bulk_Update] 检查功能可用性...');
-      
+
       // 调用真实的AI服务检查功能可用性
       const available = await aiBulkUpdateService.checkFeatureAvailability();
       setAiFeatureAvailable(available);
-      
+
       console.log('✅ [AI_Bulk_Update] 功能检查完成，可用状态:', available);
       
     } catch (error) {
@@ -281,6 +311,34 @@ export function TestCases() {
     } finally {
       setLoading(false);
     }
+  };
+
+  // 🔥 新增：切换编辑器模式（文本 ↔ 表格）
+  const handleToggleEditorMode = () => {
+    const newMode = stepsEditorMode === 'text' ? 'table' : 'text';
+
+    // 从文本模式切换到表格模式：解析文本为结构化数据
+    if (newMode === 'table') {
+      const parsed = parseStepsText(formData.steps);
+      setStepsData(parsed);
+    }
+    // 从表格模式切换到文本模式：序列化结构化数据为文本
+    else {
+      const serialized = serializeStepsToText(stepsData);
+      setFormData(prev => ({ ...prev, steps: serialized }));
+    }
+
+    setStepsEditorMode(newMode);
+    localStorage.setItem('stepsEditorMode', newMode); // 记住用户偏好
+  };
+
+  // 🔥 新增：表格数据变化时同步到文本字段
+  const handleStepsDataChange = (newStepsData: TestStepRow[]) => {
+    setStepsData(newStepsData);
+    // 同步更新文本格式（保持兼容性）
+    const serialized = serializeStepsToText(newStepsData);
+    setFormData(prev => ({ ...prev, steps: serialized }));
+    setFormDirty(true);
   };
 
   const handleCreateTestCase = async (keepOpen = false) => {
@@ -1410,16 +1468,16 @@ export function TestCases() {
 
 
       {/* Create/Edit Modal */}
-      <Modal 
-        isOpen={showCreateModal} 
+      <Modal
+        isOpen={showCreateModal}
         onClose={handleCloseModal}
-        title={activeTab === 'cases' 
+        title={activeTab === 'cases'
           ? (editingTestCase ? '编辑测试用例' : '创建新测试用例')
           : (editingTestSuite ? '编辑测试套件' : '创建新测试套件')
         }
         closeOnClickOutside={false}
         size="wide"
-        contentPadding="lg"
+        contentPadding="md"
         footer={
           <div className="flex justify-end space-x-3">
             <Button
@@ -1465,9 +1523,9 @@ export function TestCases() {
       >
         {activeTab === 'cases' ? (
           // 🔥 测试用例表单
-          <div className={clsx("grid gap-6", !stepsExpanded && "xl:grid-cols-3")}>
+          <div className={clsx("grid gap-4", !stepsExpanded && "xl:grid-cols-3")}>
             {/* 左侧主区：名称 + 步骤 + 断言 */}
-            <div className="space-y-4 xl:col-span-2">
+            <div className="space-y-3 xl:col-span-2">
               <div>
                 <label htmlFor="caseName" className="block text-sm font-medium text-gray-700 mb-2">
                   用例名称 *
@@ -1500,105 +1558,146 @@ export function TestCases() {
                     测试步骤 *
                   </label>
                   <div className="flex items-center gap-2 relative">
+                    {/* 🔥 新增：切换编辑器模式按钮 */}
                     <button
                       type="button"
-                      onClick={() => {
-                        const n = normalizeSteps(formData.steps);
-                        setFormData(prev => ({ ...prev, steps: n }));
-                        setFormDirty(true);
-                        showToast.info('已格式化步骤');
-                      }}
-                      className="text-xs px-2 py-1 rounded border border-gray-300 text-gray-600 hover:bg-gray-50"
-                      title="将“1、xxx 2、xxx ...”自动拆分为多行"
-                    >
-                      格式化步骤
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setStepsSoftWrap(v => !v)}
-                      aria-pressed={stepsSoftWrap}
-                      className="text-xs px-2 py-1 rounded border border-gray-300 text-gray-600 hover:bg-gray-50"
-                      title={stepsSoftWrap ? '软换行：开（Alt+W）' : '软换行：关（Alt+W）'}
-                    >
-                      {stepsSoftWrap ? '软换行：开' : '软换行：关'}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setStepsExpanded(v => {
-                          const next = !v;
-                          if (!v) {
-                            setTimeout(() => {
-                              try {
-                                stepsTextareaRef.current?.focus();
-                                stepsTextareaRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' });
-                              } catch {}
-                            }, 0);
-                          }
-                          return next;
-                        });
-                      }}
-                      aria-pressed={stepsExpanded}
-                      aria-controls="caseSteps"
-                      className="text-xs px-2 py-1 rounded border border-gray-300 text-gray-600 hover:bg-gray-50"
-                      title={stepsExpanded ? '收起编辑区域（Alt+E）' : '展开为更大编辑区域（Alt+E）'}
-                    >
-                      {stepsExpanded ? '收起编辑' : '展开编辑'}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setStepsHelpOpen(v => !v)}
-                      aria-expanded={stepsHelpOpen}
+                      onClick={handleToggleEditorMode}
                       className="inline-flex items-center text-xs px-2 py-1 rounded border border-gray-300 text-gray-600 hover:bg-gray-50"
-                      title="查看步骤输入帮助与快捷键"
+                      title={stepsEditorMode === 'table' ? '切换为文本模式' : '切换为表格模式'}
                     >
-                      <HelpCircle className="h-3.5 w-3.5 mr-1" />
-                      帮助
+                      {stepsEditorMode === 'table' ? (
+                        <>
+                          <AlignLeft className="h-3.5 w-3.5 mr-1" />
+                          文本
+                        </>
+                      ) : (
+                        <>
+                          <Table className="h-3.5 w-3.5 mr-1" />
+                          表格
+                        </>
+                      )}
                     </button>
-                    {stepsHelpOpen && (
-                      <div className="absolute right-0 top-8 z-20 w-72 rounded-lg border border-gray-200 bg-white shadow-lg p-3 text-xs leading-5">
-                        <div className="font-medium text-gray-900 mb-1">步骤输入帮助</div>
-                        <ul className="list-disc pl-5 text-gray-700 space-y-1">
-                          <li>支持编号：1. / 1、 / 1)</li>
-                          <li>粘贴自动分行，建议每步一句</li>
-                          <li>快捷键：Alt+E 展开/收起，Alt+W 软换行，Ctrl/Cmd+Enter 提交</li>
-                        </ul>
-                      </div>
+
+                    {/* 仅在文本模式显示这些按钮 */}
+                    {stepsEditorMode === 'text' && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const n = normalizeSteps(formData.steps);
+                            setFormData(prev => ({ ...prev, steps: n }));
+                            setFormDirty(true);
+                            showToast.info('已格式化步骤');
+                          }}
+                          className="text-xs px-2 py-1 rounded border border-gray-300 text-gray-600 hover:bg-gray-50"
+                          title='将"1、xxx 2、xxx ..."自动拆分为多行'
+                        >
+                          格式化步骤
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setStepsSoftWrap(v => !v)}
+                          aria-pressed={stepsSoftWrap}
+                          className="text-xs px-2 py-1 rounded border border-gray-300 text-gray-600 hover:bg-gray-50"
+                          title={stepsSoftWrap ? '软换行：开（Alt+W）' : '软换行：关（Alt+W）'}
+                        >
+                          {stepsSoftWrap ? '软换行：开' : '软换行：关'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setStepsExpanded(v => {
+                              const next = !v;
+                              if (!v) {
+                                setTimeout(() => {
+                                  try {
+                                    stepsTextareaRef.current?.focus();
+                                    stepsTextareaRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+                                  } catch {}
+                                }, 0);
+                              }
+                              return next;
+                            });
+                          }}
+                          aria-pressed={stepsExpanded}
+                          aria-controls="caseSteps"
+                          className="text-xs px-2 py-1 rounded border border-gray-300 text-gray-600 hover:bg-gray-50"
+                          title={stepsExpanded ? '收起编辑区域（Alt+E）' : '展开为更大编辑区域（Alt+E）'}
+                        >
+                          {stepsExpanded ? '收起编辑' : '展开编辑'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setStepsHelpOpen(v => !v)}
+                          aria-expanded={stepsHelpOpen}
+                          className="inline-flex items-center text-xs px-2 py-1 rounded border border-gray-300 text-gray-600 hover:bg-gray-50"
+                          title="查看步骤输入帮助与快捷键"
+                        >
+                          <HelpCircle className="h-3.5 w-3.5 mr-1" />
+                          帮助
+                        </button>
+                        {stepsHelpOpen && (
+                          <div className="absolute right-0 top-8 z-20 w-72 rounded-lg border border-gray-200 bg-white shadow-lg p-3 text-xs leading-5">
+                            <div className="font-medium text-gray-900 mb-1">步骤输入帮助</div>
+                            <ul className="list-disc pl-5 text-gray-700 space-y-1">
+                              <li>支持编号：1. / 1、 / 1)</li>
+                              <li>粘贴自动分行，建议每步一句</li>
+                              <li>快捷键：Alt+E 展开/收起，Alt+W 软换行，Ctrl/Cmd+Enter 提交</li>
+                            </ul>
+                          </div>
+                        )}
+                      </>
                     )}
                   </div>
                 </div>
-                <textarea
-                  id="caseSteps"
-                  ref={stepsTextareaRef}
-                  rows={12}
-                  value={formData.steps}
-                  onChange={(e) => {
-                    setFormData(prev => ({ ...prev, steps: e.target.value }));
-                    setFormDirty(true);
-                  }}
-                  onBlur={() => setStepsTouched(true)}
-                  onPaste={handleStepsPaste}
-                  wrap={stepsSoftWrap ? "soft" : "off"}
-                  aria-invalid={stepsTouched && !formData.steps.trim() ? 'true' : 'false'}
-                  aria-describedby="caseSteps-error"
-                  className={clsx(
-                    "w-full px-3 py-2 font-mono border rounded-lg focus:ring-2 leading-6 resize-y",
-                    (stepsTouched && !formData.steps.trim())
-                      ? "border-red-500 focus:ring-red-500 focus:border-red-500"
-                      : "border-gray-300 focus:ring-blue-500 focus:border-transparent",
-                    "min-h-[32vh] sm:min-h-[38vh] md:min-h-[42vh] xl:min-h-[44vh]",
-                    !stepsSoftWrap && "overflow-x-auto",
-                    stepsExpanded && "h-[68vh]"
-                  )}
-                  placeholder="例如：&#10;1、打开登录页面&#10;2、输入用户名和密码&#10;3、点击登录按钮&#10;4、验证页面跳转"
-                />
-                {stepsTouched && !formData.steps.trim() && (
-                  <p id="caseSteps-error" className="mt-1 text-xs text-red-600">请输入测试步骤</p>
+
+                {/* 🔥 条件渲染：表格模式或文本模式 */}
+                {stepsEditorMode === 'table' ? (
+                  <>
+                    <StepTableEditor
+                      steps={stepsData}
+                      onChange={handleStepsDataChange}
+                    />
+                    {stepsTouched && stepsData.length === 0 && (
+                      <p className="mt-1 text-xs text-red-600">请添加至少一个测试步骤</p>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <textarea
+                      id="caseSteps"
+                      ref={stepsTextareaRef}
+                      rows={12}
+                      value={formData.steps}
+                      onChange={(e) => {
+                        setFormData(prev => ({ ...prev, steps: e.target.value }));
+                        setFormDirty(true);
+                      }}
+                      onBlur={() => setStepsTouched(true)}
+                      onPaste={handleStepsPaste}
+                      wrap={stepsSoftWrap ? "soft" : "off"}
+                      aria-invalid={stepsTouched && !formData.steps.trim() ? 'true' : 'false'}
+                      aria-describedby="caseSteps-error"
+                      className={clsx(
+                        "w-full px-3 py-2 font-mono border rounded-lg focus:ring-2 leading-6 resize-y",
+                        (stepsTouched && !formData.steps.trim())
+                          ? "border-red-500 focus:ring-red-500 focus:border-red-500"
+                          : "border-gray-300 focus:ring-blue-500 focus:border-transparent",
+                        "min-h-[32vh] sm:min-h-[38vh] md:min-h-[42vh] xl:min-h-[44vh]",
+                        !stepsSoftWrap && "overflow-x-auto",
+                        stepsExpanded && "h-[68vh]"
+                      )}
+                      placeholder="例如：&#10;1、打开登录页面&#10;2、输入用户名和密码&#10;3、点击登录按钮&#10;4、验证页面跳转"
+                    />
+                    {stepsTouched && !formData.steps.trim() && (
+                      <p id="caseSteps-error" className="mt-1 text-xs text-red-600">请输入测试步骤</p>
+                    )}
+                    <div className="mt-1 flex justify-between text-xs text-gray-500">
+                      <span>行数: {formData.steps ? formData.steps.split(/\r\n|\n/).length : 0} · 支持数字编号粘贴自动拆分</span>
+                      <span>字符: {formData.steps.length}</span>
+                    </div>
+                  </>
                 )}
-                <div className="mt-1 flex justify-between text-xs text-gray-500">
-                  <span>行数: {formData.steps ? formData.steps.split(/\r\n|\n/).length : 0} · 支持数字编号粘贴自动拆分</span>
-                  <span>字符: {formData.steps.length}</span>
-                </div>
               </div>
 
               <div>
@@ -1606,10 +1705,9 @@ export function TestCases() {
                   断言预期
                 </label>
                 <textarea
-                  rows={4}
                   value={formData.assertions}
                   onChange={(e) => setFormData(prev => ({ ...prev, assertions: e.target.value }))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-y min-h-28"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none h-32 overflow-y-auto"
                   placeholder="例如：&#10;• 页面成功跳转到首页&#10;• 显示用户昵称&#10;• 退出按钮可见"
                 />
                 <div className="mt-1 flex justify-between text-xs text-gray-500">
@@ -1620,7 +1718,7 @@ export function TestCases() {
             </div>
 
             {/* 右侧辅区：系统/模块/优先级/状态/标签 */}
-            <div className={clsx("space-y-4 xl:col-span-1", stepsExpanded && "hidden")}>
+            <div className={clsx("space-y-3 xl:col-span-1", stepsExpanded && "hidden")}>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   系统

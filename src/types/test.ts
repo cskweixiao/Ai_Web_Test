@@ -1,9 +1,23 @@
+// 🔥 新增：结构化测试步骤接口
+export interface TestStepRow {
+  id: string;                    // 唯一标识
+  order: number;                 // 排序号
+  action: string;                // 操作步骤
+  expected: string;              // 预期结果
+  note?: string;                 // 备注（可选）
+  selector?: string;             // 元素选择器（可选）
+  screenshot?: string;           // 截图URL（可选）
+  duration?: number;             // 预期耗时秒数（可选）
+  type?: 'action' | 'verification' | 'setup' | 'cleanup';  // 步骤类型
+}
+
 // 测试用例基础接口
 export interface TestCase {
   id: number;
   name: string;
   description?: string;
-  steps: string;
+  steps: string;                 // 保留原文本格式（兼容性）
+  stepsData?: TestStepRow[];     // 新增：结构化步骤数据
   assertions?: string;
   priority?: 'high' | 'medium' | 'low';
   status?: 'active' | 'draft' | 'disabled';
