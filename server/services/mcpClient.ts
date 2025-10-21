@@ -1073,6 +1073,7 @@ export class PlaywrightMcpClient {
   // 🔥 修复方案：使用简单文件名+后处理移动
   async takeScreenshotForStream(options: { runId?: string; filename?: string } = {}): Promise<{ buffer: Buffer; source: 'mcp-direct' | 'filesystem'; durationMs: number }> {
     if (!this.isInitialized || !this.client) {
+      console.error('❌ [MCP] 截图失败：客户端未初始化');
       throw new Error('MCP客户端未初始化');
     }
 
@@ -1081,55 +1082,77 @@ export class PlaywrightMcpClient {
     const filename = options.filename ?? `stream-${runTag}-${Date.now()}.png`;
     const screenshotDir = screenshotConfig.getScreenshotsDirectory();
 
+    console.log(`📸 [MCP] 开始截图流程: ${filename}, runId: ${runTag}`);
+
     try {
       if (!fs.existsSync(screenshotDir)) {
+        console.log(`📁 [MCP] 创建截图目录: ${screenshotDir}`);
         fs.mkdirSync(screenshotDir, { recursive: true });
       }
     } catch (dirError) {
-      console.warn('[MCP] Failed to ensure screenshot directory:', this.normaliseError(dirError).message);
+      console.warn('⚠️ [MCP] 创建截图目录失败:', this.normaliseError(dirError).message);
     }
 
     const fallbackPath = path.join(screenshotDir, filename);
 
-    console.log('[MCP] invoking screenshot tool (stream):', {
+    console.log(`🔧 [MCP] 调用截图工具:`, {
       toolName: this.getToolName('screenshot'),
-      filename
+      filename,
+      fallbackPath
     });
 
-    const result = await this.client.callTool({
-      name: this.getToolName('screenshot'),
-      arguments: { filename }
-    });
+    let result;
+    try {
+      result = await this.client.callTool({
+        name: this.getToolName('screenshot'),
+        arguments: { filename }
+      });
+      console.log(`✅ [MCP] 截图工具调用完成，耗时: ${Date.now() - startedAt}ms`);
+    } catch (callError: any) {
+      const errorMsg = this.normaliseError(callError).message;
+      console.error(`❌ [MCP] 截图工具调用失败: ${errorMsg}`);
+      throw callError;
+    }
 
-    console.log('[MCP] screenshot tool result:', result);
+    console.log(`📋 [MCP] 截图工具返回结果:`, JSON.stringify(result).substring(0, 200));
 
     const directBuffer = this.extractImageBuffer(result);
     if (directBuffer) {
       const duration = Date.now() - startedAt;
-      console.log(`[MCP] screenshot returned buffer: ${directBuffer.length} bytes, ${duration}ms`);
+      console.log(`✅ [MCP] 直接返回Buffer成功: ${directBuffer.length} bytes, ${duration}ms, source: mcp-direct`);
       return { buffer: directBuffer, source: 'mcp-direct', durationMs: duration };
     }
 
     const toolError = this.extractScreenshotError(result);
     if (toolError) {
+      console.error(`❌ [MCP] 截图工具返回错误: ${toolError}`);
       throw new Error(toolError);
     }
 
+    console.log(`📂 [MCP] 未获取到直接Buffer，尝试文件系统回退方案`);
+
     const resolvedPath = (await this.handleScreenshotPostProcess(filename, fallbackPath)) ?? this.locateScreenshotFile(filename, fallbackPath);
     if (!resolvedPath) {
+      console.error(`❌ [MCP] 未找到截图文件: ${filename}, fallbackPath: ${fallbackPath}`);
       throw new Error(`未找到截图文件: ${filename}`);
     }
 
+    console.log(`📄 [MCP] 找到截图文件: ${resolvedPath}`);
+
     try {
       const buffer = await this.readScreenshotWithRetries(resolvedPath);
+      console.log(`✅ [MCP] 成功读取文件Buffer: ${buffer.length} bytes`);
+
       if (filename.startsWith('stream-')) {
+        console.log(`🗑️ [MCP] 删除临时流截图文件: ${resolvedPath}`);
         await fs.promises.unlink(resolvedPath).catch(() => undefined);
       }
       const duration = Date.now() - startedAt;
-      console.log(`[MCP] screenshot fallback buffer: ${buffer.length} bytes, ${duration}ms (path=${resolvedPath})`);
+      console.log(`✅ [MCP] 文件系统回退成功: ${buffer.length} bytes, ${duration}ms, source: filesystem, path: ${resolvedPath}`);
       return { buffer, source: 'filesystem', durationMs: duration };
     } catch (fsError) {
       const details = this.normaliseError(fsError);
+      console.error(`❌ [MCP] 读取回退截图失败: ${details.message}, path: ${resolvedPath}`);
       throw new Error(`读取回退截图失败: ${details.message}`);
     }
   }

@@ -177,9 +177,54 @@ export function testRoutes(testExecutionService: TestExecutionService): Router {
   router.get('/runs', async (req: Request, res: Response) => {
     try {
       const testRuns = testExecutionService.getAllTestRuns();
+
+      // 🚀 修复：为每个测试运行补充测试用例名称和完整时间信息
+      const enrichedRuns = await Promise.all(
+        testRuns.map(async (run) => {
+          try {
+            // 获取测试用例详情
+            const testCase = await testExecutionService.getTestCaseById(run.testCaseId);
+
+            return {
+              ...run,
+              name: testCase?.name || `测试 #${run.testCaseId}`,
+              // 确保时间字段存在
+              startTime: run.startTime || run.queuedAt || new Date(),
+              endTime: run.endTime || run.finishedAt,
+              // 补充其他可能缺失的字段
+              duration: run.duration || '0s',
+              progress: run.progress || 0,
+              totalSteps: run.totalSteps || 0,
+              completedSteps: run.completedSteps || 0,
+              passedSteps: run.passedSteps || 0,
+              failedSteps: run.failedSteps || 0,
+              executor: run.executor || 'System',
+              screenshots: run.screenshots || []
+            };
+          } catch (error) {
+            console.error(`获取测试用例 #${run.testCaseId} 详情失败:`, error);
+            // 即使获取失败，也返回基本信息
+            return {
+              ...run,
+              name: `测试 #${run.testCaseId}`,
+              startTime: run.startTime || run.queuedAt || new Date(),
+              endTime: run.endTime || run.finishedAt,
+              duration: run.duration || '0s',
+              progress: run.progress || 0,
+              totalSteps: run.totalSteps || 0,
+              completedSteps: run.completedSteps || 0,
+              passedSteps: run.passedSteps || 0,
+              failedSteps: run.failedSteps || 0,
+              executor: run.executor || 'System',
+              screenshots: run.screenshots || []
+            };
+          }
+        })
+      );
+
       res.json({
         success: true,
-        data: testRuns
+        data: enrichedRuns
       });
     } catch (error) {
       res.status(500).json({

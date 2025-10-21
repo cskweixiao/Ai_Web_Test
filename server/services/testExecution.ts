@@ -251,6 +251,23 @@ export class TestExecutionService {
     return testCases.map(this.dbTestCaseToApp);
   }
 
+  // 🚀 新增：根据ID获取单个测试用例
+  public async getTestCaseById(id: number): Promise<TestCase | null> {
+    const testCase = await this.prisma.test_cases.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        title: true,
+        steps: true,
+        tags: true,
+        system: true,
+        module: true,
+        created_at: true
+      }
+    });
+    return testCase ? this.dbTestCaseToApp(testCase) : null;
+  }
+
   // 🔥 新增：支持分页和过滤的测试用例查询
   public async getTestCasesPaginated(params: {
     page: number;

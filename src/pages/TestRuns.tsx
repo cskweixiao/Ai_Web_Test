@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Play,
@@ -56,11 +56,13 @@ interface TestRun {
 }
 
 export function TestRuns() {
+  // 🚀 优化：移除组件渲染日志
+  // console.log('🔥 [TestRuns] 组件重新渲染，时间戳:', Date.now());
+
   const [testRuns, setTestRuns] = useState<TestRun[]>([]);
   const [selectedRun, setSelectedRun] = useState<TestRun | null>(null);
   const [showLogs, setShowLogs] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [autoRefresh, setAutoRefresh] = useState(true);
   const [stoppingTests, setStoppingTests] = useState<Set<string>>(new Set());
   const [showStopModal, setShowStopModal] = useState(false);
   const [activeTab, setActiveTab] = useState<'logs' | 'live' | 'evidence' | 'queue'>(() => {
@@ -70,6 +72,10 @@ export function TestRuns() {
   useEffect(() => {
     localStorage.setItem('tr-activeTab', activeTab);
   }, [activeTab]);
+  // 🔥 修复灰屏：使用 useEffect 同步 selectedRun，但添加日志追踪
+  // 🚀 优化：使用 useRef 避免频繁更新 selectedRun 触发 LiveView 重连
+  const lastUpdateTimeRef = useRef<number>(0);
+
   useEffect(() => {
     if (!selectedRun) return;
 
@@ -79,14 +85,29 @@ export function TestRuns() {
     const logsChanged =
       (latest.logs?.length || 0) !== (selectedRun.logs?.length || 0);
 
-    if (
+    const hasChanges = (
       latest.status !== selectedRun.status ||
       latest.progress !== selectedRun.progress ||
       latest.completedSteps !== selectedRun.completedSteps ||
       latest.failedSteps !== selectedRun.failedSteps ||
       latest.passedSteps !== selectedRun.passedSteps ||
       logsChanged
-    ) {
+    );
+
+    if (hasChanges) {
+      // 🚀 节流更新：避免过于频繁的状态更新
+      const now = Date.now();
+      if (now - lastUpdateTimeRef.current < 1000) {
+        console.log('⏭️ [TestRuns] 跳过更新（节流中）');
+        return;
+      }
+
+      lastUpdateTimeRef.current = now;
+      console.log('🔄 [TestRuns] selectedRun 需要更新，检测到变化:', {
+        statusChange: latest.status !== selectedRun.status,
+        progressChange: latest.progress !== selectedRun.progress,
+        logsChange: logsChanged
+      });
       setSelectedRun({ ...latest });
     }
   }, [testRuns, selectedRun]);
@@ -136,7 +157,7 @@ export function TestRuns() {
       const data = await response.json();
       
       // 添加详细日志，查看原始数据
-      console.log('📊 API返回的原始数据:', JSON.stringify(data, null, 2));
+      console.log('📊 API返回数据:', { success: data.success, count: data.data?.length || 0 });
       
       if (data.success) {
         // 转换数据格式，确保时间字段正确
@@ -206,12 +227,12 @@ export function TestRuns() {
             screenshots: run.screenshots || []
           };
           
-          console.log('处理后的测试运行数据:', processedRun);
+          // console.log('处理后的测试运行数据:', processedRun);
           return processedRun;
         });
         
         setTestRuns(runs);
-        console.log('📊 成功加载测试运行数据:', runs);
+        console.log('📊 成功加载测试运行数据:', runs.length, '条记录');
         
         // 🔥 清理停止状态 - 只保留实际还在运行的测试
         setStoppingTests(prev => {
@@ -241,7 +262,7 @@ export function TestRuns() {
           const suiteResponse = await fetch('http://localhost:3001/api/suites/runs');
           const suiteData = await suiteResponse.json();
           
-          console.log('📊 API返回的套件运行原始数据:', JSON.stringify(suiteData, null, 2));
+          console.log('📊 套件数据:', { success: suiteData.success, count: suiteData.data?.length || 0 });
           
           if (suiteData.success && suiteData.data && suiteData.data.length > 0) {
             // 将套件运行数据转换为测试运行格式
@@ -293,14 +314,14 @@ export function TestRuns() {
                 error: suiteRun.error
               };
               
-              console.log('处理后的套件运行数据:', processedSuiteRun);
+              // console.log('处理后的套件运行数据:', processedSuiteRun);
               return processedSuiteRun;
             });
             
             // 🚀 修复：只在组件挂载时更新状态
             if (isMountedRef.current) {
               setTestRuns(suiteRuns);
-              console.log('📊 成功加载套件运行数据:', suiteRuns);
+              console.log('📊 成功加载套件运行数据:', suiteRuns.length, '条记录');
             } else {
               console.log('组件已卸载，跳过状态更新');
             }
@@ -499,38 +520,8 @@ export function TestRuns() {
     };
   }, []); // 空依赖，只初始化一次
 
-  // 🔥 优化：稳定的自动刷新，避免因testRuns变化而重复设置定时器
-  useEffect(() => {
-    let interval: NodeJS.Timeout;
-    
-    if (autoRefresh) {
-      interval = setInterval(() => {
-        // 🚀 优化：只在有运行中的测试时才全量刷新
-        setTestRuns(currentRuns => {
-          const hasRunningTests = currentRuns.some(run => 
-            run.status === 'running' || run.status === 'queued'
-          );
-          
-          if (hasRunningTests) {
-            console.log('🔄 定时刷新测试数据（有运行中的测试）...');
-            loadTestRuns();
-          } else {
-            console.log('⏸️ 跳过定时刷新（无运行中的测试）');
-          }
-          
-          return currentRuns; // 不改变state，避免重渲染
-        });
-      }, 15000); // 延长到15秒，进一步减少频率
-    }
-
-    return () => {
-      if (interval) {
-        clearInterval(interval);
-        console.log('🧹 清理自动刷新定时器');
-      }
-    };
-  }, [autoRefresh]); // 移除testRuns依赖，避免频繁重新设置
-
+  // 🔥 完全依赖 WebSocket 实时更新，无需定时刷新
+  // WebSocket 会自动推送测试状态变化，用户也可以手动点击"刷新数据"按钮
 
   // 🔥 优化：缓存停止测试处理函数
   const handleStopTest = useCallback((testRun: TestRun) => {
@@ -671,6 +662,12 @@ export function TestRuns() {
   const handleViewLogs = useCallback((run: TestRun) => {
     setSelectedRun(run);
     setShowLogs(true);
+  }, []);
+
+  // 🔥 修复灰屏问题：使用 useCallback 稳定 onFrameUpdate 函数引用
+  // 避免 WebSocket 消息触发的重新渲染导致 LiveView 重新连接
+  const handleFrameUpdate = useCallback((timestamp: Date) => {
+    console.log('实时流帧更新:', timestamp);
   }, []);
 
   const getStatusIcon = (status: string) => {
@@ -880,36 +877,11 @@ export function TestRuns() {
               </div>
             )}
 
-            <div className="grid grid-cols-2 md:grid-cols-6 gap-4 text-sm text-gray-600">
-              <div><span className="font-medium">总步骤:</span> {run.totalSteps}</div>
-              <div><span className="font-medium">已完成:</span> {run.completedSteps}</div>
-              <div><span className="font-medium">通过:</span> <span className="text-green-600 font-medium">{run.passedSteps}</span></div>
-              <div><span className="font-medium">失败:</span> <span className="text-red-600 font-medium">{run.failedSteps}</span></div>
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm text-gray-600">
               <div><span className="font-medium">执行者:</span> {run.executor}</div>
               <div><span className="font-medium">环境:</span> {run.environment}</div>
+              <div><span className="font-medium">用时:</span> {run.duration}</div>
             </div>
-
-            {run.totalSteps > 0 && run.status !== 'running' && (
-              <div className="mt-2">
-                <div className="flex items-center justify-between text-xs text-gray-600 mb-1">
-                  <span>成功率</span>
-                  <span className="font-medium">
-                    {Math.round((run.passedSteps / run.totalSteps) * 100)}%
-                  </span>
-                </div>
-                <div className="w-full bg-gray-200 rounded-full h-2">
-                  <div
-                    className={clsx(
-                      "h-2 rounded-full transition-all",
-                      run.failedSteps === 0 ? "bg-green-500" : "bg-yellow-500"
-                    )}
-                    style={{ 
-                      width: `${Math.round((run.passedSteps / run.totalSteps) * 100)}%` 
-                    }}
-                  />
-                </div>
-              </div>
-            )}
           </div>
         </div>
 
@@ -956,15 +928,7 @@ export function TestRuns() {
     </motion.div>
   ), (prevProps, nextProps) => {
     // 🔥 自定义比较函数，只有关键属性变化时才重新渲染
-  // 🔁 日志自动滚动到底部
-  useEffect(() => {
-    if (activeTab !== 'logs' || !autoScrollLogs) return;
-    const el = logsContainerRef.current;
-    if (!el) return;
-    el.scrollTop = el.scrollHeight;
-  }, [selectedRun?.id, selectedRun?.logs?.length, activeTab, autoScrollLogs]);
-
-  return (
+    return (
       prevProps.run.id === nextProps.run.id &&
       prevProps.run.status === nextProps.run.status &&
       prevProps.run.progress === nextProps.run.progress &&
@@ -974,6 +938,14 @@ export function TestRuns() {
       prevProps.isStoppingTest === nextProps.isStoppingTest
     );
   });
+
+  // 🔁 日志自动滚动到底部
+  useEffect(() => {
+    if (activeTab !== 'logs' || !autoScrollLogs) return;
+    const el = logsContainerRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+  }, [selectedRun?.id, selectedRun?.logs?.length, activeTab, autoScrollLogs]);
 
   // 添加错误边界处理
   const ErrorFallback = ({ children }: { children: React.ReactNode }) => {
@@ -1020,7 +992,7 @@ export function TestRuns() {
             <p className="text-gray-600">查看测试运行状态和断言结果</p>
           </div>
           <div className="flex items-center space-x-3">
-            {/* 🔥 新增：全局停止按钮 - 始终显示 */}
+            {/* 🔥 全局停止按钮 */}
             <motion.button
               whileHover={{ scale: stats.running + stats.queued > 0 ? 1.02 : 1 }}
               whileTap={{ scale: stats.running + stats.queued > 0 ? 0.98 : 1 }}
@@ -1035,8 +1007,8 @@ export function TestRuns() {
                   : "bg-gray-200 text-gray-500 cursor-not-allowed"
               )}
               title={
-                stoppingAll 
-                  ? "正在停止所有测试..." 
+                stoppingAll
+                  ? "正在停止所有测试..."
                   : stats.running + stats.queued > 0
                   ? `停止所有运行中的测试 (${stats.running + stats.queued}个)`
                   : "当前没有正在运行的测试"
@@ -1047,34 +1019,22 @@ export function TestRuns() {
               ) : (
                 <StopCircle className="h-5 w-5 mr-2" />
               )}
-              {stoppingAll 
-                ? '停止中...' 
+              {stoppingAll
+                ? '停止中...'
                 : stats.running + stats.queued > 0
                 ? `停止所有 (${stats.running + stats.queued})`
                 : '停止所有'
               }
             </motion.button>
-            
-            <motion.button
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
-              onClick={() => setAutoRefresh(!autoRefresh)}
-              className={clsx(
-                "inline-flex items-center px-4 py-2 rounded-lg transition-colors",
-                autoRefresh 
-                  ? "bg-green-600 text-white hover:bg-green-700" 
-                  : "bg-gray-200 text-gray-700 hover:bg-gray-300"
-              )}
-            >
-              <RefreshCw className={clsx("h-5 w-5 mr-2", autoRefresh && "animate-spin")} />
-              {autoRefresh ? '自动刷新中' : '手动刷新'}
-            </motion.button>
+
+            {/* 🔥 手动刷新按钮 - WebSocket失败时的备用方案 */}
             <motion.button
               whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.98 }}
               onClick={loadTestRuns}
               disabled={loading}
               className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
+              title="手动刷新测试数据（通常由WebSocket自动更新）"
             >
               <RefreshCw className={clsx("h-5 w-5 mr-2", loading && "animate-spin")} />
               刷新数据
@@ -1197,24 +1157,54 @@ export function TestRuns() {
                   </div>
                 </div>
                 
-                {/* 🔥 执行摘要 */}
+                {/* 🔥 执行摘要 - 显示执行次数而非步骤数 */}
                 <div className="px-6 py-4 bg-gray-50 border-b">
-                  <div className="grid grid-cols-4 gap-4 text-center">
+                  <div className="grid grid-cols-3 gap-6 text-center">
                     <div>
-                      <div className="text-2xl font-bold text-gray-900">{selectedRun.totalSteps}</div>
-                      <div className="text-sm text-gray-600">总步骤</div>
+                      <div className="text-3xl font-bold text-gray-900">1</div>
+                      <div className="text-sm text-gray-600 mt-1">执行总数</div>
+                      <div className="text-xs text-gray-500 mt-0.5">当前查看单个测试用例</div>
                     </div>
                     <div>
-                      <div className="text-2xl font-bold text-green-600">{selectedRun.passedSteps}</div>
-                      <div className="text-sm text-gray-600">通过</div>
+                      <div className="text-3xl font-bold text-green-600">
+                        {selectedRun.status === 'completed' ? '1' : '0'}
+                      </div>
+                      <div className="text-sm text-gray-600 mt-1">成功</div>
+                      <div className="text-xs text-gray-500 mt-0.5">
+                        {selectedRun.status === 'completed' ? '测试已完成' : '测试进行中'}
+                      </div>
                     </div>
                     <div>
-                      <div className="text-2xl font-bold text-red-600">{selectedRun.failedSteps}</div>
-                      <div className="text-sm text-gray-600">失败</div>
+                      <div className="text-3xl font-bold text-red-600">
+                        {selectedRun.status === 'failed' ? '1' : '0'}
+                      </div>
+                      <div className="text-sm text-gray-600 mt-1">失败</div>
+                      <div className="text-xs text-gray-500 mt-0.5">
+                        {selectedRun.status === 'failed' ? '测试执行失败' : '暂无失败'}
+                      </div>
                     </div>
-                    <div>
-                      <div className="text-2xl font-bold text-blue-600">{selectedRun.progress}%</div>
-                      <div className="text-sm text-gray-600">完成率</div>
+                  </div>
+
+                  {/* 步骤级别统计 - 作为补充信息 */}
+                  <div className="mt-4 pt-4 border-t border-gray-200">
+                    <div className="text-xs text-gray-500 mb-2 text-center">步骤执行详情</div>
+                    <div className="grid grid-cols-4 gap-3 text-center">
+                      <div className="bg-white rounded-lg py-2 px-3">
+                        <div className="text-lg font-semibold text-gray-900">{selectedRun.totalSteps}</div>
+                        <div className="text-xs text-gray-600">总步骤</div>
+                      </div>
+                      <div className="bg-white rounded-lg py-2 px-3">
+                        <div className="text-lg font-semibold text-blue-600">{selectedRun.completedSteps}</div>
+                        <div className="text-xs text-gray-600">已完成</div>
+                      </div>
+                      <div className="bg-white rounded-lg py-2 px-3">
+                        <div className="text-lg font-semibold text-green-600">{selectedRun.passedSteps}</div>
+                        <div className="text-xs text-gray-600">通过</div>
+                      </div>
+                      <div className="bg-white rounded-lg py-2 px-3">
+                        <div className="text-lg font-semibold text-red-600">{selectedRun.failedSteps}</div>
+                        <div className="text-xs text-gray-600">失败</div>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -1392,12 +1382,10 @@ export function TestRuns() {
                 {activeTab === 'live' && (
                   <div className="h-full min-h-0">
                     <div className="h-full rounded-lg overflow-hidden bg-black/5">
-                      <LiveView 
+                      <LiveView
                         runId={selectedRun.id}
                         testStatus={selectedRun.status}
-                        onFrameUpdate={(timestamp) => {
-                          console.log('实时流帧更新:', timestamp);
-                        }}
+                        onFrameUpdate={handleFrameUpdate}
                       />
                     </div>
                   </div>

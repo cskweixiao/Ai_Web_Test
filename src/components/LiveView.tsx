@@ -15,25 +15,37 @@ export const LiveView: React.FC<LiveViewProps> = React.memo(({ runId, testStatus
   const reconnectTimeoutRef = useRef<NodeJS.Timeout>();
   const lastFrameUpdateCallRef = useRef<number>(0);
 
+  // 🔥 修复灰屏：使用 useRef 存储 onFrameUpdate，避免 useEffect 重新执行
+  const onFrameUpdateRef = useRef(onFrameUpdate);
+  useEffect(() => {
+    onFrameUpdateRef.current = onFrameUpdate;
+  }, [onFrameUpdate]);
+
   // 🔥 优化：节流onFrameUpdate回调，避免过度调用父组件
+  // 使用 useRef 避免依赖 onFrameUpdate，防止 useEffect 重新执行
   const throttledOnFrameUpdate = useCallback((timestamp: Date) => {
     const now = Date.now();
     // 限制回调频率为最多每500ms一次，避免过度触发父组件重渲染
     if (now - lastFrameUpdateCallRef.current >= 500) {
       lastFrameUpdateCallRef.current = now;
-      onFrameUpdate?.(timestamp);
+      onFrameUpdateRef.current?.(timestamp);
     }
-  }, [onFrameUpdate]);
+  }, []); // 空依赖数组，函数引用永不变化
 
   useEffect(() => {
+    // 🚀 优化：只在非运行状态或有错误时输出日志
+    if (testStatus && testStatus !== 'running') {
+      console.log('🔍 [LiveView] 状态变化:', { runId: runId.substring(0, 8), testStatus });
+    }
+
     if (!imgRef.current) return;
 
     // 检查测试状态，如果不是运行中，显示相应消息
     if (testStatus && testStatus !== 'running') {
-      console.log('🔍 [LiveView] 测试非运行状态，不连接流:', { runId, testStatus });
+      // 日志已在上方输出，此处不重复
       setIsConnected(false);
       setFrameCount(0);
-      
+
       switch (testStatus) {
         case 'completed':
           setError('测试已完成，实时画面不可用');
@@ -54,128 +66,133 @@ export const LiveView: React.FC<LiveViewProps> = React.memo(({ runId, testStatus
     }
 
     const img = imgRef.current;
-    img.style.transition = 'opacity 200ms ease-in-out';
-    img.style.opacity = '0.15';
     const token = getAuthToken();
     const streamUrl = `http://localhost:3001/api/stream/live/${runId}?token=${token}`;
-    
-    console.log('🔍 [LiveView] 开始连接MJPEG流 (IMG模式):', {
-      runId,
-      testStatus,
-      token: token.substring(0, 10) + '...',
-      streamUrl
-    });
+
+    // 🚀 优化：只在首次连接时输出日志
+    console.log('🔍 [LiveView] 连接MJPEG流:', runId.substring(0, 8));
 
     let frameUpdateTimer: NodeJS.Timeout;
     let lastFrameTime = Date.now();
     let lastFrameContent: string | null = null;
     let consecutiveIdenticalFrames = 0;
+    let isCleanedUp = false; // 🚀 新增：清理标志，避免重复操作
 
     // 🔥 简化：更宽松的帧监控，减少误判
     const startFrameMonitor = () => {
       frameUpdateTimer = setInterval(() => {
+        if (isCleanedUp) return; // 🚀 避免清理后继续执行
+
         const now = Date.now();
         const timeSinceLastFrame = now - lastFrameTime;
-        
+
         // 🔥 放宽超时阈值，只有真正长时间无响应才断开
-        const timeoutThreshold = 20000; // 20秒无更新才认为断开
-        
+        const timeoutThreshold = 30000; // 🚀 增加到30秒，避免误判
+
         if (timeSinceLastFrame > timeoutThreshold && isConnected) {
           console.warn(`⚠️ [LiveView] 长时间无帧更新: ${timeSinceLastFrame}ms`);
           setIsConnected(false);
           setError('连接可能中断');
         }
-      }, 5000); // 降低检查频率至5秒一次
+      }, 10000); // 🚀 降低检查频率至10秒一次，减少CPU占用
     };
 
     // 🔥 简化：基础帧更新处理，移除复杂的内容检测
     const handleImageLoad = () => {
       const now = Date.now();
+      const timeSinceLastFrame = now - lastFrameTime;
+
+      // 🚀 优化：只在特定情况下输出日志
+      if (frameCount % 30 === 0) { // 每30帧输出一次日志
+        console.log(`🖼️ [LiveView] 帧更新: ${runId.substring(0,8)}, 总帧数: ${frameCount + 1}`);
+      }
+
       if (imgRef.current) {
         imgRef.current.style.opacity = '1';
       }
-      const timeSinceLastFrame = now - lastFrameTime;
-      
+
       // 🔥 移除过严的时间检测，接受所有正常的帧更新
       if (timeSinceLastFrame < 50) { // 只过滤过于频繁的重复触发
         return;
       }
-      
+
       // 🔥 简化：直接更新状态，不做复杂的内容比较
       lastFrameTime = now;
-      setFrameCount(prev => prev + 1);
-      
+      const newFrameCount = frameCount + 1;
+      setFrameCount(newFrameCount);
+
       // 如果之前断开了，现在有帧更新说明恢复了
       if (!isConnected) {
-        console.log('✅ [LiveView] 检测到帧更新，恢复连接状态');
+        console.log('✅ [LiveView] 连接已恢复');
         setIsConnected(true);
         setError(null);
       }
-      
+
       // 🔥 节流回调
       throttledOnFrameUpdate(new Date());
-      
-      if (frameCount % 30 === 0) { // 每30帧记录一次，减少日志
-        console.log(`📺 [LiveView] 帧更新: ${runId.substring(0,8)}, 间隔: ${timeSinceLastFrame}ms`);
-      }
     };
 
     // 🔥 MJPEG流每一帧都会触发load事件
     img.addEventListener('load', handleImageLoad);
 
     let retryCount = 0;
-    const maxRetries = 5;
-    
+    const maxRetries = 3; // 🚀 减少重试次数，避免过度重连
+
     img.onerror = (e) => {
-    if (imgRef.current) { imgRef.current.style.opacity = '0.35'; }
-      console.error('❌ [LiveView] 图像加载错误:', {
-        runId: runId.substring(0, 8),
-        retryCount,
-        error: e
-      });
-      
+      if (isCleanedUp) return; // 🚀 避免清理后继续执行
+      if (imgRef.current) { imgRef.current.style.opacity = '0.35'; }
+
+      // 🚀 优化：简化错误日志
+      console.error('❌ [LiveView] 加载错误:', runId.substring(0, 8), '重试:', retryCount);
+
       setIsConnected(false);
-      
+
       if (retryCount < maxRetries) {
         retryCount++;
         setError(`连接中断，重试中... (${retryCount}/${maxRetries})`);
-        
-        // 🔥 简化重连：不频繁改变src，而是延迟后简单重连
-        const retryDelay = Math.min(2000 * retryCount, 10000);
-        console.log(`🔄 [LiveView] 第${retryCount}次重连，${retryDelay}ms后重试`);
-        
+
+        // 🚀 优化重连：延长重试延迟，避免频繁重连
+        const retryDelay = Math.min(5000 * retryCount, 15000); // 🚀 延长到5秒起步
+
         reconnectTimeoutRef.current = setTimeout(() => {
-          if (imgRef.current) {
-            // 🔥 减少闪烁：只添加时间戳，不改变基础URL
-            const newUrl = streamUrl + '&_retry=' + Date.now();
-            imgRef.current.style.opacity = '0.2';
-            imgRef.current.src = newUrl;
-            console.log('🔄 [LiveView] 尝试重新连接流');
-          }
+          if (isCleanedUp || !imgRef.current) return; // 🚀 检查清理状态
+
+          // 🚀 不修改 src，而是让浏览器自然重试
+          setError(`等待重连... (${retryCount}/${maxRetries})`);
         }, retryDelay);
       } else {
-        console.warn('⚠️ [LiveView] 达到最大重试次数');
-        setError('连接失败，请切换到其他标签页再回来重试');
+        console.warn('⚠️ [LiveView] 达到最大重试次数，停止重连');
+        setError('连接失败，请刷新页面或切换标签页重试');
       }
     };
 
     // 🔥 修复：只设置一次src，不要频繁重设
     img.src = streamUrl;
     startFrameMonitor();
-    
+
     // 初始状态设为连接中
     setIsConnected(true);
     setError(null);
-    
+
     return () => {
+      isCleanedUp = true; // 🚀 标记已清理，避免定时器和错误处理继续执行
+
       if (imgRef.current) { imgRef.current.style.opacity = '0.15'; }
-      console.log('🧹 [LiveView] 清理连接:', runId);
+      // 🚀 优化：简化清理日志
+      console.log('🧹 [LiveView] 清理:', runId.substring(0, 8));
+
+      // 🚀 先清理事件监听器
       img.removeEventListener('load', handleImageLoad);
+      img.onerror = null; // 🚀 移除错误处理，避免清理后继续触发
+
+      // 🚀 清理定时器
       if (frameUpdateTimer) clearInterval(frameUpdateTimer);
       if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
-      // 🔥 修复：不要设置img.src=''，避免ECONNRESET
+
+      // 🚀 不修改 img.src，让浏览器自然关闭连接
+      // 避免触发新的网络请求和事件
     };
-  }, [runId, testStatus, throttledOnFrameUpdate]);
+  }, [runId, testStatus]); // 🔥 移除 throttledOnFrameUpdate 依赖，因为它已经用 useCallback([]) 稳定了
 
   return (
     <div className="live-view-container w-full h-full flex flex-col border rounded-lg overflow-hidden">
@@ -227,9 +244,8 @@ export const LiveView: React.FC<LiveViewProps> = React.memo(({ runId, testStatus
         ) : (
           <img
             ref={imgRef}
-            className="w-full h-full object-contain bg-black transition-opacity duration-200 ease-in-out"
-            style={{ opacity: 0.15 }}
-            alt="??????"
+            className="w-full h-full object-contain bg-black"
+            alt="实时画面"
           />
         )}
       </div>
@@ -237,11 +253,20 @@ export const LiveView: React.FC<LiveViewProps> = React.memo(({ runId, testStatus
   );
 }, (prevProps, nextProps) => {
   // 🔥 自定义比较函数：只有关键属性变化时才重新渲染
-  return (
+  const shouldSkipRender = (
     prevProps.runId === nextProps.runId &&
     prevProps.testStatus === nextProps.testStatus
-    // 注意：onFrameUpdate不参与比较，因为它通常是由useCallback生成的稳定引用
   );
+
+  console.log('🔍 [LiveView React.memo] 比较 props:', {
+    runIdSame: prevProps.runId === nextProps.runId,
+    statusSame: prevProps.testStatus === nextProps.testStatus,
+    prevStatus: prevProps.testStatus,
+    nextStatus: nextProps.testStatus,
+    shouldSkipRender
+  });
+
+  return shouldSkipRender;
 });
 
 // 🔥 修正：获取认证token的辅助函数

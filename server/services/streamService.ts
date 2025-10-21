@@ -86,20 +86,31 @@ export class StreamService {
 
     const captureFrame = async () => {
       if (this.activeScreenshotTasks.has(runId)) {
+        console.log(`🔒 [StreamService] 跳过截图（任务进行中）: ${runId.substring(0,8)}`);
         return;
       }
 
       this.activeScreenshotTasks.add(runId);
       this.stats.totalAttempts += 1;
       const startedAt = Date.now();
+      const attemptId = `${runId.substring(0,8)}-${this.stats.totalAttempts}`;
+
+      console.log(`📸 [StreamService] 开始截图尝试 #${this.stats.totalAttempts}: ${attemptId}`);
 
       try {
         const result = await mcpClient.takeScreenshotForStream({ runId });
-        await this.pushFrameAndUpdateCache(runId, result.buffer);
         const duration = result.durationMs ?? (Date.now() - startedAt);
+
+        console.log(`✅ [StreamService] 截图成功 #${this.stats.totalAttempts}: ${attemptId}, 耗时: ${duration}ms, 大小: ${result.buffer.length}字节, 来源: ${result.source}`);
+
+        await this.pushFrameAndUpdateCache(runId, result.buffer);
         this.stats.successfulScreenshots += 1;
         this.updateAverageProcessingTime(duration);
+
+        console.log(`📤 [StreamService] 帧已推送: ${attemptId}, 成功率: ${((this.stats.successfulScreenshots/this.stats.totalAttempts)*100).toFixed(1)}%`);
       } catch (error) {
+        const duration = Date.now() - startedAt;
+        console.error(`❌ [StreamService] 截图失败 #${this.stats.totalAttempts}: ${attemptId}, 耗时: ${duration}ms, 错误: ${this.describeError(error)}`);
         await this.handleStreamFailure(runId, error);
       } finally {
         this.activeScreenshotTasks.delete(runId);
@@ -153,32 +164,67 @@ export class StreamService {
     const shortId = runId.substring(0, 8);
     const pageUnavailable = this.isPageUnavailableError(message);
 
+    // 🔥 检测MCP连接关闭错误（通常是页面跳转导致）
+    const isMcpConnectionClosed = message.includes('Connection closed') ||
+                                  message.includes('-32000') ||
+                                  message.includes('Target closed');
+
+    // 🔥 对于MCP连接关闭，不计入严重失败统计
+    if (isMcpConnectionClosed) {
+      console.log(`⏳ [StreamService] MCP连接临时关闭（页面跳转中）: ${shortId}, 错误详情: ${message}`);
+
+      // 推送缓存帧保持画面
+      const cachedFrame = this.frameBuffer.get(runId);
+      if (cachedFrame) {
+        console.log(`🔄 [StreamService] 推送缓存帧维持画面: ${shortId}, 缓存帧大小: ${cachedFrame.length}字节`);
+        try {
+          await this.pushFrameWithoutCache(runId, cachedFrame);
+          console.log(`✅ [StreamService] 缓存帧推送成功: ${shortId}`);
+        } catch (pushError) {
+          console.error(`❌ [StreamService] 缓存帧推送失败: ${runId}`, pushError);
+        }
+      } else {
+        console.warn(`⚠️ [StreamService] 无缓存帧可用，将等待下次截图: ${shortId}`);
+      }
+
+      // 不增加fallback计数，让定时器自动重试即可
+      console.log(`🔄 [StreamService] 等待定时器自动重试截图: ${shortId}`);
+      return;
+    }
+
+    // 其他错误正常处理
     this.stats.fallbackFrames += 1;
-    console.warn(`[StreamService] MCP screenshot failed (${shortId}): ${message}`);
+    console.warn(`⚠️ [StreamService] 其他截图失败（非连接关闭）: ${shortId}, 错误: ${message}`);
 
     const cachedFrame = this.frameBuffer.get(runId);
     if (cachedFrame) {
+      console.log(`🔄 [StreamService] 使用缓存帧作为降级方案: ${shortId}, 缓存帧大小: ${cachedFrame.length}字节`);
       try {
         await this.pushFrameWithoutCache(runId, cachedFrame);
+        console.log(`✅ [StreamService] 降级缓存帧推送成功: ${shortId}`);
       } catch (pushError) {
-        console.error(`[StreamService] failed to resend cached frame: ${runId}`, pushError);
+        console.error(`❌ [StreamService] 降级缓存帧推送失败: ${runId}`, pushError);
       }
     } else if (!pageUnavailable) {
+      console.log(`🎨 [StreamService] 无缓存帧，创建占位帧: ${shortId}`);
       try {
         const placeholder = await this.createPlaceholderFrame();
+        console.log(`🎨 [StreamService] 占位帧已创建: ${shortId}, 大小: ${placeholder.length}字节`);
         await this.pushFrameWithoutCache(runId, placeholder);
+        console.log(`✅ [StreamService] 占位帧推送成功: ${shortId}`);
       } catch (placeholderError) {
-        console.error(`[StreamService] failed to push placeholder frame: ${runId}`, placeholderError);
+        console.error(`❌ [StreamService] 占位帧创建/推送失败: ${runId}`, placeholderError);
       }
     } else {
-      console.log(`[StreamService] Skipping placeholder frame while page is unavailable: ${runId}`);
+      console.log(`⏭️ [StreamService] 页面不可用，跳过占位帧: ${runId}`);
     }
 
     const failureRate = this.stats.totalAttempts > 0
       ? (this.stats.fallbackFrames / this.stats.totalAttempts) * 100
       : 0;
 
-    if (this.stats.totalAttempts > 20 && failureRate > 90) {
+    // 🔥 提高失败率阈值，避免页面跳转时误判
+    if (this.stats.totalAttempts > 30 && failureRate > 95) {
       console.error(`[StreamService] failure rate ${failureRate.toFixed(1)}%, pausing stream: ${runId}`);
       this.pauseStreamTemporarily(runId, 10000);
     }
