@@ -72,43 +72,49 @@ export function TestRuns() {
   useEffect(() => {
     localStorage.setItem('tr-activeTab', activeTab);
   }, [activeTab]);
-  // 🔥 修复灰屏：使用 useEffect 同步 selectedRun，但添加日志追踪
-  // 🚀 优化：使用 useRef 避免频繁更新 selectedRun 触发 LiveView 重连
+  // 🔥 优化：使用 useRef 避免频繁更新 selectedRun 触发 LiveView 重连
+  const selectedRunIdRef = useRef<string | null>(null);
   const lastUpdateTimeRef = useRef<number>(0);
 
+  // 🔥 新增：只在关键状态变化时更新 selectedRun
   useEffect(() => {
     if (!selectedRun) return;
 
     const latest = testRuns.find(run => run.id === selectedRun.id);
     if (!latest) return;
 
-    const logsChanged =
-      (latest.logs?.length || 0) !== (selectedRun.logs?.length || 0);
-
-    const hasChanges = (
+    // 🔥 关键优化：只有status或progress等关键字段变化时才更新
+    const hasSignificantChange = (
       latest.status !== selectedRun.status ||
       latest.progress !== selectedRun.progress ||
       latest.completedSteps !== selectedRun.completedSteps ||
-      latest.failedSteps !== selectedRun.failedSteps ||
       latest.passedSteps !== selectedRun.passedSteps ||
-      logsChanged
+      latest.failedSteps !== selectedRun.failedSteps
     );
 
-    if (hasChanges) {
+    // 🔥 日志变化不触发 selectedRun 更新，避免 LiveView 重连
+    // 日志会通过批量消息直接更新到 testRuns 中
+
+    if (hasSignificantChange) {
       // 🚀 节流更新：避免过于频繁的状态更新
       const now = Date.now();
       if (now - lastUpdateTimeRef.current < 1000) {
-        console.log('⏭️ [TestRuns] 跳过更新（节流中）');
-        return;
+        return; // 静默跳过，不输出日志
       }
 
       lastUpdateTimeRef.current = now;
-      console.log('🔄 [TestRuns] selectedRun 需要更新，检测到变化:', {
-        statusChange: latest.status !== selectedRun.status,
-        progressChange: latest.progress !== selectedRun.progress,
-        logsChange: logsChanged
+
+      // 🔥 只更新关键字段，不包含 logs
+      setSelectedRun({
+        ...selectedRun,
+        status: latest.status,
+        progress: latest.progress,
+        completedSteps: latest.completedSteps,
+        passedSteps: latest.passedSteps,
+        failedSteps: latest.failedSteps,
+        endTime: latest.endTime,
+        duration: latest.duration
       });
-      setSelectedRun({ ...latest });
     }
   }, [testRuns, selectedRun]);
 
@@ -481,44 +487,84 @@ export function TestRuns() {
     };
   }, [updateTestRunIncrementally]);
 
+  // 🔥 新增：批量处理日志消息
+  const handleBatchLogs = useCallback((message: any) => {
+    const { runId, logs } = message;
+    if (!runId || !logs || !Array.isArray(logs) || logs.length === 0) {
+      return;
+    }
+
+    // 🔥 批量更新日志，一次性添加所有日志
+    setTestRuns(prevRuns => {
+      const runIndex = prevRuns.findIndex(run => run.id === runId);
+      if (runIndex < 0) return prevRuns;
+
+      const updatedRuns = [...prevRuns];
+      const currentRun = updatedRuns[runIndex];
+
+      // 合并新日志，转换格式
+      const formattedLogs = logs.map((log: any) => ({
+        id: log.id || `log-${Date.now()}-${Math.random()}`,
+        timestamp: log.timestamp ? new Date(log.timestamp) : new Date(),
+        level: log.level || 'info',
+        message: log.message || '',
+        stepId: log.stepId
+      }));
+
+      updatedRuns[runIndex] = {
+        ...currentRun,
+        logs: [...(currentRun.logs || []), ...formattedLogs]
+      };
+
+      console.log(`📦 [TestRuns] 批量添加日志: ${logs.length}条, runId=${runId.substring(0, 8)}`);
+      return updatedRuns;
+    });
+  }, []);
+
   // 🔥 稳定的WebSocket连接管理 - 减少重复初始化
   useEffect(() => {
     let isMounted = true;
     let messageCount = 0;
-    
+
     // 初始化WebSocket连接
     testService.initializeWebSocket().catch(error => {
       console.error('初始化WebSocket连接失败:', error);
     });
-    
+
     // 添加WebSocket消息监听器
     const listenerId = 'testRuns-page';
     testService.addMessageListener(listenerId, (message) => {
       if (!isMounted || !message) return;
-      
+
       messageCount++;
-      
+
       if (messageCount % 10 === 1) { // 减少日志输出
         console.log('📨 WebSocket消息:', message.type, messageCount);
       }
-      
+
+      // 🔥 新增：处理批量日志
+      if (message.type === 'logs_batch') {
+        handleBatchLogs(message);
+        return;
+      }
+
       // 🚀 优化：优先使用增量更新
-      if (message.type === 'test_update' || message.type === 'test_complete' || 
+      if (message.type === 'test_update' || message.type === 'test_complete' ||
           message.type === 'suiteUpdate') {
         debouncedUpdate(message);
       }
     });
-    
+
     // 首次加载数据
     loadTestRuns();
-    
+
     // 组件卸载时清理
     return () => {
       isMounted = false;
       testService.removeMessageListener(listenerId);
       console.log('🧹 WebSocket监听器已清理');
     };
-  }, []); // 空依赖，只初始化一次
+  }, [handleBatchLogs, debouncedUpdate]); // 🔥 添加依赖
 
   // 🔥 完全依赖 WebSocket 实时更新，无需定时刷新
   // WebSocket 会自动推送测试状态变化，用户也可以手动点击"刷新数据"按钮

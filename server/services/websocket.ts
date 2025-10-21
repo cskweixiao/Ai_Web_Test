@@ -3,16 +3,22 @@ import { v4 as uuidv4 } from 'uuid';
 import { EventEmitter } from 'events';
 
 export interface WebSocketMessage {
-  type: 'test_update' | 'test_complete' | 'test_error' | 'log' | 'suiteUpdate';
+  type: 'test_update' | 'test_complete' | 'test_error' | 'log' | 'logs_batch' | 'suiteUpdate';
   runId: string;
   data?: any;
   timestamp?: string;
   suiteRun?: any; // 添加suiteRun字段支持套件更新消息
+  logs?: any[]; // 🔥 批量日志数组
 }
 
 export class WebSocketManager extends EventEmitter {
   private wss: WebSocketServer;
   private clients: Map<string, WebSocket> = new Map();
+  // 🔥 新增：日志批处理缓冲区
+  private logBuffers: Map<string, any[]> = new Map();
+  private logFlushTimers: Map<string, NodeJS.Timeout> = new Map();
+  private readonly LOG_BATCH_SIZE = 20; // 批量大小
+  private readonly LOG_BATCH_DELAY = 200; // 批量延迟 (ms)
 
   constructor(wss: WebSocketServer) {
     super();
@@ -202,13 +208,69 @@ export class WebSocketManager extends EventEmitter {
     });
   }
 
-  // 发送日志
+  // 🔥 优化：发送日志 - 使用批处理
   public sendTestLog(runId: string, log: any) {
+    if (!runId) {
+      console.error('尝试发送日志，但未提供runId');
+      return;
+    }
+
+    // 获取或创建该 runId 的日志缓冲区
+    if (!this.logBuffers.has(runId)) {
+      this.logBuffers.set(runId, []);
+    }
+
+    const buffer = this.logBuffers.get(runId)!;
+    buffer.push(log);
+
+    // 如果达到批量大小，立即刷新
+    if (buffer.length >= this.LOG_BATCH_SIZE) {
+      this.flushLogBuffer(runId);
+    } else {
+      // 否则设置延迟刷新
+      this.scheduleLogFlush(runId);
+    }
+  }
+
+  // 🔥 新增：安排日志刷新
+  private scheduleLogFlush(runId: string) {
+    // 如果已有定时器，不重复创建
+    if (this.logFlushTimers.has(runId)) {
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      this.flushLogBuffer(runId);
+    }, this.LOG_BATCH_DELAY);
+
+    this.logFlushTimers.set(runId, timer);
+  }
+
+  // 🔥 新增：刷新日志缓冲区
+  private flushLogBuffer(runId: string) {
+    const buffer = this.logBuffers.get(runId);
+    if (!buffer || buffer.length === 0) {
+      return;
+    }
+
+    // 清除定时器
+    const timer = this.logFlushTimers.get(runId);
+    if (timer) {
+      clearTimeout(timer);
+      this.logFlushTimers.delete(runId);
+    }
+
+    // 批量发送日志
     this.broadcast({
-      type: 'log',
+      type: 'logs_batch',
       runId,
-      data: log
+      logs: [...buffer]
     });
+
+    console.log(`📦 [WebSocket] 批量发送日志: runId=${runId.substring(0, 8)}, count=${buffer.length}`);
+
+    // 清空缓冲区
+    buffer.length = 0;
   }
 
   public sendTestStatus(runId: string, status: string, data: any = {}) {
@@ -221,6 +283,16 @@ export class WebSocketManager extends EventEmitter {
 
   public shutdown() {
     console.log('🔌 正在关闭所有 WebSocket 连接...');
+
+    // 🔥 清理所有日志缓冲区和定时器
+    this.logFlushTimers.forEach((timer, runId) => {
+      clearTimeout(timer);
+      // 刷新剩余的日志
+      this.flushLogBuffer(runId);
+    });
+    this.logFlushTimers.clear();
+    this.logBuffers.clear();
+
     this.clients.forEach((ws, clientId) => {
       ws.close(1000, '服务器正在关闭');
       this.clients.delete(clientId);

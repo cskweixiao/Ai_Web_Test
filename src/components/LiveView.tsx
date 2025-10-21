@@ -15,6 +15,10 @@ export const LiveView: React.FC<LiveViewProps> = React.memo(({ runId, testStatus
   const reconnectTimeoutRef = useRef<NodeJS.Timeout>();
   const lastFrameUpdateCallRef = useRef<number>(0);
 
+  // 🔥 新增：连接状态管理，避免重复连接
+  const isConnectingRef = useRef(false);
+  const currentRunIdRef = useRef<string | null>(null);
+
   // 🔥 修复灰屏：使用 useRef 存储 onFrameUpdate，避免 useEffect 重新执行
   const onFrameUpdateRef = useRef(onFrameUpdate);
   useEffect(() => {
@@ -33,6 +37,12 @@ export const LiveView: React.FC<LiveViewProps> = React.memo(({ runId, testStatus
   }, []); // 空依赖数组，函数引用永不变化
 
   useEffect(() => {
+    // 🔥 防止重复连接：如果runId没变且已经连接，直接返回
+    if (currentRunIdRef.current === runId && isConnectingRef.current) {
+      console.log('🔒 [LiveView] 已经连接中，跳过重复初始化:', runId.substring(0, 8));
+      return;
+    }
+
     // 🚀 优化：只在非运行状态或有错误时输出日志
     if (testStatus && testStatus !== 'running') {
       console.log('🔍 [LiveView] 状态变化:', { runId: runId.substring(0, 8), testStatus });
@@ -45,6 +55,8 @@ export const LiveView: React.FC<LiveViewProps> = React.memo(({ runId, testStatus
       // 日志已在上方输出，此处不重复
       setIsConnected(false);
       setFrameCount(0);
+      isConnectingRef.current = false;
+      currentRunIdRef.current = null;
 
       switch (testStatus) {
         case 'completed':
@@ -64,6 +76,10 @@ export const LiveView: React.FC<LiveViewProps> = React.memo(({ runId, testStatus
       }
       return;
     }
+
+    // 🔥 标记正在连接
+    isConnectingRef.current = true;
+    currentRunIdRef.current = runId;
 
     const img = imgRef.current;
     const token = getAuthToken();
@@ -180,6 +196,10 @@ export const LiveView: React.FC<LiveViewProps> = React.memo(({ runId, testStatus
       if (imgRef.current) { imgRef.current.style.opacity = '0.15'; }
       // 🚀 优化：简化清理日志
       console.log('🧹 [LiveView] 清理:', runId.substring(0, 8));
+
+      // 🔥 重置连接状态
+      isConnectingRef.current = false;
+      currentRunIdRef.current = null;
 
       // 🚀 先清理事件监听器
       img.removeEventListener('load', handleImageLoad);
