@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { NavLink, useLocation } from 'react-router-dom';
+import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import {
   Home,
   FileCode,
@@ -10,11 +10,17 @@ import {
   Menu,
   X,
   Factory,
+  LogOut,
+  User,
+  Users,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { clsx } from 'clsx';
+import { Dropdown } from 'antd';
+import type { MenuProps } from 'antd';
 import { Logo } from './Logo';
 import { ThemeToggle } from './ThemeToggle';
+import { useAuth } from '../contexts/AuthContext';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -27,14 +33,57 @@ const navigationItems = [
   { name: '测试报告', href: '/reports', icon: BarChart3 },
   { name: '测试工厂', href: '/test-factory', icon: Factory },
   { name: 'AI 助手', href: '/llm-assistant', icon: Bot },
+  { name: '用户管理', href: '/user-management', icon: Users },
   { name: '设置', href: '/settings', icon: Settings },
 ];
 
 export function Layout({ children }: LayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const location = useLocation();
+  const navigate = useNavigate();
+  const { user, logout, isSuperAdmin } = useAuth();
 
-  const currentPage = navigationItems.find(item => item.href === location.pathname);
+  // 🔥 根据用户权限过滤导航菜单
+  const filteredNavigationItems = navigationItems.filter(item => {
+    // 用户管理页面仅超级管理员可见
+    if (item.href === '/user-management') {
+      return isSuperAdmin;
+    }
+    return true;
+  });
+
+  const currentPage = filteredNavigationItems.find(item => item.href === location.pathname);
+
+  const handleLogout = () => {
+    logout();
+    navigate('/login');
+  };
+
+  const userMenuItems: MenuProps['items'] = [
+    {
+      key: 'user-info',
+      label: (
+        <div className="px-2 py-1">
+          <div className="font-medium">{user?.username}</div>
+          {user?.accountName && <div className="text-xs text-gray-500">{user.accountName}</div>}
+          {user?.department && <div className="text-xs text-gray-400">{user.department}</div>}
+          {user?.isSuperAdmin && (
+            <div className="mt-1 text-xs text-purple-600 font-medium">超级管理员</div>
+          )}
+        </div>
+      ),
+      disabled: true,
+    },
+    {
+      type: 'divider',
+    },
+    {
+      key: 'logout',
+      icon: <LogOut className="h-4 w-4" />,
+      label: '退出登录',
+      onClick: handleLogout,
+    },
+  ];
 
   return (
     <div className="min-h-screen bg-[var(--color-bg-secondary)]">
@@ -69,7 +118,7 @@ export function Layout({ children }: LayoutProps) {
                 </motion.button>
               </div>
               <nav className="flex-1 px-6 py-8 space-y-3">
-                {navigationItems.map((item, index) => {
+                {filteredNavigationItems.map((item, index) => {
                   const Icon = item.icon;
                   const isActive = location.pathname === item.href;
                   return (
@@ -97,7 +146,7 @@ export function Layout({ children }: LayoutProps) {
                             transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
                           />
                         )}
-                        
+
                         <motion.div
                           className="relative flex items-center"
                           whileHover={{ x: 4 }}
@@ -126,7 +175,7 @@ export function Layout({ children }: LayoutProps) {
             <Logo size="lg" showText={true} />
           </div>
           <nav className="flex-1 px-6 py-8 space-y-3">
-            {navigationItems.map((item, index) => {
+            {filteredNavigationItems.map((item, index) => {
               const Icon = item.icon;
               const isActive = location.pathname === item.href;
               return (
@@ -153,7 +202,7 @@ export function Layout({ children }: LayoutProps) {
                         transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
                       />
                     )}
-                    
+
                     <motion.div
                       className="relative flex items-center"
                       whileHover={{ x: 4 }}
@@ -219,14 +268,18 @@ export function Layout({ children }: LayoutProps) {
                 <span className="text-sm font-medium text-green-700 dark:text-green-400">系统正常</span>
               </motion.div>
               <ThemeToggle size="md" />
-              <motion.div 
-                className="h-10 w-10 bg-gradient-to-br from-gray-300 to-gray-400 dark:from-gray-600 dark:to-gray-700 rounded-full shadow-md cursor-pointer"
-                whileHover={{ scale: 1.1, boxShadow: '0 8px 25px rgba(0, 0, 0, 0.15)' }}
-                whileTap={{ scale: 0.9 }}
-                initial={{ opacity: 0, scale: 0.8 }}
-                animate={{ opacity: 1, scale: 1 }}
-                transition={{ delay: 0.4 }}
-              ></motion.div>
+              <Dropdown menu={{ items: userMenuItems }} placement="bottomRight" trigger={['click']}>
+                <motion.div
+                  className="h-10 w-10 bg-gradient-to-br from-purple-500 to-purple-600 dark:from-purple-600 dark:to-purple-700 rounded-full shadow-md cursor-pointer flex items-center justify-center text-white font-medium"
+                  whileHover={{ scale: 1.1, boxShadow: '0 8px 25px rgba(0, 0, 0, 0.15)' }}
+                  whileTap={{ scale: 0.9 }}
+                  initial={{ opacity: 0, scale: 0.8 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  transition={{ delay: 0.4 }}
+                >
+                  <User className="h-5 w-5" />
+                </motion.div>
+              </Dropdown>
             </div>
           </div>
         </motion.div>

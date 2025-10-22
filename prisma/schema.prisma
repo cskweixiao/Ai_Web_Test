@@ -154,6 +154,7 @@ model test_cases {
   tags             Json?
   system           String?            @db.VarChar(100)
   module           String?            @db.VarChar(100)
+  department       String?            @db.VarChar(100)
   created_at       DateTime?          @default(now()) @db.Timestamp(0)
   step_screenshots step_screenshots[]
   suite_case_map   suite_case_map[]
@@ -200,6 +201,7 @@ model test_suites {
   id             Int              @id @default(autoincrement())
   name           String           @db.VarChar(255)
   owner_id       Int
+  department     String?          @db.VarChar(100)
   metadata       Json?
   created_at     DateTime?        @default(now()) @db.Timestamp(0)
   suite_case_map suite_case_map[]
@@ -220,15 +222,19 @@ model user_roles {
 }
 
 model users {
-  id            Int           @id @default(autoincrement())
-  email         String        @unique(map: "email") @db.VarChar(255)
-  password_hash String        @db.VarChar(255)
-  created_at    DateTime?     @default(now()) @db.Timestamp(0)
-  api_tokens    api_tokens[]
-  audit_logs    audit_logs[]
-  test_runs     test_runs[]
-  test_suites   test_suites[]
-  user_roles    user_roles[]
+  id              Int           @id @default(autoincrement())
+  email           String        @unique(map: "email") @db.VarChar(255)
+  username        String        @unique(map: "username") @db.VarChar(100)
+  account_name    String?       @db.VarChar(100)
+  password_hash   String        @db.VarChar(255)
+  department      String?       @db.VarChar(100)
+  is_super_admin  Boolean       @default(false)
+  created_at      DateTime?     @default(now()) @db.Timestamp(0)
+  api_tokens      api_tokens[]
+  audit_logs      audit_logs[]
+  test_runs       test_runs[]
+  test_suites     test_suites[]
+  user_roles      user_roles[]
   // 🔥 新增：AI批量更新功能关联
   case_versions       case_versions[]
   bulk_edit_sessions  bulk_edit_sessions[]

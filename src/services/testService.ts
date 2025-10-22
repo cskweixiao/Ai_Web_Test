@@ -11,10 +11,23 @@ export interface WebSocketMessage {
 
 const API_BASE_URL = `http://${window.location.hostname}:3001/api`;
 const WS_URL = `ws://${window.location.hostname}:3001`;
+const TOKEN_KEY = 'authToken';
 
 export class TestService {
   private ws: WebSocket | null = null;
   private listeners: Map<string, (message: WebSocketMessage) => void> = new Map();
+
+  // 🔥 获取认证请求头
+  private getAuthHeaders(): HeadersInit {
+    const token = localStorage.getItem(TOKEN_KEY);
+    const headers: HeadersInit = {
+      'Content-Type': 'application/json'
+    };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    return headers;
+  }
 
   // 初始化 WebSocket 连接
   initializeWebSocket(): Promise<void> {
@@ -286,7 +299,9 @@ export class TestService {
       // 添加时间戳防止缓存
       queryParams.append('t', new Date().getTime().toString());
 
-      const response = await fetch(`${API_BASE_URL}/tests/cases?${queryParams.toString()}`);
+      const response = await fetch(`${API_BASE_URL}/tests/cases?${queryParams.toString()}`, {
+        headers: this.getAuthHeaders()
+      });
 
       console.log('📡 [testService] 分页API响应状态:', response.status);
       const data = await response.json();
@@ -322,9 +337,7 @@ export class TestService {
     try {
       const response = await fetch(`${API_BASE_URL}/tests/cases`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: this.getAuthHeaders(),
         body: JSON.stringify(caseData)
       });
       
@@ -346,18 +359,16 @@ export class TestService {
     try {
       const response = await fetch(`${API_BASE_URL}/tests/cases/${id}`, {
         method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: this.getAuthHeaders(),
         body: JSON.stringify(caseData)
       });
-      
+
       const data = await response.json();
-      
+
       if (!data.success) {
         throw new Error(data.error || '更新测试用例失败');
       }
-      
+
       return data.data;
     } catch (error) {
       console.error('更新测试用例失败:', error);
@@ -369,11 +380,12 @@ export class TestService {
   async deleteTestCase(id: number): Promise<void> {
     try {
       const response = await fetch(`${API_BASE_URL}/tests/cases/${id}`, {
-        method: 'DELETE'
+        method: 'DELETE',
+        headers: this.getAuthHeaders()
       });
-      
+
       const data = await response.json();
-      
+
       if (!data.success) {
         throw new Error(data.error || '删除测试用例失败');
       }
@@ -388,18 +400,16 @@ export class TestService {
     try {
       const response = await fetch(`${API_BASE_URL}/tests/cases/execute`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: this.getAuthHeaders(),
         body: JSON.stringify({ caseId })
       });
-      
+
       const data = await response.json();
-      
+
       if (!data.success) {
         throw new Error(data.error || '执行测试用例失败');
       }
-      
+
       return { runId: data.runId };
     } catch (error) {
       console.error('执行测试用例失败:', error);
@@ -412,18 +422,16 @@ export class TestService {
     try {
       const response = await fetch(`${API_BASE_URL}/tests/execute`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: this.getAuthHeaders(),
         body: JSON.stringify(request)
       });
-      
+
       const data = await response.json();
-      
+
       if (!data.success) {
         throw new Error(data.error || '执行测试失败');
       }
-      
+
       return data;
     } catch (error) {
       console.error('执行测试失败:', error);
@@ -434,13 +442,15 @@ export class TestService {
   // 获取测试运行状态
   async getTestRun(runId: string): Promise<TestRun> {
     try {
-      const response = await fetch(`${API_BASE_URL}/tests/runs/${runId}`);
+      const response = await fetch(`${API_BASE_URL}/tests/runs/${runId}`, {
+        headers: this.getAuthHeaders()
+      });
       const data = await response.json();
-      
+
       if (!data.success) {
         throw new Error(data.error || '获取测试运行状态失败');
       }
-      
+
       return data.data;
     } catch (error) {
       console.error('获取测试运行状态失败:', error);
@@ -451,13 +461,15 @@ export class TestService {
   // 获取所有测试运行
   async getAllTestRuns(): Promise<TestRun[]> {
     try {
-      const response = await fetch(`${API_BASE_URL}/tests/runs`);
+      const response = await fetch(`${API_BASE_URL}/tests/runs`, {
+        headers: this.getAuthHeaders()
+      });
       const data = await response.json();
-      
+
       if (!data.success) {
         throw new Error(data.error || '获取测试运行列表失败');
       }
-      
+
       return data.data;
     } catch (error) {
       console.error('获取测试运行列表失败:', error);
@@ -469,11 +481,12 @@ export class TestService {
   async cancelTest(runId: string): Promise<void> {
     try {
       const response = await fetch(`${API_BASE_URL}/tests/runs/${runId}/cancel`, {
-        method: 'POST'
+        method: 'POST',
+        headers: this.getAuthHeaders()
       });
-      
+
       const data = await response.json();
-      
+
       if (!data.success) {
         throw new Error(data.error || '取消测试失败');
       }
@@ -486,13 +499,15 @@ export class TestService {
   // 获取所有测试套件
   async getTestSuites(): Promise<TestSuite[]> {
     try {
-      const response = await fetch(`${API_BASE_URL}/suites`);
+      const response = await fetch(`${API_BASE_URL}/suites`, {
+        headers: this.getAuthHeaders()
+      });
       const data = await response.json();
-      
+
       if (!data.success) {
         throw new Error(data.error || '获取测试套件失败');
       }
-      
+
       return data.data;
     } catch (error) {
       console.error('获取测试套件失败:', error);
@@ -505,18 +520,16 @@ export class TestService {
     try {
       const response = await fetch(`${API_BASE_URL}/suites`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: this.getAuthHeaders(),
         body: JSON.stringify(suiteData)
       });
-      
+
       const data = await response.json();
-      
+
       if (!data.success) {
         throw new Error(data.error || '创建测试套件失败');
       }
-      
+
       return data.data;
     } catch (error) {
       console.error('创建测试套件失败:', error);
@@ -529,18 +542,16 @@ export class TestService {
     try {
       const response = await fetch(`${API_BASE_URL}/suites/${id}`, {
         method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: this.getAuthHeaders(),
         body: JSON.stringify(suiteData)
       });
-      
+
       const data = await response.json();
-      
+
       if (!data.success) {
         throw new Error(data.error || '更新测试套件失败');
       }
-      
+
       return data.data;
     } catch (error) {
       console.error('更新测试套件失败:', error);
@@ -552,11 +563,12 @@ export class TestService {
   async deleteTestSuite(id: number): Promise<void> {
     try {
       const response = await fetch(`${API_BASE_URL}/suites/${id}`, {
-        method: 'DELETE'
+        method: 'DELETE',
+        headers: this.getAuthHeaders()
       });
-      
+
       const data = await response.json();
-      
+
       if (!data.success) {
         throw new Error(data.error || '删除测试套件失败');
       }
@@ -567,7 +579,7 @@ export class TestService {
   }
 
   // 执行测试套件
-  async runTestSuite(suiteId: number, options: { 
+  async runTestSuite(suiteId: number, options: {
     environment?: string;
     executionMode?: 'standard' | 'interactive';
     concurrency?: number;
@@ -576,21 +588,19 @@ export class TestService {
     try {
       const response = await fetch(`${API_BASE_URL}/suites/execute`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: this.getAuthHeaders(),
         body: JSON.stringify({
           suiteId,
           ...options
         })
       });
-      
+
       const data = await response.json();
-      
+
       if (!data.success) {
         throw new Error(data.error || '执行测试套件失败');
       }
-      
+
       return { runId: data.runId };
     } catch (error) {
       console.error('执行测试套件失败:', error);
@@ -601,13 +611,15 @@ export class TestService {
   // 获取测试套件运行状态
   async getSuiteRun(suiteRunId: string): Promise<TestSuiteRun> {
     try {
-      const response = await fetch(`${API_BASE_URL}/suites/runs/${suiteRunId}`);
+      const response = await fetch(`${API_BASE_URL}/suites/runs/${suiteRunId}`, {
+        headers: this.getAuthHeaders()
+      });
       const data = await response.json();
-      
+
       if (!data.success) {
         throw new Error(data.error || '获取测试套件运行状态失败');
       }
-      
+
       return data.data;
     } catch (error) {
       console.error('获取测试套件运行状态失败:', error);
@@ -618,13 +630,15 @@ export class TestService {
   // 获取所有测试套件运行
   async getAllSuiteRuns(): Promise<TestSuiteRun[]> {
     try {
-      const response = await fetch(`${API_BASE_URL}/suites/runs`);
+      const response = await fetch(`${API_BASE_URL}/suites/runs`, {
+        headers: this.getAuthHeaders()
+      });
       const data = await response.json();
-      
+
       if (!data.success) {
         throw new Error(data.error || '获取测试套件运行列表失败');
       }
-      
+
       return data.data;
     } catch (error) {
       console.error('获取测试套件运行列表失败:', error);
@@ -636,11 +650,12 @@ export class TestService {
   async cancelSuiteRun(suiteRunId: string): Promise<void> {
     try {
       const response = await fetch(`${API_BASE_URL}/suites/runs/${suiteRunId}/cancel`, {
-        method: 'POST'
+        method: 'POST',
+        headers: this.getAuthHeaders()
       });
-      
+
       const data = await response.json();
-      
+
       if (!data.success) {
         throw new Error(data.error || '取消测试套件运行失败');
       }
@@ -653,13 +668,15 @@ export class TestService {
   // 新增：获取测试报告详情
   async getTestReport(runId: string): Promise<any> {
     try {
-      const response = await fetch(`${API_BASE_URL}/reports/${runId}`);
+      const response = await fetch(`${API_BASE_URL}/reports/${runId}`, {
+        headers: this.getAuthHeaders()
+      });
       const data = await response.json();
-      
+
       if (!data.success) {
         throw new Error(data.error || '获取测试报告详情失败');
       }
-      
+
       return data.data;
     } catch (error) {
       console.error('获取测试报告详情失败:', error);

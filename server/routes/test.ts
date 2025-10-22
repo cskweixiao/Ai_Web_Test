@@ -20,6 +20,12 @@ export function testRoutes(testExecutionService: TestExecutionService): Router {
       const pageNum = parseInt(page as string);
       const sizePer = parseInt(pageSize as string);
 
+      // 🔥 获取当前用户信息（从认证中间件）
+      const userDepartment = req.user?.department || undefined;
+      const isSuperAdmin = req.user?.isSuperAdmin || false;
+
+      console.log('🔍 获取测试用例 - 用户部门:', userDepartment, '超级管理员:', isSuperAdmin);
+
       // 获取过滤后的测试用例
       const result = await testExecutionService.getTestCasesPaginated({
         page: pageNum,
@@ -28,7 +34,9 @@ export function testRoutes(testExecutionService: TestExecutionService): Router {
         tag: tag as string,
         priority: priority as string,
         status: status as string,
-        system: system as string
+        system: system as string,
+        userDepartment,
+        isSuperAdmin
       });
 
       res.json({

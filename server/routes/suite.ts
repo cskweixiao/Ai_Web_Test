@@ -7,7 +7,13 @@ export function suiteRoutes(suiteExecutionService: SuiteExecutionService): Route
   // 获取所有测试套件
   router.get('/', async (req: Request, res: Response) => {
     try {
-      const suites = await suiteExecutionService.getAllTestSuites();
+      // 🔥 获取当前用户信息（从认证中间件）
+      const userDepartment = req.user?.department || undefined;
+      const isSuperAdmin = req.user?.isSuperAdmin || false;
+
+      console.log('🔍 获取测试套件 - 用户部门:', userDepartment, '超级管理员:', isSuperAdmin);
+
+      const suites = await suiteExecutionService.getAllTestSuites(userDepartment, isSuperAdmin);
       res.json({ success: true, data: suites });
     } catch (error: any) {
       res.status(500).json({ success: false, error: error.message });

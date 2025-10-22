@@ -136,8 +136,8 @@ export function TestRuns() {
       testService.initializeWebSocket().catch(error => {
         console.warn('WebSocket连接初始化失败，将使用HTTP API轮询:', error);
       });
-      
-      const response = await fetch('http://localhost:3001/api/tests/runs');
+
+      const response = await fetch(`http://${window.location.hostname}:3001/api/tests/runs`);
       
       // 🚀 修复：检查请求是否被中断
       if (!response.ok) {
@@ -249,7 +249,7 @@ export function TestRuns() {
         
         // 尝试加载套件运行数据
         try {
-          const suiteResponse = await fetch('http://localhost:3001/api/suites/runs');
+          const suiteResponse = await fetch(`http://${window.location.hostname}:3001/api/suites/runs`);
           const suiteData = await suiteResponse.json();
           
           console.log('📊 套件数据:', { success: suiteData.success, count: suiteData.data?.length || 0 });

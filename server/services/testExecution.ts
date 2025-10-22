@@ -188,7 +188,7 @@ export class TestExecutionService {
   }
 
   // #region Test Case Management
-  private dbTestCaseToApp(dbCase: { id: number; title: string; steps: Prisma.JsonValue | null; tags: Prisma.JsonValue | null; system: string | null; module: string | null; created_at: Date | null; }): TestCase {
+  private dbTestCaseToApp(dbCase: { id: number; title: string; steps: Prisma.JsonValue | null; tags: Prisma.JsonValue | null; system: string | null; module: string | null; department?: string | null; created_at: Date | null; }): TestCase {
     let steps = '';
     let assertions = '';
     if (typeof dbCase.steps === 'string' && dbCase.steps) {
@@ -213,6 +213,7 @@ export class TestExecutionService {
       tags: (Array.isArray(dbCase.tags) ? dbCase.tags : []) as string[],
       system: dbCase.system || undefined,
       module: dbCase.module || undefined,
+      department: dbCase.department || undefined,
       created: dbCase.created_at?.toISOString(),
       priority: 'medium',
       status: 'active',
@@ -230,6 +231,7 @@ export class TestExecutionService {
         tags: true,
         system: true,
         module: true,
+        department: true,
         created_at: true
       }
     });
@@ -245,6 +247,7 @@ export class TestExecutionService {
         tags: true,
         system: true,
         module: true,
+        department: true,
         created_at: true
       }
     });
@@ -262,6 +265,7 @@ export class TestExecutionService {
         tags: true,
         system: true,
         module: true,
+        department: true,
         created_at: true
       }
     });
@@ -277,11 +281,18 @@ export class TestExecutionService {
     priority?: string;
     status?: string;
     system?: string;
+    userDepartment?: string;
+    isSuperAdmin?: boolean;
   }): Promise<{data: TestCase[], total: number}> {
-    const { page, pageSize, search, tag, priority, status, system } = params;
+    const { page, pageSize, search, tag, priority, status, system, userDepartment, isSuperAdmin } = params;
 
     // 构建查询条件
     const where: any = {};
+
+    // 🔥 部门权限过滤：非超级管理员只能看自己部门的数据
+    if (!isSuperAdmin && userDepartment) {
+      where.department = userDepartment;
+    }
 
     // 搜索条件（标题和步骤）
     if (search && search.trim()) {
@@ -397,6 +408,7 @@ export class TestExecutionService {
         tags: (testCaseData.tags as Prisma.JsonValue) || Prisma.JsonNull,
         system: testCaseData.system || null,
         module: testCaseData.module || null,
+        department: testCaseData.department || null,
       },
     });
     return this.dbTestCaseToApp(newTestCase);
@@ -416,6 +428,7 @@ export class TestExecutionService {
         steps: stepsData,
         system: testCaseData.system,
         module: testCaseData.module,
+        department: testCaseData.department,
       };
 
       if (testCaseData.tags) {

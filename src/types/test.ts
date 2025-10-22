@@ -24,6 +24,7 @@ export interface TestCase {
   tags?: string[];
   system?: string;    // 新增系统字段
   module?: string;    // 新增模块字段
+  department?: string; // 🔥 新增：部门字段
   author?: string;
   created?: string;
   lastRun?: string;
@@ -165,6 +166,7 @@ export interface TestSuite {
   name: string;
   description?: string;
   owner?: string;
+  department?: string; // 🔥 新增：部门字段
   tags?: string[];
   testCaseIds: number[];
   createdAt: string;

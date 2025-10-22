@@ -382,9 +382,16 @@ export class SuiteExecutionService {
   // 🔥 新增：测试套件CRUD方法
   
   // 获取所有测试套件
-  public async getAllTestSuites(): Promise<TestSuite[]> {
+  public async getAllTestSuites(userDepartment?: string, isSuperAdmin?: boolean): Promise<TestSuite[]> {
     try {
+      // 🔥 构建查询条件：非超级管理员只能看自己部门的数据
+      const where: any = {};
+      if (!isSuperAdmin && userDepartment) {
+        where.department = userDepartment;
+      }
+
       const dbSuites = await this.prisma.test_suites.findMany({
+        where,
         include: {
           suite_case_map: { select: { case_id: true } },
           users: { select: { email: true } }
@@ -399,6 +406,7 @@ export class SuiteExecutionService {
           name: dbSuite.name,
           description: metadata.description as string || '',
           owner: dbSuite.users.email,
+          department: dbSuite.department || undefined,
           tags: metadata.tags as string[] || [],
           testCaseIds: dbSuite.suite_case_map.map(map => map.case_id),
           createdAt: dbSuite.created_at?.toISOString() || new Date().toISOString(),
@@ -450,6 +458,7 @@ export class SuiteExecutionService {
         data: {
           name: suiteData.name || 'Untitled Suite',
           owner_id: defaultUser.id,
+          department: suiteData.department || null,
           metadata: metadata
         },
         include: {
@@ -472,6 +481,7 @@ export class SuiteExecutionService {
         name: newSuite.name,
         description: metadata.description,
         owner: newSuite.users.email,
+        department: newSuite.department || undefined,
         tags: metadata.tags,
         testCaseIds: suiteData.testCaseIds || [],
         createdAt: newSuite.created_at?.toISOString() || new Date().toISOString(),
@@ -531,6 +541,7 @@ export class SuiteExecutionService {
         where: { id },
         data: {
           name: suiteData.name !== undefined ? suiteData.name : existingSuite.name,
+          department: suiteData.department !== undefined ? suiteData.department : existingSuite.department,
           metadata: updatedMetadata
         },
         include: {
@@ -561,6 +572,7 @@ export class SuiteExecutionService {
         name: updatedSuite.name,
         description: updatedMetadata.description,
         owner: updatedSuite.users.email,
+        department: updatedSuite.department || undefined,
         tags: updatedMetadata.tags,
         testCaseIds: suiteData.testCaseIds !== undefined ? suiteData.testCaseIds : existingSuite.suite_case_map.map(map => map.case_id),
         createdAt: updatedSuite.created_at?.toISOString() || new Date().toISOString(),

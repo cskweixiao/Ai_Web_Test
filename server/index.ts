@@ -14,6 +14,12 @@ import { configRoutes } from './routes/config.js';
 import { createAiBulkUpdateRoutes, createVersionRoutes } from './routes/aiBulkUpdate.js';
 import { createFeatureFlagRoutes, createPublicFeatureFlagRoutes } from './routes/featureFlag.js';
 import { createSecurityRoutes } from './routes/security.js';
+// 🔥 新增：认证相关路由
+import { createAuthRoutes } from './routes/auth.js';
+import { createUserRoutes } from './routes/users.js';
+import { createAuthMiddleware } from './middleware/authMiddleware.js';
+// 🔥 新增：Dashboard统计路由
+import { createDashboardRoutes } from './routes/dashboard.js';
 // 🔥 新增：初始化功能开关和权限
 import { initializeAllFeatureFlags } from './middleware/featureFlag.js';
 import { PermissionService } from './middleware/auth.js';
@@ -447,15 +453,26 @@ async function startServer() {
     initializeQueueService(queueService);
     initializeStreamService(streamService);
     initializeEvidenceService(evidenceService);
-    
-    // 注册所有路由
-    app.use('/api/tests', testRoutes(testExecutionService));
-    app.use('/api/suites', suiteRoutes(suiteExecutionService));
+
+    // 🔥 创建认证中间件
+    const { authenticate } = createAuthMiddleware(prisma);
+
+    // 注册所有路由（需要认证的路由使用认证中间件）
+    app.use('/api/tests', authenticate, testRoutes(testExecutionService));
+    app.use('/api/suites', authenticate, suiteRoutes(suiteExecutionService));
     app.use('/api', screenshotRoutes(screenshotService));
     app.use('/api/config', configRoutes);
     app.use(streamRoutes);
     app.use(evidenceRoutes);
     app.use(queueRoutes);
+
+    // 🔥 新增：认证路由
+    console.log('🔧 注册认证路由...');
+    app.use('/api/auth', createAuthRoutes(prisma));
+
+    // 🔥 新增：用户管理路由
+    console.log('🔧 注册用户管理路由...');
+    app.use('/api/users', createUserRoutes(prisma));
 
     // 🔥 新增：AI批量更新相关路由
     console.log('🔧 注册AI批量更新路由...');
@@ -466,11 +483,15 @@ async function startServer() {
     console.log('🔧 注册功能开关管理路由...');
     app.use('/api/v1/feature-flags', createFeatureFlagRoutes());
     app.use('/api/v1/features', createPublicFeatureFlagRoutes());
-    
+
     // 🔥 新增：安全监控路由
     console.log('🔧 注册安全监控路由...');
     app.use('/api/v1/security', createSecurityRoutes());
-    
+
+    // 🔥 新增：Dashboard统计路由
+    console.log('🔧 注册Dashboard统计路由...');
+    app.use('/api/dashboard', authenticate, createDashboardRoutes(prisma));
+
     console.log('✅ API路由注册完成');
 
     // 🔥 在所有API路由注册完成后，注册catch-all 404处理

@@ -282,17 +282,22 @@ export function AIBulkUpdateModal({
     }
 
     console.log('🚀 准备应用的提案ID:', selectedProposals);
+    console.log('📝 用户编辑的内容:', editedContents);
 
     setLoading(true);
-    
+
     // 记录应用开始
     monitorAIBulkUpdate.applyProposals(sessionResult.sessionId, selectedProposals);
-    
+
     try {
       console.log('🔄 [AIBulkUpdate] 开始应用提案:', selectedProposals);
-      
-      // 调用真实的AI服务
-      const result = await aiBulkUpdateService.applyProposals(sessionResult.sessionId, selectedProposals);
+
+      // 🔥 修复Bug: 传递用户编辑的内容到后端
+      const result = await aiBulkUpdateService.applyProposals(
+        sessionResult.sessionId,
+        selectedProposals,
+        editedContents  // ✅ 传递用户编辑的内容
+      );
       
       setCurrentStep('apply');
       

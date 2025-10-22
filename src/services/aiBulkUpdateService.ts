@@ -322,16 +322,24 @@ export class AIBulkUpdateService {
 
   /**
    * 应用选中的提案
+   * @param sessionId - 会话ID
+   * @param proposalIds - 要应用的提案ID列表
+   * @param editedContents - 用户编辑的内容 (可选, key为提案ID, value为编辑后的内容)
    */
-  async applyProposals(sessionId: number, proposalIds: number[]): Promise<ApplyResult> {
-    console.log('🔄 [AIBulkUpdateService] 开始应用提案:', { sessionId, proposalIds });
+  async applyProposals(
+    sessionId: number,
+    proposalIds: number[],
+    editedContents?: {[key: number]: string}
+  ): Promise<ApplyResult> {
+    console.log('🔄 [AIBulkUpdateService] 开始应用提案:', { sessionId, proposalIds, editedContents });
 
     try {
       const result = await this.makeRequest('/ai-bulk/apply', {
         method: 'POST',
-        body: JSON.stringify({ 
+        body: JSON.stringify({
           sessionId: sessionId,
-          selectedProposals: proposalIds 
+          selectedProposals: proposalIds,
+          editedContents: editedContents  // 🔥 传递用户编辑的内容到后端
         })
       });
 
@@ -430,7 +438,7 @@ export class AIBulkUpdateService {
   initializeWebSocket(): Promise<void> {
     return new Promise((resolve, reject) => {
       try {
-        const wsUrl = `ws://localhost:3001/ws?userId=${this.getCurrentUserId()}`;
+        const wsUrl = `ws://${window.location.hostname}:3001/ws?userId=${this.getCurrentUserId()}`;
         this.wsManager = new WebSocket(wsUrl);
 
         this.wsManager.onopen = () => {

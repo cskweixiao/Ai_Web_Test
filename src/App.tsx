@@ -1,6 +1,6 @@
 import React from 'react';
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
-import { ConfigProvider } from 'antd';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { ConfigProvider, Spin } from 'antd';
 import { Layout } from './components/Layout';
 import { Dashboard } from './pages/Dashboard';
 import { TestCases } from './pages/TestCases';
@@ -9,10 +9,13 @@ import { Reports } from './pages/Reports';
 import { Settings } from './pages/Settings';
 import { LLMAssistant } from './pages/LLMAssistant';
 import { TestFactory } from './pages/TestFactory.tsx';
+import { Login } from './pages/Login';
+import { UserManagement } from './pages/UserManagement';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { ToastProvider } from './components/ui/toast';
 import { useSetupToast } from './utils/toast';
 import { ThemeProvider, useThemeContext } from './hooks/useTheme.tsx';
+import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { testService } from './services/testService';
 import './styles/globals.css';
 
@@ -159,6 +162,48 @@ const darkThemeConfig = {
   },
 };
 
+// Protected Route component
+const ProtectedRoute: React.FC<{ children: React.ReactElement }> = ({ children }) => {
+  const { isAuthenticated, loading } = useAuth();
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <Spin size="large" tip="加载中..." />
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace />;
+  }
+
+  return children;
+};
+
+// Admin Only Route component - 只有超级管理员才能访问
+const AdminRoute: React.FC<{ children: React.ReactElement }> = ({ children }) => {
+  const { isAuthenticated, isSuperAdmin, loading } = useAuth();
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <Spin size="large" tip="加载中..." />
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace />;
+  }
+
+  if (!isSuperAdmin) {
+    return <Navigate to="/" replace />;
+  }
+
+  return children;
+};
+
 function AppContent() {
   // 设置Toast实例
   useSetupToast();
@@ -194,23 +239,39 @@ function AppContent() {
   return (
     <ConfigProvider theme={isDark ? darkThemeConfig : antdThemeConfig}>
       <Router>
-        <Layout>
-          <ErrorBoundary>
-            <Routes>
-              <Route path="/" element={<Dashboard />} />
-              <Route path="/test-cases" element={<TestCases />} />
-              <Route path="/test-runs" element={
+        <Routes>
+          {/* 登录页面 - 不需要认证 */}
+          <Route path="/login" element={<Login />} />
+
+          {/* 受保护的路由 - 需要认证 */}
+          <Route path="/*" element={
+            <ProtectedRoute>
+              <Layout>
                 <ErrorBoundary>
-                  <TestRuns />
+                  <Routes>
+                    <Route path="/" element={<Dashboard />} />
+                    <Route path="/test-cases" element={<TestCases />} />
+                    <Route path="/test-runs" element={
+                      <ErrorBoundary>
+                        <TestRuns />
+                      </ErrorBoundary>
+                    } />
+                    <Route path="/reports" element={<Reports />} />
+                    <Route path="/llm-assistant" element={<LLMAssistant />} />
+                    <Route path="/test-factory" element={<TestFactory />} />
+                    {/* 用户管理 - 仅超级管理员可访问 */}
+                    <Route path="/user-management" element={
+                      <AdminRoute>
+                        <UserManagement />
+                      </AdminRoute>
+                    } />
+                    <Route path="/settings" element={<Settings />} />
+                  </Routes>
                 </ErrorBoundary>
-              } />
-              <Route path="/reports" element={<Reports />} />
-              <Route path="/llm-assistant" element={<LLMAssistant />} />
-              <Route path="/test-factory" element={<TestFactory />} />
-              <Route path="/settings" element={<Settings />} />
-            </Routes>
-          </ErrorBoundary>
-        </Layout>
+              </Layout>
+            </ProtectedRoute>
+          } />
+        </Routes>
       </Router>
     </ConfigProvider>
   );
@@ -219,9 +280,11 @@ function AppContent() {
 function App() {
   return (
     <ThemeProvider>
-      <ToastProvider>
-        <AppContent />
-      </ToastProvider>
+      <AuthProvider>
+        <ToastProvider>
+          <AppContent />
+        </ToastProvider>
+      </AuthProvider>
     </ThemeProvider>
   );
 }

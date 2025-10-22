@@ -38,6 +38,7 @@ import { TagInput } from '../components/ui/TagInput';
 import { TestCaseTable } from '../components/TestCaseTable';
 import { StepTableEditor } from '../components/StepTableEditor';
 import { parseStepsText, serializeStepsToText } from '../utils/stepConverter';
+import { useAuth } from '../contexts/AuthContext';
 
 // 表单数据接口
 interface CreateTestCaseForm {
@@ -62,9 +63,12 @@ interface CreateTestSuiteForm {
 }
 
 export function TestCases() {
+  // 🔥 获取当前用户信息
+  const { user } = useAuth();
+
   // 🔥 新增: 导航钩子
   const navigate = useNavigate();
-  
+
   // 🔥 新增：Tab状态管理
   const [activeTab, setActiveTab] = useState<'cases' | 'suites'>('cases');
   
@@ -401,6 +405,7 @@ export function TestCases() {
           tags: formData.tags.split(',').map(tag => tag.trim()).filter(tag => tag.length > 0),
           system: formData.system.trim() || undefined,
           module: formData.module.trim() || undefined,
+          department: user?.department || undefined, // 🔥 添加当前用户的部门
           author: '当前用户',
           created: new Date().toISOString().split('T')[0],
           lastRun: '从未运行',
@@ -587,6 +592,7 @@ export function TestCases() {
           priority: suiteFormData.priority,
           status: suiteFormData.status,
           tags: suiteFormData.tags.split(',').map(tag => tag.trim()).filter(tag => tag.length > 0),
+          department: user?.department || undefined, // 🔥 添加当前用户的部门
           author: '当前用户',
           created: new Date().toISOString().split('T')[0]
         };

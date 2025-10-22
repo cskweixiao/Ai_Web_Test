@@ -9,6 +9,34 @@
   --color-text-secondary: #6b7280;
   --color-border: #e5e7eb;
   --color-shadow: rgba(0, 0, 0, 0.1);
+
+  /* 🔥 新增：语义化颜色 */
+  --color-success: #10b981;
+  --color-success-light: #d1fae5;
+  --color-warning: #f59e0b;
+  --color-warning-light: #fef3c7;
+  --color-error: #ef4444;
+  --color-error-light: #fee2e2;
+  --color-info: #06b6d4;
+  --color-info-light: #cffafe;
+
+  /* 🔥 新增：中性色阶 */
+  --color-gray-50: #f9fafb;
+  --color-gray-100: #f3f4f6;
+  --color-gray-200: #e5e7eb;
+  --color-gray-300: #d1d5db;
+  --color-gray-400: #9ca3af;
+  --color-gray-500: #6b7280;
+  --color-gray-600: #4b5563;
+  --color-gray-700: #374151;
+  --color-gray-800: #1f2937;
+  --color-gray-900: #111827;
+
+  /* 🔥 新增：品牌色渐变 */
+  --gradient-primary: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%);
+  --gradient-success: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  --gradient-warning: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+  --gradient-error: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
 }
 
 .dark {
@@ -19,6 +47,16 @@
   --color-text-secondary: #cbd5e1;
   --color-border: #334155;
   --color-shadow: rgba(0, 0, 0, 0.3);
+
+  /* 🔥 深色模式语义化颜色 */
+  --color-success: #22c55e;
+  --color-success-light: #064e3b;
+  --color-warning: #fbbf24;
+  --color-warning-light: #78350f;
+  --color-error: #f87171;
+  --color-error-light: #7f1d1d;
+  --color-info: #22d3ee;
+  --color-info-light: #164e63;
 }
 
 /* 基础样式 */
@@ -57,6 +95,53 @@ body {
   background: var(--color-text-secondary);
 }
 
+/* 🔥 Typography 系统 */
+.text-display {
+  font-size: 3rem;       /* 48px - 大标题 */
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+}
+
+.text-heading {
+  font-size: 2rem;       /* 32px - 页面标题 */
+  font-weight: 600;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+}
+
+.text-title {
+  font-size: 1.25rem;    /* 20px - 卡片标题 */
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.text-body {
+  font-size: 1rem;       /* 16px - 正文 */
+  font-weight: 400;
+  line-height: 1.5;
+}
+
+.text-caption {
+  font-size: 0.875rem;   /* 14px - 辅助文字 */
+  color: var(--color-text-secondary);
+  line-height: 1.4;
+}
+
+.text-small {
+  font-size: 0.75rem;    /* 12px - 最小文字 */
+  color: var(--color-text-secondary);
+  line-height: 1.33;
+}
+
+/* 🔥 间距系统 (8px Grid) */
+.spacing-1 { padding: 0.5rem; }   /* 8px */
+.spacing-2 { padding: 1rem; }     /* 16px */
+.spacing-3 { padding: 1.5rem; }   /* 24px */
+.spacing-4 { padding: 2rem; }     /* 32px */
+.spacing-5 { padding: 3rem; }     /* 48px */
+.spacing-6 { padding: 4rem; }     /* 64px */
+
 /* 自定义工具类 */
 .glass-effect {
   background: rgba(255, 255, 255, 0.1);
@@ -70,7 +155,14 @@ body {
 }
 
 .gradient-text {
-  background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%);
+  background: var(--gradient-primary);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.gradient-success-text {
+  background: var(--gradient-success);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
