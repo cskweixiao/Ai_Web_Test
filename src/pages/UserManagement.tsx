@@ -247,8 +247,8 @@ export function UserManagement() {
         className="flex justify-between items-center"
       >
         <div>
-          <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100">用户管理</h2>
-          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-gray-900 dark:text-gray-100">用户管理</h1>
+          <p className="mt-1 text-sm sm:text-base text-gray-600 dark:text-gray-400">
             管理系统用户账户和权限
           </p>
         </div>
@@ -267,7 +267,7 @@ export function UserManagement() {
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.1 }}
-        className="bg-white dark:bg-gray-800 rounded-lg shadow"
+        className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden"
       >
         <Table
           columns={columns}
@@ -278,8 +278,10 @@ export function UserManagement() {
             pageSize: 10,
             showSizeChanger: true,
             showTotal: (total) => `共 ${total} 个用户`,
+            className: "px-4 py-3"
           }}
           scroll={{ x: 1200 }}
+          className="user-management-table"
         />
       </motion.div>
 

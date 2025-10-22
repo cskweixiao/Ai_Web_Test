@@ -32,7 +32,6 @@ import { useNavigate } from 'react-router-dom';
 import { Modal, ConfirmModal } from '../components/ui/modal';
 import { Button } from '../components/ui/button';
 import { showToast } from '../utils/toast';
-import  {AIBulkUpdateModal}  from '../components/AIBulkUpdateModal';
 import { aiBulkUpdateService } from '../services/aiBulkUpdateService';
 import { TagInput } from '../components/ui/TagInput';
 import { TestCaseTable } from '../components/TestCaseTable';
@@ -101,7 +100,6 @@ export function TestCases() {
   const [runningSuiteId, setRunningSuiteId] = useState<number | null>(null);
   
   // 🔥 新增：AI批量更新状态管理
-  const [showAIBulkUpdateModal, setShowAIBulkUpdateModal] = useState(false);
   const [aiFeatureAvailable, setAiFeatureAvailable] = useState(false);
   const [checkingFeature, setCheckingFeature] = useState(true);
   
@@ -446,20 +444,9 @@ export function TestCases() {
     }
   };
 
-  // 处理测试用例数据中的可选字段
+  // 处理测试用例数据中的可选字段 - 改为导航到编辑页面
   const handleEditTestCase = (testCase: TestCase) => {
-    setEditingTestCase(testCase);
-    setFormData({
-      name: testCase.name,
-      steps: testCase.steps,
-      assertions: testCase.assertions || '',
-      priority: testCase.priority || 'medium',
-      status: testCase.status || 'active',
-      tags: testCase.tags ? testCase.tags.join(', ') : '',
-      system: testCase.system || '',
-      module: testCase.module || ''
-    });
-    setShowCreateModal(true);
+    navigate(`/test-cases/${testCase.id}/edit`);
   };
 
   const handleDeleteTestCase = (testCase: TestCase) => {
@@ -1045,7 +1032,7 @@ export function TestCases() {
             <motion.button
               whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.98 }}
-              onClick={() => setShowAIBulkUpdateModal(true)}
+              onClick={() => navigate('/ai-bulk-update')}
               className="inline-flex items-center px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
               title="使用AI批量更新测试用例"
             >
@@ -1078,7 +1065,13 @@ export function TestCases() {
           <motion.button
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
-            onClick={() => setShowCreateModal(true)}
+            onClick={() => {
+              if (activeTab === 'cases') {
+                navigate('/test-cases/new');
+              } else {
+                setShowCreateModal(true);
+              }
+            }}
             className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
           >
             <Plus className="h-5 w-5 mr-2" />
@@ -1247,7 +1240,7 @@ export function TestCases() {
               <motion.button
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
-                onClick={() => setShowCreateModal(true)}
+                onClick={() => navigate('/test-cases/new')}
                 className="inline-flex items-center px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
               >
                 <Plus className="h-5 w-5 mr-2" />
@@ -2042,13 +2035,6 @@ export function TestCases() {
         size="sm"
       />
 
-      {/* 🔥 新增: AI批量更新模态框 */}
-      <AIBulkUpdateModal
-        isOpen={showAIBulkUpdateModal}
-        onClose={() => setShowAIBulkUpdateModal(false)}
-        testCases={testCases}
-        onRefresh={loadTestCases}
-      />
     </div>
   );
 }

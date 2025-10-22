@@ -204,3 +204,162 @@ body {
 .animate-pulse-glow {
   animation: pulse-glow 2s ease-in-out infinite;
 }
+
+/* 🔥 Tab栏相关样式 */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+/* 添加第三层背景色 */
+:root {
+  --color-bg-tertiary: #f3f4f6;
+}
+
+.dark {
+  --color-bg-tertiary: #1e293b;
+}
+
+/* 🔥 Ant Design 组件样式覆盖 - 统一字体大小 */
+
+/* Table 组件 */
+.ant-table {
+  font-size: 14px; /* 保持与系统 text-sm 一致 */
+}
+
+.ant-table-thead > tr > th {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-gray-700);
+  background-color: var(--color-gray-50);
+}
+
+.dark .ant-table-thead > tr > th {
+  color: var(--color-gray-300);
+  background-color: var(--color-gray-800);
+}
+
+.ant-table-tbody > tr > td {
+  font-size: 14px;
+  color: var(--color-gray-900);
+}
+
+.dark .ant-table-tbody > tr > td {
+  color: var(--color-gray-100);
+}
+
+/* Button 组件 */
+.ant-btn {
+  font-size: 14px;
+}
+
+.ant-btn-lg {
+  font-size: 16px;
+}
+
+.ant-btn-sm {
+  font-size: 12px;
+}
+
+/* Modal 组件 */
+.ant-modal-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--color-gray-900);
+}
+
+.dark .ant-modal-title {
+  color: var(--color-gray-100);
+}
+
+.ant-modal-content {
+  background-color: var(--color-bg-primary);
+}
+
+.dark .ant-modal-content {
+  background-color: var(--color-gray-800);
+}
+
+/* Form 组件 */
+.ant-form-item-label > label {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-gray-700);
+}
+
+.dark .ant-form-item-label > label {
+  color: var(--color-gray-300);
+}
+
+.ant-input,
+.ant-input-password,
+.ant-select-selector {
+  font-size: 14px;
+}
+
+/* Tag 组件 */
+.ant-tag {
+  font-size: 12px;
+}
+
+/* Pagination 组件 */
+.ant-pagination {
+  font-size: 14px;
+}
+
+/* Message 组件 */
+.ant-message-notice-content {
+  font-size: 14px;
+}
+
+/* Popconfirm 组件 */
+.ant-popconfirm-message-title {
+  font-size: 14px;
+}
+
+.ant-popconfirm-description {
+  font-size: 14px;
+}
+
+/* 🔥 用户管理表格特定样式 */
+.user-management-table .ant-table-thead > tr > th {
+  background-color: #f9fafb;
+  font-weight: 600;
+  padding: 16px;
+  border-bottom: 2px solid #e5e7eb;
+}
+
+.dark .user-management-table .ant-table-thead > tr > th {
+  background-color: #1f2937;
+  border-bottom-color: #374151;
+}
+
+.user-management-table .ant-table-tbody > tr > td {
+  padding: 16px;
+  vertical-align: middle;
+}
+
+.user-management-table .ant-table-tbody > tr:hover > td {
+  background-color: #f3f4f6;
+}
+
+.dark .user-management-table .ant-table-tbody > tr:hover > td {
+  background-color: #374151;
+}
+
+.user-management-table .ant-table-tbody > tr {
+  transition: all 0.2s ease;
+}
+
+/* Table 边框优化 */
+.user-management-table .ant-table {
+  border-radius: 0;
+}
+
+.user-management-table .ant-table-container {
+  border-radius: 0;
+}

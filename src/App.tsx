@@ -4,8 +4,10 @@ import { ConfigProvider, Spin } from 'antd';
 import { Layout } from './components/Layout';
 import { Dashboard } from './pages/Dashboard';
 import { TestCases } from './pages/TestCases';
+import { TestCaseDetail } from './pages/TestCaseDetail';
 import { TestRuns } from './pages/TestRuns';
-import { Reports } from './pages/Reports';
+import { TestRunDetail } from './pages/TestRunDetail';
+import { TestReports } from './pages/TestReports';
 import { Settings } from './pages/Settings';
 import { LLMAssistant } from './pages/LLMAssistant';
 import { TestFactory } from './pages/TestFactory.tsx';
@@ -16,6 +18,7 @@ import { ToastProvider } from './components/ui/toast';
 import { useSetupToast } from './utils/toast';
 import { ThemeProvider, useThemeContext } from './hooks/useTheme.tsx';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { TabProvider } from './contexts/TabContext';
 import { testService } from './services/testService';
 import './styles/globals.css';
 
@@ -246,29 +249,41 @@ function AppContent() {
           {/* 受保护的路由 - 需要认证 */}
           <Route path="/*" element={
             <ProtectedRoute>
-              <Layout>
-                <ErrorBoundary>
-                  <Routes>
-                    <Route path="/" element={<Dashboard />} />
-                    <Route path="/test-cases" element={<TestCases />} />
-                    <Route path="/test-runs" element={
-                      <ErrorBoundary>
-                        <TestRuns />
-                      </ErrorBoundary>
-                    } />
-                    <Route path="/reports" element={<Reports />} />
-                    <Route path="/llm-assistant" element={<LLMAssistant />} />
-                    <Route path="/test-factory" element={<TestFactory />} />
-                    {/* 用户管理 - 仅超级管理员可访问 */}
-                    <Route path="/user-management" element={
-                      <AdminRoute>
-                        <UserManagement />
-                      </AdminRoute>
-                    } />
-                    <Route path="/settings" element={<Settings />} />
-                  </Routes>
-                </ErrorBoundary>
-              </Layout>
+              <TabProvider>
+                <Layout>
+                  <ErrorBoundary>
+                    <Routes>
+                      <Route path="/" element={<Dashboard />} />
+
+                      {/* 测试用例路由 */}
+                      <Route path="/test-cases" element={<TestCases />} />
+                      <Route path="/test-cases/new" element={<TestCaseDetail />} />
+                      <Route path="/test-cases/:id/edit" element={<TestCaseDetail />} />
+
+                      {/* 测试执行路由 */}
+                      <Route path="/test-runs" element={
+                        <ErrorBoundary>
+                          <TestRuns />
+                        </ErrorBoundary>
+                      } />
+                      <Route path="/test-runs/:id/detail" element={<TestRunDetail />} />
+
+                      <Route path="/reports" element={<TestReports />} />
+                      <Route path="/llm-assistant" element={<LLMAssistant />} />
+                      <Route path="/test-factory" element={<TestFactory />} />
+
+                      {/* 用户管理 - 仅超级管理员可访问 */}
+                      <Route path="/user-management" element={
+                        <AdminRoute>
+                          <UserManagement />
+                        </AdminRoute>
+                      } />
+
+                      <Route path="/settings" element={<Settings />} />
+                    </Routes>
+                  </ErrorBoundary>
+                </Layout>
+              </TabProvider>
             </ProtectedRoute>
           } />
         </Routes>

@@ -252,6 +252,27 @@ export class TestService {
     }
   }
 
+  // 🔥 新增：根据ID获取单个测试用例
+  async getTestCaseById(id: number): Promise<TestCase> {
+    try {
+      console.log(`🔄 [testService] 获取测试用例 ID: ${id}`);
+      const response = await fetch(`${API_BASE_URL}/tests/cases/${id}`, {
+        headers: this.getAuthHeaders(),
+      });
+
+      if (!response.ok) {
+        throw new Error(`获取测试用例失败: ${response.statusText}`);
+      }
+
+      const testCase = await response.json();
+      console.log('✅ [testService] 成功获取测试用例:', testCase.name);
+      return testCase;
+    } catch (error) {
+      console.error(`❌ [testService] 获取测试用例失败 (ID: ${id}):`, error);
+      throw error;
+    }
+  }
+
   // 🔥 新增：分页查询测试用例
   async getTestCasesPaginated(params: {
     page: number;

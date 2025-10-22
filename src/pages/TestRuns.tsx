@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Play,
@@ -59,6 +60,7 @@ export function TestRuns() {
   // 🚀 优化：移除组件渲染日志
   // console.log('🔥 [TestRuns] 组件重新渲染，时间戳:', Date.now());
 
+  const navigate = useNavigate();
   const [testRuns, setTestRuns] = useState<TestRun[]>([]);
   const [selectedRun, setSelectedRun] = useState<TestRun | null>(null);
   const [showLogs, setShowLogs] = useState(false);
@@ -137,7 +139,16 @@ export function TestRuns() {
         console.warn('WebSocket连接初始化失败，将使用HTTP API轮询:', error);
       });
 
-      const response = await fetch(`http://${window.location.hostname}:3001/api/tests/runs`);
+      // 🔥 添加认证header
+      const token = localStorage.getItem('authToken');
+      const headers: HeadersInit = {};
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      const response = await fetch(`http://${window.location.hostname}:3001/api/tests/runs`, {
+        headers
+      });
       
       // 🚀 修复：检查请求是否被中断
       if (!response.ok) {
@@ -346,7 +357,7 @@ export function TestRuns() {
     if (!message) return;
     
     // 根据消息类型进行增量更新
-    if (message.type === 'test_update' || message.type === 'test_complete') {
+    if (message.type === 'test_created' || message.type === 'test_update' || message.type === 'test_complete') {
       const runId = message.runId || message.data?.id;
       const updateData = message.data;
       
@@ -542,8 +553,8 @@ export function TestRuns() {
       }
 
       // 🚀 优化：优先使用增量更新
-      if (message.type === 'test_update' || message.type === 'test_complete' ||
-          message.type === 'suiteUpdate') {
+      if (message.type === 'test_created' || message.type === 'test_update' ||
+          message.type === 'test_complete' || message.type === 'suiteUpdate') {
         debouncedUpdate(message);
       }
     });
@@ -697,10 +708,9 @@ export function TestRuns() {
     }
   }, [testRuns]);
 
-  // 🔥 修复：将 onViewLogs 回调移到组件顶层，避免在 map 中使用 hooks
+  // 修改为导航到详情页面
   const handleViewLogs = useCallback((run: TestRun) => {
-    setSelectedRun(run);
-    setShowLogs(true);
+    navigate(`/test-runs/${run.id}/detail`);
   }, []);
 
   // 🔥 修复灰屏问题：使用 useCallback 稳定 onFrameUpdate 函数引用
@@ -1009,16 +1019,19 @@ export function TestRuns() {
             </motion.button>
           )}
 
-          <motion.button
-            whileHover={{ scale: 1.1 }}
-            whileTap={{ scale: 0.9 }}
-            onClick={() => onViewLogs(run)}
-            className="p-2 text-gray-400 hover:text-blue-600 transition-colors"
-            title="查看详细执行日志"
-          >
-            <Terminal className="h-4 w-4" />
-          </motion.button>
-          
+          {/* 🔥 只在非队列状态时显示查看日志按钮 */}
+          {run.status !== 'queued' && (
+            <motion.button
+              whileHover={{ scale: 1.1 }}
+              whileTap={{ scale: 0.9 }}
+              onClick={() => onViewLogs(run)}
+              className="p-2 text-gray-400 hover:text-blue-600 transition-colors"
+              title="查看详细执行日志"
+            >
+              <Terminal className="h-4 w-4" />
+            </motion.button>
+          )}
+
         </div>
       </div>
     </motion.div>

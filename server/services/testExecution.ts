@@ -15,6 +15,7 @@ import * as path from 'path';
 import { QueueService, QueueTask } from './queueService.js';
 import { StreamService } from './streamService.js';
 import { EvidenceService } from './evidenceService.js';
+import { TestCaseExecutionService } from './testCaseExecutionService.js';
 
 // 重构后的测试执行服务：完全基于MCP的新流程
 export class TestExecutionService {
@@ -27,6 +28,7 @@ export class TestExecutionService {
   private queueService: QueueService;
   private streamService: StreamService;
   private evidenceService: EvidenceService;
+  private executionService: TestCaseExecutionService;
 
   // 🚀 Phase 4: 性能监控系统
   private performanceMonitor = {
@@ -122,6 +124,9 @@ export class TestExecutionService {
       path.join(process.cwd(), 'artifacts'),
       process.env.BASE_URL || 'http://localhost:3000'
     );
+
+    // 🔥 初始化测试执行持久化服务
+    this.executionService = TestCaseExecutionService.getInstance();
 
     console.log(`🗄️ TestExecutionService已连接到数据库服务`);
 
@@ -472,7 +477,7 @@ export class TestExecutionService {
   ): Promise<string> {
     const runId = uuidv4();
     const userId = options.userId || 'system';
-    
+
     const testRun: TestRun = {
       id: runId, runId, testCaseId, environment, executionMode,
       status: 'queued',
@@ -484,6 +489,70 @@ export class TestExecutionService {
     };
 
     testRunStore.set(runId, testRun);
+
+    // 🔥 立即广播测试创建事件（先用占位符名称，不等待数据库查询）
+    const placeholderName = `测试用例 #${testCaseId}`;
+    this.wsManager.broadcast({
+      type: 'test_created',
+      runId,
+      data: {
+        id: runId,
+        testCaseId,
+        name: placeholderName,
+        status: testRun.status,
+        startTime: testRun.startedAt,
+        environment,
+        executor: userId,
+        progress: 0,
+        totalSteps: 0,
+        completedSteps: 0,
+        passedSteps: 0,
+        failedSteps: 0,
+        duration: '0s',
+        logs: [],
+        screenshots: []
+      }
+    });
+    console.log(`📡 [${runId}] 立即广播测试创建事件（占位符）`);
+
+    // 🔥 异步获取实际测试用例名称并更新（不阻塞）+ 保存到数据库
+    console.log(`🔍 [${runId}] 开始查询测试用例信息 testCaseId=${testCaseId}...`);
+    this.findTestCaseById(testCaseId).then(async testCase => {
+      console.log(`✅ [${runId}] 测试用例查询成功，testCase=${testCase ? 'found' : 'null'}`);
+
+      const actualName = testCase?.name || placeholderName;
+      if (actualName !== placeholderName) {
+        this.wsManager.broadcast({
+          type: 'test_update',
+          runId,
+          data: {
+            name: actualName
+          }
+        });
+        console.log(`📡 [${runId}] 更新实际测试用例名称: ${actualName}`);
+      }
+
+      // 🔥 保存测试执行记录到数据库
+      console.log(`💾 [${runId}] 准备保存测试执行记录到数据库，actualName="${actualName}"`);
+      try {
+        console.log(`💾 [${runId}] 调用 executionService.createExecution...`);
+        await this.executionService.createExecution({
+          id: runId,
+          testCaseId,
+          testCaseTitle: actualName,
+          environment,
+          executionMode,
+          executorUserId: userId !== 'system' ? parseInt(userId) : undefined,
+          // TODO: 从用户信息获取部门
+        });
+        console.log(`💾 [${runId}] 测试执行记录已保存到数据库`);
+      } catch (error) {
+        console.warn(`⚠️ [${runId}] 保存测试执行记录失败:`, error);
+      }
+    }).catch(err => {
+      console.warn(`⚠️ [${runId}] 获取测试用例名称失败:`, err.message);
+    });
+
     this.addLog(runId, `测试 #${testCaseId} 已加入队列，环境: ${environment}`);
 
     // 🔥 修正：创建队列任务
@@ -2310,6 +2379,26 @@ ${elements.map((el, index) => `${index + 1}. ${el.ref}: ${el.role} "${el.text}"`
         this.addLog(runId, message, logLevel);
       }
       this.wsManager.broadcast({ type: 'test_update', runId, data: { status: testRun.status } });
+
+      // 🔥 异步同步到数据库（不阻塞执行）
+      this.syncTestRunToDatabase(runId).catch(err => {
+        console.warn(`⚠️ [${runId}] 同步数据库失败:`, err.message);
+      });
+    }
+  }
+
+  /**
+   * 🔥 同步 TestRun 到数据库
+   */
+  private async syncTestRunToDatabase(runId: string): Promise<void> {
+    const testRun = testRunStore.get(runId);
+    if (!testRun) return;
+
+    try {
+      await this.executionService.syncFromTestRun(testRun);
+    } catch (error) {
+      // 静默失败，避免影响测试执行
+      console.error(`❌ [${runId}] 数据库同步失败:`, error);
     }
   }
 

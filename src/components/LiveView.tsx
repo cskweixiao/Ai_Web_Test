@@ -256,38 +256,60 @@ export const LiveView: React.FC<LiveViewProps> = React.memo(({ runId, testStatus
         )}
       </div>
       
-      <div className="live-view-content bg-slate-100 flex-1 min-h-0 flex items-center justify-center">
-        {error ? (
-          <div className="text-white text-center p-8">
-            <div className="text-4xl mb-4">
-              {testStatus === 'completed' ? '✅' : 
-               testStatus === 'failed' ? '❌' : 
-               testStatus === 'queued' ? '⏳' : 
-               testStatus === 'cancelled' ? '🚫' : '📺'}
+      <div className="live-view-content bg-slate-100 flex-1 min-h-0 flex items-center justify-center relative">
+        <img
+          ref={imgRef}
+          className="w-full h-full object-contain bg-black"
+          alt="实时画面"
+        />
+
+        {/* 测试状态叠加层 */}
+        {testStatus && testStatus !== 'running' && (
+          <div className="absolute inset-0 bg-black bg-opacity-75 flex items-center justify-center">
+            <div className="text-white text-center p-8 max-w-md">
+              <div className="text-6xl mb-6">
+                {testStatus === 'completed' ? '✅' :
+                 testStatus === 'failed' ? '❌' :
+                 testStatus === 'queued' ? '⏳' :
+                 testStatus === 'cancelled' ? '🚫' : '📺'}
+              </div>
+              <div className="text-2xl font-bold mb-4">
+                {testStatus === 'completed' ? '测试已完成' :
+                 testStatus === 'failed' ? '测试已失败' :
+                 testStatus === 'queued' ? '等待执行中' :
+                 testStatus === 'cancelled' ? '测试已取消' : '测试未运行'}
+              </div>
+              {testStatus === 'completed' && (
+                <div className="text-base text-gray-300 leading-relaxed">
+                  <p className="mb-2">✨ 测试执行成功</p>
+                  <p>💡 可以在"测试证据"标签页查看完整截图</p>
+                </div>
+              )}
+              {testStatus === 'failed' && (
+                <div className="text-base text-gray-300 leading-relaxed">
+                  <p className="mb-2">⚠️ 测试执行过程中出现错误</p>
+                  <p>💡 请在"执行日志"标签页查看详细错误信息</p>
+                </div>
+              )}
+              {testStatus === 'queued' && (
+                <div className="text-base text-gray-300 leading-relaxed">
+                  <p>测试正在队列中等待执行，请稍候...</p>
+                </div>
+              )}
+              {testStatus === 'cancelled' && (
+                <div className="text-base text-gray-300 leading-relaxed">
+                  <p>测试已被用户取消</p>
+                </div>
+              )}
             </div>
-            <div className="text-lg mb-2">{error}</div>
-            {testStatus === 'completed' && (
-              <div className="text-sm text-gray-300 mt-3">
-                测试已成功完成，可以在"测试证据"标签页查看截图
-              </div>
-            )}
-            {testStatus === 'failed' && (
-              <div className="text-sm text-gray-300 mt-3">
-                测试执行失败，可以在"执行日志"标签页查看详细错误信息
-              </div>
-            )}
-            {testStatus === 'queued' && (
-              <div className="text-sm text-gray-300 mt-3">
-                测试正在等待执行，请稍候...
-              </div>
-            )}
           </div>
-        ) : (
-          <img
-            ref={imgRef}
-            className="w-full h-full object-contain bg-black"
-            alt="实时画面"
-          />
+        )}
+
+        {/* 错误提示（连接错误等） */}
+        {error && testStatus === 'running' && (
+          <div className="absolute top-4 right-4 bg-red-500 bg-opacity-90 text-white px-4 py-2 rounded-lg shadow-lg">
+            <span className="text-sm">{error}</span>
+          </div>
         )}
       </div>
     </div>

@@ -21,12 +21,20 @@ import type { MenuProps } from 'antd';
 import { Logo } from './Logo';
 import { ThemeToggle } from './ThemeToggle';
 import { useAuth } from '../contexts/AuthContext';
+import { TabBar } from './TabBar';
+import { useTabShortcuts } from '../hooks/useTabShortcuts';
 
 interface LayoutProps {
   children: React.ReactNode;
 }
 
-const navigationItems = [
+interface NavigationItem {
+  name: string;
+  href: string;
+  icon: React.ElementType;
+}
+
+const navigationItems: NavigationItem[] = [
   { name: '仪表板', href: '/', icon: Home },
   { name: '测试用例', href: '/test-cases', icon: FileCode },
   { name: '测试执行', href: '/test-runs', icon: Play },
@@ -42,6 +50,9 @@ export function Layout({ children }: LayoutProps) {
   const location = useLocation();
   const navigate = useNavigate();
   const { user, logout, isSuperAdmin } = useAuth();
+
+  // 启用Tab快捷键
+  useTabShortcuts();
 
   // 🔥 根据用户权限过滤导航菜单
   const filteredNavigationItems = navigationItems.filter(item => {
@@ -284,8 +295,11 @@ export function Layout({ children }: LayoutProps) {
           </div>
         </motion.div>
 
+        {/* Tab Bar */}
+        <TabBar />
+
         {/* Page content */}
-        <motion.main 
+        <motion.main
           className="flex-1 p-6 sm:p-8 lg:p-10"
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}

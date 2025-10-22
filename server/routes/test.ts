@@ -181,14 +181,53 @@ export function testRoutes(testExecutionService: TestExecutionService): Router {
     }
   });
 
-  // 获取所有测试运行
+  // 获取所有测试运行（支持数据隔离）
   router.get('/runs', async (req: Request, res: Response) => {
     try {
-      const testRuns = testExecutionService.getAllTestRuns();
+      // 🔥 获取当前用户信息（从认证中间件）
+      const userDepartment = req.user?.department || undefined;
+      const userId = req.user?.id;
+      const isSuperAdmin = req.user?.isSuperAdmin || false;
 
-      // 🚀 修复：为每个测试运行补充测试用例名称和完整时间信息
-      const enrichedRuns = await Promise.all(
-        testRuns.map(async (run) => {
+      // 从内存中获取正在运行或最近的测试
+      const memoryRuns = testExecutionService.getAllTestRuns();
+
+      // 🔥 从数据库获取历史测试记录（支持数据隔离）
+      const executionService = (testExecutionService as any).executionService;
+      const dbRuns = await executionService.getExecutions({
+        executorUserId: !isSuperAdmin && userId ? parseInt(userId) : undefined,
+        executorDepartment: !isSuperAdmin ? userDepartment : undefined,
+        limit: 100
+      });
+
+      // 合并内存和数据库记录（去重，优先使用内存中的数据）
+      const memoryRunIds = new Set(memoryRuns.map(r => r.id));
+      const dbRunsFiltered = dbRuns.filter(r => !memoryRunIds.has(r.id));
+
+      // 转换数据库记录到前端格式
+      const dbRunsFormatted = dbRunsFiltered.map(dbRun => ({
+        id: dbRun.id,
+        testCaseId: dbRun.testCaseId,
+        name: dbRun.testCaseTitle,
+        status: dbRun.status,
+        startTime: dbRun.startedAt || dbRun.queuedAt,
+        endTime: dbRun.finishedAt,
+        duration: dbRun.durationMs ? `${(dbRun.durationMs / 1000).toFixed(1)}s` : '0s',
+        progress: dbRun.progress,
+        totalSteps: dbRun.totalSteps,
+        completedSteps: dbRun.completedSteps,
+        passedSteps: dbRun.passedSteps,
+        failedSteps: dbRun.failedSteps,
+        executor: dbRun.executorUserId?.toString() || 'System',
+        environment: dbRun.environment,
+        logs: dbRun.executionLogs || [],
+        screenshots: dbRun.screenshots || [],
+        error: dbRun.errorMessage
+      }));
+
+      // 🚀 为内存中的测试运行补充测试用例名称和完整时间信息
+      const enrichedMemoryRuns = await Promise.all(
+        memoryRuns.map(async (run) => {
           try {
             // 获取测试用例详情
             const testCase = await testExecutionService.getTestCaseById(run.testCaseId);
@@ -230,11 +269,24 @@ export function testRoutes(testExecutionService: TestExecutionService): Router {
         })
       );
 
+      // 合并并按时间倒序排序
+      const allRuns = [...enrichedMemoryRuns, ...dbRunsFormatted].sort((a, b) => {
+        const timeA = (a.startTime || a.queuedAt || new Date()).getTime();
+        const timeB = (b.startTime || b.queuedAt || new Date()).getTime();
+        return timeB - timeA;
+      });
+
       res.json({
         success: true,
-        data: enrichedRuns
+        data: allRuns,
+        meta: {
+          memoryCount: enrichedMemoryRuns.length,
+          dbCount: dbRunsFormatted.length,
+          total: allRuns.length
+        }
       });
     } catch (error) {
+      console.error('获取测试运行列表失败:', error);
       res.status(500).json({
         success: false,
         error: error.message
@@ -294,6 +346,31 @@ export function testRoutes(testExecutionService: TestExecutionService): Router {
       res.status(500).json({
         success: false,
         error: error.message
+      });
+    }
+  });
+
+  // 🔥 新增：根据ID获取单个测试用例
+  router.get('/cases/:id', async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+
+      // 使用 testExecutionService 获取测试用例
+      const testCase = await testExecutionService.getTestCaseById(parseInt(id));
+
+      if (!testCase) {
+        return res.status(404).json({
+          success: false,
+          error: '测试用例不存在',
+        });
+      }
+
+      res.json(testCase);
+    } catch (error: any) {
+      console.error('获取测试用例失败:', error);
+      res.status(500).json({
+        success: false,
+        error: error.message,
       });
     }
   });

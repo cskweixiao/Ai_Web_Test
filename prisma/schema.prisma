@@ -162,6 +162,8 @@ model test_cases {
   // 🔥 新增：AI批量更新功能关联
   case_versions    case_versions[]
   patch_proposals  case_patch_proposals[]
+  // 🔥 新增：测试用例执行记录关联
+  test_case_executions test_case_executions[]
 }
 
 model test_run_results {
@@ -238,6 +240,8 @@ model users {
   // 🔥 新增：AI批量更新功能关联
   case_versions       case_versions[]
   bulk_edit_sessions  bulk_edit_sessions[]
+  // 🔥 新增：测试用例执行记录关联
+  test_case_executions test_case_executions[]
 }
 
 enum job_logs_status {
@@ -364,3 +368,65 @@ enum proposal_apply_status {
   skipped
   conflicted
 }
+
+// 🔥 新增：测试用例执行记录表（单个测试用例执行）
+model test_case_executions {
+  id                  String                        @id @db.VarChar(255) // UUID
+  test_case_id        Int
+  test_case_title     String                        @db.VarChar(255) // 冗余存储，避免JOIN
+  environment         String                        @default("default") @db.VarChar(100)
+  execution_mode      String                        @default("standard") @db.VarChar(50)
+  status              test_case_execution_status    @default(queued)
+
+  // 执行者信息（数据隔离）
+  executor_user_id    Int?
+  executor_department String?                       @db.VarChar(100)
+
+  // 时间信息
+  queued_at           DateTime                      @default(now()) @db.Timestamp(0)
+  started_at          DateTime?                     @db.Timestamp(0)
+  finished_at         DateTime?                     @db.Timestamp(0)
+  duration_ms         Int?
+
+  // 执行统计
+  total_steps         Int                           @default(0)
+  completed_steps     Int                           @default(0)
+  passed_steps        Int                           @default(0)
+  failed_steps        Int                           @default(0)
+  progress            Int                           @default(0) @db.TinyInt // 0-100
+
+  // 错误信息
+  error_message       String?                       @db.Text
+
+  // 关联数据（JSON存储）
+  execution_logs      Json?                         // 执行日志
+  screenshots         Json?                         // 截图路径列表
+  artifacts           Json?                         // 产物信息
+  metadata            Json?                         // 其他元数据
+
+  // 关联关系
+  test_cases          test_cases?                   @relation(fields: [test_case_id], references: [id], onDelete: Cascade)
+  users               users?                        @relation(fields: [executor_user_id], references: [id], onDelete: SetNull)
+
+  // 索引优化
+  @@index([test_case_id])
+  @@index([executor_user_id])
+  @@index([executor_department])
+  @@index([status])
+  @@index([queued_at])
+  @@index([started_at])
+  @@index([finished_at])
+}
+
+// 测试用例执行状态枚举
+enum test_case_execution_status {
+  queued
+  running
+  completed
+  failed
+  cancelled
+  error
+}
+
+// 🔥 更新 test_cases 表，添加执行记录关联
+// （注意：这个修改需要在上面的 test_cases model 中添加）

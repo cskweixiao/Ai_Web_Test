@@ -20,6 +20,8 @@ import { createUserRoutes } from './routes/users.js';
 import { createAuthMiddleware } from './middleware/authMiddleware.js';
 // 🔥 新增：Dashboard统计路由
 import { createDashboardRoutes } from './routes/dashboard.js';
+// 🔥 新增：Reports测试报告路由
+import { createReportsRoutes } from './routes/reports.js';
 // 🔥 新增：初始化功能开关和权限
 import { initializeAllFeatureFlags } from './middleware/featureFlag.js';
 import { PermissionService } from './middleware/auth.js';
@@ -491,6 +493,10 @@ async function startServer() {
     // 🔥 新增：Dashboard统计路由
     console.log('🔧 注册Dashboard统计路由...');
     app.use('/api/dashboard', authenticate, createDashboardRoutes(prisma));
+
+    // 🔥 新增：Reports测试报告路由
+    console.log('🔧 注册Reports测试报告路由...');
+    app.use('/api/reports', authenticate, createReportsRoutes(prisma));
 
     console.log('✅ API路由注册完成');
 

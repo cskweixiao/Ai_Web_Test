@@ -12,33 +12,36 @@ interface StepTableEditorProps {
 export function StepTableEditor({ steps, onChange, readOnly = false }: StepTableEditorProps) {
   const [editingCell, setEditingCell] = useState<{ rowId: string; field: 'action' | 'expected' | 'note' } | null>(null);
 
+  // 确保 steps 始终是数组
+  const safeSteps = steps || [];
+
   // 添加新步骤
   const handleAddStep = useCallback(() => {
     const newStep: TestStepRow = {
       id: `step-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-      order: steps.length + 1,
+      order: safeSteps.length + 1,
       action: '',
       expected: '',
       type: 'action'
     };
-    onChange([...steps, newStep]);
-  }, [steps, onChange]);
+    onChange([...safeSteps, newStep]);
+  }, [safeSteps, onChange]);
 
   // 删除步骤
   const handleDeleteStep = useCallback((stepId: string) => {
-    const filtered = steps.filter(s => s.id !== stepId);
+    const filtered = safeSteps.filter(s => s.id !== stepId);
     // 重新排序
     const reordered = filtered.map((step, index) => ({ ...step, order: index + 1 }));
     onChange(reordered);
-  }, [steps, onChange]);
+  }, [safeSteps, onChange]);
 
   // 更新步骤字段
   const handleUpdateField = useCallback((stepId: string, field: keyof TestStepRow, value: any) => {
-    const updated = steps.map(step =>
+    const updated = safeSteps.map(step =>
       step.id === stepId ? { ...step, [field]: value } : step
     );
     onChange(updated);
-  }, [steps, onChange]);
+  }, [safeSteps, onChange]);
 
   // 开始编辑单元格
   const startEditing = (rowId: string, field: 'action' | 'expected' | 'note') => {
@@ -65,12 +68,12 @@ export function StepTableEditor({ steps, onChange, readOnly = false }: StepTable
 
       {/* 表格主体 */}
       <div className="divide-y max-h-[28vh] overflow-y-auto">
-        {steps.length === 0 ? (
+        {safeSteps.length === 0 ? (
           <div className="py-12 text-center text-gray-400">
             暂无步骤，点击下方"添加步骤"按钮开始
           </div>
         ) : (
-          steps.map((step, index) => (
+          safeSteps.map((step, index) => (
             <div
               key={step.id}
               className="grid grid-cols-[40px_1fr_80px] gap-3 px-3 py-2 hover:bg-gray-50 transition-colors items-start"
@@ -108,6 +111,7 @@ export function StepTableEditor({ steps, onChange, readOnly = false }: StepTable
               <div className="flex items-center justify-center gap-1 pt-1">
                 {!readOnly && (
                   <Button
+                    type="button"
                     variant="ghost"
                     size="icon"
                     onClick={() => handleDeleteStep(step.id)}
@@ -130,6 +134,7 @@ export function StepTableEditor({ steps, onChange, readOnly = false }: StepTable
             共 {steps.length} 个步骤
           </div>
           <Button
+            type="button"
             variant="outline"
             onClick={handleAddStep}
             size="sm"
