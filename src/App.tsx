@@ -13,8 +13,11 @@ import { LLMAssistant } from './pages/LLMAssistant';
 import { TestFactory } from './pages/TestFactory.tsx';
 import { Login } from './pages/Login';
 import { UserManagement } from './pages/UserManagement';
+import { FunctionalTestCases } from './pages/FunctionalTestCases';
+import { FunctionalTestCaseGenerator } from './pages/FunctionalTestCaseGenerator';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { ToastProvider } from './components/ui/toast';
+import { NotFoundPage, ServerErrorPage, ForbiddenPage } from './pages/ErrorPage';
 import { useSetupToast } from './utils/toast';
 import { ThemeProvider, useThemeContext } from './hooks/useTheme.tsx';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
@@ -260,6 +263,10 @@ function AppContent() {
                       <Route path="/test-cases/new" element={<TestCaseDetail />} />
                       <Route path="/test-cases/:id/edit" element={<TestCaseDetail />} />
 
+                      {/* 功能测试用例路由 */}
+                      <Route path="/functional-test-cases" element={<FunctionalTestCases />} />
+                      <Route path="/functional-test-cases/generator" element={<FunctionalTestCaseGenerator />} />
+
                       {/* 测试执行路由 */}
                       <Route path="/test-runs" element={
                         <ErrorBoundary>
@@ -280,6 +287,13 @@ function AppContent() {
                       } />
 
                       <Route path="/settings" element={<Settings />} />
+
+                      {/* 错误页面 */}
+                      <Route path="/error/403" element={<ForbiddenPage />} />
+                      <Route path="/error/500" element={<ServerErrorPage />} />
+
+                      {/* 404 页面 - 必须放在最后 */}
+                      <Route path="*" element={<NotFoundPage />} />
                     </Routes>
                   </ErrorBoundary>
                 </Layout>

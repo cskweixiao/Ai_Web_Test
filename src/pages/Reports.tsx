@@ -1,361 +1,489 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import {
   Download,
-  Filter,
   Calendar,
   TrendingUp,
   TrendingDown,
-  BarChart3,
-  PieChart,
   Activity,
   Clock,
   CheckCircle,
-  XCircle
+  XCircle,
+  AlertTriangle,
+  FileText,
+  Image as ImageIcon
 } from 'lucide-react';
-import { LineChart, Line, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart as RechartsPieChart, Pie, Cell, BarChart, Bar } from 'recharts';
+import { LineChart, Line, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart as RechartsPieChart, Pie, Cell, BarChart, Bar, Legend } from 'recharts';
 import { format, subDays } from 'date-fns';
+import { reportService, BugStats, TrendDataPoint, FailureReason, FlakyTest, FailedCase, SuiteSummary } from '../services/reportService';
+import { DatePicker, Select, message, Spin, Table, Tag } from 'antd';
+import type { ColumnsType } from 'antd/es/table';
 
-const executionTrendData = Array.from({ length: 30 }, (_, i) => {
-  const date = subDays(new Date(), 29 - i);
-  return {
-    date: format(date, 'MM-dd'),
-    success: Math.floor(Math.random() * 20) + 80,
-    failed: Math.floor(Math.random() * 15) + 5,
-    total: 100
-  };
-});
-
-const testCasePerformanceData = [
-  { name: '用户登录流程', avgTime: 2.3, successRate: 95, runs: 150 },
-  { name: '购物车功能', avgTime: 1.8, successRate: 88, runs: 120 },
-  { name: '支付流程', avgTime: 4.2, successRate: 92, runs: 98 },
-  { name: '用户注册', avgTime: 1.5, successRate: 96, runs: 85 },
-  { name: '商品搜索', avgTime: 0.8, successRate: 90, runs: 200 },
-];
-
-const browserDistributionData = [
-  { name: 'Chrome', value: 45, color: '#4285F4' },
-  { name: 'Firefox', value: 25, color: '#FF7139' },
-  { name: 'Safari', value: 20, color: '#00B4FF' },
-  { name: 'Edge', value: 10, color: '#0078D4' },
-];
-
-const environmentStatsData = [
-  { environment: 'Production', success: 94, failed: 6, total: 100 },
-  { environment: 'Staging', success: 89, failed: 11, total: 100 },
-  { environment: 'Development', success: 85, failed: 15, total: 100 },
-];
+const { RangePicker } = DatePicker;
+const { Option } = Select;
 
 export function Reports() {
-  const [dateRange, setDateRange] = useState('30d');
-  const [selectedEnvironment, setSelectedEnvironment] = useState('all');
+  // 状态管理
+  const [loading, setLoading] = useState(false);
+  const [dateRange, setDateRange] = useState<[Date, Date]>([subDays(new Date(), 30), new Date()]);
+  const [department, setDepartment] = useState<string>('all');
+  const [suiteId, setSuiteId] = useState<string | number>('all');
 
-  const totalRuns = executionTrendData.reduce((sum, day) => sum + day.total, 0);
-  const totalSuccess = executionTrendData.reduce((sum, day) => sum + day.success, 0);
-  const totalFailed = executionTrendData.reduce((sum, day) => sum + day.failed, 0);
-  const avgSuccessRate = Math.round((totalSuccess / totalRuns) * 100);
+  // 数据状态
+  const [bugStats, setBugStats] = useState<BugStats | null>(null);
+  const [trendData, setTrendData] = useState<TrendDataPoint[]>([]);
+  const [failureReasons, setFailureReasons] = useState<FailureReason[]>([]);
+  const [flakyTests, setFlakyTests] = useState<FlakyTest[]>([]);
+  const [failedCases, setFailedCases] = useState<FailedCase[]>([]);
+  const [suiteSummaries, setSuiteSummaries] = useState<SuiteSummary[]>([]);
 
-  const avgExecutionTime = testCasePerformanceData.reduce((sum, test) => sum + test.avgTime, 0) / testCasePerformanceData.length;
+  // 分页
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  const [totalFailedCases, setTotalFailedCases] = useState(0);
+
+  // 加载数据
+  const fetchReportData = async () => {
+    if (!dateRange || dateRange.length !== 2) {
+      message.warning('请选择日期范围');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const params = {
+        startDate: format(dateRange[0], 'yyyy-MM-dd'),
+        endDate: format(dateRange[1], 'yyyy-MM-dd'),
+        department: department !== 'all' ? department : undefined,
+        suiteId: suiteId !== 'all' ? suiteId : undefined,
+      };
+
+      // 并行加载所有数据
+      const [
+        statsData,
+        trendDataRes,
+        failureReasonsRes,
+        flakyTestsRes,
+        failedCasesRes,
+        suiteSummariesRes
+      ] = await Promise.all([
+        reportService.getBugStats(params),
+        reportService.getBugTrend(params),
+        reportService.getFailureReasons(params),
+        reportService.getFlakyTests({ ...params, limit: 10 }),
+        reportService.getFailedCases({ ...params, page: currentPage, pageSize }),
+        reportService.getSuiteSummary({ ...params })
+      ]);
+
+      setBugStats(statsData);
+      setTrendData(trendDataRes);
+      setFailureReasons(failureReasonsRes);
+      setFlakyTests(flakyTestsRes);
+      setFailedCases(failedCasesRes.records);
+      setTotalFailedCases(failedCasesRes.total);
+      setSuiteSummaries(suiteSummariesRes);
+
+      message.success('报告数据加载成功');
+    } catch (error: any) {
+      console.error('加载报告数据失败:', error);
+      message.error('加载报告数据失败: ' + (error.response?.data?.error || error.message));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // 初始加载和参数变化时重新加载
+  useEffect(() => {
+    fetchReportData();
+  }, [dateRange, department, suiteId, currentPage, pageSize]);
+
+  // 失败用例表格列定义
+  const failedCaseColumns: ColumnsType<FailedCase> = [
+    {
+      title: '时间',
+      dataIndex: 'timestamp',
+      key: 'timestamp',
+      width: 180,
+      render: (timestamp: string) => format(new Date(timestamp), 'yyyy-MM-dd HH:mm:ss')
+    },
+    {
+      title: '用例名称',
+      dataIndex: 'caseName',
+      key: 'caseName',
+      width: 200
+    },
+    {
+      title: '测试套件',
+      dataIndex: 'suiteName',
+      key: 'suiteName',
+      width: 150
+    },
+    {
+      title: '执行人',
+      dataIndex: 'executor',
+      key: 'executor',
+      width: 120
+    },
+    {
+      title: '失败类型',
+      dataIndex: 'errorCategory',
+      key: 'errorCategory',
+      width: 120,
+      render: (category: string) => {
+        const colorMap: Record<string, string> = {
+          '断言失败': 'red',
+          '超时': 'orange',
+          '元素未找到': 'blue',
+          '其他': 'default'
+        };
+        return <Tag color={colorMap[category] || 'default'}>{category}</Tag>;
+      }
+    },
+    {
+      title: '失败原因',
+      dataIndex: 'failureReason',
+      key: 'failureReason',
+      ellipsis: true,
+      width: 300
+    },
+    {
+      title: '附件',
+      key: 'attachments',
+      width: 100,
+      render: (_: any, record: FailedCase) => (
+        <div className="flex space-x-2">
+          {record.screenshotUrl && (
+            <ImageIcon className="h-4 w-4 text-blue-500 cursor-pointer" title="有截图" />
+          )}
+          {record.hasLogs && (
+            <FileText className="h-4 w-4 text-green-500 cursor-pointer" title="有日志" />
+          )}
+        </div>
+      )
+    }
+  ];
+
+  // 不稳定用例表格列
+  const flakyTestColumns: ColumnsType<FlakyTest> = [
+    {
+      title: '用例名称',
+      dataIndex: 'caseName',
+      key: 'caseName'
+    },
+    {
+      title: '测试套件',
+      dataIndex: 'suiteName',
+      key: 'suiteName'
+    },
+    {
+      title: '总执行次数',
+      dataIndex: 'totalRuns',
+      key: 'totalRuns',
+      align: 'center'
+    },
+    {
+      title: '失败次数',
+      dataIndex: 'failures',
+      key: 'failures',
+      align: 'center'
+    },
+    {
+      title: '失败率',
+      dataIndex: 'failureRate',
+      key: 'failureRate',
+      align: 'center',
+      render: (rate: number, record: FlakyTest) => {
+        const color = record.severity === 'high' ? 'red' : record.severity === 'medium' ? 'orange' : 'yellow';
+        return <Tag color={color}>{rate.toFixed(1)}%</Tag>;
+      }
+    },
+    {
+      title: '最后失败时间',
+      dataIndex: 'lastFailure',
+      key: 'lastFailure',
+      render: (date: string | null) => date ? format(new Date(date), 'yyyy-MM-dd HH:mm') : '-'
+    }
+  ];
+
+  // 失败原因饼图颜色
+  const FAILURE_COLORS = ['#EF4444', '#F97316', '#3B82F6', '#6B7280'];
 
   return (
     <div className="space-y-6">
-      {/* Header */}
+      {/* Header with Filters */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h2 className="text-2xl font-bold text-gray-900">测试报告</h2>
-          <p className="text-gray-600">分析测试执行趋势和性能指标</p>
+          <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100">测试报告</h2>
+          <p className="text-gray-600 dark:text-gray-400">分析测试执行趋势和性能指标</p>
         </div>
-        <div className="flex items-center space-x-3">
-          <select
-            value={dateRange}
-            onChange={(e) => setDateRange(e.target.value)}
-            className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+        <div className="flex items-center space-x-3 flex-wrap">
+          <RangePicker
+            value={[dateRange[0] as any, dateRange[1] as any]}
+            onChange={(dates) => {
+              if (dates && dates[0] && dates[1]) {
+                setDateRange([dates[0].toDate(), dates[1].toDate()]);
+              }
+            }}
+            format="YYYY-MM-DD"
+            className="w-64"
+          />
+          <Select
+            value={department}
+            onChange={setDepartment}
+            className="w-32"
           >
-            <option value="7d">最近7天</option>
-            <option value="30d">最近30天</option>
-            <option value="90d">最近90天</option>
-          </select>
-          <select
-            value={selectedEnvironment}
-            onChange={(e) => setSelectedEnvironment(e.target.value)}
-            className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-          >
-            <option value="all">所有环境</option>
-            <option value="production">生产环境</option>
-            <option value="staging">预发环境</option>
-            <option value="development">开发环境</option>
-          </select>
+            <Option value="all">所有部门</Option>
+            <Option value="研发部">研发部</Option>
+            <Option value="测试部">测试部</Option>
+            <Option value="产品部">产品部</Option>
+          </Select>
           <motion.button
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
-            className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            onClick={fetchReportData}
+            disabled={loading}
+            className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
           >
             <Download className="h-5 w-5 mr-2" />
-            导出报告
+            刷新数据
           </motion.button>
         </div>
       </div>
 
-      {/* Key Metrics */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="bg-white rounded-xl p-6 shadow-sm border border-gray-200"
-        >
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-600">总执行次数</p>
-              <p className="text-3xl font-bold text-gray-900">{totalRuns.toLocaleString()}</p>
-              <p className="text-sm text-green-600 flex items-center mt-1">
-                <TrendingUp className="h-4 w-4 mr-1" />
-                +15% 较上月
-              </p>
-            </div>
-            <div className="h-12 w-12 bg-blue-100 rounded-lg flex items-center justify-center">
-              <Activity className="h-6 w-6 text-blue-600" />
-            </div>
-          </div>
-        </motion.div>
+      <Spin spinning={loading}>
+        {/* Key Metrics */}
+        {bugStats && (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-200 dark:border-gray-700"
+            >
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-gray-600 dark:text-gray-400">BUG总数</p>
+                  <p className="text-3xl font-bold text-gray-900 dark:text-gray-100">{bugStats.totalBugs}</p>
+                  <p className={`text-sm flex items-center mt-1 ${bugStats.trend.bugsChange > 0 ? 'text-red-600' : 'text-green-600'}`}>
+                    {bugStats.trend.bugsChange > 0 ? <TrendingUp className="h-4 w-4 mr-1" /> : <TrendingDown className="h-4 w-4 mr-1" />}
+                    {bugStats.trend.bugsChange > 0 ? '+' : ''}{bugStats.trend.bugsChange} 较上期
+                  </p>
+                </div>
+                <div className="h-12 w-12 bg-red-100 dark:bg-red-900/30 rounded-lg flex items-center justify-center">
+                  <XCircle className="h-6 w-6 text-red-600 dark:text-red-400" />
+                </div>
+              </div>
+            </motion.div>
 
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.1 }}
-          className="bg-white rounded-xl p-6 shadow-sm border border-gray-200"
-        >
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-600">平均成功率</p>
-              <p className="text-3xl font-bold text-gray-900">{avgSuccessRate}%</p>
-              <p className="text-sm text-green-600 flex items-center mt-1">
-                <CheckCircle className="h-4 w-4 mr-1" />
-                +2% 较上月
-              </p>
-            </div>
-            <div className="h-12 w-12 bg-green-100 rounded-lg flex items-center justify-center">
-              <CheckCircle className="h-6 w-6 text-green-600" />
-            </div>
-          </div>
-        </motion.div>
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.1 }}
+              className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-200 dark:border-gray-700"
+            >
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-gray-600 dark:text-gray-400">通过用例</p>
+                  <p className="text-3xl font-bold text-gray-900 dark:text-gray-100">{bugStats.passedCases}</p>
+                  <p className={`text-sm flex items-center mt-1 ${bugStats.trend.passedChange > 0 ? 'text-green-600' : 'text-red-600'}`}>
+                    {bugStats.trend.passedChange > 0 ? <TrendingUp className="h-4 w-4 mr-1" /> : <TrendingDown className="h-4 w-4 mr-1" />}
+                    {bugStats.trend.passedChange > 0 ? '+' : ''}{bugStats.trend.passedChange} 较上期
+                  </p>
+                </div>
+                <div className="h-12 w-12 bg-green-100 dark:bg-green-900/30 rounded-lg flex items-center justify-center">
+                  <CheckCircle className="h-6 w-6 text-green-600 dark:text-green-400" />
+                </div>
+              </div>
+            </motion.div>
 
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.2 }}
-          className="bg-white rounded-xl p-6 shadow-sm border border-gray-200"
-        >
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-600">平均执行时间</p>
-              <p className="text-3xl font-bold text-gray-900">{avgExecutionTime.toFixed(1)}分</p>
-              <p className="text-sm text-red-600 flex items-center mt-1">
-                <TrendingDown className="h-4 w-4 mr-1" />
-                -5% 较上月
-              </p>
-            </div>
-            <div className="h-12 w-12 bg-orange-100 rounded-lg flex items-center justify-center">
-              <Clock className="h-6 w-6 text-orange-600" />
-            </div>
-          </div>
-        </motion.div>
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.2 }}
+              className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-200 dark:border-gray-700"
+            >
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-gray-600 dark:text-gray-400">成功率</p>
+                  <p className="text-3xl font-bold text-gray-900 dark:text-gray-100">{bugStats.successRate}%</p>
+                  <p className={`text-sm flex items-center mt-1 ${bugStats.trend.successRateChange > 0 ? 'text-green-600' : 'text-red-600'}`}>
+                    {bugStats.trend.successRateChange > 0 ? <TrendingUp className="h-4 w-4 mr-1" /> : <TrendingDown className="h-4 w-4 mr-1" />}
+                    {bugStats.trend.successRateChange > 0 ? '+' : ''}{bugStats.trend.successRateChange}% 较上期
+                  </p>
+                </div>
+                <div className="h-12 w-12 bg-blue-100 dark:bg-blue-900/30 rounded-lg flex items-center justify-center">
+                  <Activity className="h-6 w-6 text-blue-600 dark:text-blue-400" />
+                </div>
+              </div>
+            </motion.div>
 
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.3 }}
-          className="bg-white rounded-xl p-6 shadow-sm border border-gray-200"
-        >
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-600">失败用例</p>
-              <p className="text-3xl font-bold text-gray-900">{totalFailed.toLocaleString()}</p>
-              <p className="text-sm text-green-600 flex items-center mt-1">
-                <TrendingDown className="h-4 w-4 mr-1" />
-                -12% 较上月
-              </p>
-            </div>
-            <div className="h-12 w-12 bg-red-100 rounded-lg flex items-center justify-center">
-              <XCircle className="h-6 w-6 text-red-600" />
-            </div>
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.3 }}
+              className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-200 dark:border-gray-700"
+            >
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-gray-600 dark:text-gray-400">平均执行时长</p>
+                  <p className="text-3xl font-bold text-gray-900 dark:text-gray-100">{bugStats.avgDuration.toFixed(1)}分</p>
+                  <p className={`text-sm flex items-center mt-1 ${bugStats.trend.durationChange < 0 ? 'text-green-600' : 'text-red-600'}`}>
+                    {bugStats.trend.durationChange < 0 ? <TrendingDown className="h-4 w-4 mr-1" /> : <TrendingUp className="h-4 w-4 mr-1" />}
+                    {bugStats.trend.durationChange > 0 ? '+' : ''}{bugStats.trend.durationChange.toFixed(1)}分 较上期
+                  </p>
+                </div>
+                <div className="h-12 w-12 bg-orange-100 dark:bg-orange-900/30 rounded-lg flex items-center justify-center">
+                  <Clock className="h-6 w-6 text-orange-600 dark:text-orange-400" />
+                </div>
+              </div>
+            </motion.div>
           </div>
-        </motion.div>
-      </div>
+        )}
 
-      {/* Charts Section */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Execution Trend */}
+        {/* Charts Section */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Bug Trend */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.4 }}
+            className="lg:col-span-2 bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-200 dark:border-gray-700"
+          >
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-6">BUG趋势分析</h3>
+            <ResponsiveContainer width="100%" height={300}>
+              <LineChart data={trendData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                <XAxis dataKey="date" stroke="#6b7280" />
+                <YAxis stroke="#6b7280" />
+                <Tooltip />
+                <Legend />
+                <Line type="monotone" dataKey="bugCount" stroke="#EF4444" name="BUG数" strokeWidth={2} />
+                <Line type="monotone" dataKey="caseCount" stroke="#3B82F6" name="用例数" strokeWidth={2} />
+              </LineChart>
+            </ResponsiveContainer>
+          </motion.div>
+
+          {/* Failure Reasons Distribution */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.5 }}
+            className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-200 dark:border-gray-700"
+          >
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-6">失败原因分布</h3>
+            {failureReasons.length > 0 ? (
+              <>
+                <ResponsiveContainer width="100%" height={200}>
+                  <RechartsPieChart>
+                    <Pie
+                      data={failureReasons}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={60}
+                      outerRadius={80}
+                      paddingAngle={5}
+                      dataKey="count"
+                    >
+                      {failureReasons.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={FAILURE_COLORS[index % FAILURE_COLORS.length]} />
+                      ))}
+                    </Pie>
+                    <Tooltip />
+                  </RechartsPieChart>
+                </ResponsiveContainer>
+                <div className="mt-4 space-y-2">
+                  {failureReasons.map((item, index) => (
+                    <div key={index} className="flex items-center justify-between">
+                      <div className="flex items-center">
+                        <div
+                          className="h-3 w-3 rounded-full mr-2"
+                          style={{ backgroundColor: FAILURE_COLORS[index % FAILURE_COLORS.length] }}
+                        ></div>
+                        <span className="text-sm text-gray-600 dark:text-gray-400">{item.categoryName}</span>
+                      </div>
+                      <span className="text-sm font-medium text-gray-900 dark:text-gray-100">{item.percentage}%</span>
+                    </div>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <div className="flex items-center justify-center h-64 text-gray-400">暂无数据</div>
+            )}
+          </motion.div>
+        </div>
+
+        {/* Flaky Tests Table */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.4 }}
-          className="lg:col-span-2 bg-white rounded-xl p-6 shadow-sm border border-gray-200"
+          transition={{ delay: 0.6 }}
+          className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-200 dark:border-gray-700"
         >
           <div className="flex items-center justify-between mb-6">
-            <h3 className="text-lg font-semibold text-gray-900">执行趋势分析</h3>
-            <div className="flex items-center space-x-4 text-sm">
-              <div className="flex items-center">
-                <div className="h-3 w-3 bg-green-500 rounded-full mr-2"></div>
-                成功
-              </div>
-              <div className="flex items-center">
-                <div className="h-3 w-3 bg-red-500 rounded-full mr-2"></div>
-                失败
-              </div>
+            <div className="flex items-center">
+              <AlertTriangle className="h-5 w-5 text-yellow-600 mr-2" />
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">不稳定用例 Top 10</h3>
             </div>
           </div>
-          <ResponsiveContainer width="100%" height={300}>
-            <AreaChart data={executionTrendData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-              <XAxis dataKey="date" stroke="#6b7280" />
-              <YAxis stroke="#6b7280" />
-              <Tooltip />
-              <Area
-                type="monotone"
-                dataKey="success"
-                stackId="1"
-                stroke="#10B981"
-                fill="#10B981"
-                fillOpacity={0.6}
-              />
-              <Area
-                type="monotone"
-                dataKey="failed"
-                stackId="1"
-                stroke="#EF4444"
-                fill="#EF4444"
-                fillOpacity={0.6}
-              />
-            </AreaChart>
-          </ResponsiveContainer>
+          <Table
+            columns={flakyTestColumns}
+            dataSource={flakyTests}
+            rowKey="caseId"
+            pagination={false}
+            size="small"
+            locale={{ emptyText: '暂无不稳定用例' }}
+          />
         </motion.div>
 
-        {/* Browser Distribution */}
+        {/* Failed Cases Table */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.5 }}
-          className="bg-white rounded-xl p-6 shadow-sm border border-gray-200"
+          transition={{ delay: 0.7 }}
+          className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-200 dark:border-gray-700"
         >
-          <h3 className="text-lg font-semibold text-gray-900 mb-6">浏览器分布</h3>
-          <ResponsiveContainer width="100%" height={200}>
-            <RechartsPieChart>
-              <Pie
-                data={browserDistributionData}
-                cx="50%"
-                cy="50%"
-                innerRadius={60}
-                outerRadius={80}
-                paddingAngle={5}
-                dataKey="value"
-              >
-                {browserDistributionData.map((entry, index) => (
-                  <Cell key={`cell-${index}`} fill={entry.color} />
-                ))}
-              </Pie>
-              <Tooltip />
-            </RechartsPieChart>
-          </ResponsiveContainer>
-          <div className="mt-4 space-y-2">
-            {browserDistributionData.map((item, index) => (
-              <div key={index} className="flex items-center justify-between">
-                <div className="flex items-center">
-                  <div
-                    className="h-3 w-3 rounded-full mr-2"
-                    style={{ backgroundColor: item.color }}
-                  ></div>
-                  <span className="text-sm text-gray-600">{item.name}</span>
-                </div>
-                <span className="text-sm font-medium">{item.value}%</span>
-              </div>
-            ))}
-          </div>
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-6">失败用例详情</h3>
+          <Table
+            columns={failedCaseColumns}
+            dataSource={failedCases}
+            rowKey="id"
+            pagination={{
+              current: currentPage,
+              pageSize: pageSize,
+              total: totalFailedCases,
+              onChange: (page, size) => {
+                setCurrentPage(page);
+                setPageSize(size || 10);
+              },
+              showSizeChanger: true,
+              showTotal: (total) => `共 ${total} 条`
+            }}
+            size="small"
+            locale={{ emptyText: '暂无失败用例' }}
+            scroll={{ x: 1200 }}
+          />
         </motion.div>
-      </div>
 
-      {/* Test Case Performance */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.6 }}
-        className="bg-white rounded-xl p-6 shadow-sm border border-gray-200"
-      >
-        <div className="flex items-center justify-between mb-6">
-          <h3 className="text-lg font-semibold text-gray-900">测试用例性能分析</h3>
-          <div className="text-sm text-gray-600">按平均执行时间排序</div>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead>
-              <tr className="border-b border-gray-200">
-                <th className="text-left py-3 px-4 font-medium text-gray-600">测试用例</th>
-                <th className="text-right py-3 px-4 font-medium text-gray-600">平均执行时间</th>
-                <th className="text-right py-3 px-4 font-medium text-gray-600">成功率</th>
-                <th className="text-right py-3 px-4 font-medium text-gray-600">执行次数</th>
-                <th className="text-right py-3 px-4 font-medium text-gray-600">趋势</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-200">
-              {testCasePerformanceData.map((testCase, index) => (
-                <motion.tr
-                  key={testCase.name}
-                  initial={{ opacity: 0, x: -20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: 0.7 + index * 0.1 }}
-                  className="hover:bg-gray-50"
-                >
-                  <td className="py-4 px-4">
-                    <div className="font-medium text-gray-900">{testCase.name}</div>
-                  </td>
-                  <td className="py-4 px-4 text-right text-gray-600">
-                    {testCase.avgTime}分钟
-                  </td>
-                  <td className="py-4 px-4 text-right">
-                    <span className={`inline-flex px-2 py-1 rounded-full text-xs font-medium ${
-                      testCase.successRate >= 95 ? 'bg-green-100 text-green-800' :
-                      testCase.successRate >= 90 ? 'bg-yellow-100 text-yellow-800' :
-                      'bg-red-100 text-red-800'
-                    }`}>
-                      {testCase.successRate}%
-                    </span>
-                  </td>
-                  <td className="py-4 px-4 text-right text-gray-600">
-                    {testCase.runs}
-                  </td>
-                  <td className="py-4 px-4 text-right">
-                    {Math.random() > 0.5 ? (
-                      <TrendingUp className="h-4 w-4 text-green-500 inline" />
-                    ) : (
-                      <TrendingDown className="h-4 w-4 text-red-500 inline" />
-                    )}
-                  </td>
-                </motion.tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </motion.div>
-
-      {/* Environment Statistics */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.8 }}
-        className="bg-white rounded-xl p-6 shadow-sm border border-gray-200"
-      >
-        <h3 className="text-lg font-semibold text-gray-900 mb-6">环境统计</h3>
-        <ResponsiveContainer width="100%" height={300}>
-          <BarChart data={environmentStatsData}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-            <XAxis dataKey="environment" stroke="#6b7280" />
-            <YAxis stroke="#6b7280" />
-            <Tooltip />
-            <Bar dataKey="success" fill="#10B981" name="成功" />
-            <Bar dataKey="failed" fill="#EF4444" name="失败" />
-          </BarChart>
-        </ResponsiveContainer>
-      </motion.div>
+        {/* Suite Summary */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.8 }}
+          className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-200 dark:border-gray-700"
+        >
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-6">套件统计</h3>
+          <ResponsiveContainer width="100%" height={300}>
+            <BarChart data={suiteSummaries}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+              <XAxis dataKey="suiteName" stroke="#6b7280" />
+              <YAxis stroke="#6b7280" />
+              <Tooltip />
+              <Legend />
+              <Bar dataKey="executions" fill="#3B82F6" name="执行次数" />
+              <Bar dataKey="bugCount" fill="#EF4444" name="BUG数" />
+            </BarChart>
+          </ResponsiveContainer>
+        </motion.div>
+      </Spin>
     </div>
   );
 }

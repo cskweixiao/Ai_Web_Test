@@ -20,7 +20,7 @@ async function createAdminUser() {
         where: { id: existingAdmin.id },
         data: {
           is_super_admin: true,
-          password_hash: await bcrypt.hash('admin123', 10)
+          password_hash: await bcrypt.hash('admin', 10)
         }
       });
 
@@ -31,7 +31,7 @@ async function createAdminUser() {
       console.log(`   超级管理员: ${updated.is_super_admin}`);
     } else {
       // 创建新的超级管理员
-      const passwordHash = await bcrypt.hash('admin123', 10);
+      const passwordHash = await bcrypt.hash('admin', 10);
 
       const admin = await prisma.users.create({
         data: {
@@ -48,13 +48,13 @@ async function createAdminUser() {
       console.log(`   ID: ${admin.id}`);
       console.log(`   用户名: ${admin.username}`);
       console.log(`   邮箱: ${admin.email}`);
-      console.log(`   密码: admin123`);
+      console.log(`   密码: admin`);
       console.log(`   超级管理员: ${admin.is_super_admin}`);
     }
 
     console.log('\n可以使用以下凭据登录:');
     console.log('   用户名: admin');
-    console.log('   密码: admin123');
+    console.log('   密码: admin');
 
   } catch (error) {
     console.error('❌ 创建管理员失败:', error);

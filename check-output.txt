@@ -1,0 +1,992 @@
+=== 查找所有label元素 ===
+
+1. "供应商管理"
+   ID: u2669
+   Next: u2670 (hasInput: false)
+
+2. "首页"
+   ID: u2671
+   Next: u2672 (hasInput: false)
+
+3. "ViBOT 采购运营平台"
+   ID: u2675
+   Next: u2676 (hasInput: false)
+
+4. "系统管理"
+   ID: u2677
+   Next: u2678 (hasInput: false)
+
+5. "公司资料管理"
+   ID: u2683
+   Next: u2684 (hasInput: false)
+
+6. "审批管理"
+   ID: u2687
+   Next: u2688 (hasInput: false)
+
+7. "分销商管理"
+   ID: u2689
+   Next: u2690 (hasInput: false)
+
+8. "下载中心"
+   ID: u2692
+   Next: u2693 (hasInput: false)
+
+9. "类目管理"
+   ID: u2699
+   Next: u2700 (hasInput: false)
+
+10. "商品管理"
+   ID: u2703
+   Next: u2704 (hasInput: false)
+
+11. "订单管理"
+   ID: u2706
+   Next: u2707 (hasInput: false)
+
+12. "对账管理"
+   ID: u2709
+   Next: u2710 (hasInput: false)
+
+13. "工作台"
+   ID: u2712
+   Next: u2713 (hasInput: false)
+
+14. "ERP异常数据"
+   ID: u2714
+   Next: u2715 (hasInput: false)
+
+15. "企业集配"
+   ID: u2716
+   Next: u2717 (hasInput: false)
+
+16. "超级管理员"
+   ID: u2719
+   Next: u2720 (hasInput: false)
+
+17. "修改密码"
+   ID: u2723
+   Next: u2724 (hasInput: false)
+
+18. "退出"
+   ID: u2724
+   Next: u2725 (hasInput: false)
+
+19. "配送管理"
+   ID: u2726
+   Next: u2727 (hasInput: false)
+
+20. "数据中心"
+   ID: u2729
+   Next: u2730 (hasInput: false)
+
+21. "商品池"
+   ID: u2732
+   Next: u2733 (hasInput: false)
+
+22. "API管理"
+   ID: u2735
+   Next: u2736 (hasInput: false)
+
+23. "商品管理"
+   ID: u2739
+   Next: u2740 (hasInput: false)
+
+24. "组合商品"
+   ID: u2740
+   Next: u2741 (hasInput: false)
+
+25. "商品审核"
+   ID: u2741
+   Next: u2742 (hasInput: false)
+
+26. "可售管理"
+   ID: u2742
+   Next: u2743 (hasInput: false)
+
+27. "价格策略"
+   ID: u2743
+   Next: u2744 (hasInput: false)
+
+28. "商品下架计划"
+   ID: u2744
+   Next: u2745 (hasInput: false)
+
+29. "商品库存报备"
+   ID: u2745
+   Next: u2746 (hasInput: false)
+
+30. "进项信息管理"
+   ID: u2746
+   Next: u2747 (hasInput: false)
+
+31. "改价记录"
+   ID: u2747
+   Next: u2748 (hasInput: false)
+
+32. "集配管理"
+   ID: u2750
+   Next: u2751 (hasInput: false)
+
+33. "客户名称："
+   ID: u2752
+   Next: u2753 (hasInput: true)
+
+34. "客户名称"
+   ID: u2759
+   Next: u2760 (hasInput: false)
+
+35. "商品总数量"
+   ID: u2760
+   Next: u2761 (hasInput: false)
+
+36. "申请日期"
+   ID: u2761
+   Next: u2762 (hasInput: false)
+
+37. "申请人"
+   ID: u2762
+   Next: u2763 (hasInput: false)
+
+38. "商品渠道"
+   ID: u2763
+   Next: u2764 (hasInput: false)
+
+39. "test"
+   ID: u2764
+   Next: u2765 (hasInput: false)
+
+40. "2025-09-02 10:20:01"
+   ID: u2765
+   Next: u2766 (hasInput: false)
+
+41. "客户A"
+   ID: u2768
+   Next: u2769 (hasInput: false)
+
+42. "结算总金额（集采含税采购成本）（元）"
+   ID: u2769
+   Next: u2770 (hasInput: false)
+
+43. "销售总金额（元）"
+   ID: u2770
+   Next: u2771 (hasInput: false)
+
+44. "当前审批节点"
+   ID: u2771
+   Next: u2772 (hasInput: false)
+
+45. "当前审批人"
+   ID: u2772
+   Next: u2773 (hasInput: false)
+
+46. "-"
+   ID: u2773
+   Next: u2774 (hasInput: false)
+
+47. "平台自营"
+   ID: u2774
+   Next: u2775 (hasInput: false)
+
+48. "100"
+   ID: u2775
+   Next: u2776 (hasInput: false)
+
+49. "20000"
+   ID: u2776
+   Next: u2777 (hasInput: false)
+
+50. "35000"
+   ID: u2777
+   Next: u2778 (hasInput: false)
+
+51. "-"
+   ID: u2778
+   Next: u2779 (hasInput: false)
+
+52. "操作"
+   ID: u2779
+   Next: u2780 (hasInput: false)
+
+53. "详情"
+   ID: u2780
+   Next: u2781 (hasInput: false)
+
+54. "当前状态"
+   ID: u2781
+   Next: u2782 (hasInput: false)
+
+55. "审批完结"
+   ID: u2782
+   Next: u2783 (hasInput: false)
+
+56. "test"
+   ID: u2783
+   Next: u2784 (hasInput: false)
+
+57. "22"
+   ID: u2784
+   Next: u2785 (hasInput: false)
+
+58. "2025-09-01 12:30:01"
+   ID: u2785
+   Next: u2786 (hasInput: false)
+
+59. "平台自营"
+   ID: u2787
+   Next: u2788 (hasInput: false)
+
+60. "客户B"
+   ID: u2788
+   Next: u2789 (hasInput: false)
+
+61. "6666"
+   ID: u2789
+   Next: u2790 (hasInput: false)
+
+62. "8888"
+   ID: u2790
+   Next: u2791 (hasInput: false)
+
+63. "平台采购审核"
+   ID: u2791
+   Next: u2792 (hasInput: false)
+
+64. "平台采购"
+   ID: u2792
+   Next: u2793 (hasInput: false)
+
+65. "详情"
+   ID: u2793
+   Next: u2794 (hasInput: false)
+
+66. "审批中"
+   ID: u2794
+   Next: u2795 (hasInput: false)
+
+67. "test"
+   ID: u2795
+   Next: u2796 (hasInput: false)
+
+68. "1000"
+   ID: u2796
+   Next: u2797 (hasInput: false)
+
+69. "2025-09-01 10:30:01"
+   ID: u2797
+   Next: u2798 (hasInput: false)
+
+70. "平台自营"
+   ID: u2799
+   Next: u2800 (hasInput: false)
+
+71. "湖北礼品联盟"
+   ID: u2800
+   Next: u2801 (hasInput: false)
+
+72. "60000"
+   ID: u2801
+   Next: u2802 (hasInput: false)
+
+73. "65000"
+   ID: u2802
+   Next: u2803 (hasInput: false)
+
+74. "上传地址"
+   ID: u2803
+   Next: u2804 (hasInput: false)
+
+75. "申请人名称"
+   ID: u2804
+   Next: u2805 (hasInput: false)
+
+76. "详情"
+   ID: u2805
+   Next: u2806 (hasInput: false)
+
+77. "审批中"
+   ID: u2806
+   Next: u2807 (hasInput: false)
+
+78. "test"
+   ID: u2807
+   Next: u2808 (hasInput: false)
+
+79. "500"
+   ID: u2808
+   Next: u2809 (hasInput: false)
+
+80. "2025-09-01 09:30:01"
+   ID: u2809
+   Next: u2810 (hasInput: false)
+
+81. "平台自营"
+   ID: u2811
+   Next: u2812 (hasInput: false)
+
+82. "郑州礼业公司"
+   ID: u2812
+   Next: u2813 (hasInput: false)
+
+83. "80000"
+   ID: u2813
+   Next: u2814 (hasInput: false)
+
+84. "88000"
+   ID: u2814
+   Next: u2815 (hasInput: false)
+
+85. "上传地址"
+   ID: u2815
+   Next: u2816 (hasInput: false)
+
+86. "申请人名称"
+   ID: u2816
+   Next: u2817 (hasInput: false)
+
+87. "详情"
+   ID: u2817
+   Next: u2818 (hasInput: false)
+
+88. "审批中"
+   ID: u2818
+   Next: u2819 (hasInput: false)
+
+89. "test"
+   ID: u2819
+   Next: u2820 (hasInput: false)
+
+90. "600"
+   ID: u2820
+   Next: u2821 (hasInput: false)
+
+91. "2025-09-01 09:10:01"
+   ID: u2821
+   Next: u2822 (hasInput: false)
+
+92. "平台自营"
+   ID: u2823
+   Next: u2824 (hasInput: false)
+
+93. "河南真好卖"
+   ID: u2824
+   Next: u2825 (hasInput: false)
+
+94. "100000"
+   ID: u2825
+   Next: u2826 (hasInput: false)
+
+95. "120000"
+   ID: u2826
+   Next: u2827 (hasInput: false)
+
+96. "平台确认下单"
+   ID: u2827
+   Next: u2828 (hasInput: false)
+
+97. "平台采购"
+   ID: u2828
+   Next: u2829 (hasInput: false)
+
+98. "详情"
+   ID: u2829
+   Next: u2830 (hasInput: false)
+
+99. "审批中"
+   ID: u2830
+   Next: u2831 (hasInput: false)
+
+100. "审核"
+   ID: u2831
+   Next: u2832 (hasInput: false)
+
+101. "确认下单"
+   ID: u2832
+   Next: u2833 (hasInput: false)
+
+102. "机构名称"
+   ID: u2833
+   Next: u2834 (hasInput: false)
+
+103. "上海虹桥礼业商贸有限公司"
+   ID: u2834
+   Next: u2835 (hasInput: false)
+
+104. "上海虹桥礼业商贸有限公司"
+   ID: u2835
+   Next: u2836 (hasInput: false)
+
+105. "湖北洪山礼业商贸有限公司"
+   ID: u2836
+   Next: u2837 (hasInput: false)
+
+106. "郑州高新礼业商贸有限公司"
+   ID: u2837
+   Next: u2838 (hasInput: false)
+
+107. "上海虹桥礼业商贸有限公司"
+   ID: u2838
+   Next: u2839 (hasInput: false)
+
+108. "渠道集采订单号"
+   ID: u2839
+   Next: u2840 (hasInput: false)
+
+109. "JC2025090212300100001"
+   ID: u2840
+   Next: u2841 (hasInput: false)
+
+110. "JC2025090210200100001"
+   ID: u2841
+   Next: u2842 (hasInput: false)
+
+111. "JC2025090112300100001"
+   ID: u2842
+   Next: u2843 (hasInput: false)
+
+112. "JC2025090110300100001"
+   ID: u2843
+   Next: u2844 (hasInput: false)
+
+113. "JC2025090109300100001"
+   ID: u2844
+   Next: u2845 (hasInput: false)
+
+114. "结算总金额（集采含税V链供应价）（元）"
+   ID: u2845
+   Next: u2846 (hasInput: false)
+
+115. "30000"
+   ID: u2846
+   Next: u2847 (hasInput: false)
+
+116. "7777"
+   ID: u2847
+   Next: u2848 (hasInput: false)
+
+117. "70000"
+   ID: u2848
+   Next: u2849 (hasInput: false)
+
+118. "85000"
+   ID: u2849
+   Next: u2850 (hasInput: false)
+
+119. "130000"
+   ID: u2850
+   Next: u2851 (hasInput: false)
+
+120. "订单处理状态"
+   ID: u2851
+   Next: u2852 (hasInput: false)
+
+121. "未处理"
+   ID: u2852
+   Next: u2853 (hasInput: false)
+
+122. "处理完成"
+   ID: u2853
+   Next: u2854 (hasInput: false)
+
+123. "未处理"
+   ID: u2854
+   Next: u2855 (hasInput: false)
+
+124. "未处理"
+   ID: u2855
+   Next: u2856 (hasInput: false)
+
+125. "未处理"
+   ID: u2856
+   Next: undefined (hasInput: false)
+
+126. "iPhone12智能手机全网通黑色"
+   ID: u2862
+   Next: u2863 (hasInput: false)
+
+127. "商品信息"
+   ID: u2863
+   Next: u2864 (hasInput: false)
+
+128. "规格"
+   ID: u2864
+   Next: u2865 (hasInput: false)
+
+129. "规格1，规格2"
+   ID: u2865
+   Next: u2866 (hasInput: false)
+
+130. "市场价"
+   ID: u2866
+   Next: u2867 (hasInput: false)
+
+131. "含税供应价"
+   ID: u2867
+   Next: u2868 (hasInput: false)
+
+132. "库存数量"
+   ID: u2868
+   Next: u2869 (hasInput: false)
+
+133. "销量"
+   ID: u2869
+   Next: u2870 (hasInput: false)
+
+134. "操作"
+   ID: u2870
+   Next: u2871 (hasInput: false)
+
+135. "100.00"
+   ID: u2871
+   Next: u2872 (hasInput: false)
+
+136. "110.00"
+   ID: u2872
+   Next: u2873 (hasInput: false)
+
+137. "1"
+   ID: u2873
+   Next: u2874 (hasInput: false)
+
+138. "修改"
+   ID: u2874
+   Next: u2875 (hasInput: false)
+
+139. "规格1，规格2"
+   ID: u2875
+   Next: u2876 (hasInput: false)
+
+140. "100.00"
+   ID: u2876
+   Next: u2877 (hasInput: false)
+
+141. "110.00"
+   ID: u2877
+   Next: u2878 (hasInput: false)
+
+142. "1"
+   ID: u2878
+   Next: u2879 (hasInput: false)
+
+143. "规格1，规格2"
+   ID: u2879
+   Next: u2880 (hasInput: false)
+
+144. "100.00"
+   ID: u2880
+   Next: u2881 (hasInput: false)
+
+145. "110.00"
+   ID: u2881
+   Next: u2882 (hasInput: false)
+
+146. "1"
+   ID: u2882
+   Next: u2883 (hasInput: false)
+
+147. "详情"
+   ID: u2883
+   Next: u2884 (hasInput: false)
+
+148. "收起"
+   ID: u2887
+   Next: u2888 (hasInput: false)
+
+149. "SPU编码"
+   ID: u2889
+   Next: u2890 (hasInput: false)
+
+150. "S200101001"
+   ID: u2890
+   Next: u2891 (hasInput: false)
+
+151. "状态"
+   ID: u2891
+   Next: u2892 (hasInput: false)
+
+152. "商品编码"
+   ID: u2892
+   Next: u2893 (hasInput: false)
+
+153. "S2001010010009"
+   ID: u2893
+   Next: u2894 (hasInput: false)
+
+154. "S2001010010009"
+   ID: u2894
+   Next: u2895 (hasInput: false)
+
+155. "S2001010010009"
+   ID: u2895
+   Next: u2896 (hasInput: false)
+
+156. "不含税供应价"
+   ID: u2896
+   Next: u2897 (hasInput: false)
+
+157. "110.00"
+   ID: u2897
+   Next: u2898 (hasInput: false)
+
+158. "110.00"
+   ID: u2898
+   Next: u2899 (hasInput: false)
+
+159. "110.00"
+   ID: u2899
+   Next: u2900 (hasInput: false)
+
+160. "税额"
+   ID: u2900
+   Next: u2901 (hasInput: false)
+
+161. "税率"
+   ID: u2901
+   Next: u2902 (hasInput: false)
+
+162. "0"
+   ID: u2902
+   Next: u2903 (hasInput: false)
+
+163. "0"
+   ID: u2903
+   Next: u2904 (hasInput: false)
+
+164. "0"
+   ID: u2904
+   Next: u2905 (hasInput: false)
+
+165. "0%"
+   ID: u2905
+   Next: u2906 (hasInput: false)
+
+166. "0%"
+   ID: u2906
+   Next: u2907 (hasInput: false)
+
+167. "0%"
+   ID: u2907
+   Next: u2908 (hasInput: false)
+
+168. "下架/待提交"
+   ID: u2908
+   Next: u2909 (hasInput: false)
+
+169. "销售单位"
+   ID: u2909
+   Next: u2910 (hasInput: false)
+
+170. "部"
+   ID: u2910
+   Next: u2911 (hasInput: false)
+
+171. "预览"
+   ID: u2911
+   Next: u2912 (hasInput: false)
+
+172. "11"
+   ID: u2913
+   Next: u2914 (hasInput: false)
+
+173. "11"
+   ID: u2916
+   Next: u2917 (hasInput: false)
+
+174. "11"
+   ID: u2919
+   Next: u2920 (hasInput: false)
+
+175. "设定库存"
+   ID: u2923
+   Next: u2924 (hasInput: false)
+
+176. "iPhone12智能手机全网通黑色"
+   ID: u2925
+   Next: u2926 (hasInput: false)
+
+177. "批量编辑"
+   ID: u2927
+   Next: u2928 (hasInput: true)
+
+178. "规格"
+   ID: u2934
+   Next: u2935 (hasInput: false)
+
+179. "库存数量"
+   ID: u2935
+   Next: u2936 (hasInput: false)
+
+180. "规格1，规格2"
+   ID: u2936
+   Next: u2937 (hasInput: true)
+
+181. "规格1，规格2"
+   ID: u2938
+   Next: u2939 (hasInput: true)
+
+182. "规格1，规格2"
+   ID: u2940
+   Next: u2941 (hasInput: true)
+
+183. "小米全新新款智能手机全网通黑色"
+   ID: u2947
+   Next: u2948 (hasInput: false)
+
+184. "规格1，规格2"
+   ID: u2948
+   Next: u2949 (hasInput: false)
+
+185. "100.00"
+   ID: u2949
+   Next: u2950 (hasInput: false)
+
+186. "110.00"
+   ID: u2950
+   Next: u2951 (hasInput: false)
+
+187. "1"
+   ID: u2951
+   Next: u2952 (hasInput: false)
+
+188. "11"
+   ID: u2953
+   Next: u2954 (hasInput: false)
+
+189. "规格1，规格2"
+   ID: u2955
+   Next: u2956 (hasInput: false)
+
+190. "100.00"
+   ID: u2956
+   Next: u2957 (hasInput: false)
+
+191. "110.00"
+   ID: u2957
+   Next: u2958 (hasInput: false)
+
+192. "1"
+   ID: u2958
+   Next: u2959 (hasInput: false)
+
+193. "11"
+   ID: u2960
+   Next: u2961 (hasInput: false)
+
+194. "规格1，规格2"
+   ID: u2962
+   Next: u2963 (hasInput: false)
+
+195. "100.00"
+   ID: u2963
+   Next: u2964 (hasInput: false)
+
+196. "110.00"
+   ID: u2964
+   Next: u2965 (hasInput: false)
+
+197. "1"
+   ID: u2965
+   Next: u2966 (hasInput: false)
+
+198. "11"
+   ID: u2967
+   Next: u2968 (hasInput: false)
+
+199. "详情"
+   ID: u2969
+   Next: u2970 (hasInput: false)
+
+200. "S200101002"
+   ID: u2970
+   Next: u2971 (hasInput: false)
+
+201. "上架"
+   ID: u2971
+   Next: u2972 (hasInput: false)
+
+202. "S2001010020009"
+   ID: u2972
+   Next: u2973 (hasInput: false)
+
+203. "S2001010020009"
+   ID: u2973
+   Next: u2974 (hasInput: false)
+
+204. "S2001010020009"
+   ID: u2974
+   Next: u2975 (hasInput: false)
+
+205. "部"
+   ID: u2975
+   Next: u2976 (hasInput: false)
+
+206. "110.00"
+   ID: u2976
+   Next: u2977 (hasInput: false)
+
+207. "110.00"
+   ID: u2977
+   Next: u2978 (hasInput: false)
+
+208. "110.00"
+   ID: u2978
+   Next: u2979 (hasInput: false)
+
+209. "0"
+   ID: u2979
+   Next: u2980 (hasInput: false)
+
+210. "0"
+   ID: u2980
+   Next: u2981 (hasInput: false)
+
+211. "0"
+   ID: u2981
+   Next: u2982 (hasInput: false)
+
+212. "0%"
+   ID: u2982
+   Next: u2983 (hasInput: false)
+
+213. "0%"
+   ID: u2983
+   Next: u2984 (hasInput: false)
+
+214. "0%"
+   ID: u2984
+   Next: u2985 (hasInput: false)
+
+215. "预览"
+   ID: u2985
+   Next: u2986 (hasInput: false)
+
+216. "下架"
+   ID: u2986
+   Next: u2987 (hasInput: false)
+
+217. "提示"
+   ID: u2989
+   Next: u2990 (hasInput: false)
+
+218. "确定下架所选商品吗？"
+   ID: u2992
+   Next: u2993 (hasInput: false)
+
+219. "申请日期："
+   ID: u2996
+   Next: u2997 (hasInput: true)
+
+220. "收起"
+   ID: u2998
+   Next: u2999 (hasInput: false)
+
+221. "申请人："
+   ID: u2999
+   Next: u3000 (hasInput: false)
+
+222. "当前状态："
+   ID: u3000
+   Next: u3001 (hasInput: true)
+
+223. "机构名称："
+   ID: u3003
+   Next: u3004 (hasInput: true)
+
+224. "审核"
+   ID: u3013
+   Next: u3014 (hasInput: false)
+
+225. "* 审核意见："
+   ID: u3014
+   Next: u3015 (hasInput: true)
+
+226. "备注："
+   ID: u3017
+   Next: u3018 (hasInput: true)
+
+227. "0/100"
+   ID: u3019
+   Next: u3020 (hasInput: false)
+
+228. "审核"
+   ID: u3025
+   Next: u3026 (hasInput: false)
+
+229. "* 审核意见："
+   ID: u3026
+   Next: u3027 (hasInput: true)
+
+230. "* 备注："
+   ID: u3029
+   Next: u3030 (hasInput: true)
+
+231. "0/100"
+   ID: u3031
+   Next: u3032 (hasInput: false)
+
+232. "* 期望回复时效："
+   ID: u3032
+   Next: u3033 (hasInput: true)
+
+233. "小时"
+   ID: u3034
+   Next: u3035 (hasInput: false)
+
+234. "当审核同意时，请先确保商品为可售可挑选、确保库存！"
+   ID: u3036
+   Next: u3037 (hasInput: false)
+
+235. "当审核同意时，请先确保商品为可售可挑选、确保库存！"
+   ID: u3038
+   Next: undefined (hasInput: false)
+
+236. "下单确认审核"
+   ID: u3047
+   Next: u3048 (hasInput: false)
+
+237. "* 是否下单："
+   ID: u3048
+   Next: u3049 (hasInput: true)
+
+238. "备注："
+   ID: u3051
+   Next: u3052 (hasInput: true)
+
+239. "0/100"
+   ID: u3053
+   Next: u3054 (hasInput: false)
+
+240. "下单确认审核"
+   ID: u3059
+   Next: u3060 (hasInput: false)
+
+241. "* 是否下单："
+   ID: u3060
+   Next: u3061 (hasInput: true)
+
+242. "* 备注："
+   ID: u3063
+   Next: u3064 (hasInput: true)
+
+243. "0/100"
+   ID: u3065
+   Next: u3066 (hasInput: false)
+
+244. "当审核同意时，系统即进行下单，请确认无误再操作！"
+   ID: u3067
+   Next: u3068 (hasInput: false)
+
+245. "当审核同意时，系统即进行下单，请确认无误再操作！"
+   ID: u3069
+   Next: undefined (hasInput: false)
+
+246. "渠道集采订单号："
+   ID: u3070
+   Next: u3071 (hasInput: true)
+
+247. "订单处理状态："
+   ID: u3080
+   Next: u3081 (hasInput: true)
+
+
+总共找到 247 个label元素

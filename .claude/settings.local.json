@@ -73,7 +73,15 @@
       "Bash(Select-Object -First 5)",
       "Bash(Select-Object -First 50)",
       "Bash(Select-Object -First 20)",
-      "Bash(echo \"后端API和前端服务已完成。由于响应长度限制，建议分批实现前端组件。当前已完成：\n✅ 后端6个API端点（bug-stats, bug-trend, failure-reasons, flaky-tests, failed-cases, suite-summary）\n✅ 失败原因自动分类逻辑\n✅ 前端reportService服务层\n✅ server/index.ts路由注册\n\n下一步建议直接重写src/pages/Reports.tsx，集成所有功能到一个文件中，避免创建过多组件文件。\")"
+      "Bash(echo \"后端API和前端服务已完成。由于响应长度限制，建议分批实现前端组件。当前已完成：\n✅ 后端6个API端点（bug-stats, bug-trend, failure-reasons, flaky-tests, failed-cases, suite-summary）\n✅ 失败原因自动分类逻辑\n✅ 前端reportService服务层\n✅ server/index.ts路由注册\n\n下一步建议直接重写src/pages/Reports.tsx，集成所有功能到一个文件中，避免创建过多组件文件。\")",
+      "Bash(Select-Object -Last 50)",
+      "Read(//c/Users/谭恒/Desktop/**)",
+      "Bash(Select-String -Pattern \"跳过隐藏|解析完成|页面详情\" -Context 1)",
+      "Bash(Select-Object -Last 5)",
+      "Read(//c/Users/谭恒/**)",
+      "Bash(Select-String -Pattern \"查询条件|Query|渠道集采|订单处理\" -Context 2)",
+      "Bash(set LOG_FULL_PROMPT=true)",
+      "Bash(Select-Object -First 200)"
     ],
     "deny": []
   },

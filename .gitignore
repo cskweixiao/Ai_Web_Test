@@ -53,6 +53,7 @@ debug-execution.log
 # Temp files
 temp/
 backups/
+uploads/
 
 # Config files (keep templates)
 mcp-config.json

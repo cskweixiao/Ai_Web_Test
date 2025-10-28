@@ -1,0 +1,351 @@
+{
+  "tasks": [
+    {
+      "id": "67268c71-30d8-44b4-98ba-c1072283e1a6",
+      "name": "数据库Schema设计和迁移",
+      "description": "在Prisma schema中新增functional_test_cases表和ai_generation_sessions表，定义枚举类型，建立外键关联，创建必要索引，生成并执行数据库迁移",
+      "notes": "参考现有schema.prisma的格式和命名规范。注意枚举类型需要在model之后定义。确保外键关联正确，索引字段合理。迁移前建议先备份数据库。",
+      "status": "pending",
+      "dependencies": [],
+      "createdAt": "2025-10-23T07:09:49.829Z",
+      "updatedAt": "2025-10-23T07:09:49.829Z",
+      "relatedFiles": [
+        {
+          "path": "prisma/schema.prisma",
+          "type": "TO_MODIFY",
+          "description": "Prisma数据库schema文件，需要添加两个新表和三个枚举类型"
+        }
+      ],
+      "implementationGuide": "1. 编辑prisma/schema.prisma文件，在文件末尾添加两个新model：\n\nmodel functional_test_cases {\n  id              Int       @id @default(autoincrement())\n  name            String    @db.VarChar(255)\n  description     String?   @db.Text\n  steps           String    @db.Text\n  assertions      String    @db.Text\n  system          String?   @db.VarChar(100)\n  module          String?   @db.VarChar(100)\n  priority        functional_test_priority @default(medium)\n  tags            String?   @db.VarChar(500)\n  status          functional_test_status @default(PUBLISHED)\n  source          functional_test_source @default(MANUAL)\n  ai_session_id   String?   @db.VarChar(100)\n  creator_id      Int\n  test_type       String?   @db.VarChar(50)\n  preconditions   String?   @db.Text\n  test_data       String?   @db.Text\n  created_at      DateTime  @default(now()) @db.Timestamp(0)\n  updated_at      DateTime  @updatedAt @db.Timestamp(0)\n  users           users     @relation(fields: [creator_id], references: [id], onDelete: Cascade)\n  @@index([system])\n  @@index([module])\n  @@index([creator_id])\n  @@index([ai_session_id])\n  @@index([source])\n}\n\nmodel ai_generation_sessions {\n  id                  String    @id @db.VarChar(100)\n  user_id             Int\n  axure_filename      String    @db.VarChar(255)\n  axure_file_size     Int\n  project_name        String?   @db.VarChar(255)\n  system_type         String?   @db.VarChar(50)\n  business_domain     String?   @db.VarChar(100)\n  requirement_doc     String?   @db.Text\n  page_count          Int       @default(0)\n  element_count       Int       @default(0)\n  interaction_count   Int       @default(0)\n  total_generated     Int       @default(0)\n  total_saved         Int       @default(0)\n  batches             Json?\n  created_at          DateTime  @default(now()) @db.Timestamp(0)\n  users               users     @relation(fields: [user_id], references: [id], onDelete: Cascade)\n  @@index([user_id])\n  @@index([created_at])\n}\n\nenum functional_test_priority { low, medium, high, critical }\nenum functional_test_status { DRAFT, PUBLISHED, ARCHIVED }\nenum functional_test_source { MANUAL, AI_GENERATED }\n\n2. 在users model中添加关联字段（找到users model后添加）：\nfunctional_test_cases    functional_test_cases[]\nai_generation_sessions   ai_generation_sessions[]\n\n3. 运行命令生成迁移文件：npx prisma migrate dev --name add_functional_test_cases\n4. 运行命令生成Prisma客户端：npx prisma generate\n5. 验证数据库表是否创建成功",
+      "verificationCriteria": "1. 执行npx prisma migrate dev命令成功无错误\n2. 执行npx prisma generate命令成功生成类型\n3. 在数据库中查看functional_test_cases和ai_generation_sessions表已创建\n4. 所有索引和外键约束正确创建\n5. TypeScript类型提示中能看到新表的类型定义",
+      "analysisResult": "实现TestFlow系统的\"Axure原型自动生成功能测试用例\"功能（V2.0）。该功能通过AI技术将Axure导出的HTML原型文件自动转换为结构化的功能测试用例。核心特性：草稿箱+正式库分离、分批生成避免Token限制、增量修改、流式输出。技术栈：React 18 + TypeScript + Ant Design前端，Express + Prisma + MySQL后端，复用现有MCP客户端AI能力。"
+    },
+    {
+      "id": "b14480f7-137b-4cf3-8033-88aa602d49b4",
+      "name": "实现文件上传中间件",
+      "description": "使用multer创建文件上传中间件，支持Axure HTML文件上传，限制文件大小50MB，只允许.html和.htm格式，配置临时存储目录",
+      "notes": "参考Express文件上传最佳实践。文件名需要唯一避免冲突。临时文件建议24小时后自动清理（可后续任务实现）。错误处理要友好。",
+      "status": "pending",
+      "dependencies": [],
+      "createdAt": "2025-10-23T07:09:49.829Z",
+      "updatedAt": "2025-10-23T07:09:49.829Z",
+      "relatedFiles": [
+        {
+          "path": "server/middleware/upload.ts",
+          "type": "CREATE",
+          "description": "新建文件上传中间件",
+          "lineStart": 1,
+          "lineEnd": 30
+        },
+        {
+          "path": ".gitignore",
+          "type": "TO_MODIFY",
+          "description": "添加uploads目录到忽略列表"
+        }
+      ],
+      "implementationGuide": "1. 安装依赖：npm install multer @types/multer\n\n2. 创建文件server/middleware/upload.ts：\nimport multer from 'multer';\nimport path from 'path';\nimport fs from 'fs';\n\nconst uploadDir = path.join(process.cwd(), 'uploads', 'axure');\nif (!fs.existsSync(uploadDir)) {\n  fs.mkdirSync(uploadDir, { recursive: true });\n}\n\nconst storage = multer.diskStorage({\n  destination: (req, file, cb) => cb(null, uploadDir),\n  filename: (req, file, cb) => {\n    const uniqueName = Date.now() + '-' + Math.random().toString(36).substring(7) + path.extname(file.originalname);\n    cb(null, uniqueName);\n  }\n});\n\nexport const axureUpload = multer({\n  storage,\n  limits: { fileSize: 50 * 1024 * 1024 },\n  fileFilter: (req, file, cb) => {\n    const ext = path.extname(file.originalname).toLowerCase();\n    if (ext === '.html' || ext === '.htm') {\n      cb(null, true);\n    } else {\n      cb(new Error('只支持HTML文件格式'));\n    }\n  }\n});\n\n3. 在.gitignore中添加：uploads/axure/\n4. 测试上传功能是否正常工作",
+      "verificationCriteria": "1. npm install命令成功安装multer\n2. upload.ts文件创建成功且无TypeScript错误\n3. uploads/axure目录自动创建\n4. 文件上传限制（50MB、.html/.htm）正确工作\n5. 上传的文件能正确保存到指定目录",
+      "analysisResult": "实现TestFlow系统的\"Axure原型自动生成功能测试用例\"功能（V2.0）。该功能通过AI技术将Axure导出的HTML原型文件自动转换为结构化的功能测试用例。核心特性：草稿箱+正式库分离、分批生成避免Token限制、增量修改、流式输出。技术栈：React 18 + TypeScript + Ant Design前端，Express + Prisma + MySQL后端，复用现有MCP客户端AI能力。"
+    },
+    {
+      "id": "8262c3a9-3ef8-485b-8c04-87aa849a4bc2",
+      "name": "实现Axure解析服务",
+      "description": "创建AxureParseService服务类，使用cheerio库解析Axure导出的HTML文件，提取页面结构、元素、交互行为等信息，返回结构化数据",
+      "notes": "Axure导出的HTML结构可能因版本而异，需要支持多种选择器。如果无法识别标准Axure结构，提供友好错误提示。解析超时设置5分钟。",
+      "status": "pending",
+      "dependencies": [
+        {
+          "taskId": "b14480f7-137b-4cf3-8033-88aa602d49b4"
+        }
+      ],
+      "createdAt": "2025-10-23T07:09:49.829Z",
+      "updatedAt": "2025-10-23T07:09:49.829Z",
+      "relatedFiles": [
+        {
+          "path": "server/types/axure.ts",
+          "type": "CREATE",
+          "description": "Axure解析相关的类型定义"
+        },
+        {
+          "path": "server/services/axureParseService.ts",
+          "type": "CREATE",
+          "description": "Axure HTML解析服务",
+          "lineStart": 1,
+          "lineEnd": 80
+        }
+      ],
+      "implementationGuide": "1. 安装依赖：npm install cheerio @types/cheerio\n\n2. 创建类型定义文件server/types/axure.ts：\nexport interface AxureParseResult {\n  sessionId: string;\n  pageCount: number;\n  elementCount: number;\n  interactionCount: number;\n  pages: AxurePage[];\n}\nexport interface AxurePage {\n  name: string;\n  url: string;\n  elements: AxureElement[];\n  interactions: AxureInteraction[];\n}\nexport interface AxureElement {\n  id: string;\n  type: string;\n  name?: string;\n  placeholder?: string;\n  text?: string;\n}\nexport interface AxureInteraction {\n  type: string;\n  trigger: string;\n  target?: string;\n  action?: string;\n}\n\n3. 创建服务文件server/services/axureParseService.ts：\nimport * as cheerio from 'cheerio';\nimport fs from 'fs/promises';\nimport { v4 as uuidv4 } from 'uuid';\nimport type { AxureParseResult, AxurePage, AxureElement, AxureInteraction } from '../types/axure.js';\n\nexport class AxureParseService {\n  async parseHtmlFile(filePath: string): Promise<AxureParseResult> {\n    // 1. 读取HTML文件\n    const html = await fs.readFile(filePath, 'utf-8');\n    const $ = cheerio.load(html);\n    \n    // 2. 提取页面列表（查找data-page或类似属性）\n    const pages: AxurePage[] = [];\n    $('[data-page], .page, [id^=page]').each((i, elem) => {\n      const page = this.extractPage($, elem);\n      pages.push(page);\n    });\n    \n    // 3. 统计信息\n    const elementCount = pages.reduce((sum, p) => sum + p.elements.length, 0);\n    const interactionCount = pages.reduce((sum, p) => sum + p.interactions.length, 0);\n    \n    return {\n      sessionId: uuidv4(),\n      pageCount: pages.length,\n      elementCount,\n      interactionCount,\n      pages\n    };\n  }\n  \n  private extractPage($: cheerio.CheerioAPI, elem: cheerio.Element): AxurePage {\n    // 提取页面名称\n    const name = $(elem).attr('data-name') || $(elem).attr('id') || 'Unnamed Page';\n    const url = $(elem).attr('data-url') || '';\n    \n    // 提取页面元素\n    const elements = this.extractElements($, elem);\n    \n    // 提取交互行为\n    const interactions = this.extractInteractions($, elem);\n    \n    return { name, url, elements, interactions };\n  }\n  \n  private extractElements($: cheerio.CheerioAPI, pageElem: cheerio.Element): AxureElement[] {\n    const elements: AxureElement[] = [];\n    \n    // 查找input、button、select等表单元素\n    $(pageElem).find('input, button, select, textarea, a, [data-label]').each((i, elem) => {\n      elements.push({\n        id: $(elem).attr('id') || $(elem).attr('data-id') || 'elem-' + i,\n        type: elem.tagName.toLowerCase(),\n        name: $(elem).attr('name') || $(elem).attr('data-name'),\n        placeholder: $(elem).attr('placeholder'),\n        text: $(elem).text().trim()\n      });\n    });\n    \n    return elements;\n  }\n  \n  private extractInteractions($: cheerio.CheerioAPI, pageElem: cheerio.Element): AxureInteraction[] {\n    const interactions: AxureInteraction[] = [];\n    \n    // 查找onclick、data-action等交互属性\n    $(pageElem).find('[onclick], [data-action], [data-interaction]').each((i, elem) => {\n      interactions.push({\n        type: 'click',\n        trigger: $(elem).attr('id') || $(elem).text().trim(),\n        action: $(elem).attr('onclick') || $(elem).attr('data-action')\n      });\n    });\n    \n    return interactions;\n  }\n}\n\n4. 测试解析功能，确保能正确提取Axure文件信息",
+      "verificationCriteria": "1. cheerio库成功安装\n2. AxureParseService类创建成功，无TypeScript错误\n3. 使用测试Axure文件验证解析功能\n4. 能正确提取页面数量、元素数量、交互数量\n5. 返回的数据结构符合AxureParseResult接口定义",
+      "analysisResult": "实现TestFlow系统的\"Axure原型自动生成功能测试用例\"功能（V2.0）。该功能通过AI技术将Axure导出的HTML原型文件自动转换为结构化的功能测试用例。核心特性：草稿箱+正式库分离、分批生成避免Token限制、增量修改、流式输出。技术栈：React 18 + TypeScript + Ant Design前端，Express + Prisma + MySQL后端，复用现有MCP客户端AI能力。"
+    },
+    {
+      "id": "52ee3cb4-164e-4ce0-bf69-1ff701245cd2",
+      "name": "实现功能测试用例CRUD服务",
+      "description": "创建FunctionalTestCaseService服务类，实现功能测试用例的增删改查操作，包括分页查询、筛选、批量保存等功能，使用Prisma操作数据库",
+      "notes": "参考server/routes/test.ts的分页查询模式。数据隔离逻辑与现有测试用例保持一致。批量保存使用事务包装确保原子性。",
+      "status": "pending",
+      "dependencies": [
+        {
+          "taskId": "67268c71-30d8-44b4-98ba-c1072283e1a6"
+        }
+      ],
+      "createdAt": "2025-10-23T07:09:49.829Z",
+      "updatedAt": "2025-10-23T07:09:49.829Z",
+      "relatedFiles": [
+        {
+          "path": "server/services/functionalTestCaseService.ts",
+          "type": "CREATE",
+          "description": "功能测试用例CRUD服务",
+          "lineStart": 1,
+          "lineEnd": 120
+        },
+        {
+          "path": "server/services/databaseService.ts",
+          "type": "REFERENCE",
+          "description": "参考数据库服务单例模式"
+        }
+      ],
+      "implementationGuide": "创建文件server/services/functionalTestCaseService.ts：\nimport { PrismaClient } from '../../src/generated/prisma/index.js';\nimport { DatabaseService } from './databaseService.js';\n\nexport interface ListParams {\n  page: number;\n  pageSize: number;\n  search?: string;\n  tag?: string;\n  priority?: string;\n  system?: string;\n  module?: string;\n  source?: string;\n  userDepartment?: string;\n  isSuperAdmin?: boolean;\n}\n\nexport interface BatchSaveParams {\n  testCases: any[];\n  aiSessionId: string;\n  userId: number;\n}\n\nexport class FunctionalTestCaseService {\n  private prisma: PrismaClient;\n  \n  constructor() {\n    this.prisma = DatabaseService.getInstance().getClient();\n  }\n  \n  async getList(params: ListParams) {\n    const { page, pageSize, search, tag, priority, system, module, source, userDepartment, isSuperAdmin } = params;\n    \n    // 构建查询条件\n    const where: any = {};\n    \n    if (search) {\n      where.OR = [\n        { name: { contains: search } },\n        { description: { contains: search } }\n      ];\n    }\n    \n    if (system) where.system = system;\n    if (module) where.module = module;\n    if (priority) where.priority = priority;\n    if (source) where.source = source;\n    \n    if (tag) {\n      where.tags = { contains: tag };\n    }\n    \n    // 数据隔离：非超级管理员只能看到本部门数据\n    if (!isSuperAdmin && userDepartment) {\n      where.users = { department: userDepartment };\n    }\n    \n    // 分页查询\n    const [data, total] = await Promise.all([\n      this.prisma.functional_test_cases.findMany({\n        where,\n        skip: (page - 1) * pageSize,\n        take: pageSize,\n        orderBy: { created_at: 'desc' },\n        include: { users: { select: { username: true, department: true } } }\n      }),\n      this.prisma.functional_test_cases.count({ where })\n    ]);\n    \n    return { data, total };\n  }\n  \n  async batchSave(params: BatchSaveParams) {\n    const { testCases, aiSessionId, userId } = params;\n    \n    // 使用事务确保一致性\n    const result = await this.prisma.$transaction(async (tx) => {\n      // 批量插入测试用例\n      const savedCases = await tx.functional_test_cases.createMany({\n        data: testCases.map(tc => ({\n          name: tc.name,\n          description: tc.description,\n          steps: tc.steps,\n          assertions: tc.assertions,\n          system: tc.system,\n          module: tc.module,\n          priority: tc.priority,\n          tags: Array.isArray(tc.tags) ? tc.tags.join(',') : tc.tags,\n          status: 'PUBLISHED',\n          source: 'AI_GENERATED',\n          ai_session_id: aiSessionId,\n          creator_id: userId,\n          test_type: tc.testType,\n          preconditions: tc.preconditions,\n          test_data: tc.testData\n        })),\n        skipDuplicates: true\n      });\n      \n      // 更新会话统计\n      await tx.ai_generation_sessions.update({\n        where: { id: aiSessionId },\n        data: { total_saved: savedCases.count }\n      });\n      \n      return savedCases;\n    });\n    \n    return result;\n  }\n  \n  async getById(id: number) {\n    return await this.prisma.functional_test_cases.findUnique({\n      where: { id },\n      include: { users: { select: { username: true } } }\n    });\n  }\n  \n  async update(id: number, data: any) {\n    return await this.prisma.functional_test_cases.update({\n      where: { id },\n      data: {\n        name: data.name,\n        description: data.description,\n        steps: data.steps,\n        assertions: data.assertions,\n        system: data.system,\n        module: data.module,\n        priority: data.priority,\n        tags: data.tags,\n        updated_at: new Date()\n      }\n    });\n  }\n  \n  async delete(id: number) {\n    return await this.prisma.functional_test_cases.delete({ where: { id } });\n  }\n}\n\nexport const functionalTestCaseService = new FunctionalTestCaseService();",
+      "verificationCriteria": "1. FunctionalTestCaseService类创建成功，无TypeScript错误\n2. 分页查询功能正常，支持多条件筛选\n3. 批量保存使用事务，数据一致性有保障\n4. 数据隔离逻辑正确（非超管只能看本部门数据）\n5. 所有CRUD操作能正常执行",
+      "analysisResult": "实现TestFlow系统的\"Axure原型自动生成功能测试用例\"功能（V2.0）。该功能通过AI技术将Axure导出的HTML原型文件自动转换为结构化的功能测试用例。核心特性：草稿箱+正式库分离、分批生成避免Token限制、增量修改、流式输出。技术栈：React 18 + TypeScript + Ant Design前端，Express + Prisma + MySQL后端，复用现有MCP客户端AI能力。"
+    },
+    {
+      "id": "b9e126f4-19b6-456b-80b6-d0f6c069e069",
+      "name": "实现AI测试用例生成服务",
+      "description": "创建FunctionalTestCaseAIService服务类，集成MCP客户端，实现需求文档生成、分批策略规划、测试用例生成、重新生成和优化等AI功能",
+      "notes": "参考server/services/aiBulkUpdateService.ts的AI调用模式。Prompt需要多轮迭代优化。MCP客户端的callTool方法需要根据实际API调整。错误处理要完善，超时时间设置为60秒。",
+      "status": "pending",
+      "dependencies": [
+        {
+          "taskId": "8262c3a9-3ef8-485b-8c04-87aa849a4bc2"
+        }
+      ],
+      "createdAt": "2025-10-23T07:09:49.829Z",
+      "updatedAt": "2025-10-23T07:09:49.829Z",
+      "relatedFiles": [
+        {
+          "path": "server/services/functionalTestCaseAIService.ts",
+          "type": "CREATE",
+          "description": "AI测试用例生成服务",
+          "lineStart": 1,
+          "lineEnd": 100
+        },
+        {
+          "path": "server/services/mcpClient.ts",
+          "type": "REFERENCE",
+          "description": "参考MCP客户端使用方式"
+        },
+        {
+          "path": "server/services/aiBulkUpdateService.ts",
+          "type": "REFERENCE",
+          "description": "参考AI服务调用模式"
+        }
+      ],
+      "implementationGuide": "创建文件server/services/functionalTestCaseAIService.ts：\nimport { PlaywrightMcpClient } from './mcpClient.js';\nimport type { AxureParseResult } from '../types/axure.js';\n\nexport interface ProjectInfo {\n  projectName: string;\n  systemType: string;\n  businessDomain: string;\n  businessRules: string[];\n  constraints: string[];\n  description: string;\n}\n\nexport interface Batch {\n  id: string;\n  name: string;\n  priority: string;\n  scenarios: string[];\n  estimatedCount: number;\n}\n\nexport interface TestCase {\n  name: string;\n  description: string;\n  steps: string;\n  assertions: string;\n  priority: string;\n  tags: string[];\n  system: string;\n  module: string;\n}\n\nexport class FunctionalTestCaseAIService {\n  private mcpClient: PlaywrightMcpClient;\n  \n  constructor() {\n    this.mcpClient = new PlaywrightMcpClient();\n  }\n  \n  async generateRequirementDoc(axureData: AxureParseResult, projectInfo: ProjectInfo): Promise<{ requirementDoc: string; completeness: number; suggestions: string[] }> {\n    // 初始化MCP客户端\n    await this.mcpClient.initialize();\n    \n    // 构建Prompt\n    const prompt = `你是专业的产品经理和需求分析师。\\n\\n【项目背景】\\n项目名称：${projectInfo.projectName}\\n系统类型：${projectInfo.systemType}\\n业务领域：${projectInfo.businessDomain}\\n业务规则：${projectInfo.businessRules.join(', ')}\\n特殊约束：${projectInfo.constraints.join(', ')}\\n\\n【Axure 原型信息】\\n页面数量：${axureData.pageCount}\\n元素数量：${axureData.elementCount}\\n交互数量：${axureData.interactionCount}\\n页面详情：${JSON.stringify(axureData.pages, null, 2)}\\n\\n【任务】\\n生成结构化的产品需求文档，包含：\\n1. 功能模块划分\\n2. 每个功能的：功能描述、用户故事、正常流程、异常流程、业务规则\\n3. 标注可能遗漏的内容\\n\\n【输出格式】\\nMarkdown 格式，结构清晰`;\n    \n    // 调用AI（使用MCP客户端的callTool方法）\n    const result = await this.mcpClient.callTool({\n      name: 'browser_console',\n      arguments: { script: prompt }\n    });\n    \n    // 解析结果\n    const requirementDoc = result.result || '';\n    const completeness = 0.75; // 简化实现，实际可用AI评估\n    const suggestions = ['补充密码错误次数限制规则', 'Session过期处理逻辑', '网络异常重试策略'];\n    \n    return { requirementDoc, completeness, suggestions };\n  }\n  \n  async planBatchStrategy(requirementDoc: string): Promise<Batch[]> {\n    const prompt = `分析需求文档，规划测试用例生成计划。\\n\\n需求文档：${requirementDoc}\\n\\n任务：\\n1. 识别所有测试场景\\n2. 按优先级分组（正常流程 > 异常流程 > 边界条件 > 性能）\\n3. 每组不超过 5 个场景\\n4. 返回分批计划\\n\\n输出：JSON 格式的分批计划`;\n    \n    const result = await this.mcpClient.callTool({\n      name: 'browser_console',\n      arguments: { script: prompt }\n    });\n    \n    // 解析JSON结果\n    const batches: Batch[] = JSON.parse(result.result || '[]');\n    return batches;\n  }\n  \n  async generateBatch(batchId: string, scenarios: string[], requirementDoc: string, existingCases: TestCase[]): Promise<TestCase[]> {\n    const prompt = `生成本批次的测试用例。\\n\\n需求文档：${requirementDoc}\\n本批场景：${scenarios.join(', ')}\\n已生成用例：${existingCases.map(c => c.name).join(', ')}（避免重复）\\n\\n要求：\\n1. 每个场景生成 1 个详细用例\\n2. 步骤具体可执行\\n3. 验证点明确可检查\\n4. 必须生成 ${scenarios.length} 个用例\\n\\n输出：JSON 数组`;\n    \n    const result = await this.mcpClient.callTool({\n      name: 'browser_console',\n      arguments: { script: prompt }\n    });\n    \n    const testCases: TestCase[] = JSON.parse(result.result || '[]');\n    return testCases;\n  }\n  \n  async regenerateCases(originalCases: TestCase[], instruction: string, requirementDoc: string): Promise<TestCase[]> {\n    const prompt = `重新生成指定的测试用例。\\n\\n原用例：${JSON.stringify(originalCases)}\\n用户要求：${instruction}\\n需求文档：${requirementDoc}\\n\\n任务：按照用户要求改进用例\\n\\n输出：JSON 格式的新用例数组`;\n    \n    const result = await this.mcpClient.callTool({\n      name: 'browser_console',\n      arguments: { script: prompt }\n    });\n    \n    const newCases: TestCase[] = JSON.parse(result.result || '[]');\n    return newCases;\n  }\n  \n  async close() {\n    await this.mcpClient.close();\n  }\n}\n\nexport const functionalTestCaseAIService = new FunctionalTestCaseAIService();",
+      "verificationCriteria": "1. FunctionalTestCaseAIService类创建成功\n2. MCP客户端初始化正常\n3. Prompt能够正确传递给AI模型\n4. AI返回的结果能正确解析为TypeScript对象\n5. 各个方法（生成需求、规划分批、生成用例）能正常执行",
+      "analysisResult": "实现TestFlow系统的\"Axure原型自动生成功能测试用例\"功能（V2.0）。该功能通过AI技术将Axure导出的HTML原型文件自动转换为结构化的功能测试用例。核心特性：草稿箱+正式库分离、分批生成避免Token限制、增量修改、流式输出。技术栈：React 18 + TypeScript + Ant Design前端，Express + Prisma + MySQL后端，复用现有MCP客户端AI能力。"
+    },
+    {
+      "id": "fb53fa79-1d9b-4fea-8003-bfbebe3c23a7",
+      "name": "创建Axure和功能测试用例路由",
+      "description": "创建两个路由文件：axure.ts处理Axure上传解析和AI生成请求，functionalTestCase.ts处理功能测试用例的CRUD请求，并在server/index.ts中注册路由",
+      "notes": "路由格式参考server/routes/test.ts和server/routes/aiBulkUpdate.ts。所有路由都需要认证中间件。错误处理统一使用try-catch并返回标准格式。",
+      "status": "pending",
+      "dependencies": [
+        {
+          "taskId": "b14480f7-137b-4cf3-8033-88aa602d49b4"
+        },
+        {
+          "taskId": "8262c3a9-3ef8-485b-8c04-87aa849a4bc2"
+        },
+        {
+          "taskId": "52ee3cb4-164e-4ce0-bf69-1ff701245cd2"
+        },
+        {
+          "taskId": "b9e126f4-19b6-456b-80b6-d0f6c069e069"
+        }
+      ],
+      "createdAt": "2025-10-23T07:09:49.829Z",
+      "updatedAt": "2025-10-23T07:09:49.829Z",
+      "relatedFiles": [
+        {
+          "path": "server/routes/axure.ts",
+          "type": "CREATE",
+          "description": "Axure相关API路由",
+          "lineStart": 1,
+          "lineEnd": 100
+        },
+        {
+          "path": "server/routes/functionalTestCase.ts",
+          "type": "CREATE",
+          "description": "功能测试用例CRUD路由",
+          "lineStart": 1,
+          "lineEnd": 80
+        },
+        {
+          "path": "server/index.ts",
+          "type": "TO_MODIFY",
+          "description": "注册新增的两个路由"
+        },
+        {
+          "path": "server/routes/test.ts",
+          "type": "REFERENCE",
+          "description": "参考路由格式和错误处理"
+        }
+      ],
+      "implementationGuide": "1. 创建文件server/routes/axure.ts：\nimport { Router } from 'express';\nimport { axureUpload } from '../middleware/upload.js';\nimport { AxureParseService } from '../services/axureParseService.js';\nimport { FunctionalTestCaseAIService } from '../services/functionalTestCaseAIService.js';\nimport { PrismaClient } from '../../src/generated/prisma/index.js';\nimport { DatabaseService } from '../services/databaseService.js';\nimport fs from 'fs/promises';\n\nexport function createAxureRoutes() {\n  const router = Router();\n  const parseService = new AxureParseService();\n  const aiService = new FunctionalTestCaseAIService();\n  const prisma = DatabaseService.getInstance().getClient();\n  \n  // 上传并解析Axure HTML\n  router.post('/parse', axureUpload.single('file'), async (req, res) => {\n    try {\n      if (!req.file) {\n        return res.status(400).json({ success: false, error: '未上传文件' });\n      }\n      \n      const filePath = req.file.path;\n      const parseResult = await parseService.parseHtmlFile(filePath);\n      \n      // 创建会话记录\n      await prisma.ai_generation_sessions.create({\n        data: {\n          id: parseResult.sessionId,\n          user_id: req.user.id,\n          axure_filename: req.file.originalname,\n          axure_file_size: req.file.size,\n          page_count: parseResult.pageCount,\n          element_count: parseResult.elementCount,\n          interaction_count: parseResult.interactionCount\n        }\n      });\n      \n      // 删除临时文件\n      await fs.unlink(filePath);\n      \n      res.json({ success: true, data: parseResult });\n    } catch (error: any) {\n      res.status(500).json({ success: false, error: error.message });\n    }\n  });\n  \n  // 生成需求文档\n  router.post('/generate-requirement', async (req, res) => {\n    try {\n      const { sessionId, axureData, projectInfo } = req.body;\n      const result = await aiService.generateRequirementDoc(axureData, projectInfo);\n      \n      // 更新会话\n      await prisma.ai_generation_sessions.update({\n        where: { id: sessionId },\n        data: {\n          project_name: projectInfo.projectName,\n          system_type: projectInfo.systemType,\n          business_domain: projectInfo.businessDomain,\n          requirement_doc: result.requirementDoc\n        }\n      });\n      \n      res.json({ success: true, data: result });\n    } catch (error: any) {\n      res.status(500).json({ success: false, error: error.message });\n    }\n  });\n  \n  // 规划分批策略\n  router.post('/plan-batches', async (req, res) => {\n    try {\n      const { sessionId, requirementDoc } = req.body;\n      const batches = await aiService.planBatchStrategy(requirementDoc);\n      \n      // 更新会话\n      await prisma.ai_generation_sessions.update({\n        where: { id: sessionId },\n        data: { batches: JSON.stringify(batches) }\n      });\n      \n      res.json({ success: true, data: { batches } });\n    } catch (error: any) {\n      res.status(500).json({ success: false, error: error.message });\n    }\n  });\n  \n  // 生成单个批次\n  router.post('/generate-batch', async (req, res) => {\n    try {\n      const { sessionId, batchId, scenarios, requirementDoc, existingCases } = req.body;\n      const testCases = await aiService.generateBatch(batchId, scenarios, requirementDoc, existingCases);\n      \n      res.json({ success: true, data: { testCases } });\n    } catch (error: any) {\n      res.status(500).json({ success: false, error: error.message });\n    }\n  });\n  \n  // 重新生成指定用例\n  router.post('/regenerate-cases', async (req, res) => {\n    try {\n      const { originalCases, instruction, requirementDoc } = req.body;\n      const testCases = await aiService.regenerateCases(originalCases, instruction, requirementDoc);\n      \n      res.json({ success: true, data: { testCases } });\n    } catch (error: any) {\n      res.status(500).json({ success: false, error: error.message });\n    }\n  });\n  \n  return router;\n}\n\n2. 创建文件server/routes/functionalTestCase.ts：\nimport { Router } from 'express';\nimport { functionalTestCaseService } from '../services/functionalTestCaseService.js';\n\nexport function createFunctionalTestCaseRoutes() {\n  const router = Router();\n  \n  // 获取列表（分页）\n  router.get('/', async (req, res) => {\n    try {\n      const { page = '1', pageSize = '10', search, tag, priority, system, module, source } = req.query;\n      const userDepartment = req.user?.department;\n      const isSuperAdmin = req.user?.isSuperAdmin;\n      \n      const result = await functionalTestCaseService.getList({\n        page: parseInt(page as string),\n        pageSize: parseInt(pageSize as string),\n        search: search as string,\n        tag: tag as string,\n        priority: priority as string,\n        system: system as string,\n        module: module as string,\n        source: source as string,\n        userDepartment,\n        isSuperAdmin\n      });\n      \n      res.json({\n        success: true,\n        data: result.data,\n        pagination: {\n          page: parseInt(page as string),\n          pageSize: parseInt(pageSize as string),\n          total: result.total,\n          totalPages: Math.ceil(result.total / parseInt(pageSize as string))\n        }\n      });\n    } catch (error: any) {\n      res.status(500).json({ success: false, error: error.message });\n    }\n  });\n  \n  // 批量保存\n  router.post('/batch-save', async (req, res) => {\n    try {\n      const { testCases, aiSessionId } = req.body;\n      const userId = req.user.id;\n      \n      const result = await functionalTestCaseService.batchSave({ testCases, aiSessionId, userId });\n      \n      res.json({ success: true, data: result });\n    } catch (error: any) {\n      res.status(500).json({ success: false, error: error.message });\n    }\n  });\n  \n  // 获取详情\n  router.get('/:id', async (req, res) => {\n    try {\n      const id = parseInt(req.params.id);\n      const testCase = await functionalTestCaseService.getById(id);\n      \n      if (!testCase) {\n        return res.status(404).json({ success: false, error: '测试用例不存在' });\n      }\n      \n      res.json({ success: true, data: testCase });\n    } catch (error: any) {\n      res.status(500).json({ success: false, error: error.message });\n    }\n  });\n  \n  // 更新\n  router.put('/:id', async (req, res) => {\n    try {\n      const id = parseInt(req.params.id);\n      const testCase = await functionalTestCaseService.update(id, req.body);\n      \n      res.json({ success: true, data: testCase });\n    } catch (error: any) {\n      res.status(500).json({ success: false, error: error.message });\n    }\n  });\n  \n  // 删除\n  router.delete('/:id', async (req, res) => {\n    try {\n      const id = parseInt(req.params.id);\n      await functionalTestCaseService.delete(id);\n      \n      res.json({ success: true, message: '删除成功' });\n    } catch (error: any) {\n      res.status(500).json({ success: false, error: error.message });\n    }\n  });\n  \n  return router;\n}\n\n3. 在server/index.ts中注册路由（在现有路由后添加）：\nimport { createAxureRoutes } from './routes/axure.js';\nimport { createFunctionalTestCaseRoutes } from './routes/functionalTestCase.js';\n\n// 在 app.use('/api/v1/test', ...) 之后添加：\napp.use('/api/v1/axure', authMiddleware, createAxureRoutes());\napp.use('/api/v1/functional-test-cases', authMiddleware, createFunctionalTestCaseRoutes());",
+      "verificationCriteria": "1. 两个路由文件创建成功，无TypeScript错误\n2. server/index.ts中路由注册成功\n3. 使用Postman或curl测试各个API端点\n4. 文件上传、解析、AI生成等功能正常工作\n5. 所有API返回格式符合{success, data?, error?}标准",
+      "analysisResult": "实现TestFlow系统的\"Axure原型自动生成功能测试用例\"功能（V2.0）。该功能通过AI技术将Axure导出的HTML原型文件自动转换为结构化的功能测试用例。核心特性：草稿箱+正式库分离、分批生成避免Token限制、增量修改、流式输出。技术栈：React 18 + TypeScript + Ant Design前端，Express + Prisma + MySQL后端，复用现有MCP客户端AI能力。"
+    },
+    {
+      "id": "51d067f9-f082-4585-ac79-31debcc0ff6b",
+      "name": "创建前端服务层",
+      "description": "创建functionalTestCaseService.ts前端服务类，封装所有功能测试用例相关的API调用，包括列表查询、批量保存、Axure解析、AI生成等",
+      "notes": "参考src/services/testService.ts的axios使用方式。错误处理可以使用axios拦截器统一处理。所有API调用都应该有loading状态管理。",
+      "status": "pending",
+      "dependencies": [
+        {
+          "taskId": "fb53fa79-1d9b-4fea-8003-bfbebe3c23a7"
+        }
+      ],
+      "createdAt": "2025-10-23T07:09:49.829Z",
+      "updatedAt": "2025-10-23T07:09:49.829Z",
+      "relatedFiles": [
+        {
+          "path": "src/services/functionalTestCaseService.ts",
+          "type": "CREATE",
+          "description": "功能测试用例前端服务类",
+          "lineStart": 1,
+          "lineEnd": 100
+        },
+        {
+          "path": "src/services/testService.ts",
+          "type": "REFERENCE",
+          "description": "参考前端服务类的实现模式"
+        }
+      ],
+      "implementationGuide": "创建文件src/services/functionalTestCaseService.ts：\nimport axios from 'axios';\n\nconst API_BASE = '/api/v1';\n\nexport interface ListParams {\n  page: number;\n  pageSize: number;\n  search?: string;\n  tag?: string;\n  priority?: string;\n  system?: string;\n  module?: string;\n  source?: string;\n}\n\nexport interface ProjectInfo {\n  projectName: string;\n  systemType: string;\n  businessDomain: string;\n  businessRules: string[];\n  constraints: string[];\n  description: string;\n}\n\nclass FunctionalTestCaseService {\n  // 获取列表\n  async getList(params: ListParams) {\n    const response = await axios.get(`${API_BASE}/functional-test-cases`, { params });\n    return response.data;\n  }\n  \n  // 批量保存\n  async batchSave(testCases: any[], aiSessionId: string) {\n    const response = await axios.post(`${API_BASE}/functional-test-cases/batch-save`, {\n      testCases,\n      aiSessionId\n    });\n    return response.data;\n  }\n  \n  // 获取详情\n  async getById(id: number) {\n    const response = await axios.get(`${API_BASE}/functional-test-cases/${id}`);\n    return response.data;\n  }\n  \n  // 更新\n  async update(id: number, data: any) {\n    const response = await axios.put(`${API_BASE}/functional-test-cases/${id}`, data);\n    return response.data;\n  }\n  \n  // 删除\n  async delete(id: number) {\n    const response = await axios.delete(`${API_BASE}/functional-test-cases/${id}`);\n    return response.data;\n  }\n  \n  // 上传并解析Axure\n  async parseAxure(file: File) {\n    const formData = new FormData();\n    formData.append('file', file);\n    \n    const response = await axios.post(`${API_BASE}/axure/parse`, formData, {\n      headers: { 'Content-Type': 'multipart/form-data' }\n    });\n    return response.data;\n  }\n  \n  // 生成需求文档\n  async generateRequirement(sessionId: string, axureData: any, projectInfo: ProjectInfo) {\n    const response = await axios.post(`${API_BASE}/axure/generate-requirement`, {\n      sessionId,\n      axureData,\n      projectInfo\n    });\n    return response.data;\n  }\n  \n  // 规划分批策略\n  async planBatches(sessionId: string, requirementDoc: string) {\n    const response = await axios.post(`${API_BASE}/axure/plan-batches`, {\n      sessionId,\n      requirementDoc\n    });\n    return response.data;\n  }\n  \n  // 生成单个批次\n  async generateBatch(sessionId: string, batchId: string, scenarios: string[], requirementDoc: string, existingCases: any[]) {\n    const response = await axios.post(`${API_BASE}/axure/generate-batch`, {\n      sessionId,\n      batchId,\n      scenarios,\n      requirementDoc,\n      existingCases\n    });\n    return response.data;\n  }\n  \n  // 重新生成指定用例\n  async regenerateCases(originalCases: any[], instruction: string, requirementDoc: string) {\n    const response = await axios.post(`${API_BASE}/axure/regenerate-cases`, {\n      originalCases,\n      instruction,\n      requirementDoc\n    });\n    return response.data;\n  }\n}\n\nexport const functionalTestCaseService = new FunctionalTestCaseService();\nexport default functionalTestCaseService;",
+      "verificationCriteria": "1. functionalTestCaseService.ts文件创建成功\n2. 所有方法的TypeScript类型定义正确\n3. axios请求配置正确（URL、method、参数）\n4. 可以在前端组件中正常导入和使用\n5. API调用返回的数据结构与后端一致",
+      "analysisResult": "实现TestFlow系统的\"Axure原型自动生成功能测试用例\"功能（V2.0）。该功能通过AI技术将Axure导出的HTML原型文件自动转换为结构化的功能测试用例。核心特性：草稿箱+正式库分离、分批生成避免Token限制、增量修改、流式输出。技术栈：React 18 + TypeScript + Ant Design前端，Express + Prisma + MySQL后端，复用现有MCP客户端AI能力。"
+    },
+    {
+      "id": "a7a4aeff-d10e-43ef-acf8-9ae80bdc05b2",
+      "name": "实现功能测试用例列表页面",
+      "description": "创建FunctionalTestCases.tsx页面组件，展示功能测试用例列表，支持搜索、筛选、分页，包含跳转到AI生成器的按钮，复用TestCases.tsx的布局和样式",
+      "notes": "完全复用TestCases.tsx的UI模式，使用Ant Design组件。注意区分AI生成和手动创建的用例（通过source字段）。分页、筛选逻辑与现有页面保持一致。",
+      "status": "pending",
+      "dependencies": [
+        {
+          "taskId": "51d067f9-f082-4585-ac79-31debcc0ff6b"
+        }
+      ],
+      "createdAt": "2025-10-23T07:09:49.829Z",
+      "updatedAt": "2025-10-23T07:09:49.829Z",
+      "relatedFiles": [
+        {
+          "path": "src/pages/FunctionalTestCases.tsx",
+          "type": "CREATE",
+          "description": "功能测试用例列表页面",
+          "lineStart": 1,
+          "lineEnd": 150
+        },
+        {
+          "path": "src/pages/TestCases.tsx",
+          "type": "REFERENCE",
+          "description": "参考UI布局和交互模式"
+        }
+      ],
+      "implementationGuide": "创建文件src/pages/FunctionalTestCases.tsx，参考src/pages/TestCases.tsx的结构：\nimport React, { useState, useEffect } from 'react';\nimport { useNavigate } from 'react-router-dom';\nimport { Table, Button, Input, Select, Tag, Space, Pagination } from 'antd';\nimport { Plus, Search, Bot } from 'lucide-react';\nimport { functionalTestCaseService } from '../services/functionalTestCaseService';\nimport { showToast } from '../utils/toast';\nimport { useAuth } from '../contexts/AuthContext';\n\nexport function FunctionalTestCases() {\n  const navigate = useNavigate();\n  const { user } = useAuth();\n  \n  const [testCases, setTestCases] = useState([]);\n  const [loading, setLoading] = useState(false);\n  const [pagination, setPagination] = useState({ page: 1, pageSize: 10, total: 0 });\n  const [filters, setFilters] = useState({ search: '', system: '', module: '', source: '', priority: '' });\n  \n  // 加载数据\n  const loadData = async () => {\n    setLoading(true);\n    try {\n      const result = await functionalTestCaseService.getList({\n        page: pagination.page,\n        pageSize: pagination.pageSize,\n        ...filters\n      });\n      \n      setTestCases(result.data);\n      setPagination(prev => ({ ...prev, total: result.pagination.total }));\n    } catch (error: any) {\n      showToast.error('加载失败：' + error.message);\n    } finally {\n      setLoading(false);\n    }\n  };\n  \n  useEffect(() => {\n    loadData();\n  }, [pagination.page, pagination.pageSize, filters]);\n  \n  // 表格列定义\n  const columns = [\n    { title: 'ID', dataIndex: 'id', key: 'id', width: 80 },\n    { title: '用例名称', dataIndex: 'name', key: 'name' },\n    { title: '系统', dataIndex: 'system', key: 'system', width: 120 },\n    { title: '模块', dataIndex: 'module', key: 'module', width: 120 },\n    {\n      title: '优先级',\n      dataIndex: 'priority',\n      key: 'priority',\n      width: 100,\n      render: (priority: string) => (\n        <Tag color={priority === 'high' ? 'red' : priority === 'medium' ? 'orange' : 'default'}>\n          {priority}\n        </Tag>\n      )\n    },\n    {\n      title: '来源',\n      dataIndex: 'source',\n      key: 'source',\n      width: 120,\n      render: (source: string) => (\n        <Tag color={source === 'AI_GENERATED' ? 'blue' : 'default'}>\n          {source === 'AI_GENERATED' ? 'AI生成' : '手动创建'}\n        </Tag>\n      )\n    },\n    {\n      title: '操作',\n      key: 'actions',\n      width: 200,\n      render: (_, record: any) => (\n        <Space>\n          <Button size=\"small\" onClick={() => navigate(`/functional-test-cases/${record.id}`)}>查看</Button>\n          <Button size=\"small\" onClick={() => navigate(`/functional-test-cases/${record.id}/edit`)}>编辑</Button>\n          <Button size=\"small\" danger onClick={() => handleDelete(record.id)}>删除</Button>\n        </Space>\n      )\n    }\n  ];\n  \n  const handleDelete = async (id: number) => {\n    if (!confirm('确认删除该测试用例？')) return;\n    \n    try {\n      await functionalTestCaseService.delete(id);\n      showToast.success('删除成功');\n      loadData();\n    } catch (error: any) {\n      showToast.error('删除失败：' + error.message);\n    }\n  };\n  \n  return (\n    <div className=\"p-6\">\n      <div className=\"mb-6 flex items-center justify-between\">\n        <h1 className=\"text-2xl font-bold\">功能测试用例</h1>\n        <Space>\n          <Button\n            type=\"primary\"\n            icon={<Bot className=\"w-4 h-4\" />}\n            onClick={() => navigate('/functional-test-cases/generator')}\n          >\n            AI生成器\n          </Button>\n          <Button\n            type=\"default\"\n            icon={<Plus className=\"w-4 h-4\" />}\n            onClick={() => navigate('/functional-test-cases/new')}\n          >\n            手动创建\n          </Button>\n        </Space>\n      </div>\n      \n      {/* 筛选栏 */}\n      <div className=\"mb-4 flex gap-4\">\n        <Input\n          prefix={<Search className=\"w-4 h-4\" />}\n          placeholder=\"搜索用例名称\"\n          value={filters.search}\n          onChange={e => setFilters(prev => ({ ...prev, search: e.target.value }))}\n          style={{ width: 300 }}\n        />\n        <Select\n          placeholder=\"选择系统\"\n          value={filters.system || undefined}\n          onChange={value => setFilters(prev => ({ ...prev, system: value }))}\n          style={{ width: 150 }}\n          allowClear\n        >\n          <Select.Option value=\"\">全部系统</Select.Option>\n          <Select.Option value=\"电商系统\">电商系统</Select.Option>\n          <Select.Option value=\"OA系统\">OA系统</Select.Option>\n        </Select>\n        <Select\n          placeholder=\"选择来源\"\n          value={filters.source || undefined}\n          onChange={value => setFilters(prev => ({ ...prev, source: value }))}\n          style={{ width: 150 }}\n          allowClear\n        >\n          <Select.Option value=\"\">全部来源</Select.Option>\n          <Select.Option value=\"AI_GENERATED\">AI生成</Select.Option>\n          <Select.Option value=\"MANUAL\">手动创建</Select.Option>\n        </Select>\n        <Button onClick={() => setFilters({ search: '', system: '', module: '', source: '', priority: '' })}>\n          重置\n        </Button>\n      </div>\n      \n      {/* 表格 */}\n      <Table\n        dataSource={testCases}\n        columns={columns}\n        rowKey=\"id\"\n        loading={loading}\n        pagination={false}\n      />\n      \n      {/* 分页 */}\n      <div className=\"mt-4 flex justify-end\">\n        <Pagination\n          current={pagination.page}\n          pageSize={pagination.pageSize}\n          total={pagination.total}\n          showSizeChanger\n          showTotal={total => `共 ${total} 条`}\n          onChange={(page, pageSize) => setPagination(prev => ({ ...prev, page, pageSize }))}\n        />\n      </div>\n    </div>\n  );\n}",
+      "verificationCriteria": "1. FunctionalTestCases.tsx页面创建成功\n2. 页面能正常渲染，无React错误\n3. 列表数据能正确加载并显示\n4. 搜索、筛选、分页功能正常工作\n5. 跳转到AI生成器按钮能正常点击",
+      "analysisResult": "实现TestFlow系统的\"Axure原型自动生成功能测试用例\"功能（V2.0）。该功能通过AI技术将Axure导出的HTML原型文件自动转换为结构化的功能测试用例。核心特性：草稿箱+正式库分离、分批生成避免Token限制、增量修改、流式输出。技术栈：React 18 + TypeScript + Ant Design前端，Express + Prisma + MySQL后端，复用现有MCP客户端AI能力。"
+    },
+    {
+      "id": "328cc22c-8248-47d2-92c4-42fd068d9e43",
+      "name": "实现AI生成器页面（步骤1和2）",
+      "description": "创建FunctionalTestCaseGenerator.tsx页面，实现步骤1（上传Axure文件和填写项目信息）和步骤2（审核需求文档），使用步骤指示器和多步骤表单",
+      "notes": "使用Ant Design的Steps、Upload、Card等组件。文件上传前需要校验格式和大小。步骤间的数据传递通过state管理。",
+      "status": "pending",
+      "dependencies": [
+        {
+          "taskId": "51d067f9-f082-4585-ac79-31debcc0ff6b"
+        }
+      ],
+      "createdAt": "2025-10-23T07:09:49.829Z",
+      "updatedAt": "2025-10-23T07:09:49.829Z",
+      "relatedFiles": [
+        {
+          "path": "src/pages/FunctionalTestCaseGenerator.tsx",
+          "type": "CREATE",
+          "description": "AI生成器页面（步骤1和2）",
+          "lineStart": 1,
+          "lineEnd": 200
+        }
+      ],
+      "implementationGuide": "创建文件src/pages/FunctionalTestCaseGenerator.tsx的步骤1和2部分：\nimport React, { useState } from 'react';\nimport { useNavigate } from 'react-router-dom';\nimport { Steps, Upload, Input, Radio, Button, Card, Space, message } from 'antd';\nimport { InboxOutlined } from '@ant-design/icons';\nimport { functionalTestCaseService } from '../services/functionalTestCaseService';\nimport { showToast } from '../utils/toast';\n\nconst { TextArea } = Input;\nconst { Dragger } = Upload;\n\nexport function FunctionalTestCaseGenerator() {\n  const navigate = useNavigate();\n  const [currentStep, setCurrentStep] = useState(0);\n  \n  // 步骤1状态\n  const [axureFile, setAxureFile] = useState<File | null>(null);\n  const [projectInfo, setProjectInfo] = useState({\n    projectName: '',\n    systemType: '2B',\n    businessDomain: '',\n    businessRules: '',\n    constraints: '',\n    description: ''\n  });\n  const [parseResult, setParseResult] = useState<any>(null);\n  const [parsing, setParsing] = useState(false);\n  \n  // 步骤2状态\n  const [requirementDoc, setRequirementDoc] = useState('');\n  const [completeness, setCompleteness] = useState(0);\n  const [suggestions, setSuggestions] = useState<string[]>([]);\n  const [generating, setGenerating] = useState(false);\n  const [sessionId, setSessionId] = useState('');\n  \n  // 步骤1：上传和解析\n  const Step1UploadAxure = () => {\n    const uploadProps = {\n      name: 'file',\n      multiple: false,\n      accept: '.html,.htm',\n      beforeUpload: (file: File) => {\n        setAxureFile(file);\n        return false; // 阻止自动上传\n      },\n      onRemove: () => {\n        setAxureFile(null);\n      }\n    };\n    \n    const handleParse = async () => {\n      if (!axureFile) {\n        showToast.error('请先上传Axure文件');\n        return;\n      }\n      \n      setParsing(true);\n      try {\n        const result = await functionalTestCaseService.parseAxure(axureFile);\n        setParseResult(result.data);\n        setSessionId(result.data.sessionId);\n        showToast.success('解析成功！');\n        \n        // 自动进入步骤2并生成需求文档\n        setCurrentStep(1);\n        await generateRequirementDoc(result.data);\n      } catch (error: any) {\n        showToast.error('解析失败：' + error.message);\n      } finally {\n        setParsing(false);\n      }\n    };\n    \n    return (\n      <div className=\"max-w-3xl mx-auto\">\n        <Card title=\"上传 Axure 原型文件\" className=\"mb-6\">\n          <Dragger {...uploadProps}>\n            <p className=\"ant-upload-drag-icon\">\n              <InboxOutlined />\n            </p>\n            <p className=\"ant-upload-text\">点击或拖拽文件到此区域上传</p>\n            <p className=\"ant-upload-hint\">\n              支持格式：.html, .htm | 文件大小：&lt; 50MB\n            </p>\n          </Dragger>\n        </Card>\n        \n        <Card title=\"补充项目信息（可选，提升生成质量）\" className=\"mb-6\">\n          <Space direction=\"vertical\" style={{ width: '100%' }} size=\"large\">\n            <div>\n              <label className=\"block mb-2 font-medium\">项目名称</label>\n              <Input\n                placeholder=\"例如：电商后台管理系统\"\n                value={projectInfo.projectName}\n                onChange={e => setProjectInfo(prev => ({ ...prev, projectName: e.target.value }))}\n              />\n            </div>\n            \n            <div>\n              <label className=\"block mb-2 font-medium\">系统类型</label>\n              <Radio.Group\n                value={projectInfo.systemType}\n                onChange={e => setProjectInfo(prev => ({ ...prev, systemType: e.target.value }))}\n              >\n                <Radio value=\"2C\">2C 面向用户</Radio>\n                <Radio value=\"2B\">2B 面向企业</Radio>\n                <Radio value=\"internal\">内部系统</Radio>\n                <Radio value=\"platform\">开放平台</Radio>\n              </Radio.Group>\n            </div>\n            \n            <div>\n              <label className=\"block mb-2 font-medium\">业务领域</label>\n              <Input\n                placeholder=\"例如：电商/零售\"\n                value={projectInfo.businessDomain}\n                onChange={e => setProjectInfo(prev => ({ ...prev, businessDomain: e.target.value }))}\n              />\n            </div>\n            \n            <div>\n              <label className=\"block mb-2 font-medium\">关键业务规则（可选）</label>\n              <TextArea\n                rows={3}\n                placeholder=\"例如：订单金额超过1000需审批、库存不足时不能下单\"\n                value={projectInfo.businessRules}\n                onChange={e => setProjectInfo(prev => ({ ...prev, businessRules: e.target.value }))}\n              />\n            </div>\n            \n            <div>\n              <label className=\"block mb-2 font-medium\">特殊约束（可选）</label>\n              <TextArea\n                rows={3}\n                placeholder=\"例如：必须符合GDPR合规要求、支持多语言\"\n                value={projectInfo.constraints}\n                onChange={e => setProjectInfo(prev => ({ ...prev, constraints: e.target.value }))}\n              />\n            </div>\n          </Space>\n        </Card>\n        \n        <div className=\"text-center\">\n          <Button type=\"primary\" size=\"large\" loading={parsing} onClick={handleParse}>\n            {parsing ? '解析中...' : '开始解析'}\n          </Button>\n        </div>\n        \n        {parseResult && (\n          <Card className=\"mt-6\" title=\"解析结果\">\n            <p>✓ 页面数量：{parseResult.pageCount} 个</p>\n            <p>✓ 元素数量：{parseResult.elementCount} 个</p>\n            <p>✓ 交互数量：{parseResult.interactionCount} 个</p>\n          </Card>\n        )}\n      </div>\n    );\n  };\n  \n  // 步骤2：需求文档审核\n  const generateRequirementDoc = async (axureData: any) => {\n    setGenerating(true);\n    try {\n      const businessRules = projectInfo.businessRules.split('\\n').filter(r => r.trim());\n      const constraints = projectInfo.constraints.split('\\n').filter(c => c.trim());\n      \n      const result = await functionalTestCaseService.generateRequirement(\n        sessionId,\n        axureData,\n        { ...projectInfo, businessRules, constraints }\n      );\n      \n      setRequirementDoc(result.data.requirementDoc);\n      setCompleteness(result.data.completeness);\n      setSuggestions(result.data.suggestions || []);\n    } catch (error: any) {\n      showToast.error('生成需求文档失败：' + error.message);\n    } finally {\n      setGenerating(false);\n    }\n  };\n  \n  const Step2RequirementReview = () => (\n    <div className=\"max-w-4xl mx-auto\">\n      <Card title=\"AI 生成的需求文档\" className=\"mb-6\">\n        <div className=\"mb-4 p-4 bg-blue-50 rounded\">\n          <h4 className=\"font-medium mb-2\">完整度评估</h4>\n          <p>✅ 正常流程：完整</p>\n          <p>⚠️ 异常流程：较完整（{suggestions.length}个建议）</p>\n          <p>整体完整度：{Math.round(completeness * 100)}%</p>\n        </div>\n        \n        {suggestions.length > 0 && (\n          <div className=\"mb-4 p-4 bg-yellow-50 rounded\">\n            <h4 className=\"font-medium mb-2\">💡 AI 建议补充以下内容：</h4>\n            {suggestions.map((suggestion, i) => (\n              <p key={i}>{i + 1}. {suggestion}</p>\n            ))}\n          </div>\n        )}\n        \n        <TextArea\n          rows={20}\n          value={requirementDoc}\n          onChange={e => setRequirementDoc(e.target.value)}\n          placeholder=\"需求文档生成中...\"\n        />\n      </Card>\n      \n      <div className=\"text-center space-x-4\">\n        <Button onClick={() => setCurrentStep(0)}>返回上一步</Button>\n        <Button type=\"primary\" size=\"large\" onClick={() => setCurrentStep(2)}>\n          生成测试用例 →\n        </Button>\n      </div>\n    </div>\n  );\n  \n  return (\n    <div className=\"p-6\">\n      <h1 className=\"text-2xl font-bold mb-6\">🎨 AI 测试用例生成器</h1>\n      \n      <Steps\n        current={currentStep}\n        className=\"mb-8\"\n        items={[\n          { title: '上传原型' },\n          { title: '需求文档' },\n          { title: '生成用例' }\n        ]}\n      />\n      \n      {currentStep === 0 && <Step1UploadAxure />}\n      {currentStep === 1 && <Step2RequirementReview />}\n      {currentStep === 2 && <div>步骤3待实现</div>}\n    </div>\n  );\n}",
+      "verificationCriteria": "1. FunctionalTestCaseGenerator.tsx页面创建成功\n2. 步骤指示器正确显示3个步骤\n3. 步骤1的文件上传功能正常\n4. 项目信息表单能正常填写\n5. 点击开始解析后能正常调用API\n6. 步骤2的需求文档能正确显示\n7. 步骤间切换流畅",
+      "analysisResult": "实现TestFlow系统的\"Axure原型自动生成功能测试用例\"功能（V2.0）。该功能通过AI技术将Axure导出的HTML原型文件自动转换为结构化的功能测试用例。核心特性：草稿箱+正式库分离、分批生成避免Token限制、增量修改、流式输出。技术栈：React 18 + TypeScript + Ant Design前端，Express + Prisma + MySQL后端，复用现有MCP客户端AI能力。"
+    },
+    {
+      "id": "5f9f04ae-2a16-4e81-a5fc-197f43853584",
+      "name": "实现AI生成器页面步骤3（用例生成和审核）",
+      "description": "完成FunctionalTestCaseGenerator.tsx的步骤3，实现分批生成、草稿箱展示、用例编辑、重新生成、批量保存等核心功能",
+      "notes": "分批生成逻辑复杂，需要仔细管理状态。草稿箱数据可以考虑存储到LocalStorage防止丢失。批量操作时要给用户明确反馈。保存前需要二次确认。",
+      "status": "pending",
+      "dependencies": [
+        {
+          "taskId": "328cc22c-8248-47d2-92c4-42fd068d9e43"
+        }
+      ],
+      "createdAt": "2025-10-23T07:09:49.829Z",
+      "updatedAt": "2025-10-23T07:09:49.829Z",
+      "relatedFiles": [
+        {
+          "path": "src/pages/FunctionalTestCaseGenerator.tsx",
+          "type": "TO_MODIFY",
+          "description": "添加步骤3的实现",
+          "lineStart": 200,
+          "lineEnd": 400
+        }
+      ],
+      "implementationGuide": "在FunctionalTestCaseGenerator.tsx中添加步骤3的实现：\n\n// 在组件顶部添加步骤3状态\nconst [batches, setBatches] = useState<any[]>([]);\nconst [draftCases, setDraftCases] = useState<any[]>([]);\nconst [currentBatchIndex, setCurrentBatchIndex] = useState(0);\nconst [generatingBatch, setGeneratingBatch] = useState(false);\nconst [selectedCaseIds, setSelectedCaseIds] = useState<string[]>([]);\n\n// 规划分批策略\nconst planBatches = async () => {\n  try {\n    const result = await functionalTestCaseService.planBatches(sessionId, requirementDoc);\n    setBatches(result.data.batches);\n  } catch (error: any) {\n    showToast.error('规划分批失败：' + error.message);\n  }\n};\n\n// 生成当前批次\nconst generateCurrentBatch = async () => {\n  if (currentBatchIndex >= batches.length) {\n    showToast.info('所有批次已生成完毕');\n    return;\n  }\n  \n  const currentBatch = batches[currentBatchIndex];\n  setGeneratingBatch(true);\n  \n  try {\n    const result = await functionalTestCaseService.generateBatch(\n      sessionId,\n      currentBatch.id,\n      currentBatch.scenarios,\n      requirementDoc,\n      draftCases\n    );\n    \n    // 添加到草稿箱\n    const newCases = result.data.testCases.map((tc: any, index: number) => ({\n      ...tc,\n      id: `draft-${Date.now()}-${index}`,\n      batchNumber: currentBatchIndex + 1,\n      batchName: currentBatch.name,\n      selected: true\n    }));\n    \n    setDraftCases(prev => [...prev, ...newCases]);\n    showToast.success(`第${currentBatchIndex + 1}批生成完成`);\n  } catch (error: any) {\n    showToast.error('生成失败：' + error.message);\n  } finally {\n    setGeneratingBatch(false);\n  }\n};\n\n// 重新生成选中的用例\nconst regenerateSelected = async (instruction: string) => {\n  if (selectedCaseIds.length === 0) {\n    showToast.warning('请先选择要重新生成的用例');\n    return;\n  }\n  \n  const selectedCases = draftCases.filter(c => selectedCaseIds.includes(c.id));\n  \n  try {\n    const result = await functionalTestCaseService.regenerateCases(\n      selectedCases,\n      instruction,\n      requirementDoc\n    );\n    \n    // 替换草稿箱中的用例\n    const newCases = result.data.testCases;\n    const updatedDrafts = draftCases.map(c => {\n      const newCase = newCases.find((nc: any) => nc.name === c.name);\n      return newCase ? { ...newCase, id: c.id, batchNumber: c.batchNumber, batchName: c.batchName, selected: c.selected } : c;\n    });\n    \n    setDraftCases(updatedDrafts);\n    showToast.success('重新生成完成');\n  } catch (error: any) {\n    showToast.error('重新生成失败：' + error.message);\n  }\n};\n\n// 保存到用例库\nconst saveToLibrary = async () => {\n  const selectedCases = draftCases.filter(c => c.selected);\n  \n  if (selectedCases.length === 0) {\n    showToast.warning('请至少选择一个用例');\n    return;\n  }\n  \n  if (!confirm(`确认保存 ${selectedCases.length} 个用例到功能测试用例库？`)) {\n    return;\n  }\n  \n  try {\n    await functionalTestCaseService.batchSave(selectedCases, sessionId);\n    showToast.success(`成功保存 ${selectedCases.length} 个用例`);\n    \n    // 跳转到用例列表\n    setTimeout(() => {\n      navigate('/functional-test-cases');\n    }, 1500);\n  } catch (error: any) {\n    showToast.error('保存失败：' + error.message);\n  }\n};\n\n// 步骤3：用例生成和审核\nconst Step3CaseGeneration = () => {\n  useEffect(() => {\n    if (batches.length === 0) {\n      planBatches();\n    }\n  }, []);\n  \n  return (\n    <div className=\"max-w-6xl mx-auto\">\n      {/* 批次进度 */}\n      <Card title=\"生成计划与进度\" className=\"mb-6\">\n        <div className=\"mb-4\">\n          <p>预计场景：{batches.reduce((sum, b) => sum + b.scenarios.length, 0)} 个</p>\n          <p>草稿箱：{draftCases.length} 个（待审核）</p>\n        </div>\n        \n        <div className=\"space-y-2\">\n          {batches.map((batch, index) => (\n            <div key={batch.id} className=\"flex items-center gap-2\">\n              <span className={index === currentBatchIndex ? 'text-blue-600 font-medium' : ''}>\n                {index < currentBatchIndex ? '✓' : index === currentBatchIndex ? '●' : '○'}\n              </span>\n              <span>第{index + 1}批：{batch.name}（{batch.scenarios.length}个场景）</span>\n            </div>\n          ))}\n        </div>\n        \n        <div className=\"mt-4 space-x-2\">\n          <Button\n            type=\"primary\"\n            loading={generatingBatch}\n            onClick={generateCurrentBatch}\n            disabled={currentBatchIndex >= batches.length}\n          >\n            {generatingBatch ? '生成中...' : '继续生成下一批'}\n          </Button>\n          <Button onClick={() => setCurrentBatchIndex(prev => Math.min(prev + 1, batches.length - 1))}>\n            跳过当前批次\n          </Button>\n        </div>\n      </Card>\n      \n      {/* 草稿箱 */}\n      <Card title=\"📦 草稿箱（生成的用例，可编辑）\" className=\"mb-6\">\n        {draftCases.length === 0 ? (\n          <p className=\"text-gray-400\">暂无生成的用例，请点击\"继续生成下一批\"</p>\n        ) : (\n          <div className=\"space-y-4\">\n            {draftCases.map(testCase => (\n              <div key={testCase.id} className=\"border rounded p-4\">\n                <div className=\"flex items-start gap-3\">\n                  <input\n                    type=\"checkbox\"\n                    checked={testCase.selected}\n                    onChange={e => {\n                      const updated = draftCases.map(c =>\n                        c.id === testCase.id ? { ...c, selected: e.target.checked } : c\n                      );\n                      setDraftCases(updated);\n                    }}\n                  />\n                  <div className=\"flex-1\">\n                    <h4 className=\"font-medium\">{testCase.name}</h4>\n                    <p className=\"text-sm text-gray-500\">批次：{testCase.batchName} | 优先级：{testCase.priority}</p>\n                    <div className=\"mt-2 text-sm\">\n                      <p>步骤：{testCase.steps?.split('\\n').length || 0}步</p>\n                      <p>验证点：{testCase.assertions?.split('\\n').length || 0}个</p>\n                    </div>\n                  </div>\n                  <Space>\n                    <Button size=\"small\" onClick={() => {\n                      // 打开编辑modal\n                      showToast.info('编辑功能待实现');\n                    }}>✏️ 编辑</Button>\n                    <Button size=\"small\" onClick={() => {\n                      setDraftCases(prev => prev.filter(c => c.id !== testCase.id));\n                    }}>🗑️ 删除</Button>\n                  </Space>\n                </div>\n              </div>\n            ))}\n          </div>\n        )}\n      </Card>\n      \n      {/* 批量操作 */}\n      {selectedCaseIds.length > 0 && (\n        <Card title=\"💡 批量操作\" className=\"mb-6\">\n          <div className=\"space-y-3\">\n            <TextArea\n              rows={2}\n              placeholder=\"告诉 AI 如何改进（可选）：例如 把验证点写得更详细，至少5个\"\n            />\n            <Space>\n              <Button onClick={() => regenerateSelected('')}>🔄 重新生成选中的</Button>\n              <Button onClick={() => showToast.info('优化功能待实现')}>✨ 优化选中的</Button>\n              <Button danger onClick={() => {\n                setDraftCases(prev => prev.filter(c => !selectedCaseIds.includes(c.id)));\n                setSelectedCaseIds([]);\n              }}>🗑️ 删除选中的</Button>\n            </Space>\n          </div>\n        </Card>\n      )}\n      \n      {/* 底部操作栏 */}\n      <div className=\"flex justify-between\">\n        <Button onClick={() => setCurrentStep(1)}>返回修改需求</Button>\n        <Button\n          type=\"primary\"\n          size=\"large\"\n          disabled={draftCases.filter(c => c.selected).length === 0}\n          onClick={saveToLibrary}\n        >\n          💾 保存到用例库 ({draftCases.filter(c => c.selected).length})\n        </Button>\n      </div>\n    </div>\n  );\n};\n\n// 在主渲染中添加步骤3\n{currentStep === 2 && <Step3CaseGeneration />}",
+      "verificationCriteria": "1. 步骤3能正确显示批次进度\n2. 分批生成功能正常，每批生成3-5个用例\n3. 草稿箱能正确展示所有生成的用例\n4. 用例选择/取消选择功能正常\n5. 重新生成功能能正确替换选中的用例\n6. 批量删除功能正常\n7. 保存到用例库功能正常，保存后跳转到列表页\n8. 所有用户操作都有loading和成功/失败提示",
+      "analysisResult": "实现TestFlow系统的\"Axure原型自动生成功能测试用例\"功能（V2.0）。该功能通过AI技术将Axure导出的HTML原型文件自动转换为结构化的功能测试用例。核心特性：草稿箱+正式库分离、分批生成避免Token限制、增量修改、流式输出。技术栈：React 18 + TypeScript + Ant Design前端，Express + Prisma + MySQL后端，复用现有MCP客户端AI能力。"
+    },
+    {
+      "id": "509e63e0-8840-447b-bd79-0e58312f9da1",
+      "name": "调整菜单和路由",
+      "description": "修改Layout.tsx中的导航菜单，将原测试用例改名为UI自动化测试用例，新增功能测试用例菜单；在App.tsx中注册新页面的路由",
+      "notes": "确保图标导入正确。菜单顺序要合理。路由路径要与页面中的跳转路径一致。测试所有菜单项的点击跳转。",
+      "status": "pending",
+      "dependencies": [
+        {
+          "taskId": "a7a4aeff-d10e-43ef-acf8-9ae80bdc05b2"
+        },
+        {
+          "taskId": "5f9f04ae-2a16-4e81-a5fc-197f43853584"
+        }
+      ],
+      "createdAt": "2025-10-23T07:09:49.829Z",
+      "updatedAt": "2025-10-23T07:09:49.829Z",
+      "relatedFiles": [
+        {
+          "path": "src/components/Layout.tsx",
+          "type": "TO_MODIFY",
+          "description": "修改导航菜单",
+          "lineStart": 37,
+          "lineEnd": 46
+        },
+        {
+          "path": "src/App.tsx",
+          "type": "TO_MODIFY",
+          "description": "添加新路由",
+          "lineStart": 256,
+          "lineEnd": 282
+        }
+      ],
+      "implementationGuide": "1. 修改src/components/Layout.tsx的navigationItems数组（约第37-46行）：\n\nconst navigationItems: NavigationItem[] = [\n  { name: '仪表板', href: '/', icon: Home },\n  { name: 'UI自动化测试用例', href: '/test-cases', icon: FileCode },  // 改名\n  { name: '功能测试用例', href: '/functional-test-cases', icon: ClipboardList },  // 新增\n  { name: '测试执行', href: '/test-runs', icon: Play },\n  { name: '测试报告', href: '/reports', icon: BarChart3 },\n  { name: '测试工厂', href: '/test-factory', icon: Factory },\n  { name: 'AI 助手', href: '/llm-assistant', icon: Bot },\n  { name: '用户管理', href: '/user-management', icon: Users },\n  { name: '设置', href: '/settings', icon: Settings },\n];\n\n注意：需要在顶部导入ClipboardList图标：\nimport { Home, FileCode, Play, BarChart3, Settings, Bot, Menu, X, Factory, LogOut, User, Users, ClipboardList } from 'lucide-react';\n\n2. 修改src/App.tsx，在Routes中添加新路由（约第256-282行，在<Route path=\\\"/test-cases\\\" ... />之后）：\n\nimport { FunctionalTestCases } from './pages/FunctionalTestCases';\nimport { FunctionalTestCaseGenerator } from './pages/FunctionalTestCaseGenerator';\n\n// 在Routes中添加：\n<Route path=\\\"/functional-test-cases\\\" element={<FunctionalTestCases />} />\n<Route path=\\\"/functional-test-cases/generator\\\" element={<FunctionalTestCaseGenerator />} />",
+      "verificationCriteria": "1. Layout.tsx中导航菜单显示正确\n2. 原测试用例菜单改名为UI自动化测试用例\n3. 新增功能测试用例菜单项\n4. 点击功能测试用例菜单能跳转到列表页\n5. App.tsx中路由注册成功\n6. 访问/functional-test-cases和/functional-test-cases/generator路径都能正确渲染页面\n7. 没有React路由错误",
+      "analysisResult": "实现TestFlow系统的\"Axure原型自动生成功能测试用例\"功能（V2.0）。该功能通过AI技术将Axure导出的HTML原型文件自动转换为结构化的功能测试用例。核心特性：草稿箱+正式库分离、分批生成避免Token限制、增量修改、流式输出。技术栈：React 18 + TypeScript + Ant Design前端，Express + Prisma + MySQL后端，复用现有MCP客户端AI能力。"
+    }
+  ]
+}

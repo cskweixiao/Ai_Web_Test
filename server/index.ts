@@ -22,6 +22,9 @@ import { createAuthMiddleware } from './middleware/authMiddleware.js';
 import { createDashboardRoutes } from './routes/dashboard.js';
 // 🔥 新增：Reports测试报告路由
 import { createReportsRoutes } from './routes/reports.js';
+// 🔥 新增：功能测试用例相关路由
+import { createAxureRoutes } from './routes/axure.js';
+import { createFunctionalTestCaseRoutes } from './routes/functionalTestCase.js';
 // 🔥 新增：初始化功能开关和权限
 import { initializeAllFeatureFlags } from './middleware/featureFlag.js';
 import { PermissionService } from './middleware/auth.js';
@@ -192,7 +195,7 @@ const corsOptions = {
       callback(null, true);
     } else {
       // 🔥 增强的局域网IP检测，支持更多网段
-      const isLanAccess = /^https?:\/\/(192\.168\.\d{1,3}\.\d{1,3}|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}|localhost|127\.0\.0\.1):\d{4,5}$/.test(origin);
+      const isLanAccess = /^https?:\/\/(192\.168\.\d{1,3}\.\d{1,3}|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}|169\.254\.\d{1,3}\.\d{1,3}|localhost|127\.0\.0\.1):\d{4,5}$/.test(origin);
       if (isLanAccess) {
         console.log('✅ CORS允许 - 局域网访问:', origin);
         return callback(null, true);
@@ -497,6 +500,11 @@ async function startServer() {
     // 🔥 新增：Reports测试报告路由
     console.log('🔧 注册Reports测试报告路由...');
     app.use('/api/reports', authenticate, createReportsRoutes(prisma));
+
+    // 🔥 新增：功能测试用例相关路由
+    console.log('🔧 注册功能测试用例相关路由...');
+    app.use('/api/v1/axure', authenticate, createAxureRoutes());
+    app.use('/api/v1/functional-test-cases', authenticate, createFunctionalTestCaseRoutes());
 
     console.log('✅ API路由注册完成');
 

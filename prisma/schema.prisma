@@ -242,6 +242,9 @@ model users {
   bulk_edit_sessions  bulk_edit_sessions[]
   // 🔥 新增：测试用例执行记录关联
   test_case_executions test_case_executions[]
+  // 🔥 新增：功能测试用例关联
+  functional_test_cases    functional_test_cases[]
+  ai_generation_sessions   ai_generation_sessions[]
 }
 
 enum job_logs_status {
@@ -430,3 +433,76 @@ enum test_case_execution_status {
 
 // 🔥 更新 test_cases 表，添加执行记录关联
 // （注意：这个修改需要在上面的 test_cases model 中添加）
+
+// 🔥 新增：功能测试用例表（与UI自动化测试用例test_cases分离）
+model functional_test_cases {
+  id              Int                           @id @default(autoincrement())
+  name            String                        @db.VarChar(255)
+  description     String?                       @db.Text
+  steps           String                        @db.Text
+  assertions      String                        @db.Text
+  system          String?                       @db.VarChar(100)
+  module          String?                       @db.VarChar(100)
+  priority        functional_test_priority      @default(medium)
+  tags            String?                       @db.VarChar(500)
+  status          functional_test_status        @default(PUBLISHED)
+  source          functional_test_source        @default(MANUAL)
+  ai_session_id   String?                       @db.VarChar(100)
+  creator_id      Int
+  test_type       String?                       @db.VarChar(50)
+  preconditions   String?                       @db.Text
+  test_data       String?                       @db.Text
+  created_at      DateTime                      @default(now()) @db.Timestamp(0)
+  updated_at      DateTime                      @updatedAt @db.Timestamp(0)
+
+  users           users                         @relation(fields: [creator_id], references: [id], onDelete: Cascade)
+
+  @@index([system])
+  @@index([module])
+  @@index([creator_id])
+  @@index([ai_session_id])
+  @@index([source])
+}
+
+// AI生成会话表
+model ai_generation_sessions {
+  id                  String    @id @db.VarChar(100)
+  user_id             Int
+  axure_filename      String    @db.VarChar(255)
+  axure_file_size     Int
+  project_name        String?   @db.VarChar(255)
+  system_type         String?   @db.VarChar(50)
+  business_domain     String?   @db.VarChar(100)
+  requirement_doc     String?   @db.Text
+  page_count          Int       @default(0)
+  element_count       Int       @default(0)
+  interaction_count   Int       @default(0)
+  total_generated     Int       @default(0)
+  total_saved         Int       @default(0)
+  batches             Json?
+  created_at          DateTime  @default(now()) @db.Timestamp(0)
+
+  users               users     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@index([user_id])
+  @@index([created_at])
+}
+
+// 功能测试用例相关枚举类型
+enum functional_test_priority {
+  low
+  medium
+  high
+  critical
+}
+
+enum functional_test_status {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum functional_test_source {
+  MANUAL
+  AI_GENERATED
+}

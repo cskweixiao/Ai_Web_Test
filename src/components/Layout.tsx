@@ -13,6 +13,7 @@ import {
   LogOut,
   User,
   Users,
+  ClipboardList,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { clsx } from 'clsx';
@@ -36,11 +37,12 @@ interface NavigationItem {
 
 const navigationItems: NavigationItem[] = [
   { name: '仪表板', href: '/', icon: Home },
-  { name: '测试用例', href: '/test-cases', icon: FileCode },
+  { name: '功能用例', href: '/functional-test-cases', icon: ClipboardList },
+  { name: 'UI自动化', href: '/test-cases', icon: FileCode },
   { name: '测试执行', href: '/test-runs', icon: Play },
   { name: '测试报告', href: '/reports', icon: BarChart3 },
-  { name: '测试工厂', href: '/test-factory', icon: Factory },
-  { name: 'AI 助手', href: '/llm-assistant', icon: Bot },
+  // { name: '测试工厂', href: '/test-factory', icon: Factory },
+  // { name: 'AI 助手', href: '/llm-assistant', icon: Bot },
   { name: '用户管理', href: '/user-management', icon: Users },
   { name: '设置', href: '/settings', icon: Settings },
 ];
