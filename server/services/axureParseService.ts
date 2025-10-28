@@ -211,6 +211,30 @@ export class AxureParseService {
         const $elem = $(elem);
         const type = elem.tagName ? elem.tagName.toLowerCase() : 'unknown';
 
+        // 🔥 新增:跳过隐藏的元素及其子元素
+        const style = $elem.attr('style') || '';
+        const isElementHidden =
+          /display\s*:\s*none/i.test(style) ||
+          /visibility\s*:\s*hidden/i.test(style) ||
+          $elem.hasClass('ax_default_hidden') ||
+          $elem.attr('hidden') !== undefined;
+
+        // 检查父元素是否隐藏(向上查找最多5层)
+        const hasHiddenParent = $elem.parents().toArray().slice(0, 5).some(parent => {
+          const $parent = $(parent);
+          const parentStyle = $parent.attr('style') || '';
+          return (
+            /display\s*:\s*none/i.test(parentStyle) ||
+            /visibility\s*:\s*hidden/i.test(parentStyle) ||
+            $parent.hasClass('ax_default_hidden')
+          );
+        });
+
+        if (isElementHidden || hasHiddenParent) {
+          // 跳过隐藏的元素(不输出日志以减少噪音)
+          return;
+        }
+
         // 获取基本属性
         let text = $elem.text().trim();
         let name = $elem.attr('name') || $elem.attr('data-name') || $elem.attr('data-label');
@@ -253,6 +277,17 @@ export class AxureParseService {
     $(pageElem).find('div').each((i, elem) => {
       const $elem = $(elem);
       const text = $elem.text().trim();
+
+      // 🔥 跳过隐藏的div
+      const style = $elem.attr('style') || '';
+      const isHidden =
+        /display\s*:\s*none/i.test(style) ||
+        /visibility\s*:\s*hidden/i.test(style) ||
+        $elem.hasClass('ax_default_hidden');
+
+      if (isHidden) {
+        return; // 跳过隐藏的业务规则说明
+      }
 
       // 只提取长文本且包含业务规则关键词的div
       if (text.length > 50 &&
