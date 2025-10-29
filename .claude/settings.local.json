@@ -81,7 +81,8 @@
       "Read(//c/Users/谭恒/**)",
       "Bash(Select-String -Pattern \"查询条件|Query|渠道集采|订单处理\" -Context 2)",
       "Bash(set LOG_FULL_PROMPT=true)",
-      "Bash(Select-Object -First 200)"
+      "Bash(Select-Object -First 200)",
+      "Bash(git commit:*)"
     ],
     "deny": []
   },

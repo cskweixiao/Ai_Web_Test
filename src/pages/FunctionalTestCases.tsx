@@ -348,7 +348,7 @@ export function FunctionalTestCases() {
               <thead className="bg-gray-50">
                 <tr>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    用例ID
+                    序号
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     测试点名称
@@ -391,6 +391,9 @@ export function FunctionalTestCases() {
                     // 判断是否是同一用例的第一行
                     const isFirstRow = idx === 0 || testCases[idx - 1].id !== row.id;
 
+                    // 计算前端序号：从当前页的起始位置开始
+                    const rowNumber = (pagination.page - 1) * pagination.pageSize + idx + 1;
+
                     return (
                       <motion.tr
                         key={`${row.id}-${row.test_point_index}-${idx}`}
@@ -402,9 +405,9 @@ export function FunctionalTestCases() {
                           isFirstRow && idx !== 0 && 'border-t-2 border-gray-300'
                         )}
                       >
-                        {/* 用例ID */}
+                        {/* 前端序号 */}
                         <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">
-                          {isFirstRow && `#${row.id}`}
+                          {rowNumber}
                         </td>
 
                         {/* 测试点名称 */}

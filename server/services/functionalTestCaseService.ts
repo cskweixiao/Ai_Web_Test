@@ -119,6 +119,7 @@ export class FunctionalTestCaseService {
   /**
    * 获取功能测试用例平铺列表（以测试点为维度展示）
    * 每个测试点占据一行，一个测试用例如果有12个测试点就会展示12行
+   * 新版：直接从 functional_test_points 表查询
    */
   async getFlatList(params: ListParams) {
     const {
@@ -135,110 +136,102 @@ export class FunctionalTestCaseService {
       isSuperAdmin
     } = params;
 
-    // 构建查询条件（与 getList 相同）
-    const where: any = {};
+    // 构建测试用例查询条件
+    const caseWhere: any = {};
 
     if (search) {
-      where.OR = [
+      caseWhere.OR = [
         { name: { contains: search } },
         { description: { contains: search } }
       ];
     }
 
-    if (system) where.system = system;
-    if (module) where.module = module;
-    if (priority) where.priority = priority;
-    if (status) where.status = status;
-    if (source) where.source = source;
+    if (system) caseWhere.system = system;
+    if (module) caseWhere.module = module;
+    if (priority) caseWhere.priority = priority;
+    if (status) caseWhere.status = status;
+    if (source) caseWhere.source = source;
 
     if (tag) {
-      where.tags = { contains: tag };
+      caseWhere.tags = { contains: tag };
     }
 
     // 数据隔离
     if (!isSuperAdmin && userDepartment) {
-      where.users = { department: userDepartment };
+      caseWhere.users = { department: userDepartment };
     }
 
     try {
-      console.log('📊 平铺查询条件:', JSON.stringify(where, null, 2));
+      console.log('📊 平铺查询条件:', JSON.stringify(caseWhere, null, 2));
 
-      // 查询所有匹配的测试用例（不分页，因为需要先展开测试点）
-      const testCases = await this.prisma.functional_test_cases.findMany({
-        where,
-        orderBy: { created_at: 'desc' },
+      // 方式1：直接查询测试点表，JOIN 测试用例表（更高效）
+      // 查询所有测试点，带上测试用例信息
+      const testPoints = await this.prisma.functional_test_points.findMany({
+        where: {
+          functional_test_case: caseWhere
+        },
+        orderBy: [
+          { functional_test_case: { created_at: 'desc' } },
+          { test_point_index: 'asc' }
+        ],
         include: {
-          users: {
-            select: {
-              username: true,
-              department: true,
-              account_name: true
+          functional_test_case: {
+            include: {
+              users: {
+                select: {
+                  username: true,
+                  department: true,
+                  account_name: true
+                }
+              }
             }
           }
         }
       });
 
-      // 平铺：将每个测试用例的测试点展开为独立行
-      const flatRows: any[] = [];
+      // 转换为平铺行格式
+      const flatRows = testPoints.map(point => {
+        const testCase = point.functional_test_case;
+        return {
+          // 测试点ID（用于唯一标识）
+          test_point_id: point.id,
 
-      for (const testCase of testCases) {
-        const testPoints = (testCase.test_points as any[]) || [];
+          // 测试用例信息
+          id: testCase.id,
+          name: testCase.name,
+          description: testCase.description,
+          system: testCase.system,
+          module: testCase.module,
+          priority: testCase.priority,
+          status: testCase.status,
+          section_id: testCase.section_id,
+          section_name: testCase.section_name,
+          tags: testCase.tags,
+          created_at: testCase.created_at,
+          users: testCase.users,
 
-        if (testPoints.length === 0) {
-          // 没有测试点的用例，显示一行，测试点信息为空
-          flatRows.push({
-            id: testCase.id,
-            name: testCase.name,
-            description: testCase.description,
-            system: testCase.system,
-            module: testCase.module,
-            priority: testCase.priority,
-            status: testCase.status,
-            section_id: testCase.section_id,
-            section_name: testCase.section_name,
-            tags: testCase.tags,
-            created_at: testCase.created_at,
-            users: testCase.users,
+          // 测试点信息
+          test_point_index: point.test_point_index,
+          test_point_name: point.test_point_name,
+          test_point_steps: point.steps,
+          test_point_expected_result: point.expected_result,
+          test_point_risk_level: point.risk_level,
 
-            // 测试点信息（空）
-            test_point_index: 0,
-            test_point_name: null,
-            test_point_steps: null,
-            test_point_expected_result: null,
-            test_point_risk_level: null,
-            total_test_points: 0
-          });
-        } else {
-          // 有测试点的用例，每个测试点一行
-          testPoints.forEach((point: any, index: number) => {
-            flatRows.push({
-              id: testCase.id,
-              name: testCase.name,
-              description: testCase.description,
-              system: testCase.system,
-              module: testCase.module,
-              priority: testCase.priority,
-              status: testCase.status,
-              section_id: testCase.section_id,
-              section_name: testCase.section_name,
-              tags: testCase.tags,
-              created_at: testCase.created_at,
-              users: testCase.users,
+          // 总测试点数（需要额外计算，这里先设为0，后续补充）
+          total_test_points: 0
+        };
+      });
 
-              // 测试点信息
-              test_point_index: index + 1,
-              test_point_name: point.testPoint || '',
-              test_point_steps: point.steps || '',
-              test_point_expected_result: point.expectedResult || '',
-              test_point_risk_level: point.riskLevel || 'medium',
-              total_test_points: testPoints.length,
+      // 计算每个测试用例的总测试点数
+      const casePointCounts = new Map<number, number>();
+      flatRows.forEach(row => {
+        casePointCounts.set(row.id, (casePointCounts.get(row.id) || 0) + 1);
+      });
 
-              // 保存完整的 test_points 数组，用于编辑
-              test_points: testCase.test_points
-            });
-          });
-        }
-      }
+      // 填充总测试点数
+      flatRows.forEach(row => {
+        row.total_test_points = casePointCounts.get(row.id) || 0;
+      });
 
       // 对平铺后的数据进行分页
       const total = flatRows.length;
@@ -246,7 +239,7 @@ export class FunctionalTestCaseService {
       const endIndex = startIndex + pageSize;
       const paginatedRows = flatRows.slice(startIndex, endIndex);
 
-      console.log(`✅ 平铺查询结果: ${testCases.length} 个用例展开为 ${total} 行数据，返回第 ${page} 页 ${paginatedRows.length} 行`);
+      console.log(`✅ 平铺查询结果: 找到 ${total} 条测试点记录，返回第 ${page} 页 ${paginatedRows.length} 行`);
 
       return {
         data: paginatedRows,
@@ -254,7 +247,8 @@ export class FunctionalTestCaseService {
         pagination: {
           page,
           pageSize,
-          totalPages: Math.ceil(total / pageSize)
+          totalPages: Math.ceil(total / pageSize),
+          total
         }
       };
     } catch (error: any) {
@@ -264,7 +258,7 @@ export class FunctionalTestCaseService {
   }
 
   /**
-   * 批量保存测试用例
+   * 批量保存测试用例（新版：测试点独立存储）
    */
   async batchSave(params: BatchSaveParams) {
     const { testCases, aiSessionId, userId } = params;
@@ -276,17 +270,16 @@ export class FunctionalTestCaseService {
     try {
       // 使用事务确保数据一致性
       const result = await this.prisma.$transaction(async (tx) => {
-        // 批量插入测试用例
-        const savedCases = await tx.functional_test_cases.createMany({
-          data: testCases.map(tc => {
-            // 统计测试点数量
-            const testPointsCount = tc.testPoints ? tc.testPoints.length : 0;
+        let savedCount = 0;
+        let totalTestPoints = 0;
 
-            return {
+        // 逐个保存测试用例及其测试点
+        for (const tc of testCases) {
+          // 1. 保存测试用例主体
+          const savedCase = await tx.functional_test_cases.create({
+            data: {
               name: tc.name,
               description: tc.testPurpose || tc.description || '',
-              steps: tc.steps || '',
-              assertions: tc.assertions || '',
               system: tc.system,
               module: tc.module,
               priority: tc.priority || 'medium',
@@ -298,28 +291,47 @@ export class FunctionalTestCaseService {
               test_type: tc.testType,
               preconditions: tc.preconditions,
               test_data: tc.testData,
-              // 新增字段
-              test_points: tc.testPoints ? tc.testPoints : null,
-              test_points_count: testPointsCount,
               section_id: tc.sectionId,
               section_name: tc.sectionName,
               batch_number: tc.batchNumber || 0,
               coverage_areas: tc.coverageAreas
-            };
-          }),
-          skipDuplicates: true
-        });
+            }
+          });
 
-        // 更新会话统计
+          savedCount++;
+
+          // 2. 保存该用例的所有测试点
+          if (tc.testPoints && Array.isArray(tc.testPoints) && tc.testPoints.length > 0) {
+            for (let i = 0; i < tc.testPoints.length; i++) {
+              const point = tc.testPoints[i];
+              await tx.functional_test_points.create({
+                data: {
+                  test_case_id: savedCase.id,
+                  test_point_index: i + 1,
+                  test_point_name: point.testPoint || '',
+                  steps: point.steps || '',
+                  expected_result: point.expectedResult || '',
+                  risk_level: point.riskLevel || 'medium'
+                }
+              });
+              totalTestPoints++;
+            }
+            console.log(`  ✓ 用例 "${tc.name}" 已保存，包含 ${tc.testPoints.length} 个测试点`);
+          } else {
+            console.log(`  ✓ 用例 "${tc.name}" 已保存（无测试点）`);
+          }
+        }
+
+        // 3. 更新会话统计
         await tx.ai_generation_sessions.update({
           where: { id: aiSessionId },
-          data: { total_saved: savedCases.count }
+          data: { total_saved: savedCount }
         });
 
-        return savedCases;
+        console.log(`✅ 成功保存 ${savedCount} 个测试用例，${totalTestPoints} 个测试点`);
+        return { count: savedCount, testPointsCount: totalTestPoints };
       });
 
-      console.log(`✅ 成功保存 ${result.count} 个功能测试用例`);
       return result;
     } catch (error: any) {
       console.error('❌ 批量保存失败:', error);

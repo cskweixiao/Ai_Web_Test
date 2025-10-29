@@ -439,8 +439,6 @@ model functional_test_cases {
   id                Int                           @id @default(autoincrement())
   name              String                        @db.VarChar(255)
   description       String?                       @db.Text
-  steps             String                        @db.Text
-  assertions        String                        @db.Text
   system            String?                       @db.VarChar(100)
   module            String?                       @db.VarChar(100)
   priority          functional_test_priority      @default(medium)
@@ -452,10 +450,6 @@ model functional_test_cases {
   test_type         String?                       @db.VarChar(50)
   preconditions     String?                       @db.Text
   test_data         String?                       @db.Text
-
-  // 新增字段：测试点相关
-  test_points       Json?                         @db.Json
-  test_points_count Int                           @default(0)
 
   // 新增字段：章节信息（用于分批追踪）
   section_id        String?                       @db.VarChar(50)
@@ -469,6 +463,7 @@ model functional_test_cases {
   updated_at        DateTime                      @updatedAt @db.Timestamp(0)
 
   users             users                         @relation(fields: [creator_id], references: [id], onDelete: Cascade)
+  test_points       functional_test_points[]      // 关联测试点表
 
   @@index([system])
   @@index([module])
@@ -477,6 +472,33 @@ model functional_test_cases {
   @@index([source])
   @@index([section_id])
   @@index([batch_number])
+}
+
+// 🔥 新增：功能测试点表（独立存储每个测试点）
+model functional_test_points {
+  id                  Int                      @id @default(autoincrement())
+  test_case_id        Int                      // 关联的测试用例ID
+  test_point_index    Int                      // 测试点序号(1,2,3...)
+  test_point_name     String                   @db.VarChar(500) // 测试点名称
+  steps               String                   @db.Text // 测试步骤
+  expected_result     String                   @db.Text // 预期结果
+  risk_level          test_point_risk_level    @default(medium) // 风险级别
+  created_at          DateTime                 @default(now()) @db.Timestamp(0)
+  updated_at          DateTime                 @updatedAt @db.Timestamp(0)
+
+  // 关联关系
+  functional_test_case functional_test_cases  @relation(fields: [test_case_id], references: [id], onDelete: Cascade)
+
+  @@index([test_case_id])
+  @@index([test_point_index])
+  @@unique([test_case_id, test_point_index]) // 同一用例下测试点序号唯一
+}
+
+// 测试点风险级别枚举
+enum test_point_risk_level {
+  low
+  medium
+  high
 }
 
 // AI生成会话表
