@@ -7,21 +7,18 @@ import {
   Bot,
   Edit3,
   Trash2,
-  Tag as TagIcon,
   Clock,
   User,
-  ChevronDown,
-  ChevronRight,
-  ArrowUpDown,
-  ArrowUp,
-  ArrowDown,
   Filter,
-  X
+  X,
+  List as ListIcon,
+  Target
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { functionalTestCaseService } from '../services/functionalTestCaseService';
 import { showToast } from '../utils/toast';
 import { useAuth } from '../contexts/AuthContext';
+import { TestCaseDetailModal } from '../components/ai-generator/TestCaseDetailModal';
 
 /**
  * 功能测试用例列表页面
@@ -32,10 +29,9 @@ export function FunctionalTestCases() {
 
   const [testCases, setTestCases] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
-  const [expandedRows, setExpandedRows] = useState<Set<number>>(new Set());
   const [pagination, setPagination] = useState({
     page: 1,
-    pageSize: 10,
+    pageSize: 20,
     total: 0,
     totalPages: 0
   });
@@ -50,17 +46,15 @@ export function FunctionalTestCases() {
   });
   const [showFilters, setShowFilters] = useState(false);
 
-  // 排序状态
-  type SortField = 'id' | 'name' | 'priority' | 'status' | 'created_at' | 'updated_at';
-  type SortDirection = 'asc' | 'desc';
-  const [sortField, setSortField] = useState<SortField>('created_at');
-  const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
+  // 详情弹窗状态
+  const [detailModalOpen, setDetailModalOpen] = useState(false);
+  const [currentDetailCase, setCurrentDetailCase] = useState<any>(null);
 
-  // 加载数据
+  // 加载数据（使用平铺列表API）
   const loadData = async () => {
     setLoading(true);
     try {
-      const result = await functionalTestCaseService.getList({
+      const result = await functionalTestCaseService.getFlatList({
         page: pagination.page,
         pageSize: pagination.pageSize,
         ...filters
@@ -83,6 +77,42 @@ export function FunctionalTestCases() {
     loadData();
   }, [pagination.page, pagination.pageSize, filters]);
 
+  // 查看详情
+  const handleViewDetail = (testCase: any) => {
+    setCurrentDetailCase(testCase);
+    setDetailModalOpen(true);
+  };
+
+  // 保存详情修改
+  const handleSaveDetail = async (updatedTestCase: any) => {
+    try {
+      await functionalTestCaseService.update(updatedTestCase.id, {
+        name: updatedTestCase.name,
+        description: updatedTestCase.description,
+        testPoints: updatedTestCase.testPoints,
+        system: updatedTestCase.system,
+        module: updatedTestCase.module,
+        priority: updatedTestCase.priority,
+        tags: updatedTestCase.tags,
+        sectionId: updatedTestCase.sectionId,
+        sectionName: updatedTestCase.sectionName
+      });
+      showToast.success('测试用例已更新');
+      setDetailModalOpen(false);
+      loadData(); // 重新加载列表
+    } catch (error: any) {
+      showToast.error('保存失败：' + error.message);
+    }
+  };
+
+  // 编辑用例
+  const handleEdit = (id: number) => {
+    const testCase = testCases.find(tc => tc.id === id);
+    if (testCase) {
+      handleViewDetail(testCase);
+    }
+  };
+
   // 删除用例
   const handleDelete = async (id: number, name: string) => {
     if (!window.confirm(`确定要删除测试用例"${name}"吗？`)) {
@@ -98,76 +128,15 @@ export function FunctionalTestCases() {
     }
   };
 
-  // 排序处理
-  const handleSort = (field: SortField) => {
-    if (sortField === field) {
-      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
-    } else {
-      setSortField(field);
-      setSortDirection('asc');
-    }
-  };
-
-  const sortedTestCases = [...testCases].sort((a, b) => {
-    let aValue: any = a[sortField];
-    let bValue: any = b[sortField];
-
-    if (aValue === undefined) aValue = '';
-    if (bValue === undefined) bValue = '';
-
-    if (sortField === 'priority') {
-      const priorityOrder = { critical: 4, high: 3, medium: 2, low: 1 };
-      aValue = priorityOrder[aValue as keyof typeof priorityOrder] || 2;
-      bValue = priorityOrder[bValue as keyof typeof priorityOrder] || 2;
-      return sortDirection === 'asc' ? aValue - bValue : bValue - aValue;
-    }
-
-    if (sortField === 'created_at' || sortField === 'updated_at') {
-      const aDate = aValue ? new Date(aValue).getTime() : 0;
-      const bDate = bValue ? new Date(bValue).getTime() : 0;
-      return sortDirection === 'asc' ? aDate - bDate : bDate - aDate;
-    }
-
-    if (sortField === 'status') {
-      const statusOrder = { PUBLISHED: 3, DRAFT: 2, ARCHIVED: 1 };
-      aValue = statusOrder[aValue as keyof typeof statusOrder] || 2;
-      bValue = statusOrder[bValue as keyof typeof statusOrder] || 2;
-      return sortDirection === 'asc' ? aValue - bValue : bValue - aValue;
-    }
-
-    const comparison = String(aValue).localeCompare(String(bValue));
-    return sortDirection === 'asc' ? comparison : -comparison;
-  });
-
-  // 展开/收起行
-  const toggleRowExpansion = (id: number) => {
-    setExpandedRows(prev => {
-      const newExpanded = new Set(prev);
-      if (newExpanded.has(id)) {
-        newExpanded.delete(id);
-      } else {
-        newExpanded.add(id);
-      }
-      return newExpanded;
+  // 格式化日期
+  const formatDate = (date: string) => {
+    return new Date(date).toLocaleString('zh-CN', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
     });
-  };
-
-  // 优先级颜色
-  const getPriorityColor = (priority: string) => {
-    switch (priority) {
-      case 'critical': return 'bg-red-100 text-red-800 border-red-200';
-      case 'high': return 'bg-orange-100 text-orange-800 border-orange-200';
-      case 'medium': return 'bg-blue-100 text-blue-800 border-blue-200';
-      case 'low': return 'bg-gray-100 text-gray-800 border-gray-200';
-      default: return 'bg-gray-100 text-gray-800 border-gray-200';
-    }
-  };
-
-  // 来源颜色
-  const getSourceColor = (source: string) => {
-    return source === 'AI_GENERATED'
-      ? 'bg-cyan-100 text-cyan-800 border-cyan-200'
-      : 'bg-purple-100 text-purple-800 border-purple-200';
   };
 
   // 状态颜色
@@ -190,23 +159,26 @@ export function FunctionalTestCases() {
     }
   };
 
-  const SortIcon = ({ field }: { field: SortField }) => {
-    if (sortField !== field) {
-      return <ArrowUpDown className="h-4 w-4 text-gray-400" />;
+  // 优先级颜色
+  const getPriorityColor = (priority: string) => {
+    switch (priority) {
+      case 'critical': return 'bg-red-100 text-red-800 border-red-200';
+      case 'high': return 'bg-orange-100 text-orange-800 border-orange-200';
+      case 'medium': return 'bg-blue-100 text-blue-800 border-blue-200';
+      case 'low': return 'bg-gray-100 text-gray-800 border-gray-200';
+      default: return 'bg-gray-100 text-gray-800 border-gray-200';
     }
-    return sortDirection === 'asc'
-      ? <ArrowUp className="h-4 w-4 text-blue-600" />
-      : <ArrowDown className="h-4 w-4 text-blue-600" />;
   };
 
-  const formatDate = (date: string) => {
-    return new Date(date).toLocaleString('zh-CN', {
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
+  // 优先级文本
+  const getPriorityText = (priority: string) => {
+    switch (priority) {
+      case 'critical': return '紧急';
+      case 'high': return '高';
+      case 'medium': return '中';
+      case 'low': return '低';
+      default: return priority;
+    }
   };
 
   return (
@@ -375,269 +347,181 @@ export function FunctionalTestCases() {
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
                 <tr>
-                  <th className="w-12 px-4 py-3"></th>
-                  <th
-                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
-                    onClick={() => handleSort('id')}
-                  >
-                    <div className="flex items-center space-x-2">
-                      <span>ID</span>
-                      <SortIcon field="id" />
-                    </div>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    用例ID
                   </th>
-                  <th
-                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
-                    onClick={() => handleSort('name')}
-                  >
-                    <div className="flex items-center space-x-2">
-                      <span>用例名称</span>
-                      <SortIcon field="name" />
-                    </div>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    测试点名称
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    系统/模块
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    系统
                   </th>
-                  <th
-                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
-                    onClick={() => handleSort('priority')}
-                  >
-                    <div className="flex items-center space-x-2">
-                      <span>优先级</span>
-                      <SortIcon field="priority" />
-                    </div>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    模块
                   </th>
-                  <th
-                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
-                    onClick={() => handleSort('status')}
-                  >
-                    <div className="flex items-center space-x-2">
-                      <span>状态</span>
-                      <SortIcon field="status" />
-                    </div>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    测试点序号
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    来源
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider max-w-xs">
+                    测试步骤
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    标签
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider max-w-xs">
+                    预期结果
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    风险级别
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    优先级
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     创建者
                   </th>
-                  <th
-                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
-                    onClick={() => handleSort('created_at')}
-                  >
-                    <div className="flex items-center space-x-2">
-                      <span>创建时间</span>
-                      <SortIcon field="created_at" />
-                    </div>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    创建时间
                   </th>
-                  <th
-                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
-                    onClick={() => handleSort('updated_at')}
-                  >
-                    <div className="flex items-center space-x-2">
-                      <span>更新时间</span>
-                      <SortIcon field="updated_at" />
-                    </div>
-                  </th>
-                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                     操作
                   </th>
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
                 <AnimatePresence>
-                  {sortedTestCases.map((testCase) => (
-                    <React.Fragment key={testCase.id}>
+                  {testCases.map((row, idx) => {
+                    // 判断是否是同一用例的第一行
+                    const isFirstRow = idx === 0 || testCases[idx - 1].id !== row.id;
+
+                    return (
                       <motion.tr
+                        key={`${row.id}-${row.test_point_index}-${idx}`}
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
                         exit={{ opacity: 0 }}
-                        className="hover:bg-gray-50 transition-colors"
+                        className={clsx(
+                          'hover:bg-blue-50 transition-colors',
+                          isFirstRow && idx !== 0 && 'border-t-2 border-gray-300'
+                        )}
                       >
-                        <td className="px-4 py-4">
-                          <button
-                            onClick={() => toggleRowExpansion(testCase.id)}
-                            className="text-gray-400 hover:text-gray-600"
-                          >
-                            {expandedRows.has(testCase.id) ? (
-                              <ChevronDown className="h-5 w-5" />
-                            ) : (
-                              <ChevronRight className="h-5 w-5" />
-                            )}
-                          </button>
+                        {/* 用例ID */}
+                        <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">
+                          {isFirstRow && `#${row.id}`}
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                          #{testCase.id}
+
+                        {/* 测试点名称 */}
+                        <td className="px-4 py-3 text-sm text-gray-900 max-w-xs">
+                          <div className="line-clamp-2 font-medium">{row.test_point_name || '-'}</div>
                         </td>
-                        <td className="px-6 py-4 text-sm text-gray-900">
-                          <div className="font-medium">{testCase.name}</div>
+
+                        {/* 系统 */}
+                        <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
+                          {isFirstRow && (row.system || '-')}
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                          <div>{testCase.system || '-'}</div>
-                          <div className="text-xs text-gray-400">{testCase.module || '-'}</div>
+
+                        {/* 模块 */}
+                        <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
+                          {isFirstRow && (row.module || '-')}
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <span className={clsx(
-                            'inline-flex px-2 py-1 text-xs font-medium rounded-md border',
-                            getPriorityColor(testCase.priority)
-                          )}>
-                            {testCase.priority}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <span className={clsx(
-                            'inline-flex px-2 py-1 text-xs font-medium rounded-md border',
-                            getStatusColor(testCase.status)
-                          )}>
-                            {getStatusText(testCase.status)}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <span className={clsx(
-                            'inline-flex px-2 py-1 text-xs font-medium rounded-md border',
-                            getSourceColor(testCase.source)
-                          )}>
-                            {testCase.source === 'AI_GENERATED' ? 'AI生成' : '手动创建'}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                          {testCase.tags ? (
-                            <div className="flex flex-wrap gap-1 max-w-[150px]">
-                              {testCase.tags.split(',').slice(0, 2).map((tag: string, idx: number) => (
-                                <span
-                                  key={idx}
-                                  className="inline-flex items-center px-2 py-0.5 text-xs font-medium
-                                           bg-blue-100 text-blue-800 rounded"
-                                >
-                                  {tag.trim()}
-                                </span>
-                              ))}
-                              {testCase.tags.split(',').length > 2 && (
-                                <span className="text-xs text-gray-400">+{testCase.tags.split(',').length - 2}</span>
-                              )}
-                            </div>
-                          ) : (
-                            <span className="text-gray-400">-</span>
+
+                        {/* 测试点序号 */}
+                        <td className="px-4 py-3 whitespace-nowrap text-sm text-center">
+                          {row.test_point_index > 0 && (
+                            <span className="inline-flex items-center px-2 py-1 bg-purple-100 text-purple-700
+                                           rounded-full text-xs font-medium">
+                              {row.test_point_index}/{row.total_test_points}
+                            </span>
                           )}
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                          <div className="flex items-center">
-                            <User className="h-4 w-4 mr-1 text-gray-400" />
-                            {testCase.users?.username || '-'}
+
+                        {/* 测试步骤 */}
+                        <td className="px-4 py-3 text-sm text-gray-600 max-w-xs">
+                          <div className="line-clamp-3 whitespace-pre-wrap">
+                            {row.test_point_steps || '-'}
                           </div>
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                          <div className="flex items-center">
-                            <Clock className="h-4 w-4 mr-1 text-gray-400" />
-                            {formatDate(testCase.created_at)}
+
+                        {/* 预期结果 */}
+                        <td className="px-4 py-3 text-sm text-gray-600 max-w-xs">
+                          <div className="line-clamp-3 whitespace-pre-wrap">
+                            {row.test_point_expected_result || '-'}
                           </div>
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                          <div className="flex items-center">
-                            <Clock className="h-4 w-4 mr-1 text-gray-400" />
-                            {formatDate(testCase.updated_at)}
-                          </div>
+
+                        {/* 风险级别 */}
+                        <td className="px-4 py-3 whitespace-nowrap">
+                          {row.test_point_risk_level && (
+                            <span className={clsx(
+                              'inline-flex px-2 py-1 text-xs font-medium rounded-md border',
+                              row.test_point_risk_level === 'high' && 'bg-red-100 text-red-800 border-red-200',
+                              row.test_point_risk_level === 'medium' && 'bg-orange-100 text-orange-800 border-orange-200',
+                              row.test_point_risk_level === 'low' && 'bg-green-100 text-green-800 border-green-200'
+                            )}>
+                              {row.test_point_risk_level === 'high' ? '高' :
+                               row.test_point_risk_level === 'medium' ? '中' : '低'}
+                            </span>
+                          )}
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+
+                        {/* 优先级 */}
+                        <td className="px-4 py-3 whitespace-nowrap">
+                          {isFirstRow && (
+                            <span className={clsx(
+                              'inline-flex px-2 py-1 text-xs font-medium rounded-md border',
+                              getPriorityColor(row.priority)
+                            )}>
+                              {getPriorityText(row.priority)}
+                            </span>
+                          )}
+                        </td>
+
+                        {/* 创建者 */}
+                        <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
+                          {isFirstRow && (
+                            <div className="flex items-center">
+                              <User className="h-4 w-4 mr-1 text-gray-400" />
+                              {row.users?.username || '-'}
+                            </div>
+                          )}
+                        </td>
+
+                        {/* 创建时间 */}
+                        <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
+                          {isFirstRow && (
+                            <div className="flex items-center">
+                              <Clock className="h-4 w-4 mr-1 text-gray-400" />
+                              {formatDate(row.created_at)}
+                            </div>
+                          )}
+                        </td>
+
+                        {/* 操作 */}
+                        <td className="px-4 py-3 whitespace-nowrap text-right text-sm font-medium">
                           <div className="flex items-center justify-end space-x-2">
                             <button
-                              onClick={() => showToast.info('查看详情功能待实现')}
+                              onClick={() => handleViewDetail({
+                                ...row,
+                                testPoints: row.test_points,
+                                sectionId: row.section_id,
+                                sectionName: row.section_name
+                              })}
                               className="text-blue-600 hover:text-blue-900"
-                            >
-                              查看
-                            </button>
-                            <button
-                              onClick={() => showToast.info('编辑功能待实现')}
-                              className="text-gray-600 hover:text-gray-900"
+                              title="查看/编辑"
                             >
                               <Edit3 className="h-4 w-4" />
                             </button>
-                            <button
-                              onClick={() => handleDelete(testCase.id, testCase.name)}
-                              className="text-red-600 hover:text-red-900"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </button>
+                            {isFirstRow && (
+                              <button
+                                onClick={() => handleDelete(row.id, row.name)}
+                                className="text-red-600 hover:text-red-900"
+                                title="删除用例"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </button>
+                            )}
                           </div>
                         </td>
                       </motion.tr>
-
-                      {/* 展开的详情行 */}
-                      <AnimatePresence>
-                        {expandedRows.has(testCase.id) && (
-                          <motion.tr
-                            initial={{ opacity: 0, height: 0 }}
-                            animate={{ opacity: 1, height: 'auto' }}
-                            exit={{ opacity: 0, height: 0 }}
-                            className="bg-gray-50"
-                          >
-                            <td colSpan={11} className="px-6 py-4">
-                              <div className="space-y-3">
-                                {testCase.description && (
-                                  <div>
-                                    <h4 className="text-sm font-medium text-gray-700 mb-1">描述</h4>
-                                    <p className="text-sm text-gray-600">{testCase.description}</p>
-                                  </div>
-                                )}
-                                {testCase.preconditions && (
-                                  <div>
-                                    <h4 className="text-sm font-medium text-gray-700 mb-1">前置条件</h4>
-                                    <div className="text-sm text-gray-600 whitespace-pre-wrap bg-white p-3 rounded border border-gray-200">
-                                      {testCase.preconditions}
-                                    </div>
-                                  </div>
-                                )}
-                                {testCase.steps && (
-                                  <div>
-                                    <h4 className="text-sm font-medium text-gray-700 mb-1">测试步骤</h4>
-                                    <div className="text-sm text-gray-600 whitespace-pre-wrap bg-white p-3 rounded border border-gray-200">
-                                      {testCase.steps}
-                                    </div>
-                                  </div>
-                                )}
-                                {testCase.assertions && (
-                                  <div>
-                                    <h4 className="text-sm font-medium text-gray-700 mb-1">断言/预期结果</h4>
-                                    <div className="text-sm text-gray-600 whitespace-pre-wrap bg-white p-3 rounded border border-gray-200">
-                                      {testCase.assertions}
-                                    </div>
-                                  </div>
-                                )}
-                                {testCase.test_data && (
-                                  <div>
-                                    <h4 className="text-sm font-medium text-gray-700 mb-1">测试数据</h4>
-                                    <div className="text-sm text-gray-600 whitespace-pre-wrap bg-white p-3 rounded border border-gray-200">
-                                      {testCase.test_data}
-                                    </div>
-                                  </div>
-                                )}
-                                {testCase.tags && testCase.tags.length > 0 && (
-                                  <div>
-                                    <h4 className="text-sm font-medium text-gray-700 mb-1">标签</h4>
-                                    <div className="flex flex-wrap gap-2">
-                                      {testCase.tags.map((tag: string, idx: number) => (
-                                        <span
-                                          key={idx}
-                                          className="inline-flex items-center px-2 py-1 text-xs font-medium
-                                                   bg-blue-100 text-blue-800 rounded-md"
-                                        >
-                                          <TagIcon className="h-3 w-3 mr-1" />
-                                          {tag}
-                                        </span>
-                                      ))}
-                                    </div>
-                                  </div>
-                                )}
-                              </div>
-                            </td>
-                          </motion.tr>
-                        )}
-                      </AnimatePresence>
-                    </React.Fragment>
-                  ))}
+                    );
+                  })}
                 </AnimatePresence>
               </tbody>
             </table>
@@ -717,6 +601,14 @@ export function FunctionalTestCases() {
           </div>
         </div>
       )}
+
+      {/* 测试用例详情弹窗 */}
+      <TestCaseDetailModal
+        isOpen={detailModalOpen}
+        onClose={() => setDetailModalOpen(false)}
+        testCase={currentDetailCase}
+        onSave={handleSaveDetail}
+      />
     </div>
   );
 }

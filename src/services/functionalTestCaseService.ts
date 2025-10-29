@@ -86,6 +86,19 @@ class FunctionalTestCaseService {
   }
 
   /**
+   * 获取功能测试用例平铺列表（以测试点为维度展示）
+   */
+  async getFlatList(params: ListParams) {
+    const queryString = new URLSearchParams(params as any).toString();
+    const response = await fetch(`${API_BASE_URL}/functional-test-cases/flat?${queryString}`, {
+      method: 'GET',
+      headers: getAuthHeaders()
+    });
+
+    return handleResponse(response);
+  }
+
+  /**
    * 批量保存测试用例
    */
   async batchSave(testCases: any[], aiSessionId: string) {

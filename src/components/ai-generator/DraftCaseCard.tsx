@@ -13,6 +13,13 @@ interface DraftCaseCardProps {
   stepsCount?: number;
   selected: boolean;
   onToggleSelect: (id: string) => void;
+  // 新增字段
+  sectionId?: string;
+  sectionName?: string;
+  testPointsCount?: number;
+  testPurpose?: string;
+  testCase?: any;  // 完整的测试用例数据
+  onViewDetail?: (testCase: any) => void;  // 点击查看详情
 }
 
 const priorityMap = {
@@ -40,7 +47,13 @@ export function DraftCaseCard({
   batchNumber,
   stepsCount = 0,
   selected,
-  onToggleSelect
+  onToggleSelect,
+  sectionId,
+  sectionName,
+  testPointsCount,
+  testPurpose,
+  testCase,
+  onViewDetail
 }: DraftCaseCardProps) {
   return (
     <motion.div
@@ -53,12 +66,18 @@ export function DraftCaseCard({
           ? "border-purple-500 shadow-lg ring-4 ring-purple-500/20"
           : "border-gray-200 hover:border-purple-300"
       )}
-      onClick={() => onToggleSelect(id)}
+      onClick={() => onViewDetail?.(testCase)}
       whileHover={{ y: -4 }}
       whileTap={{ scale: 0.98 }}
     >
       {/* 选中指示器 */}
-      <div className="absolute top-3 right-3">
+      <div
+        className="absolute top-3 right-3 z-10"
+        onClick={(e) => {
+          e.stopPropagation();
+          onToggleSelect(id);
+        }}
+      >
         <motion.div
           className={clsx(
             "w-7 h-7 rounded-full flex items-center justify-center transition-all",
@@ -80,11 +99,24 @@ export function DraftCaseCard({
         </motion.div>
       </div>
 
-      {/* 批次标记 */}
-      <span className="absolute top-3 left-3 px-2.5 py-1 bg-blue-100 text-blue-700
+      {/* 章节标记 */}
+      {sectionId ? (
+        <div className="absolute top-3 left-3 flex items-center gap-2">
+          <span className="px-2.5 py-1 bg-purple-100 text-purple-700
+                         text-xs font-medium rounded-full">
+            章节 {sectionId}
+          </span>
+          <span className="px-2.5 py-1 bg-blue-100 text-blue-700
+                         text-xs font-medium rounded-full">
+            批次 {batchNumber}
+          </span>
+        </div>
+      ) : (
+        <span className="absolute top-3 left-3 px-2.5 py-1 bg-blue-100 text-blue-700
                        text-xs font-medium rounded-full">
-        批次 {batchNumber}
-      </span>
+          批次 {batchNumber}
+        </span>
+      )}
 
       {/* 用例内容 */}
       <div className="mt-8">
@@ -93,9 +125,17 @@ export function DraftCaseCard({
           {name}
         </h4>
 
-        <p className="text-sm text-gray-500 mb-4 line-clamp-3 min-h-[4rem]">
-          {description || '暂无描述'}
+        {/* 显示测试目的或描述 */}
+        <p className="text-sm text-gray-500 mb-2 line-clamp-2">
+          {testPurpose || description || '暂无描述'}
         </p>
+
+        {/* 章节名称 */}
+        {sectionName && (
+          <p className="text-xs text-gray-400 mb-4">
+            📄 {sectionName}
+          </p>
+        )}
 
         {/* 元数据 */}
         <div className="flex items-center justify-between pt-4 border-t border-gray-100">
@@ -113,13 +153,18 @@ export function DraftCaseCard({
             </span>
           </div>
 
-          {/* 步骤数 */}
-          {stepsCount > 0 && (
+          {/* 测试点数量 */}
+          {testPointsCount && testPointsCount > 0 ? (
+            <div className="flex items-center gap-1 text-xs text-gray-500">
+              <List className="w-4 h-4" />
+              <span>{testPointsCount} 个测试点</span>
+            </div>
+          ) : stepsCount > 0 ? (
             <div className="flex items-center gap-1 text-xs text-gray-500">
               <List className="w-4 h-4" />
               <span>{stepsCount} 步</span>
             </div>
-          )}
+          ) : null}
 
           {/* 质量评分 */}
           <div className="flex items-center gap-1">

@@ -436,32 +436,47 @@ enum test_case_execution_status {
 
 // 🔥 新增：功能测试用例表（与UI自动化测试用例test_cases分离）
 model functional_test_cases {
-  id              Int                           @id @default(autoincrement())
-  name            String                        @db.VarChar(255)
-  description     String?                       @db.Text
-  steps           String                        @db.Text
-  assertions      String                        @db.Text
-  system          String?                       @db.VarChar(100)
-  module          String?                       @db.VarChar(100)
-  priority        functional_test_priority      @default(medium)
-  tags            String?                       @db.VarChar(500)
-  status          functional_test_status        @default(PUBLISHED)
-  source          functional_test_source        @default(MANUAL)
-  ai_session_id   String?                       @db.VarChar(100)
-  creator_id      Int
-  test_type       String?                       @db.VarChar(50)
-  preconditions   String?                       @db.Text
-  test_data       String?                       @db.Text
-  created_at      DateTime                      @default(now()) @db.Timestamp(0)
-  updated_at      DateTime                      @updatedAt @db.Timestamp(0)
+  id                Int                           @id @default(autoincrement())
+  name              String                        @db.VarChar(255)
+  description       String?                       @db.Text
+  steps             String                        @db.Text
+  assertions        String                        @db.Text
+  system            String?                       @db.VarChar(100)
+  module            String?                       @db.VarChar(100)
+  priority          functional_test_priority      @default(medium)
+  tags              String?                       @db.VarChar(500)
+  status            functional_test_status        @default(PUBLISHED)
+  source            functional_test_source        @default(MANUAL)
+  ai_session_id     String?                       @db.VarChar(100)
+  creator_id        Int
+  test_type         String?                       @db.VarChar(50)
+  preconditions     String?                       @db.Text
+  test_data         String?                       @db.Text
 
-  users           users                         @relation(fields: [creator_id], references: [id], onDelete: Cascade)
+  // 新增字段：测试点相关
+  test_points       Json?                         @db.Json
+  test_points_count Int                           @default(0)
+
+  // 新增字段：章节信息（用于分批追踪）
+  section_id        String?                       @db.VarChar(50)
+  section_name      String?                       @db.VarChar(255)
+  batch_number      Int?                          @default(0)
+
+  // 新增字段：覆盖范围
+  coverage_areas    String?                       @db.VarChar(500)
+
+  created_at        DateTime                      @default(now()) @db.Timestamp(0)
+  updated_at        DateTime                      @updatedAt @db.Timestamp(0)
+
+  users             users                         @relation(fields: [creator_id], references: [id], onDelete: Cascade)
 
   @@index([system])
   @@index([module])
   @@index([creator_id])
   @@index([ai_session_id])
   @@index([source])
+  @@index([section_id])
+  @@index([batch_number])
 }
 
 // AI生成会话表

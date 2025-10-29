@@ -15,6 +15,7 @@ import { AIThinking } from '../components/ai-generator/AIThinking';
 import { DraftCaseCard } from '../components/ai-generator/DraftCaseCard';
 import { MultiFileUpload } from '../components/ai-generator/MultiFileUpload';
 import { MarkdownEditor } from '../components/ai-generator/MarkdownEditor';
+import { TestCaseDetailModal } from '../components/ai-generator/TestCaseDetailModal';
 import { clsx } from 'clsx';
 
 const { TextArea } = Input;
@@ -58,6 +59,10 @@ export function FunctionalTestCaseGenerator() {
   const [planningBatches, setPlanningBatches] = useState(false);
   const [generatingBatch, setGeneratingBatch] = useState(false);
   const [saving, setSaving] = useState(false);
+
+  // 详情对话框状态
+  const [detailModalOpen, setDetailModalOpen] = useState(false);
+  const [currentDetailCase, setCurrentDetailCase] = useState<any>(null);
 
   // 步骤1：上传和解析
   const handleParse = async () => {
@@ -181,7 +186,45 @@ export function FunctionalTestCaseGenerator() {
     }
   };
 
-  // 保存到用例库
+  // 打开详情对话框
+  const handleViewDetail = (testCase: any) => {
+    setCurrentDetailCase(testCase);
+    setDetailModalOpen(true);
+  };
+
+  // 保存详情修改
+  const handleSaveDetail = (updatedTestCase: any) => {
+    setDraftCases(prev =>
+      prev.map(c => c.id === updatedTestCase.id ? updatedTestCase : c)
+    );
+    setDetailModalOpen(false);
+    showToast.success('测试用例已更新');
+  };
+
+  // 保存选中用例（不跳转）
+  const saveSelectedCases = async () => {
+    const selectedCases = draftCases.filter(c => c.selected);
+
+    if (selectedCases.length === 0) {
+      showToast.warning('请至少选择一个用例');
+      return;
+    }
+
+    setSaving(true);
+    try {
+      await functionalTestCaseService.batchSave(selectedCases, sessionId);
+      showToast.success(`成功保存 ${selectedCases.length} 个用例，可继续生成剩余批次`);
+
+      // 从草稿箱移除已保存的用例
+      setDraftCases(prev => prev.filter(c => !c.selected));
+    } catch (error: any) {
+      showToast.error('保存失败：' + error.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // 保存到用例库（并跳转）
   const saveToLibrary = async () => {
     const selectedCases = draftCases.filter(c => c.selected);
 
@@ -226,6 +269,7 @@ export function FunctionalTestCaseGenerator() {
   const avgQuality = draftCases.length > 0
     ? Math.round(draftCases.reduce((sum, c) => sum + (c.qualityScore || 85), 0) / draftCases.length)
     : 0;
+  const totalTestPoints = draftCases.reduce((sum, c) => sum + (c.testPoints?.length || 0), 0);
 
   // 渲染步骤1：上传原型
   const renderStep1 = () => (
@@ -472,11 +516,17 @@ export function FunctionalTestCaseGenerator() {
             {/* 文本信息 */}
             <div>
               <h3 className="text-lg font-semibold text-gray-900 mb-1">
-                批次生成进度
+                按章节分批生成
               </h3>
               <p className="text-sm text-gray-600">
                 已完成 {currentBatchIndex} 批,共 {batches.length} 批
               </p>
+              {/* 显示当前批次的章节信息 */}
+              {batches.length > 0 && currentBatchIndex < batches.length && (
+                <p className="text-xs text-purple-600 mt-1">
+                  下一批: {batches[currentBatchIndex].name}
+                </p>
+              )}
             </div>
           </div>
 
@@ -501,6 +551,30 @@ export function FunctionalTestCaseGenerator() {
             {generatingBatch ? '生成中...' : '生成下一批'}
           </Button>
         </div>
+
+        {/* 批次列表预览 */}
+        {batches.length > 0 && (
+          <div className="mt-4 pt-4 border-t border-purple-200">
+            <p className="text-xs text-gray-500 mb-2">章节列表：</p>
+            <div className="flex flex-wrap gap-2">
+              {batches.map((batch, index) => (
+                <span
+                  key={batch.id}
+                  className={clsx(
+                    "px-2.5 py-1 text-xs font-medium rounded-full transition-all",
+                    index < currentBatchIndex
+                      ? "bg-green-100 text-green-700"
+                      : index === currentBatchIndex
+                      ? "bg-purple-100 text-purple-700 ring-2 ring-purple-400"
+                      : "bg-gray-100 text-gray-500"
+                  )}
+                >
+                  {batch.name}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
       </motion.div>
 
       {/* AI生成中的提示 */}
@@ -530,6 +604,11 @@ export function FunctionalTestCaseGenerator() {
               <p className="text-sm text-gray-500">
                 已生成 {draftCases.length} 个用例,选中 {selectedCount} 个
               </p>
+              {totalTestPoints > 0 && (
+                <p className="text-xs text-purple-600 mt-1">
+                  共 {totalTestPoints} 个测试点
+                </p>
+              )}
             </div>
           </div>
 
@@ -572,6 +651,13 @@ export function FunctionalTestCaseGenerator() {
                 stepsCount={testCase.steps?.length}
                 selected={testCase.selected}
                 onToggleSelect={toggleCaseSelect}
+                // 新增字段
+                sectionId={testCase.sectionId}
+                sectionName={testCase.sectionName}
+                testPointsCount={testCase.testPoints?.length || 0}
+                testPurpose={testCase.testPurpose}
+                testCase={testCase}
+                onViewDetail={handleViewDetail}
               />
             ))}
           </motion.div>
@@ -756,15 +842,26 @@ export function FunctionalTestCaseGenerator() {
                     修改需求
                   </Button>
                   <Button
-                    variant="default"
+                    variant="outline"
                     size="lg"
                     icon={<Save className="w-5 h-5" />}
+                    isLoading={saving}
+                    disabled={selectedCount === 0}
+                    onClick={saveSelectedCases}
+                    className="px-6"
+                  >
+                    💾 保存选中用例 ({selectedCount})
+                  </Button>
+                  <Button
+                    variant="default"
+                    size="lg"
+                    icon={<CheckCircle className="w-5 h-5" />}
                     isLoading={saving}
                     disabled={selectedCount === 0}
                     onClick={saveToLibrary}
                     className="px-8 shadow-lg"
                   >
-                    💾 保存到用例库 ({selectedCount})
+                    ✅ 保存并完成 ({selectedCount})
                   </Button>
                 </>
               )}
@@ -772,6 +869,14 @@ export function FunctionalTestCaseGenerator() {
           </div>
         </div>
       </div>
+
+      {/* 测试用例详情对话框 */}
+      <TestCaseDetailModal
+        isOpen={detailModalOpen}
+        onClose={() => setDetailModalOpen(false)}
+        testCase={currentDetailCase}
+        onSave={handleSaveDetail}
+      />
 
       {/* 自定义样式 */}
       <style>{`

@@ -65,6 +65,58 @@ export function createFunctionalTestCaseRoutes(): Router {
   });
 
   /**
+   * GET /api/v1/functional-test-cases/flat
+   * 获取功能测试用例平铺列表（以测试点为维度展示）
+   */
+  router.get('/flat', async (req: Request, res: Response) => {
+    try {
+      const {
+        page = '1',
+        pageSize = '20',
+        search,
+        tag,
+        priority,
+        status,
+        system,
+        module,
+        source
+      } = req.query;
+
+      // 获取用户信息（用于数据隔离）
+      const userDepartment = req.user?.department;
+      const isSuperAdmin = req.user?.isSuperAdmin || false;
+
+      console.log(`📋 查询功能测试用例平铺列表 - 页码: ${page}, 用户部门: ${userDepartment}`);
+
+      const result = await functionalTestCaseService.getFlatList({
+        page: parseInt(page as string),
+        pageSize: parseInt(pageSize as string),
+        search: search as string,
+        tag: tag as string,
+        priority: priority as string,
+        status: status as string,
+        system: system as string,
+        module: module as string,
+        source: source as string,
+        userDepartment,
+        isSuperAdmin
+      });
+
+      res.json({
+        success: true,
+        data: result.data,
+        pagination: result.pagination
+      });
+    } catch (error: any) {
+      console.error('❌ 查询平铺列表失败:', error);
+      res.status(500).json({
+        success: false,
+        error: error.message
+      });
+    }
+  });
+
+  /**
    * POST /api/v1/functional-test-cases/batch-save
    * 批量保存测试用例
    */
