@@ -109,15 +109,23 @@ export class FunctionalTestCaseAIService {
       }
     }
 
-    // 回退到默认配置
+    // 回退到默认配置（从环境变量读取）
     const defaultConfig = {
-      apiKey: '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',
-      baseUrl: 'https://openrouter.ai/api/v1',
-      model: 'openai/gpt-4o',
-      temperature: 0.3,
-      maxTokens: 4000
+      apiKey: process.env.OPENROUTER_API_KEY || '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',
+      baseUrl: process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1',
+      model: process.env.DEFAULT_MODEL || 'openai/gpt-4o',
+      temperature: parseFloat(process.env.DEFAULT_TEMPERATURE || '0.3'),
+      maxTokens: parseInt(process.env.DEFAULT_MAX_TOKENS || '4000')
     };
+
+    // 验证配置有效性
+    if (!defaultConfig.apiKey || defaultConfig.apiKey === '') {
+      console.error('❌ API Key 未配置！请在 .env 文件中设置 OPENROUTER_API_KEY');
+      throw new Error('API Key 未配置，无法调用 AI 服务');
+    }
+
     console.log(`⚠️ 使用默认配置: ${defaultConfig.model}`);
+    console.log(`🔑 API Key 来源: ${process.env.OPENROUTER_API_KEY ? '环境变量' : '硬编码回退值'}`);
     return defaultConfig;
   }
 
@@ -128,6 +136,9 @@ export class FunctionalTestCaseAIService {
     const config = await this.getCurrentConfig();
 
     console.log(`🚀 调用AI模型: ${config.model}`);
+    console.log(`📍 API端点: ${config.baseUrl}/chat/completions`);
+    console.log(`🔑 API Key状态: ${config.apiKey ? '已设置 (长度: ' + config.apiKey.length + ')' : '❌ 未设置'}`);
+    console.log(`🌡️ Temperature: ${config.temperature}, Max Tokens: ${maxTokens || config.maxTokens}`);
 
     try {
       const requestBody = {
@@ -140,6 +151,7 @@ export class FunctionalTestCaseAIService {
         max_tokens: maxTokens || config.maxTokens
       };
 
+      console.log(`📤 发送请求到 OpenRouter...`);
       const response = await fetch(config.baseUrl + '/chat/completions', {
         method: 'POST',
         headers: {
@@ -156,13 +168,28 @@ export class FunctionalTestCaseAIService {
         console.error(`❌ AI API错误详情: ${errorText}`);
         console.error(`❌ 请求模型: ${config.model}`);
         console.error(`❌ 请求URL: ${config.baseUrl}/chat/completions`);
-        throw new Error(`AI API调用失败 (${response.status}): ${errorText}`);
+
+        // 区分不同的错误类型
+        if (response.status === 401) {
+          throw new Error(`❌ 认证失败 (401): API Key无效或已过期。请检查 .env 文件中的 OPENROUTER_API_KEY`);
+        } else if (response.status === 429) {
+          throw new Error(`❌ 请求限流 (429): API调用频率过高，请稍后重试`);
+        } else if (response.status === 402) {
+          throw new Error(`❌ 配额不足 (402): OpenRouter账户余额不足，请充值`);
+        } else if (response.status === 404) {
+          throw new Error(`❌ 模型不存在 (404): 模型 "${config.model}" 在OpenRouter上不可用`);
+        } else if (response.status >= 500) {
+          throw new Error(`❌ 服务器错误 (${response.status}): OpenRouter服务异常，请稍后重试`);
+        } else {
+          throw new Error(`AI API调用失败 (${response.status}): ${errorText}`);
+        }
       }
 
       const data = await response.json();
 
       if (!data.choices || !data.choices[0] || !data.choices[0].message) {
-        throw new Error(`AI API返回格式异常: ${JSON.stringify(data)}`);
+        console.error(`❌ API返回数据格式异常:`, JSON.stringify(data, null, 2));
+        throw new Error(`AI API返回格式异常: 缺少 choices 或 message 字段`);
       }
 
       const content = data.choices[0].message.content;
@@ -170,6 +197,16 @@ export class FunctionalTestCaseAIService {
 
       return content;
     } catch (error: any) {
+      // 增强错误日志
+      if (error.name === 'TypeError' && error.message === 'fetch failed') {
+        console.error(`❌ 网络请求失败: 无法连接到 ${config.baseUrl}`);
+        console.error(`💡 可能原因:`);
+        console.error(`   1. 网络连接问题（请检查网络设置）`);
+        console.error(`   2. API端点不可达（请检查防火墙/代理设置）`);
+        console.error(`   3. DNS解析失败（请检查DNS配置）`);
+        throw new Error(`❌ 网络连接失败: 无法访问 OpenRouter API。请检查网络连接。`);
+      }
+
       console.error(`❌ AI调用失败: ${error.message}`);
       throw error;
     }

@@ -126,17 +126,77 @@ testRunStore.onChange((runId, testRun) => {
 });
 
 
+// 自动初始化AI配置
+async function ensureAIConfiguration() {
+  try {
+    // 检查数据库中是否存在 app_settings 配置
+    const existingSettings = await prisma.settings.findUnique({
+      where: { key: 'app_settings' }
+    });
+
+    if (!existingSettings) {
+      console.log('⚙️ 数据库中未找到AI配置，正在创建默认配置...');
+
+      // 从环境变量构建默认配置
+      const defaultSettings = {
+        selectedModelId: 'gpt-4o', // 前端使用的模型ID
+        apiKey: process.env.OPENROUTER_API_KEY || '',
+        temperature: parseFloat(process.env.DEFAULT_TEMPERATURE || '0.3'),
+        maxTokens: parseInt(process.env.DEFAULT_MAX_TOKENS || '4000'),
+        baseUrl: process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1'
+      };
+
+      if (!defaultSettings.apiKey) {
+        console.warn('⚠️ 环境变量 OPENROUTER_API_KEY 未设置，AI功能可能无法正常使用');
+      }
+
+      // 保存到数据库
+      await prisma.settings.create({
+        data: {
+          key: 'app_settings',
+          value: JSON.stringify(defaultSettings),
+          updated_at: new Date()
+        }
+      });
+
+      console.log('✅ AI配置已自动初始化:', {
+        model: defaultSettings.selectedModelId,
+        hasApiKey: !!defaultSettings.apiKey,
+        temperature: defaultSettings.temperature,
+        maxTokens: defaultSettings.maxTokens
+      });
+    } else {
+      console.log('✅ AI配置已存在于数据库中');
+
+      // 验证配置完整性
+      try {
+        const settings = JSON.parse(existingSettings.value || '{}');
+        if (!settings.apiKey) {
+          console.warn('⚠️ 数据库中的API Key为空，请通过前端设置页面配置');
+        } else {
+          console.log(`✅ 当前使用模型: ${settings.selectedModelId || 'default'}`);
+        }
+      } catch (error) {
+        console.error('❌ 解析AI配置失败:', error);
+      }
+    }
+  } catch (error: any) {
+    console.error('❌ 初始化AI配置失败:', error.message);
+    console.log('💡 AI功能将使用环境变量作为回退配置');
+  }
+}
+
 // 创建默认系统用户（如果不存在）
 async function ensureDefaultUser() {
   try {
     const userCount = await prisma.users.count();
-    
+
     if (userCount === 0) {
       console.log('🔑 创建默认系统用户...');
-      
+
       // 创建简单的哈希密码（实际环境应使用bcrypt等）
       const passwordHash = crypto.createHash('sha256').update('system123').digest('hex');
-      
+
       const defaultUser = await prisma.users.create({
         data: {
           email: 'system@test.local',
@@ -144,7 +204,7 @@ async function ensureDefaultUser() {
           created_at: new Date()
         }
       });
-      
+
       console.log(`✅ 默认系统用户已创建: ID=${defaultUser.id}, Email=${defaultUser.email}`);
       
       // 🔥 使用权限服务分配管理员角色
@@ -371,6 +431,11 @@ async function startServer() {
     await PermissionService.ensureDefaultRoles();
     await initializeAllFeatureFlags();
     console.log('✅ 权限角色和功能开关初始化完成');
+
+    // 🔥 新增：自动初始化AI配置
+    console.log('🤖 开始检查AI配置...');
+    await ensureAIConfiguration();
+    console.log('✅ AI配置检查完成');
 
     // 🔥 初始化所有服务
     console.log('⚙️ 开始初始化所有服务...');
