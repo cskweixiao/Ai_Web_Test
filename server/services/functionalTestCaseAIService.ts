@@ -1,6 +1,7 @@
 import type { AxureParseResult } from '../types/axure.js';
 import { llmConfigManager } from '../../src/services/llmConfigManager.js';
 import type { LLMConfig } from './aiParser.js';
+import { HttpsProxyAgent } from 'https-proxy-agent';
 
 /**
  * 项目信息
@@ -152,7 +153,9 @@ export class FunctionalTestCaseAIService {
       };
 
       console.log(`📤 发送请求到 OpenRouter...`);
-      const response = await fetch(config.baseUrl + '/chat/completions', {
+
+      // 配置代理（如果环境变量中有配置）
+      const fetchOptions: any = {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${config.apiKey}`,
@@ -161,7 +164,18 @@ export class FunctionalTestCaseAIService {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify(requestBody)
-      });
+      };
+
+      // 如果配置了代理，使用代理
+      const proxyUrl = process.env.HTTPS_PROXY || process.env.HTTP_PROXY;
+      if (proxyUrl) {
+        console.log(`🌐 使用代理: ${proxyUrl}`);
+        fetchOptions.agent = new HttpsProxyAgent(proxyUrl);
+      } else {
+        console.log(`📡 直连模式（未配置代理）`);
+      }
+
+      const response = await fetch(config.baseUrl + '/chat/completions', fetchOptions);
 
       if (!response.ok) {
         const errorText = await response.text();
