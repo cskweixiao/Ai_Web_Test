@@ -1,5 +1,6 @@
 import { PlaywrightMcpClient } from './mcpClient.js';
 import { llmConfigManager, LLMConfigManager } from '../../src/services/llmConfigManager.js';
+import { ProxyAgent } from 'undici';
 
 // AI配置接口
 export interface LLMConfig {
@@ -903,7 +904,10 @@ ${elementsContext}
         max_tokens: currentConfig.maxTokens
       };
 
-      const response = await fetch(currentConfig.baseUrl + '/chat/completions', {
+      // 配置代理（如果环境变量中有配置）
+      const proxyUrl = process.env.HTTPS_PROXY || process.env.HTTP_PROXY;
+
+      const fetchOptions: any = {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${currentConfig.apiKey}`,
@@ -912,7 +916,14 @@ ${elementsContext}
           'Content-Type': 'application/json'
         },
         body: JSON.stringify(requestBody)
-      });
+      };
+
+      // 如果配置了代理，使用 undici 的 ProxyAgent
+      if (proxyUrl) {
+        fetchOptions.dispatcher = new ProxyAgent(proxyUrl);
+      }
+
+      const response = await fetch(currentConfig.baseUrl + '/chat/completions', fetchOptions);
 
       if (!response.ok) {
         const errorText = await response.text();
