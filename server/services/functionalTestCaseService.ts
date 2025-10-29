@@ -85,6 +85,9 @@ export class FunctionalTestCaseService {
     }
 
     try {
+      console.log('📊 查询条件:', JSON.stringify(where, null, 2));
+      console.log('👤 用户信息 - 部门:', userDepartment, '超级管理员:', isSuperAdmin);
+
       // 分页查询
       const [data, total] = await Promise.all([
         this.prisma.functional_test_cases.findMany({
@@ -105,6 +108,7 @@ export class FunctionalTestCaseService {
         this.prisma.functional_test_cases.count({ where })
       ]);
 
+      console.log(`✅ 查询结果: 找到 ${total} 条记录，返回 ${data.length} 条`);
       return { data, total };
     } catch (error: any) {
       console.error('❌ 查询功能测试用例失败:', error);
@@ -119,6 +123,8 @@ export class FunctionalTestCaseService {
     const { testCases, aiSessionId, userId } = params;
 
     console.log(`📦 开始批量保存 ${testCases.length} 个功能测试用例`);
+    console.log(`📝 会话ID: ${aiSessionId}, 用户ID: ${userId}`);
+    console.log(`📄 第一个用例示例:`, JSON.stringify(testCases[0], null, 2));
 
     try {
       // 使用事务确保数据一致性

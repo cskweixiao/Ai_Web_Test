@@ -16,6 +16,32 @@ function getAuthHeaders(): HeadersInit {
 }
 
 /**
+ * 处理 API 响应，统一处理 401 错误
+ */
+async function handleResponse(response: Response) {
+  if (response.status === 401) {
+    // Token 过期或无效，清除本地存储并跳转到登录页
+    localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem('authUser');
+
+    // 显示友好提示
+    alert('登录已过期，请重新登录');
+
+    // 跳转到登录页
+    window.location.href = '/login';
+
+    throw new Error('认证失败，请重新登录');
+  }
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.error || `请求失败: ${response.status} ${response.statusText}`);
+  }
+
+  return response.json();
+}
+
+/**
  * 列表查询参数
  */
 export interface ListParams {
@@ -56,11 +82,7 @@ class FunctionalTestCaseService {
       headers: getAuthHeaders()
     });
 
-    if (!response.ok) {
-      throw new Error(`获取列表失败: ${response.status} ${response.statusText}`);
-    }
-
-    return response.json();
+    return handleResponse(response);
   }
 
   /**
@@ -73,11 +95,7 @@ class FunctionalTestCaseService {
       body: JSON.stringify({ testCases, aiSessionId })
     });
 
-    if (!response.ok) {
-      throw new Error(`批量保存失败: ${response.status} ${response.statusText}`);
-    }
-
-    return response.json();
+    return handleResponse(response);
   }
 
   /**
@@ -89,11 +107,7 @@ class FunctionalTestCaseService {
       headers: getAuthHeaders()
     });
 
-    if (!response.ok) {
-      throw new Error(`获取详情失败: ${response.status} ${response.statusText}`);
-    }
-
-    return response.json();
+    return handleResponse(response);
   }
 
   /**
@@ -106,11 +120,7 @@ class FunctionalTestCaseService {
       body: JSON.stringify(data)
     });
 
-    if (!response.ok) {
-      throw new Error(`更新失败: ${response.status} ${response.statusText}`);
-    }
-
-    return response.json();
+    return handleResponse(response);
   }
 
   /**
@@ -122,11 +132,7 @@ class FunctionalTestCaseService {
       headers: getAuthHeaders()
     });
 
-    if (!response.ok) {
-      throw new Error(`删除失败: ${response.status} ${response.statusText}`);
-    }
-
-    return response.json();
+    return handleResponse(response);
   }
 
   /**
@@ -149,11 +155,7 @@ class FunctionalTestCaseService {
       body: formData
     });
 
-    if (!response.ok) {
-      throw new Error(`解析Axure失败: ${response.status} ${response.statusText}`);
-    }
-
-    return response.json();
+    return handleResponse(response);
   }
 
   /**
@@ -178,11 +180,7 @@ class FunctionalTestCaseService {
       body: formData
     });
 
-    if (!response.ok) {
-      throw new Error(`解析Axure失败: ${response.status} ${response.statusText}`);
-    }
-
-    return response.json();
+    return handleResponse(response);
   }
 
   /**
@@ -205,12 +203,8 @@ class FunctionalTestCaseService {
 
       clearTimeout(timeoutId);
 
-      if (!response.ok) {
-        throw new Error(`生成需求文档失败: ${response.status} ${response.statusText}`);
-      }
-
       console.log('✅ 收到需求文档响应');
-      const result = await response.json();
+      const result = await handleResponse(response);
       console.log('✅ 需求文档解析成功，长度:', result.data?.requirementDoc?.length);
 
       return result;
@@ -233,11 +227,7 @@ class FunctionalTestCaseService {
       body: JSON.stringify({ sessionId, requirementDoc })
     });
 
-    if (!response.ok) {
-      throw new Error(`规划批次失败: ${response.status} ${response.statusText}`);
-    }
-
-    return response.json();
+    return handleResponse(response);
   }
 
   /**
@@ -262,11 +252,7 @@ class FunctionalTestCaseService {
       })
     });
 
-    if (!response.ok) {
-      throw new Error(`生成批次用例失败: ${response.status} ${response.statusText}`);
-    }
-
-    return response.json();
+    return handleResponse(response);
   }
 
   /**
@@ -283,11 +269,7 @@ class FunctionalTestCaseService {
       })
     });
 
-    if (!response.ok) {
-      throw new Error(`重新生成用例失败: ${response.status} ${response.statusText}`);
-    }
-
-    return response.json();
+    return handleResponse(response);
   }
 }
 

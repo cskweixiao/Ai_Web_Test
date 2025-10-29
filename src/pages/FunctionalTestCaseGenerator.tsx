@@ -121,8 +121,12 @@ export function FunctionalTestCaseGenerator() {
 
     try {
       const batchResult = await functionalTestCaseService.planBatches(sessionId, requirementDoc);
+      console.log('📋 规划分批结果:', batchResult);
+      console.log('📦 批次数组:', batchResult.data.batches);
       setBatches(batchResult.data.batches);
+      console.log('✅ 批次状态已更新');
     } catch (error: any) {
+      console.error('❌ 规划分批失败:', error);
       showToast.error('规划分批失败：' + error.message);
     } finally {
       setPlanningBatches(false);
@@ -137,6 +141,7 @@ export function FunctionalTestCaseGenerator() {
     }
 
     const currentBatch = batches[currentBatchIndex];
+    console.log('📦 开始生成批次:', currentBatch);
     setGeneratingBatch(true);
 
     try {
@@ -148,6 +153,10 @@ export function FunctionalTestCaseGenerator() {
         draftCases
       );
 
+      console.log('✅ 批次生成结果:', result);
+      console.log('📊 测试用例数组:', result.data.testCases);
+      console.log('📏 生成了多少个用例:', result.data.testCases?.length);
+
       const newCases = result.data.testCases.map((tc: any, index: number) => ({
         ...tc,
         id: `draft-${Date.now()}-${index}`,
@@ -155,10 +164,17 @@ export function FunctionalTestCaseGenerator() {
         selected: true
       }));
 
-      setDraftCases(prev => [...prev, ...newCases]);
+      console.log('🎨 处理后的用例数组:', newCases);
+
+      setDraftCases(prev => {
+        const updated = [...prev, ...newCases];
+        console.log('📝 更新后的草稿箱:', updated);
+        return updated;
+      });
       setCurrentBatchIndex(prev => prev + 1);
       showToast.success(`第${currentBatchIndex + 1}批生成完成`);
     } catch (error: any) {
+      console.error('❌ 生成批次失败:', error);
       showToast.error('生成失败：' + error.message);
     } finally {
       setGeneratingBatch(false);
@@ -471,7 +487,16 @@ export function FunctionalTestCaseGenerator() {
             icon={<Zap className="w-5 h-5" />}
             isLoading={generatingBatch}
             disabled={currentBatchIndex >= batches.length}
-            onClick={generateCurrentBatch}
+            onClick={() => {
+              console.log('🔘 点击了生成下一批按钮');
+              console.log('📊 当前状态:', {
+                currentBatchIndex,
+                batchesLength: batches.length,
+                generatingBatch,
+                disabled: currentBatchIndex >= batches.length
+              });
+              generateCurrentBatch();
+            }}
           >
             {generatingBatch ? '生成中...' : '生成下一批'}
           </Button>
