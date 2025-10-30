@@ -262,20 +262,20 @@ export class FunctionalTestCaseAIService {
 
     // 📄 详细页面信息
     console.log('📄 【步骤 2/5】Axure 页面详情:');
-    axureData.pages.forEach((page, index) => {
-      console.log(`\n   页面 ${index + 1}: "${page.name}"`);
-      console.log(`      - 元素数量: ${page.elements.length}`);
-      console.log(`      - 交互数量: ${page.interactions.length}`);
+    (axureData.pages || []).forEach((page, index) => {
+      console.log(`\n   页面 ${index + 1}: "${page.name || '未命名'}"`);
+      console.log(`      - 元素数量: ${(page.elements || []).length}`);
+      console.log(`      - 交互数量: ${(page.interactions || []).length}`);
 
       // 显示前5个元素
-      if (page.elements.length > 0) {
+      if ((page.elements || []).length > 0) {
         console.log(`      - 主要元素:`);
-        page.elements.slice(0, 5).forEach(elem => {
+        (page.elements || []).slice(0, 5).forEach(elem => {
           const displayText = elem.text ? `"${elem.text}"` : (elem.placeholder ? `[${elem.placeholder}]` : (elem.name || '未命名'));
           console.log(`         • ${elem.type}: ${displayText}`);
         });
-        if (page.elements.length > 5) {
-          console.log(`         ... 还有 ${page.elements.length - 5} 个元素`);
+        if ((page.elements || []).length > 5) {
+          console.log(`         ... 还有 ${(page.elements || []).length - 5} 个元素`);
         }
       }
     });
@@ -410,8 +410,8 @@ export class FunctionalTestCaseAIService {
 
     // 🎯 关键优化: 提前收集所有input/select元素,确保查询条件完整展示给AI
     const allInputElements: Array<{name?: string; type: string; value?: string; placeholder?: string; page: string}> = [];
-    axureData.pages.forEach(page => {
-      page.elements
+    (axureData.pages || []).forEach(page => {
+      (page.elements || [])
         .filter(e => e.type === 'input' || e.type === 'select')
         .forEach(e => {
           if (e.name) {
@@ -420,7 +420,7 @@ export class FunctionalTestCaseAIService {
               type: e.type,
               value: e.value,
               placeholder: e.placeholder,
-              page: page.name
+              page: page.name || '未命名'
             });
           }
         });
@@ -434,8 +434,8 @@ export class FunctionalTestCaseAIService {
 
     // 🎯 关键优化2: 提取所有长文本段落(可能包含重要的业务规则说明)
     const longTexts: Array<{text: string; page: string}> = [];
-    axureData.pages.forEach(page => {
-      page.elements
+    (axureData.pages || []).forEach(page => {
+      (page.elements || [])
         .filter(e => e.type === 'div' && e.text && e.text.length > 50) // 提取超过50字的div元素
         .forEach(e => {
           // 过滤掉只包含重复数据的文本(如列表数据)
@@ -445,7 +445,7 @@ export class FunctionalTestCaseAIService {
               text.includes('结算总金额') || text.includes('通过时') || text.includes('拉取')) {
             longTexts.push({
               text: text.substring(0, 500), // 最多取500字
-              page: page.name
+              page: page.name || '未命名'
             });
           }
         });
@@ -461,12 +461,12 @@ export class FunctionalTestCaseAIService {
 模块: ${projectInfo.moduleName || '未指定'}
 ${projectInfo.businessRules && projectInfo.businessRules.length > 0 ? '\n业务规则:\n' + projectInfo.businessRules.map((r, i) => `${i + 1}. ${r}`).join('\n') : ''}
 ${inputSummary}${longTextSummary}
-Axure原型解析结果 (${axureData.pageCount}页, ${axureData.elementCount}元素):
+Axure原型解析结果 (${axureData.pageCount || 0}页, ${axureData.elementCount || 0}元素):
 
-${axureData.pages.slice(0, 10).map((page, i) => {
+${(axureData.pages || []).slice(0, 10).map((page, i) => {
   // 🔍 关键优化: 优先显示所有input/select元素,确保查询条件不会被遗漏
-  const inputElements = page.elements.filter(e => e.type === 'input' || e.type === 'select');
-  const otherElements = page.elements.filter(e => e.type !== 'input' && e.type !== 'select');
+  const inputElements = (page.elements || []).filter(e => e.type === 'input' || e.type === 'select');
+  const otherElements = (page.elements || []).filter(e => e.type !== 'input' && e.type !== 'select');
 
   // 构建元素详情: 先显示所有输入框,再显示其他元素
   const inputDetail = inputElements.map(e => {
@@ -484,18 +484,18 @@ ${axureData.pages.slice(0, 10).map((page, i) => {
 
   const elementsDetail = [inputDetail, otherDetail].filter(d => d).join('\n');
 
-  const interactionsDetail = page.interactions.slice(0, 10).map(int =>
+  const interactionsDetail = (page.interactions || []).slice(0, 10).map(int =>
     `  - ${int.type}${int.trigger ? `: ${int.trigger}` : ''}`
   ).join('\n');
 
-  return `页面${i + 1}: ${page.name}
+  return `页面${i + 1}: ${page.name || '未命名'}
 📝 输入框/下拉框 (${inputElements.length}个):
 ${inputDetail || '  无'}
 
 其他元素(${otherElements.length}个):
 ${otherDetail || '  无'}
 
-交互(${page.interactions.length}):
+交互(${(page.interactions || []).length}):
 ${interactionsDetail || '  无'}`;
 }).join('\n\n')}
 
