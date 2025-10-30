@@ -37,12 +37,9 @@ export function FunctionalTestCaseGenerator() {
   // 步骤1状态
   const [axureFiles, setAxureFiles] = useState<File[]>([]);
   const [projectInfo, setProjectInfo] = useState({
-    projectName: '',
-    systemType: '2B',
-    businessDomain: '',
-    businessRules: '',
-    constraints: '',
-    description: ''
+    systemName: '',      // 系统名称
+    moduleName: '',      // 模块名称
+    businessRules: ''    // 补充业务规则
   });
   const [parseResult, setParseResult] = useState<any>(null);
   const [parsing, setParsing] = useState(false);
@@ -78,6 +75,16 @@ export function FunctionalTestCaseGenerator() {
       return;
     }
 
+    // 验证必填字段
+    if (!projectInfo.systemName.trim()) {
+      showToast.error('请填写系统名称');
+      return;
+    }
+    if (!projectInfo.moduleName.trim()) {
+      showToast.error('请填写模块名称');
+      return;
+    }
+
     setParsing(true);
     try {
       const result = await functionalTestCaseService.parseAxureMulti(axureFiles);
@@ -99,8 +106,8 @@ export function FunctionalTestCaseGenerator() {
   const generateRequirementDoc = async (axureData: any, sid?: string) => {
     setGenerating(true);
     try {
-      const businessRules = projectInfo.businessRules.split('\n').filter(r => r.trim());
-      const constraints = projectInfo.constraints.split('\n').filter(c => c.trim());
+      // 安全处理业务规则，避免 undefined 错误
+      const businessRules = (projectInfo.businessRules || '').split('\n').filter(r => r.trim());
 
       // 使用传入的 sessionId 或状态中的 sessionId
       const currentSessionId = sid || sessionId;
@@ -108,7 +115,11 @@ export function FunctionalTestCaseGenerator() {
       const result = await functionalTestCaseService.generateRequirement(
         currentSessionId,
         axureData,
-        { ...projectInfo, businessRules, constraints }
+        {
+          systemName: projectInfo.systemName || '',
+          moduleName: projectInfo.moduleName || '',
+          businessRules
+        }
       );
 
       setRequirementDoc(result.data.requirementDoc);
@@ -155,7 +166,9 @@ export function FunctionalTestCaseGenerator() {
         currentBatch.id,
         currentBatch.scenarios,
         requirementDoc,
-        draftCases
+        draftCases,
+        projectInfo.systemName,  // 传递系统名称
+        projectInfo.moduleName   // 传递模块名称
       );
 
       console.log('✅ 批次生成结果:', result);
@@ -355,64 +368,53 @@ export function FunctionalTestCaseGenerator() {
             </div>
 
             <div className="space-y-5">
-              {/* 项目名称 */}
+              {/* 系统名称 */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  项目名称
+                  系统名称 <span className="text-red-500">*</span>
                 </label>
                 <Input
                   placeholder="例如：电商后台管理系统"
-                  value={projectInfo.projectName}
-                  onChange={e => setProjectInfo(prev => ({ ...prev, projectName: e.target.value }))}
+                  value={projectInfo.systemName}
+                  onChange={e => setProjectInfo(prev => ({ ...prev, systemName: e.target.value }))}
                 />
+                <p className="text-xs text-gray-500 mt-1">生成的测试用例会自动填充此系统名称</p>
               </div>
 
-              {/* 系统类型 */}
+              {/* 模块名称 */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  系统类型
-                </label>
-                <Radio.Group
-                  value={projectInfo.systemType}
-                  onChange={e => setProjectInfo(prev => ({ ...prev, systemType: e.target.value }))}
-                  className="flex flex-col gap-2"
-                >
-                  <Radio value="2C">2C 面向用户</Radio>
-                  <Radio value="2B">2B 面向企业</Radio>
-                  <Radio value="internal">内部系统</Radio>
-                </Radio.Group>
-              </div>
-
-              {/* 业务领域 */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  业务领域
+                  模块名称 <span className="text-red-500">*</span>
                 </label>
                 <Input
-                  placeholder="例如：电商/零售"
-                  value={projectInfo.businessDomain}
-                  onChange={e => setProjectInfo(prev => ({ ...prev, businessDomain: e.target.value }))}
+                  placeholder="例如：订单管理"
+                  value={projectInfo.moduleName}
+                  onChange={e => setProjectInfo(prev => ({ ...prev, moduleName: e.target.value }))}
                 />
+                <p className="text-xs text-gray-500 mt-1">生成的测试用例会自动填充此模块名称</p>
               </div>
 
-              {/* 业务规则 */}
+              {/* 补充业务规则 */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  关键业务规则
+                  补充业务规则 <span className="text-gray-400">(选填)</span>
                 </label>
                 <TextArea
-                  rows={4}
-                  placeholder="每行一条规则，例如：&#10;• 订单金额超过1000需审批&#10;• 库存不足时不能下单"
+                  rows={6}
+                  placeholder="每行一条规则，例如：&#10;• 订单金额超过1000需审批&#10;• 库存不足时不能下单&#10;• 同一用户5分钟内不能重复下单&#10;• 支付超时30分钟自动取消订单"
                   value={projectInfo.businessRules}
                   onChange={e => setProjectInfo(prev => ({ ...prev, businessRules: e.target.value }))}
                 />
               </div>
 
               {/* 提示信息 */}
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-                <p className="text-xs text-blue-700 leading-relaxed">
-                  💡 提示：补充业务信息可以帮助 AI 生成更准确的测试用例,包括边界条件和异常场景。
-                </p>
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <h4 className="text-sm font-medium text-blue-900 mb-2">💡 填写说明</h4>
+                <ul className="text-xs text-blue-700 space-y-1 leading-relaxed">
+                  <li>• <strong>系统名称</strong> 和 <strong>模块名称</strong> 为必填项，会自动填充到生成的测试用例中</li>
+                  <li>• <strong>补充业务规则</strong> 可选填，帮助 AI 生成更准确的边界条件和异常场景测试</li>
+                  <li>• 页面名称会从 PRD 文档中自动提取，无需手动填写</li>
+                </ul>
               </div>
             </div>
           </div>

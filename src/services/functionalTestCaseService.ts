@@ -251,7 +251,9 @@ class FunctionalTestCaseService {
     batchId: string,
     scenarios: string[],
     requirementDoc: string,
-    existingCases: any[]
+    existingCases: any[],
+    systemName?: string,
+    moduleName?: string
   ) {
     const response = await fetch(`${API_BASE_URL}/axure/generate-batch`, {
       method: 'POST',
@@ -261,7 +263,9 @@ class FunctionalTestCaseService {
         batchId,
         scenarios,
         requirementDoc,
-        existingCases
+        existingCases,
+        systemName,
+        moduleName
       })
     });
 

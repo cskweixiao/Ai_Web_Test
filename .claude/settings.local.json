@@ -82,7 +82,12 @@
       "Bash(Select-String -Pattern \"查询条件|Query|渠道集采|订单处理\" -Context 2)",
       "Bash(set LOG_FULL_PROMPT=true)",
       "Bash(Select-Object -First 200)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(start-qdrant.bat)",
+      "Bash(start http://localhost:6333/dashboard)",
+      "Bash(Get-Content \"d:\\AI_mvp\\ai_test\\project\\logs\\server.log\")",
+      "Bash(Select-Object -Last 100)",
+      "Bash(Select-Object -First 30)"
     ],
     "deny": []
   },

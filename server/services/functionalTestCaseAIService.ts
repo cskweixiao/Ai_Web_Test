@@ -2,17 +2,15 @@ import type { AxureParseResult } from '../types/axure.js';
 import { llmConfigManager } from '../../src/services/llmConfigManager.js';
 import type { LLMConfig } from './aiParser.js';
 import { ProxyAgent } from 'undici';
+import { TestCaseKnowledgeBase } from './testCaseKnowledgeBase.js';
 
 /**
  * 项目信息
  */
 export interface ProjectInfo {
-  projectName: string;
-  systemType: string;
-  businessDomain: string;
-  businessRules: string[];
-  constraints: string[];
-  description: string;
+  systemName?: string;      // 系统名称
+  moduleName?: string;       // 模块名称
+  businessRules?: string[];  // 补充业务规则
 }
 
 /**
@@ -64,9 +62,22 @@ export interface TestCase {
  */
 export class FunctionalTestCaseAIService {
   private useConfigManager: boolean = true;
+  private knowledgeBase: TestCaseKnowledgeBase;
+  private knowledgeBaseAvailable: boolean = false;
 
   constructor() {
     console.log('🤖 功能测试用例AI服务已初始化');
+
+    // 初始化知识库服务
+    try {
+      this.knowledgeBase = new TestCaseKnowledgeBase();
+      this.knowledgeBaseAvailable = true;
+      console.log('📚 知识库服务已加载（RAG增强模式）');
+    } catch (error: any) {
+      console.warn('⚠️  知识库服务初始化失败，将降级为普通模式:', error.message);
+      this.knowledgeBaseAvailable = false;
+      this.knowledgeBase = null as any;
+    }
   }
 
   /**
@@ -242,12 +253,9 @@ export class FunctionalTestCaseAIService {
 
     // 📊 输入数据日志
     console.log('📊 【步骤 1/5】输入数据统计:');
-    console.log(`   - 项目名称: ${projectInfo.projectName}`);
-    console.log(`   - 系统类型: ${projectInfo.systemType}`);
-    console.log(`   - 业务领域: ${projectInfo.businessDomain}`);
-    console.log(`   - 项目描述: ${projectInfo.description.substring(0, 100)}${projectInfo.description.length > 100 ? '...' : ''}`);
-    console.log(`   - 业务规则数量: ${projectInfo.businessRules.length}`);
-    console.log(`   - 约束条件数量: ${projectInfo.constraints.length}`);
+    console.log(`   - 系统名称: ${projectInfo.systemName || '未指定'}`);
+    console.log(`   - 模块名称: ${projectInfo.moduleName || '未指定'}`);
+    console.log(`   - 业务规则数量: ${projectInfo.businessRules?.length || 0}`);
     console.log(`   - Axure 页面数: ${axureData.pageCount}`);
     console.log(`   - Axure 元素数: ${axureData.elementCount}`);
     console.log(`   - Axure 交互数: ${axureData.interactionCount}\n`);
@@ -449,10 +457,9 @@ export class FunctionalTestCaseAIService {
         ).join('\n\n')}\n`
       : '';
 
-    const userPrompt = `项目: ${projectInfo.projectName} (${projectInfo.systemType} - ${projectInfo.businessDomain})
-描述: ${projectInfo.description}
-${projectInfo.businessRules.length > 0 ? '\n业务规则:\n' + projectInfo.businessRules.map((r, i) => `${i + 1}. ${r}`).join('\n') : ''}
-${projectInfo.constraints.length > 0 ? '\n约束:\n' + projectInfo.constraints.map((c, i) => `${i + 1}. ${c}`).join('\n') : ''}
+    const userPrompt = `系统: ${projectInfo.systemName || '未指定'}
+模块: ${projectInfo.moduleName || '未指定'}
+${projectInfo.businessRules && projectInfo.businessRules.length > 0 ? '\n业务规则:\n' + projectInfo.businessRules.map((r, i) => `${i + 1}. ${r}`).join('\n') : ''}
 ${inputSummary}${longTextSummary}
 Axure原型解析结果 (${axureData.pageCount}页, ${axureData.elementCount}元素):
 
@@ -629,10 +636,12 @@ ${axureData.pageCount > 10 ? `\n(还有${axureData.pageCount - 10}个页面未�
     batchId: string,
     scenarios: string[], // scenarios[0] 是章节ID (如 "1.1")
     requirementDoc: string,
-    existingCases: TestCase[]
+    existingCases: TestCase[],
+    systemName?: string,  // 系统名称
+    moduleName?: string   // 模块名称
   ): Promise<TestCase[]> {
     const sectionId = scenarios[0]; // "1.1", "1.2" 等
-    console.log(`🤖 开始生成批次 ${batchId}（章节 ${sectionId}）`);
+    console.log(`🤖 开始生成批次 ${batchId}（章节 ${sectionId}），系统: ${systemName || '未指定'}, 模块: ${moduleName || '未指定'}`);
 
     // 提取该章节的完整内容
     const sectionRegex = new RegExp(`###\\s+${sectionId.replace('.', '\\.')}\\s+(.+?)[\\s\\S]*?(?=###\\s+[\\d.]+\\s+|$)`);
@@ -641,6 +650,100 @@ ${axureData.pageCount > 10 ? `\n(还有${axureData.pageCount - 10}个页面未�
     const sectionName = sectionMatch ? sectionMatch[1].trim() : '功能模块';
 
     console.log(`📄 提取章节内容 - ${sectionId} ${sectionName} (${sectionContent.length}字符)`);
+
+    // 🔍 查询知识库（RAG增强）
+    console.log(`\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+    console.log(`📚 [知识库RAG] 开始检索相关知识...`);
+    console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+
+    let knowledgeContext = '';
+    if (this.knowledgeBaseAvailable) {
+      try {
+        console.log(`🔍 [RAG-Step1] 准备查询参数:`);
+        console.log(`   📌 章节名称: "${sectionName}"`);
+        console.log(`   📌 内容长度: ${sectionContent.length}字符 (取前500字作为查询上下文)`);
+        console.log(`   📌 检索参数: topK=3, scoreThreshold=0.5`);
+
+        const queryText = `${sectionName}\n${sectionContent.substring(0, 500)}`;
+        console.log(`   📌 实际查询文本预览: ${queryText.substring(0, 150)}...`);
+
+        console.log(`\n🔍 [RAG-Step2] 调用Qdrant向量数据库进行语义检索...`);
+        const queryStartTime = Date.now();
+
+        const knowledgeResults = await this.knowledgeBase.searchByCategory({
+          query: queryText,
+          topK: 3,
+          scoreThreshold: 0.5
+        });
+
+        const queryDuration = Date.now() - queryStartTime;
+        console.log(`✅ [RAG-Step2] 向量检索完成 (耗时: ${queryDuration}ms)`);
+
+        const totalKnowledge =
+          knowledgeResults.businessRules.length +
+          knowledgeResults.testPatterns.length +
+          knowledgeResults.pitfalls.length +
+          knowledgeResults.riskScenarios.length;
+
+        if (totalKnowledge > 0) {
+          console.log(`\n📊 [RAG-Step3] 知识检索结果汇总:`);
+          console.log(`   ✅ 业务规则: ${knowledgeResults.businessRules.length}条`);
+          if (knowledgeResults.businessRules.length > 0) {
+            knowledgeResults.businessRules.forEach((r: any, i: number) => {
+              console.log(`      ${i+1}. "${r.knowledge.title}" (相似度: ${(r.score * 100).toFixed(1)}%)`);
+            });
+          }
+
+          console.log(`   ✅ 测试模式: ${knowledgeResults.testPatterns.length}条`);
+          if (knowledgeResults.testPatterns.length > 0) {
+            knowledgeResults.testPatterns.forEach((r: any, i: number) => {
+              console.log(`      ${i+1}. "${r.knowledge.title}" (相似度: ${(r.score * 100).toFixed(1)}%)`);
+            });
+          }
+
+          console.log(`   ✅ 历史踩坑点: ${knowledgeResults.pitfalls.length}条`);
+          if (knowledgeResults.pitfalls.length > 0) {
+            knowledgeResults.pitfalls.forEach((r: any, i: number) => {
+              console.log(`      ${i+1}. "${r.knowledge.title}" (相似度: ${(r.score * 100).toFixed(1)}%)`);
+            });
+          }
+
+          console.log(`   ✅ 资损风险场景: ${knowledgeResults.riskScenarios.length}条`);
+          if (knowledgeResults.riskScenarios.length > 0) {
+            knowledgeResults.riskScenarios.forEach((r: any, i: number) => {
+              console.log(`      ${i+1}. "${r.knowledge.title}" (相似度: ${(r.score * 100).toFixed(1)}%)`);
+            });
+          }
+
+          console.log(`   📈 总计检索到: ${totalKnowledge}条相关知识`);
+
+          console.log(`\n🔧 [RAG-Step4] 格式化知识上下文，准备注入AI提示词...`);
+          knowledgeContext = this.buildKnowledgeContext(knowledgeResults);
+          console.log(`✅ [RAG-Step4] 知识上下文构建完成 (长度: ${knowledgeContext.length}字符)`);
+
+          console.log(`\n🎯 [RAG模式] 将使用知识库增强模式生成测试用例`);
+        } else {
+          console.log(`\n⚠️  [RAG-Step3] 未检索到相关知识 (所有知识相似度 < 0.5)`);
+          console.log(`   💡 这可能是因为:`);
+          console.log(`      - 知识库中没有与"${sectionName}"相关的内容`);
+          console.log(`      - 相似度阈值0.5设置过高`);
+          console.log(`      - 需要添加更多业务知识到知识库`);
+          console.log(`\n🔄 [降级处理] 切换到普通模式生成（不使用知识库增强）`);
+        }
+      } catch (error: any) {
+        console.error(`\n❌ [RAG-Error] 知识库查询异常:`);
+        console.error(`   错误类型: ${error.name}`);
+        console.error(`   错误信息: ${error.message}`);
+        console.error(`   错误堆栈: ${error.stack}`);
+        console.warn(`\n🔄 [降级处理] 自动切换到普通模式生成`);
+      }
+    } else {
+      console.log(`⚠️  [RAG状态] 知识库服务未启用`);
+      console.log(`   💡 原因: 服务初始化时出现错误（检查Qdrant连接或配置）`);
+      console.log(`\n🔄 [降级处理] 使用普通模式生成（不使用知识库增强）`);
+    }
+
+    console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`);
 
     const systemPrompt = `你是一个测试用例设计专家。你的职责是：
 1. 根据需求文档的指定章节生成详细的功能测试用例
@@ -678,7 +781,8 @@ ${axureData.pageCount > 10 ? `\n(还有${axureData.pageCount - 10}个页面未�
 - steps: 汇总的操作步骤（兼容旧格式）
 - assertions: 汇总的预期结果（兼容旧格式）
 - preconditions: 前置条件（可选）
-- testData: 测试数据（可选）`;
+- testData: 测试数据（可选）
+${knowledgeContext}`;
 
     const existingCaseNames = existingCases.map(tc => tc.name).join('\n- ');
 
@@ -741,7 +845,24 @@ ${existingCaseNames || '无'}
 💡 提示：根据需求文档内容决定测试点数量，简单页面可能3-5个测试点，复杂流程可能需要10-20个测试点。`;
 
     try {
+      console.log(`\n🤖 [AI生成] 准备调用大模型生成测试用例...`);
+      console.log(`   📝 系统提示词长度: ${systemPrompt.length} 字符`);
+      console.log(`   📝 用户提示词长度: ${userPrompt.length} 字符`);
+
+      if (knowledgeContext) {
+        console.log(`   ✅ 已注入知识库上下文 (${knowledgeContext.length}字符)`);
+        console.log(`   💡 AI将基于知识库内容生成更专业的测试用例`);
+      } else {
+        console.log(`   ⚠️  未注入知识库上下文，使用普通模式生成`);
+      }
+
+      console.log(`\n🚀 [AI生成] 正在调用大模型API (GPT-4o via OpenRouter)...`);
+      const aiStartTime = Date.now();
+
       const aiResponse = await this.callAI(systemPrompt, userPrompt, 8000);
+
+      const aiDuration = Date.now() - aiStartTime;
+      console.log(`✅ [AI生成] 大模型响应完成 (耗时: ${aiDuration}ms, 响应长度: ${aiResponse.length}字符)`);
 
       // 解析AI响应
       let jsonText = aiResponse.trim();
@@ -754,10 +875,19 @@ ${existingCaseNames || '无'}
       const parsed = JSON.parse(jsonText);
       const testCases: TestCase[] = parsed.testCases || [];
 
-      // 补充章节信息
+      // 补充章节信息和系统模块信息
       testCases.forEach(tc => {
         tc.sectionId = sectionId;
         tc.sectionName = sectionName;
+
+        // 自动填充系统名称和模块名称
+        if (systemName) {
+          tc.system = systemName;
+        }
+        if (moduleName) {
+          tc.module = moduleName;
+        }
+
         // 如果没有testPoints，从steps和assertions生成一个默认测试点
         if (!tc.testPoints || tc.testPoints.length === 0) {
           tc.testPoints = [{
@@ -891,6 +1021,103 @@ ${requirementDoc.substring(0, 1500)}...
       console.log(`✅ 回退方案重新生成完成`);
       return newCases;
     }
+  }
+
+  /**
+   * 构建知识库上下文（RAG增强）
+   */
+  private buildKnowledgeContext(knowledgeResults: {
+    businessRules: any[];
+    testPatterns: any[];
+    pitfalls: any[];
+    riskScenarios: any[];
+  }): string {
+    console.log(`\n🔧 [RAG-格式化] 开始构建知识上下文，准备注入AI提示词...`);
+
+    let context = '\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n';
+    context += '📚 【知识库增强】以下是从企业知识库检索到的相关测试知识：\n';
+    context += '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n';
+
+    let totalKnowledgeAdded = 0;
+
+    // 业务规则
+    if (knowledgeResults.businessRules.length > 0) {
+      console.log(`   📋 [类别1/4] 添加业务规则 ${knowledgeResults.businessRules.length} 条:`);
+      context += '\n## 📋 业务规则参考\n';
+      context += '（生成测试用例时必须符合这些业务规则）\n\n';
+      knowledgeResults.businessRules.forEach((result, i) => {
+        const knowledge = result.knowledge;
+        const similarity = (result.score * 100).toFixed(1);
+        console.log(`      - "${knowledge.title}" (${similarity}%, ${knowledge.content.length}字符)`);
+        context += `**${i + 1}. ${knowledge.title}** (相似度: ${similarity}%)\n`;
+        context += `${knowledge.content}\n\n`;
+        totalKnowledgeAdded++;
+      });
+    } else {
+      console.log(`   📋 [类别1/4] 业务规则: 无匹配`);
+    }
+
+    // 测试模式
+    if (knowledgeResults.testPatterns.length > 0) {
+      console.log(`   🎯 [类别2/4] 添加测试模式 ${knowledgeResults.testPatterns.length} 条:`);
+      context += '\n## 🎯 测试模式参考\n';
+      context += '（参考这些测试模式设计测试点，确保覆盖全面）\n\n';
+      knowledgeResults.testPatterns.forEach((result, i) => {
+        const knowledge = result.knowledge;
+        const similarity = (result.score * 100).toFixed(1);
+        console.log(`      - "${knowledge.title}" (${similarity}%, ${knowledge.content.length}字符)`);
+        context += `**${i + 1}. ${knowledge.title}** (相似度: ${similarity}%)\n`;
+        context += `${knowledge.content}\n\n`;
+        totalKnowledgeAdded++;
+      });
+    } else {
+      console.log(`   🎯 [类别2/4] 测试模式: 无匹配`);
+    }
+
+    // 历史踩坑点
+    if (knowledgeResults.pitfalls.length > 0) {
+      console.log(`   ⚠️  [类别3/4] 添加历史踩坑点 ${knowledgeResults.pitfalls.length} 条 (高优先级):`);
+      context += '\n## ⚠️  历史踩坑点（必须覆盖）\n';
+      context += '（这些是历史上发生过的bug，测试用例中必须包含这些场景以避免重复犯错）\n\n';
+      knowledgeResults.pitfalls.forEach((result, i) => {
+        const knowledge = result.knowledge;
+        const similarity = (result.score * 100).toFixed(1);
+        console.log(`      - "${knowledge.title}" (${similarity}%, ${knowledge.content.length}字符)`);
+        context += `**${i + 1}. ${knowledge.title}** (相似度: ${similarity}%)\n`;
+        context += `${knowledge.content}\n\n`;
+        totalKnowledgeAdded++;
+      });
+    } else {
+      console.log(`   ⚠️  [类别3/4] 历史踩坑点: 无匹配`);
+    }
+
+    // 资损风险场景
+    if (knowledgeResults.riskScenarios.length > 0) {
+      console.log(`   🔥 [类别4/4] 添加资损风险场景 ${knowledgeResults.riskScenarios.length} 条 (最高优先级):`);
+      context += '\n## 🔥 资损风险场景（优先级最高）\n';
+      context += '（这些场景可能导致资金损失或安全问题，必须优先测试并标记为high风险等级）\n\n';
+      knowledgeResults.riskScenarios.forEach((result, i) => {
+        const knowledge = result.knowledge;
+        const similarity = (result.score * 100).toFixed(1);
+        console.log(`      - "${knowledge.title}" (${similarity}%, ${knowledge.content.length}字符)`);
+        context += `**${i + 1}. ${knowledge.title}** (相似度: ${similarity}%)\n`;
+        context += `${knowledge.content}\n\n`;
+        totalKnowledgeAdded++;
+      });
+    } else {
+      console.log(`   🔥 [类别4/4] 资损风险场景: 无匹配`);
+    }
+
+    context += '\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n';
+    context += '💡 请基于以上知识库内容生成更专业、更全面的测试用例\n';
+    context += '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n';
+
+    console.log(`✅ [RAG-格式化] 知识上下文构建完成:`);
+    console.log(`   📊 总计添加 ${totalKnowledgeAdded} 条知识`);
+    console.log(`   📏 上下文总长度: ${context.length} 字符`);
+    console.log(`   💡 这些知识将被注入到AI系统提示词中，引导生成更专业的测试用例\n`);
+
+    return context;
   }
 
   /**

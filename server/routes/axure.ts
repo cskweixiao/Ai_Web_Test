@@ -173,9 +173,9 @@ export function createAxureRoutes(): Router {
       await prisma.ai_generation_sessions.update({
         where: { id: sessionId },
         data: {
-          project_name: projectInfo.projectName,
-          system_type: projectInfo.systemType,
-          business_domain: projectInfo.businessDomain,
+          project_name: projectInfo.systemName || '',    // 使用系统名称
+          system_type: projectInfo.moduleName || '',     // 使用模块名称
+          business_domain: '',                           // 不再使用
           requirement_doc: result.requirementDoc
         }
       });
@@ -240,7 +240,7 @@ export function createAxureRoutes(): Router {
    */
   router.post('/generate-batch', async (req: Request, res: Response) => {
     try {
-      const { sessionId, batchId, scenarios, requirementDoc, existingCases } = req.body;
+      const { sessionId, batchId, scenarios, requirementDoc, existingCases, systemName, moduleName } = req.body;
 
       if (!sessionId || !batchId || !scenarios || !requirementDoc) {
         return res.status(400).json({
@@ -249,14 +249,16 @@ export function createAxureRoutes(): Router {
         });
       }
 
-      console.log(`🤖 开始生成批次: ${batchId}`);
+      console.log(`🤖 开始生成批次: ${batchId}, 系统: ${systemName || '未指定'}, 模块: ${moduleName || '未指定'}`);
 
       // 调用AI服务生成测试用例
       const testCases = await functionalTestCaseAIService.generateBatch(
         batchId,
         scenarios,
         requirementDoc,
-        existingCases || []
+        existingCases || [],
+        systemName,
+        moduleName
       );
 
       // 更新会话统计
