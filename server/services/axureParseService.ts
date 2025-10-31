@@ -30,16 +30,43 @@ export class AxureParseService {
       const mainContainers = ['#base', 'body'];
       let foundMainContent = false;
 
+      // 🎯 优化：从<title>标签提取真实页面名称
+      const titleText = $('head title').text().trim();
+      let cleanedTitle = titleText;
+
+      // 清理常见的Axure后缀（通用规则）
+      if (titleText) {
+        cleanedTitle = titleText
+          .replace(/\s*-\s*Axure\s*RP.*$/i, '')  // 移除 "- Axure RP 9"
+          .replace(/\s*\|\s*Axure.*$/i, '')      // 移除 "| Axure"
+          .replace(/\s*-\s*Powered by.*$/i, '') // 移除 "- Powered by..."
+          .trim();
+
+        if (cleanedTitle) {
+          console.log(`  📌 从<title>提取页面名称: "${cleanedTitle}"`);
+        }
+      }
+
       for (const selector of mainContainers) {
         const mainElem = $(selector);
         if (mainElem.length > 0) {
           console.log(`  ✓ 找到主容器: ${selector}`);
           const mainPage = this.extractPage($, mainElem[0]);
+
           if (mainPage.elements.length > 0) {
-            mainPage.name = mainPage.name || '主页面';
+            // 🎯 关键修复：如果提取的名称无效（如"base"），强制使用<title>中的名称
+            if (!this.isValidBusinessName(mainPage.name)) {
+              if (cleanedTitle && this.isValidBusinessName(cleanedTitle)) {
+                console.log(`  🔄 替换无效名称 "${mainPage.name}" → "${cleanedTitle}"`);
+                mainPage.name = cleanedTitle;
+              } else {
+                mainPage.name = '主页面';
+              }
+            }
+
             pages.push(mainPage);
             foundMainContent = true;
-            console.log(`  ✅ 主页面提取成功: ${mainPage.elements.length} 个元素`);
+            console.log(`  ✅ 主页面提取成功: "${mainPage.name}", ${mainPage.elements.length} 个元素`);
             break;
           }
         }
@@ -57,7 +84,7 @@ export class AxureParseService {
         '[id^="page"]',
         '[id^="p-"]',
         '.ax-page',
-        'div[data-label]'
+        'div[data-label]:not(.panel_state)'  // 🎯 关键修复：排除动态面板的状态容器
       ];
 
       let foundAdditionalPages = false;
@@ -70,6 +97,19 @@ export class AxureParseService {
 
           elements.each((i, elem) => {
             const $elem = $(elem);
+
+            // 🎯 关键修复1: 跳过动态面板的状态容器（panel_state）
+            if ($elem.hasClass('panel_state')) {
+              console.log(`    ⏩ 跳过动态面板状态容器: ${$elem.attr('data-label') || $elem.attr('id')}`);
+              return;
+            }
+
+            // 🎯 关键修复2: 跳过ID匹配状态容器格式的元素（u数字_state数字）
+            const elemId = $elem.attr('id');
+            if (elemId && /^u\d+_state\d+$/i.test(elemId)) {
+              console.log(`    ⏩ 跳过状态容器ID: ${elemId}`);
+              return;
+            }
 
             // 🔍 只提取非隐藏的页面容器 (使用正则表达式匹配,兼容有无空格)
             const style = $elem.attr('style') || '';
@@ -128,14 +168,63 @@ export class AxureParseService {
   private extractPage($: cheerio.CheerioAPI, elem: cheerio.Element): AxurePage {
     const $elem = $(elem);
 
-    // 提取页面名称
-    const name =
-      $elem.attr('data-name') ||
-      $elem.attr('data-label') ||
-      $elem.attr('title') ||
-      $elem.attr('id') ||
-      $elem.find('h1, h2, h3').first().text().trim() ||
-      'Unnamed Page';
+    console.log(`  📄 提取页面信息...`);
+
+    // 🎯 改进的页面名称提取优先级（通用规则）
+    let name = '';
+
+    // 优先级1: 从页面标题元素提取（h1 > h2 > h3）- 业务页面通常有明确的标题
+    const headingText = $elem.find('h1, h2, h3').first().text().trim();
+    if (headingText && this.isValidBusinessName(headingText)) {
+      name = headingText;
+      console.log(`    ✓ 使用标题元素: "${name}"`);
+    }
+
+    // 优先级2: data-label 属性（如果有效）
+    if (!name) {
+      const dataLabel = $elem.attr('data-label');
+      if (dataLabel && this.isValidBusinessName(dataLabel)) {
+        name = dataLabel;
+        console.log(`    ✓ 使用data-label: "${name}"`);
+      } else if (dataLabel) {
+        console.log(`    ✗ data-label无效: "${dataLabel}"`);
+      }
+    }
+
+    // 优先级3: data-name 属性（如果有效）
+    if (!name) {
+      const dataName = $elem.attr('data-name');
+      if (dataName && this.isValidBusinessName(dataName)) {
+        name = dataName;
+        console.log(`    ✓ 使用data-name: "${name}"`);
+      } else if (dataName) {
+        console.log(`    ✗ data-name无效: "${dataName}"`);
+      }
+    }
+
+    // 优先级4: title 属性（如果有效）
+    if (!name) {
+      const titleAttr = $elem.attr('title');
+      if (titleAttr && this.isValidBusinessName(titleAttr)) {
+        name = titleAttr;
+        console.log(`    ✓ 使用title属性: "${name}"`);
+      }
+    }
+
+    // 优先级5: id 属性（最后才考虑，因为可能是技术ID）
+    if (!name) {
+      const idAttr = $elem.attr('id');
+      if (idAttr && this.isValidBusinessName(idAttr)) {
+        name = idAttr;
+        console.log(`    ⚠️  使用id属性: "${name}"`);
+      }
+    }
+
+    // 如果以上都没有，使用默认名称
+    if (!name) {
+      name = 'Unnamed Page';
+      console.log(`    ? 使用默认名称: "${name}"`);
+    }
 
     // 提取页面URL
     const url = $elem.attr('data-url') || $elem.attr('href') || '';
@@ -687,5 +776,67 @@ export class AxureParseService {
 
     console.log(`    ? 无法判断页面类型 → unknown`);
     return 'unknown';
+  }
+
+  /**
+   * 判断是否是有效的业务页面名称（通用规则，不依赖特定内容）
+   * @param name 待验证的名称
+   * @returns true表示是有效的业务名称，false表示可能是技术名称
+   */
+  private isValidBusinessName(name: string): boolean {
+    if (!name || typeof name !== 'string') {
+      return false;
+    }
+
+    const trimmed = name.trim();
+
+    // 规则1: 长度至少2个字符（排除单字符）
+    if (trimmed.length < 2) {
+      console.log(`      ✗ 名称太短: "${trimmed}"`);
+      return false;
+    }
+
+    // 规则2: 不是纯数字（如 "58", "65"）
+    if (/^\d+$/.test(trimmed)) {
+      console.log(`      ✗ 纯数字: "${trimmed}"`);
+      return false;
+    }
+
+    // 规则3: 不是Axure自动生成的ID格式（u + 数字）
+    if (/^u\d+$/i.test(trimmed)) {
+      console.log(`      ✗ Axure自动ID: "${trimmed}"`);
+      return false;
+    }
+
+    // 规则4: 不是动态面板状态格式（State + 数字）
+    if (/^State\d+$/i.test(trimmed)) {
+      console.log(`      ✗ 动态面板状态: "${trimmed}"`);
+      return false;
+    }
+
+    // 规则5: 不是状态容器ID格式（u数字_state数字）
+    if (/^u\d+_state\d+$/i.test(trimmed)) {
+      console.log(`      ✗ 状态容器ID: "${trimmed}"`);
+      return false;
+    }
+
+    // 规则6: 不是常见的技术性单词（base, body, container, wrapper, content, panel）
+    const technicalWords = ['base', 'body', 'container', 'wrapper', 'content', 'panel'];
+    if (technicalWords.includes(trimmed.toLowerCase())) {
+      console.log(`      ✗ 技术性单词: "${trimmed}"`);
+      return false;
+    }
+
+    // 规则7: 应该包含至少一个中文字符 OR 至少3个英文字符
+    const hasChinese = /[\u4e00-\u9fa5]/.test(trimmed);
+    const hasEnglish = /[a-zA-Z]{3,}/.test(trimmed);
+
+    if (!hasChinese && !hasEnglish) {
+      console.log(`      ✗ 无有效文字内容: "${trimmed}"`);
+      return false;
+    }
+
+    console.log(`      ✓ 有效业务名称: "${trimmed}"`);
+    return true;
   }
 }
