@@ -14,6 +14,11 @@ export interface ListParams {
   system?: string;
   module?: string;
   source?: string;
+  sectionName?: string;
+  createdBy?: string;
+  startDate?: string;
+  endDate?: string;
+  riskLevel?: string;
   userDepartment?: string;
   isSuperAdmin?: boolean;
 }
@@ -132,6 +137,11 @@ export class FunctionalTestCaseService {
       system,
       module,
       source,
+      sectionName,
+      createdBy,
+      startDate,
+      endDate,
+      riskLevel,
       userDepartment,
       isSuperAdmin
     } = params;
@@ -151,24 +161,59 @@ export class FunctionalTestCaseService {
     if (priority) caseWhere.priority = priority;
     if (status) caseWhere.status = status;
     if (source) caseWhere.source = source;
+    if (sectionName) caseWhere.section_name = { contains: sectionName };
 
     if (tag) {
       caseWhere.tags = { contains: tag };
     }
 
+    // 创建人筛选
+    if (createdBy) {
+      caseWhere.users = {
+        username: { contains: createdBy }
+      };
+    }
+
+    // 创建时间范围筛选
+    if (startDate || endDate) {
+      caseWhere.created_at = {};
+      if (startDate) {
+        caseWhere.created_at.gte = new Date(startDate);
+      }
+      if (endDate) {
+        // 结束日期包含当天，设置为23:59:59
+        const endDateTime = new Date(endDate);
+        endDateTime.setHours(23, 59, 59, 999);
+        caseWhere.created_at.lte = endDateTime;
+      }
+    }
+
     // 数据隔离
     if (!isSuperAdmin && userDepartment) {
-      caseWhere.users = { department: userDepartment };
+      // 如果已经设置了用户筛选，需要合并
+      if (caseWhere.users) {
+        caseWhere.users.department = userDepartment;
+      } else {
+        caseWhere.users = { department: userDepartment };
+      }
+    }
+
+    // 构建测试点查询条件
+    const pointWhere: any = {};
+    if (riskLevel) {
+      pointWhere.risk_level = riskLevel;
     }
 
     try {
       console.log('📊 平铺查询条件:', JSON.stringify(caseWhere, null, 2));
+      console.log('📊 测试点查询条件:', JSON.stringify(pointWhere, null, 2));
 
       // 方式1：直接查询测试点表，JOIN 测试用例表（更高效）
       // 查询所有测试点，带上测试用例信息
       const testPoints = await this.prisma.functional_test_points.findMany({
         where: {
-          functional_test_case: caseWhere
+          functional_test_case: caseWhere,
+          ...pointWhere
         },
         orderBy: [
           { functional_test_case: { created_at: 'desc' } },

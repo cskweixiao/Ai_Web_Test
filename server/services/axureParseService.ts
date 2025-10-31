@@ -146,12 +146,18 @@ export class AxureParseService {
     // 提取交互行为
     const interactions = this.extractInteractions($, elem);
 
-    return {
+    // 创建页面对象
+    const page: AxurePage = {
       name,
       url,
       elements,
       interactions
     };
+
+    // 自动识别页面类型
+    page.pageType = this.detectPageType(page);
+
+    return page;
   }
 
   /**
@@ -585,5 +591,101 @@ export class AxureParseService {
       interactionCount,
       pages: allPages
     };
+  }
+
+  /**
+   * 自动识别页面类型
+   * 根据页面元素、按钮文本、页面名称等启发式规则判断页面类型
+   * @param page 页面对象
+   * @returns 页面类型
+   */
+  private detectPageType(page: AxurePage): 'list' | 'form' | 'detail' | 'dialog' | 'mixed' | 'unknown' {
+    const inputCount = page.elements.filter(e => e.type === 'input' || e.type === 'select').length;
+    const buttonCount = page.elements.filter(e => e.type === 'button').length;
+    const divCount = page.elements.filter(e => e.type === 'div' && e.text && e.text.length > 5).length;
+
+    console.log(`  🔍 页面类型识别 "${page.name}": input=${inputCount}, button=${buttonCount}, div=${divCount}`);
+
+    // 规则1: 查询按钮 + 数据展示 → 列表页
+    const queryButtons = page.elements.filter(e =>
+      e.type === 'button' &&
+      e.text && (
+        e.text.includes('查询') ||
+        e.text.includes('搜索') ||
+        e.text.includes('重置') ||
+        e.text.toLowerCase().includes('search') ||
+        e.text.toLowerCase().includes('query')
+      )
+    );
+
+    // 规则2: 保存/提交按钮 → 表单页
+    const formButtons = page.elements.filter(e =>
+      e.type === 'button' &&
+      e.text && (
+        e.text.includes('保存') ||
+        e.text.includes('提交') ||
+        e.text.includes('确定') ||
+        e.text.includes('创建') ||
+        e.text.includes('新建') ||
+        e.text.toLowerCase().includes('save') ||
+        e.text.toLowerCase().includes('submit') ||
+        e.text.toLowerCase().includes('create')
+      )
+    );
+
+    console.log(`    - 查询按钮: ${queryButtons.length}个, 表单按钮: ${formButtons.length}个`);
+
+    // 规则3: 页面名称关键词
+    const nameLower = page.name.toLowerCase();
+    if (nameLower.includes('列表') || nameLower.includes('list') || nameLower.includes('管理')) {
+      console.log(`    ✓ 页面名称包含"列表/list/管理" → list`);
+      return 'list';
+    }
+    if (nameLower.includes('新建') || nameLower.includes('编辑') || nameLower.includes('修改') ||
+        nameLower.includes('create') || nameLower.includes('edit') || nameLower.includes('form')) {
+      console.log(`    ✓ 页面名称包含"新建/编辑/修改" → form`);
+      return 'form';
+    }
+    if (nameLower.includes('详情') || nameLower.includes('查看') || nameLower.includes('detail') || nameLower.includes('view')) {
+      console.log(`    ✓ 页面名称包含"详情/查看" → detail`);
+      return 'detail';
+    }
+    if (nameLower.includes('弹窗') || nameLower.includes('对话框') || nameLower.includes('modal') || nameLower.includes('dialog')) {
+      console.log(`    ✓ 页面名称包含"弹窗/对话框" → dialog`);
+      return 'dialog';
+    }
+
+    // 规则4: 按钮文本 + 元素比例分析
+    if (queryButtons.length > 0 && divCount > inputCount * 2) {
+      console.log(`    ✓ 有查询按钮且展示内容多 (div/input=${(divCount/Math.max(inputCount,1)).toFixed(1)}) → list`);
+      return 'list';
+    }
+    if (formButtons.length > 0 && inputCount >= 3) {
+      console.log(`    ✓ 有表单按钮且输入框>=3 → form`);
+      return 'form';
+    }
+    if (inputCount === 0 && divCount > 10) {
+      console.log(`    ✓ 无输入框且展示内容丰富 → detail`);
+      return 'detail';
+    }
+
+    // 规则5: 元素比例判断
+    const inputDivRatio = inputCount === 0 ? 0 : divCount / inputCount;
+    if (inputDivRatio > 5) {
+      console.log(`    ✓ 展示内容远多于输入框 (ratio=${inputDivRatio.toFixed(1)}) → list`);
+      return 'list';
+    } else if (inputDivRatio < 1 && inputCount > 3) {
+      console.log(`    ✓ 输入框多于展示内容 (ratio=${inputDivRatio.toFixed(1)}) → form`);
+      return 'form';
+    }
+
+    // 规则6: 混合或未知
+    if (inputCount > 0 && divCount > 0) {
+      console.log(`    ? 元素特征不明显 → mixed`);
+      return 'mixed';
+    }
+
+    console.log(`    ? 无法判断页面类型 → unknown`);
+    return 'unknown';
   }
 }

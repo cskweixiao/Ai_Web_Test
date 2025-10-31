@@ -293,26 +293,56 @@ export class FunctionalTestCaseAIService {
 📋 必须包含的内容:
 
 **一、页面结构（仅当原型中存在时才写）**
+
+⚠️ **重要：首先识别页面类型，然后根据页面类型生成对应章节！**
+
+🔍 **页面类型识别规则**：
+- **列表页（list）**：包含"查询"/"搜索"按钮，主要展示数据列表
+  → 需要生成：查询条件、列表展示字段、操作按钮
+- **表单页（form）**：包含"保存"/"提交"按钮，主要用于新建/编辑数据
+  → 需要生成：表单字段、操作按钮（不要生成查询条件）
+- **详情页（detail）**：只读展示，无输入框，包含大量展示内容
+  → 需要生成：详情展示字段、操作按钮（不要生成查询条件）
+- **弹窗页（dialog）**：独立弹窗，根据内容判断是表单还是详情
+- **混合页（mixed）**：包含多种功能，根据实际情况生成
+- **未知页（unknown）**：无法判断，谨慎处理
+
+📝 **input/select 元素的正确归类**：
+- **列表页** → 查询条件（过滤数据用）
+- **表单页** → 表单字段（创建/编辑数据用）
+- **详情页** → 通常不应该有input/select（如果有，可能是混合页）
+
+🎯 **章节生成规则**：
+
+**对于列表页（list）**：
 - 查询条件：
-  * ⚠️ 绝对优先规则：type="input"或type="select"的元素就是查询条件！
-  * 🔍 识别步骤：
-    1. 先扫描所有type="input"和type="select"元素
-    2. 如果元素有name属性，name就是查询条件字段名
-    3. 把所有这些字段都列为查询条件，不要管字段名是否在列表中出现
-  * 🚫 绝对禁止：不要把input/select类型的元素判断为列表字段
-  * 📝 判断规则速查表：
-    - type="input" + name="客户名称" → 查询条件: 客户名称
-    - type="select" + name="订单状态" → 查询条件: 订单状态
-    - type="input" + name="渠道集采订单号" → 查询条件: 渠道集采订单号（即使列表中也有这个字段名）
-    - type="div" + text="JC2025090212300100001" → 列表字段: 渠道集采订单号（这是显示的数据值）
-  * 🎯 执行要求：先找出所有input/select，全部归类为查询条件，然后再处理列表字段
+  * 从 type="input" 或 type="select" 的元素中提取
+  * 这些是用户用来过滤列表数据的条件
+  * 如果元素有name属性，name就是查询条件字段名
 
 - 列表展示字段：
-  * 仅从type="div"的元素中提取
-  * 这些是用来显示数据的只读区域，不是输入框
-  * 如果某个字段名已经在查询条件中出现过，在列表中就不要重复写了
+  * 从 type="div" 的元素中提取
+  * 这些是列表中展示的数据列
+  * 如果某个字段名已经在查询条件中出现，在列表中就不要重复
 
-- 操作按钮：从type="button"的元素中提取
+- 操作按钮：从 type="button" 的元素中提取
+
+**对于表单页（form）**：
+- 🚫 不要生成"查询条件"章节！
+- 表单字段：
+  * 从 type="input" 或 type="select" 的元素中提取
+  * 这些是用户用来输入/编辑数据的字段
+  * 记录字段名、控件类型、必填项、默认值、说明
+
+- 操作按钮：从 type="button" 的元素中提取（通常是"保存"/"提交"/"取消"）
+
+**对于详情页（detail）**：
+- 🚫 不要生成"查询条件"章节！
+- 详情展示字段：
+  * 从 type="div" 的元素中提取
+  * 这些是只读展示的数据字段
+
+- 操作按钮：从 type="button" 的元素中提取（通常是"返回"/"编辑"）
 
 **二、表单详细定义（仅当原型中存在表单时才写）**
 从原型中逐个提取每个字段的:
@@ -358,15 +388,46 @@ export class FunctionalTestCaseAIService {
 
 ### 1.1 [实际页面名称]
 
-#### 1.1.1 查询条件（仅当原型中存在列表页时）
+⚠️ **页面类型：[list/form/detail/dialog/mixed/unknown]** ← 必须先标注页面类型！
+
+📋 **根据页面类型生成对应章节**：
+
+**如果是列表页（list）**，生成以下章节：
+
+#### 1.1.1 查询条件
 | 字段名 | 控件类型 | 必填 | 默认值 | 说明 | 来源 |
 |--------|---------|------|--------|------|------|
 （此处填入从原型提取的实际字段，不要写任何占位符）
 
-#### 1.1.2 列表展示字段（仅当原型中存在时）
+#### 1.1.2 列表展示字段
 | 字段名 | 数据类型 | 格式 | 说明 | 来源 |
 |--------|---------|------|------|------|
 （此处填入从原型提取的实际字段，不要写任何占位符）
+
+#### 1.1.3 操作按钮
+（列出列表中的操作按钮）
+
+**如果是表单页（form）**，生成以下章节：
+
+#### 1.1.1 表单字段
+| 字段名 | 控件类型 | 必填 | 默认值 | 说明 | 来源 |
+|--------|---------|------|--------|------|------|
+（此处填入从原型提取的实际字段，不要写任何占位符）
+
+#### 1.1.2 操作按钮
+（列出表单中的操作按钮，通常是"保存"/"提交"/"取消"等）
+
+**如果是详情页（detail）**，生成以下章节：
+
+#### 1.1.1 详情展示字段
+| 字段名 | 数据类型 | 格式 | 说明 | 来源 |
+|--------|---------|------|------|------|
+（此处填入从原型提取的实际字段，不要写任何占位符）
+
+#### 1.1.2 操作按钮
+（列出详情页中的操作按钮，通常是"返回"/"编辑"等）
+
+**如果是混合页（mixed）或未知页（unknown）**，根据实际情况灵活生成章节
 
 #### 1.1.3 操作按钮（仅当原型中存在时）
 | 按钮名称 | 位置 | 触发条件 | 操作说明 | 来源 |
@@ -408,28 +469,67 @@ export class FunctionalTestCaseAIService {
 4. 如果原型中没有某个章节的内容，就跳过该章节，不要生成示例
 5. 所有字段名、按钮文本都必须从原型中提取，不要自己创造`;
 
-    // 🎯 关键优化: 提前收集所有input/select元素,确保查询条件完整展示给AI
-    const allInputElements: Array<{name?: string; type: string; value?: string; placeholder?: string; page: string}> = [];
+    // 🎯 关键优化: 收集页面类型信息和元素统计,帮助AI识别页面类型
+    const pageTypeAnalysis: Array<{
+      name: string;
+      pageType: string;
+      inputCount: number;
+      buttonCount: number;
+      queryButtons: string[];
+      formButtons: string[];
+      suggestion: string;
+    }> = [];
+
     (axureData.pages || []).forEach(page => {
-      (page.elements || [])
-        .filter(e => e.type === 'input' || e.type === 'select')
-        .forEach(e => {
-          if (e.name) {
-            allInputElements.push({
-              name: e.name,
-              type: e.type,
-              value: e.value,
-              placeholder: e.placeholder,
-              page: page.name || '未命名'
-            });
-          }
-        });
+      const inputCount = (page.elements || []).filter(e => e.type === 'input' || e.type === 'select').length;
+      const buttonCount = (page.elements || []).filter(e => e.type === 'button').length;
+
+      const queryButtons = (page.elements || [])
+        .filter(e => e.type === 'button' && e.text && (
+          e.text.includes('查询') || e.text.includes('搜索') || e.text.includes('重置')
+        ))
+        .map(e => e.text || '');
+
+      const formButtons = (page.elements || [])
+        .filter(e => e.type === 'button' && e.text && (
+          e.text.includes('保存') || e.text.includes('提交') || e.text.includes('确定')
+        ))
+        .map(e => e.text || '');
+
+      const pageType = page.pageType || 'unknown';
+
+      let suggestion = '';
+      if (pageType === 'list') {
+        suggestion = '需要生成：查询条件、列表展示字段、操作按钮';
+      } else if (pageType === 'form') {
+        suggestion = '需要生成：表单字段、操作按钮（不要生成查询条件）';
+      } else if (pageType === 'detail') {
+        suggestion = '需要生成：详情展示字段、操作按钮（不要生成查询条件）';
+      } else {
+        suggestion = '根据实际情况灵活生成';
+      }
+
+      pageTypeAnalysis.push({
+        name: page.name || '未命名',
+        pageType,
+        inputCount,
+        buttonCount,
+        queryButtons,
+        formButtons,
+        suggestion
+      });
     });
 
-    const inputSummary = allInputElements.length > 0
-      ? `\n🔍 【重要】原型中的所有输入框/下拉框 (${allInputElements.length}个,这些必须全部作为查询条件):\n${allInputElements.map((inp, i) =>
-          `${i + 1}. ${inp.type}: name="${inp.name}"${inp.value ? `, value="${inp.value}"` : ''}${inp.placeholder ? `, placeholder="${inp.placeholder}"` : ''} (来源: ${inp.page})`
-        ).join('\n')}\n`
+    const pageTypeTable = pageTypeAnalysis.length > 0
+      ? `\n🔍 【重要】页面类型分析表（请根据此表生成对应章节）:\n${pageTypeAnalysis.map((p, i) =>
+          `${i + 1}. ${p.name}
+   页面类型: ${p.pageType}
+   输入框数量: ${p.inputCount}
+   按钮数量: ${p.buttonCount}
+   查询按钮: ${p.queryButtons.length > 0 ? p.queryButtons.join(', ') : '无'}
+   表单按钮: ${p.formButtons.length > 0 ? p.formButtons.join(', ') : '无'}
+   📋 章节建议: ${p.suggestion}`
+        ).join('\n\n')}\n`
       : '';
 
     // 🎯 关键优化2: 提取所有长文本段落(可能包含重要的业务规则说明)
@@ -460,7 +560,7 @@ export class FunctionalTestCaseAIService {
     const userPrompt = `系统: ${projectInfo.systemName || '未指定'}
 模块: ${projectInfo.moduleName || '未指定'}
 ${projectInfo.businessRules && projectInfo.businessRules.length > 0 ? '\n业务规则:\n' + projectInfo.businessRules.map((r, i) => `${i + 1}. ${r}`).join('\n') : ''}
-${inputSummary}${longTextSummary}
+${pageTypeTable}${longTextSummary}
 Axure原型解析结果 (${axureData.pageCount || 0}页, ${axureData.elementCount || 0}元素):
 
 ${(axureData.pages || []).slice(0, 10).map((page, i) => {
@@ -489,6 +589,8 @@ ${(axureData.pages || []).slice(0, 10).map((page, i) => {
   ).join('\n');
 
   return `页面${i + 1}: ${page.name || '未命名'}
+⚠️ 页面类型: ${page.pageType || 'unknown'}
+
 📝 输入框/下拉框 (${inputElements.length}个):
 ${inputDetail || '  无'}
 

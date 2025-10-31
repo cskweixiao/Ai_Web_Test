@@ -79,7 +79,12 @@ export function createFunctionalTestCaseRoutes(): Router {
         status,
         system,
         module,
-        source
+        source,
+        sectionName,
+        createdBy,
+        startDate,
+        endDate,
+        riskLevel
       } = req.query;
 
       // 获取用户信息（用于数据隔离）
@@ -98,6 +103,11 @@ export function createFunctionalTestCaseRoutes(): Router {
         system: system as string,
         module: module as string,
         source: source as string,
+        sectionName: sectionName as string,
+        createdBy: createdBy as string,
+        startDate: startDate as string,
+        endDate: endDate as string,
+        riskLevel: riskLevel as string,
         userDepartment,
         isSuperAdmin
       });

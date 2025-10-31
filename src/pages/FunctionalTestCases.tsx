@@ -42,7 +42,12 @@ export function FunctionalTestCases() {
     source: '',
     priority: '',
     status: '',
-    tag: ''
+    tag: '',
+    sectionName: '',
+    createdBy: '',
+    startDate: '',
+    endDate: '',
+    riskLevel: ''
   });
   const [showFilters, setShowFilters] = useState(false);
 
@@ -239,7 +244,10 @@ export function FunctionalTestCases() {
           </button>
           <button
             onClick={() => {
-              setFilters({ search: '', system: '', module: '', source: '', priority: '', status: '', tag: '' });
+              setFilters({
+                search: '', system: '', module: '', source: '', priority: '', status: '', tag: '',
+                sectionName: '', createdBy: '', startDate: '', endDate: '', riskLevel: ''
+              });
               setPagination(prev => ({ ...prev, page: 1 }));
             }}
             className="inline-flex items-center px-4 py-2 text-gray-600 hover:text-gray-900
@@ -259,72 +267,129 @@ export function FunctionalTestCases() {
               exit={{ height: 0, opacity: 0 }}
               className="overflow-hidden"
             >
-              <div className="grid grid-cols-4 gap-3 pt-3 border-t border-gray-200">
-                <select
-                  value={filters.system}
-                  onChange={e => setFilters(prev => ({ ...prev, system: e.target.value }))}
-                  className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2
-                           focus:ring-blue-500 focus:border-transparent"
-                >
-                  <option value="">全部系统</option>
-                  <option value="电商系统">电商系统</option>
-                  <option value="OA系统">OA系统</option>
-                  <option value="CRM系统">CRM系统</option>
-                </select>
+              <div className="space-y-3 pt-3 border-t border-gray-200">
+                {/* 第一行 */}
+                <div className="grid grid-cols-5 gap-3">
+                  <select
+                    value={filters.system}
+                    onChange={e => setFilters(prev => ({ ...prev, system: e.target.value }))}
+                    className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2
+                             focus:ring-blue-500 focus:border-transparent"
+                  >
+                    <option value="">全部系统</option>
+                    <option value="电商系统">电商系统</option>
+                    <option value="OA系统">OA系统</option>
+                    <option value="CRM系统">CRM系统</option>
+                  </select>
 
-                <select
-                  value={filters.module}
-                  onChange={e => setFilters(prev => ({ ...prev, module: e.target.value }))}
-                  className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2
-                           focus:ring-blue-500 focus:border-transparent"
-                >
-                  <option value="">全部模块</option>
-                </select>
+                  <select
+                    value={filters.module}
+                    onChange={e => setFilters(prev => ({ ...prev, module: e.target.value }))}
+                    className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2
+                             focus:ring-blue-500 focus:border-transparent"
+                  >
+                    <option value="">全部模块</option>
+                  </select>
 
-                <select
-                  value={filters.priority}
-                  onChange={e => setFilters(prev => ({ ...prev, priority: e.target.value }))}
-                  className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2
-                           focus:ring-blue-500 focus:border-transparent"
-                >
-                  <option value="">全部优先级</option>
-                  <option value="critical">紧急</option>
-                  <option value="high">高</option>
-                  <option value="medium">中</option>
-                  <option value="low">低</option>
-                </select>
+                  <input
+                    type="text"
+                    placeholder="页面名称..."
+                    value={filters.sectionName}
+                    onChange={e => setFilters(prev => ({ ...prev, sectionName: e.target.value }))}
+                    className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2
+                             focus:ring-blue-500 focus:border-transparent"
+                  />
 
-                <select
-                  value={filters.status}
-                  onChange={e => setFilters(prev => ({ ...prev, status: e.target.value }))}
-                  className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2
-                           focus:ring-blue-500 focus:border-transparent"
-                >
-                  <option value="">全部状态</option>
-                  <option value="PUBLISHED">已发布</option>
-                  <option value="DRAFT">草稿</option>
-                  <option value="ARCHIVED">已归档</option>
-                </select>
+                  <select
+                    value={filters.priority}
+                    onChange={e => setFilters(prev => ({ ...prev, priority: e.target.value }))}
+                    className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2
+                             focus:ring-blue-500 focus:border-transparent"
+                  >
+                    <option value="">全部优先级</option>
+                    <option value="critical">紧急</option>
+                    <option value="high">高</option>
+                    <option value="medium">中</option>
+                    <option value="low">低</option>
+                  </select>
 
-                <select
-                  value={filters.source}
-                  onChange={e => setFilters(prev => ({ ...prev, source: e.target.value }))}
-                  className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2
-                           focus:ring-blue-500 focus:border-transparent"
-                >
-                  <option value="">全部来源</option>
-                  <option value="AI_GENERATED">AI生成</option>
-                  <option value="MANUAL">手动创建</option>
-                </select>
+                  <select
+                    value={filters.status}
+                    onChange={e => setFilters(prev => ({ ...prev, status: e.target.value }))}
+                    className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2
+                             focus:ring-blue-500 focus:border-transparent"
+                  >
+                    <option value="">全部状态</option>
+                    <option value="PUBLISHED">已发布</option>
+                    <option value="DRAFT">草稿</option>
+                    <option value="ARCHIVED">已归档</option>
+                  </select>
+                </div>
 
-                <input
-                  type="text"
-                  placeholder="标签筛选..."
-                  value={filters.tag}
-                  onChange={e => setFilters(prev => ({ ...prev, tag: e.target.value }))}
-                  className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2
-                           focus:ring-blue-500 focus:border-transparent"
-                />
+                {/* 第二行 */}
+                <div className="grid grid-cols-5 gap-3">
+                  <select
+                    value={filters.source}
+                    onChange={e => setFilters(prev => ({ ...prev, source: e.target.value }))}
+                    className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2
+                             focus:ring-blue-500 focus:border-transparent"
+                  >
+                    <option value="">全部来源</option>
+                    <option value="AI_GENERATED">AI生成</option>
+                    <option value="MANUAL">手动创建</option>
+                  </select>
+
+                  <select
+                    value={filters.riskLevel}
+                    onChange={e => setFilters(prev => ({ ...prev, riskLevel: e.target.value }))}
+                    className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2
+                             focus:ring-blue-500 focus:border-transparent"
+                  >
+                    <option value="">全部风险等级</option>
+                    <option value="high">高风险</option>
+                    <option value="medium">中风险</option>
+                    <option value="low">低风险</option>
+                  </select>
+
+                  <input
+                    type="text"
+                    placeholder="创建人..."
+                    value={filters.createdBy}
+                    onChange={e => setFilters(prev => ({ ...prev, createdBy: e.target.value }))}
+                    className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2
+                             focus:ring-blue-500 focus:border-transparent"
+                  />
+
+                  <input
+                    type="date"
+                    placeholder="开始日期"
+                    value={filters.startDate}
+                    onChange={e => setFilters(prev => ({ ...prev, startDate: e.target.value }))}
+                    className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2
+                             focus:ring-blue-500 focus:border-transparent"
+                  />
+
+                  <input
+                    type="date"
+                    placeholder="结束日期"
+                    value={filters.endDate}
+                    onChange={e => setFilters(prev => ({ ...prev, endDate: e.target.value }))}
+                    className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2
+                             focus:ring-blue-500 focus:border-transparent"
+                  />
+                </div>
+
+                {/* 第三行 - 标签 */}
+                <div className="grid grid-cols-5 gap-3">
+                  <input
+                    type="text"
+                    placeholder="标签筛选..."
+                    value={filters.tag}
+                    onChange={e => setFilters(prev => ({ ...prev, tag: e.target.value }))}
+                    className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2
+                             focus:ring-blue-500 focus:border-transparent"
+                  />
+                </div>
               </div>
             </motion.div>
           )}
