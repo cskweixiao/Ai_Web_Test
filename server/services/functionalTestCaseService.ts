@@ -257,6 +257,7 @@ export class FunctionalTestCaseService {
 
           // 测试点信息
           test_point_index: point.test_point_index,
+          test_purpose: point.test_purpose, // 🆕 测试目的
           test_point_name: point.test_point_name,
           test_point_steps: point.steps,
           test_point_expected_result: point.expected_result,
@@ -299,6 +300,85 @@ export class FunctionalTestCaseService {
     } catch (error: any) {
       console.error('❌ 平铺查询功能测试用例失败:', error);
       throw new Error(`平铺查询功能测试用例失败: ${error.message}`);
+    }
+  }
+
+  /**
+   * 手动创建测试用例（含测试点）
+   */
+  async create(data: any, userId: number) {
+    console.log(`✨ 创建功能测试用例: ${data.name}, 用户ID: ${userId}`);
+    console.log(`📝 包含 ${data.testPoints?.length || 0} 个测试点`);
+
+    try {
+      // 使用事务确保数据一致性
+      const result = await this.prisma.$transaction(async (tx) => {
+        // 1. 创建测试用例主体
+        const testCase = await tx.functional_test_cases.create({
+          data: {
+            name: data.name,
+            description: data.description || '',
+            system: data.system || '',
+            module: data.module || '',
+            priority: data.priority || 'medium',
+            status: data.status || 'DRAFT',
+            tags: data.tags || '',
+            source: 'MANUAL',
+            creator_id: userId,
+            test_type: data.testType || '',
+            preconditions: data.preconditions || '',
+            test_data: data.testData || '',
+            section_name: data.sectionName || '',
+            coverage_areas: data.coverageAreas || ''
+          }
+        });
+
+        console.log(`  ✓ 测试用例已创建，ID: ${testCase.id}`);
+
+        // 2. 创建关联的测试点
+        if (data.testPoints && Array.isArray(data.testPoints) && data.testPoints.length > 0) {
+          for (let i = 0; i < data.testPoints.length; i++) {
+            const point = data.testPoints[i];
+            await tx.functional_test_points.create({
+              data: {
+                test_case_id: testCase.id,
+                test_point_index: i + 1,
+                test_purpose: point.testPurpose || '',
+                test_point_name: point.testPointName,
+                steps: point.steps,
+                expected_result: point.expectedResult,
+                risk_level: point.riskLevel || 'medium'
+              }
+            });
+          }
+          console.log(`  ✓ 已创建 ${data.testPoints.length} 个测试点`);
+        }
+
+        // 3. 查询完整数据（含测试点）返回
+        const completeTestCase = await tx.functional_test_cases.findUnique({
+          where: { id: testCase.id },
+          include: {
+            functional_test_points: {
+              orderBy: { test_point_index: 'asc' }
+            },
+            users: {
+              select: {
+                username: true,
+                account_name: true,
+                department: true
+              }
+            }
+          }
+        });
+
+        console.log(`✅ 测试用例创建完成: ${testCase.id}`);
+        return completeTestCase;
+      });
+
+      return result;
+    } catch (error: any) {
+      console.error('❌ 创建测试用例失败:', error);
+      throw new Error(`创建测试用例失败: ${error.message}`);
     }
   }
 
@@ -353,6 +433,7 @@ export class FunctionalTestCaseService {
                 data: {
                   test_case_id: savedCase.id,
                   test_point_index: i + 1,
+                  test_purpose: point.testPurpose || tc.testPurpose || '', // 🆕 保存测试目的
                   test_point_name: point.testPoint || '',
                   steps: point.steps || '',
                   expected_result: point.expectedResult || '',
@@ -463,6 +544,102 @@ export class FunctionalTestCaseService {
     } catch (error: any) {
       console.error('❌ 删除测试用例失败:', error);
       throw new Error(`删除测试用例失败: ${error.message}`);
+    }
+  }
+
+  /**
+   * 批量删除测试点
+   */
+  async batchDeleteTestPoints(testPointIds: number[]) {
+    console.log(`🗑️  批量删除测试点，数量: ${testPointIds.length}`);
+
+    try {
+      // 使用事务批量删除
+      const result = await this.prisma.functional_test_points.deleteMany({
+        where: {
+          id: {
+            in: testPointIds
+          }
+        }
+      });
+
+      console.log(`✅ 成功删除 ${result.count} 个测试点`);
+
+      return {
+        deletedCount: result.count
+      };
+    } catch (error: any) {
+      console.error('❌ 批量删除测试点失败:', error);
+      throw new Error(`批量删除测试点失败: ${error.message}`);
+    }
+  }
+
+  /**
+   * 获取测试点详情（含关联用例信息）
+   */
+  async getTestPointById(id: number) {
+    console.log(`📋 查询测试点详情，ID: ${id}`);
+
+    try {
+      const testPoint = await this.prisma.functional_test_points.findUnique({
+        where: { id },
+        include: {
+          functional_test_case: {
+            select: {
+              id: true,
+              name: true,
+              system: true,
+              module: true,
+              section_name: true,
+              description: true
+            }
+          }
+        }
+      });
+
+      if (!testPoint) {
+        return null;
+      }
+
+      console.log(`✅ 查询成功，测试点: ${testPoint.test_point_name}`);
+
+      return {
+        testPoint,
+        testCase: testPoint.functional_test_case
+      };
+    } catch (error: any) {
+      console.error('❌ 查询测试点详情失败:', error);
+      throw new Error(`查询测试点详情失败: ${error.message}`);
+    }
+  }
+
+  /**
+   * 更新测试点
+   */
+  async updateTestPoint(id: number, data: any) {
+    console.log(`📝 更新测试点，ID: ${id}`);
+
+    try {
+      const updateData: any = {
+        test_purpose: data.testPurpose || '',
+        test_point_name: data.testPointName,
+        steps: data.steps,
+        expected_result: data.expectedResult,
+        risk_level: data.riskLevel || 'medium',
+        updated_at: new Date()
+      };
+
+      const result = await this.prisma.functional_test_points.update({
+        where: { id },
+        data: updateData
+      });
+
+      console.log(`✅ 测试点更新成功: ${result.test_point_name}`);
+
+      return result;
+    } catch (error: any) {
+      console.error('❌ 更新测试点失败:', error);
+      throw new Error(`更新测试点失败: ${error.message}`);
     }
   }
 }

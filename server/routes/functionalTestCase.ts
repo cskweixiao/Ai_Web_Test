@@ -178,6 +178,145 @@ export function createFunctionalTestCaseRoutes(): Router {
   });
 
   /**
+   * POST /api/v1/functional-test-cases/batch-delete
+   * 批量删除测试点
+   */
+  router.post('/batch-delete', async (req: Request, res: Response) => {
+    try {
+      const { testPointIds } = req.body;
+
+      if (!testPointIds || !Array.isArray(testPointIds) || testPointIds.length === 0) {
+        return res.status(400).json({
+          success: false,
+          error: '测试点ID列表不能为空'
+        });
+      }
+
+      if (!req.user) {
+        return res.status(401).json({
+          success: false,
+          error: '未授权'
+        });
+      }
+
+      console.log(`🗑️ 批量删除 ${testPointIds.length} 个测试点`);
+
+      const result = await functionalTestCaseService.batchDeleteTestPoints(testPointIds);
+
+      res.json({
+        success: true,
+        data: result,
+        message: `成功删除 ${result.deletedCount} 个测试点`
+      });
+    } catch (error: any) {
+      console.error('❌ 批量删除失败:', error);
+      res.status(500).json({
+        success: false,
+        error: error.message
+      });
+    }
+  });
+
+  /**
+   * POST /api/v1/functional-test-cases
+   * 手动创建测试用例（含测试点）
+   */
+  router.post('/', async (req: Request, res: Response) => {
+    try {
+      const {
+        name,
+        description,
+        system,
+        module,
+        priority,
+        status,
+        testType,
+        tags,
+        preconditions,
+        testData,
+        sectionName,
+        coverageAreas,
+        testPoints
+      } = req.body;
+
+      // 验证必填字段
+      if (!name || !name.trim()) {
+        return res.status(400).json({
+          success: false,
+          error: '测试用例名称不能为空'
+        });
+      }
+
+      if (!testPoints || !Array.isArray(testPoints) || testPoints.length === 0) {
+        return res.status(400).json({
+          success: false,
+          error: '至少需要一个测试点'
+        });
+      }
+
+      // 验证每个测试点
+      for (let i = 0; i < testPoints.length; i++) {
+        const point = testPoints[i];
+        if (!point.testPointName || !point.testPointName.trim()) {
+          return res.status(400).json({
+            success: false,
+            error: `测试点 ${i + 1} 的名称不能为空`
+          });
+        }
+        if (!point.steps || !point.steps.trim()) {
+          return res.status(400).json({
+            success: false,
+            error: `测试点 ${i + 1} 的测试步骤不能为空`
+          });
+        }
+        if (!point.expectedResult || !point.expectedResult.trim()) {
+          return res.status(400).json({
+            success: false,
+            error: `测试点 ${i + 1} 的预期结果不能为空`
+          });
+        }
+      }
+
+      if (!req.user) {
+        return res.status(401).json({
+          success: false,
+          error: '未授权'
+        });
+      }
+
+      console.log(`✨ 手动创建测试用例: ${name}, 包含 ${testPoints.length} 个测试点`);
+
+      const result = await functionalTestCaseService.create({
+        name,
+        description,
+        system,
+        module,
+        priority,
+        status,
+        testType,
+        tags,
+        preconditions,
+        testData,
+        sectionName,
+        coverageAreas,
+        testPoints
+      }, req.user.id);
+
+      res.json({
+        success: true,
+        data: result,
+        message: '测试用例创建成功'
+      });
+    } catch (error: any) {
+      console.error('❌ 创建测试用例失败:', error);
+      res.status(500).json({
+        success: false,
+        error: error.message
+      });
+    }
+  });
+
+  /**
    * GET /api/v1/functional-test-cases/:id
    * 获取单个测试用例详情
    */
@@ -268,6 +407,114 @@ export function createFunctionalTestCaseRoutes(): Router {
       });
     } catch (error: any) {
       console.error('❌ 删除失败:', error);
+      res.status(500).json({
+        success: false,
+        error: error.message
+      });
+    }
+  });
+
+  /**
+   * GET /api/v1/functional-test-cases/test-points/:id
+   * 获取测试点详情（含关联用例信息）
+   */
+  router.get('/test-points/:id', async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+
+      if (isNaN(id)) {
+        return res.status(400).json({
+          success: false,
+          error: '无效的测试点ID'
+        });
+      }
+
+      console.log(`📋 查询测试点详情，ID: ${id}`);
+
+      const result = await functionalTestCaseService.getTestPointById(id);
+
+      if (!result) {
+        return res.status(404).json({
+          success: false,
+          error: '测试点不存在'
+        });
+      }
+
+      res.json({
+        success: true,
+        data: result
+      });
+    } catch (error: any) {
+      console.error('❌ 查询测试点详情失败:', error);
+      res.status(500).json({
+        success: false,
+        error: error.message
+      });
+    }
+  });
+
+  /**
+   * PUT /api/v1/functional-test-cases/test-points/:id
+   * 更新测试点
+   */
+  router.put('/test-points/:id', async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+
+      if (isNaN(id)) {
+        return res.status(400).json({
+          success: false,
+          error: '无效的测试点ID'
+        });
+      }
+
+      const {
+        testPurpose,
+        testPointName,
+        steps,
+        expectedResult,
+        riskLevel
+      } = req.body;
+
+      // 验证必填字段
+      if (!testPointName || !testPointName.trim()) {
+        return res.status(400).json({
+          success: false,
+          error: '测试点名称不能为空'
+        });
+      }
+
+      if (!steps || !steps.trim()) {
+        return res.status(400).json({
+          success: false,
+          error: '测试步骤不能为空'
+        });
+      }
+
+      if (!expectedResult || !expectedResult.trim()) {
+        return res.status(400).json({
+          success: false,
+          error: '预期结果不能为空'
+        });
+      }
+
+      console.log(`📝 更新测试点，ID: ${id}`);
+
+      const result = await functionalTestCaseService.updateTestPoint(id, {
+        testPurpose,
+        testPointName,
+        steps,
+        expectedResult,
+        riskLevel
+      });
+
+      res.json({
+        success: true,
+        data: result,
+        message: '测试点更新成功'
+      });
+    } catch (error: any) {
+      console.error('❌ 更新测试点失败:', error);
       res.status(500).json({
         success: false,
         error: error.message

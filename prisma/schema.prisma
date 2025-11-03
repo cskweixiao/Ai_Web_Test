@@ -479,6 +479,7 @@ model functional_test_points {
   id                  Int                      @id @default(autoincrement())
   test_case_id        Int                      // 关联的测试用例ID
   test_point_index    Int                      // 测试点序号(1,2,3...)
+  test_purpose        String?                  @db.VarChar(500) // 🆕 测试目的（每个测试点都有）
   test_point_name     String                   @db.VarChar(500) // 测试点名称
   steps               String                   @db.Text // 测试步骤
   expected_result     String                   @db.Text // 预期结果
@@ -491,6 +492,7 @@ model functional_test_points {
 
   @@index([test_case_id])
   @@index([test_point_index])
+  @@index([test_purpose]) // 🆕 添加索引，方便按测试目的查询和分组
   @@unique([test_case_id, test_point_index]) // 同一用例下测试点序号唯一
 }
 

@@ -87,7 +87,11 @@
       "Bash(start http://localhost:6333/dashboard)",
       "Bash(Get-Content \"d:\\AI_mvp\\ai_test\\project\\logs\\server.log\")",
       "Bash(Select-Object -Last 100)",
-      "Bash(Select-Object -First 30)"
+      "Bash(Select-Object -First 30)",
+      "Bash(docker logs:*)",
+      "Bash(docker inspect:*)",
+      "Bash(docker exec:*)",
+      "Bash(docker ps:*)"
     ],
     "deny": []
   },

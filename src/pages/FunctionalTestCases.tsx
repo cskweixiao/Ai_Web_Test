@@ -51,6 +51,10 @@ export function FunctionalTestCases() {
   });
   const [showFilters, setShowFilters] = useState(false);
 
+  // 复选框状态
+  const [selectedRows, setSelectedRows] = useState<Set<number>>(new Set());
+  const [selectAll, setSelectAll] = useState(false);
+
   // 详情弹窗状态
   const [detailModalOpen, setDetailModalOpen] = useState(false);
   const [currentDetailCase, setCurrentDetailCase] = useState<any>(null);
@@ -81,6 +85,65 @@ export function FunctionalTestCases() {
   useEffect(() => {
     loadData();
   }, [pagination.page, pagination.pageSize, filters]);
+
+  // 复选框处理函数
+  const handleSelectAll = () => {
+    if (selectAll) {
+      setSelectedRows(new Set());
+      setSelectAll(false);
+    } else {
+      const allIds = new Set(testCases.map(row => row.test_point_id));
+      setSelectedRows(allIds);
+      setSelectAll(true);
+    }
+  };
+
+  const handleSelectRow = (testPointId: number) => {
+    const newSelected = new Set(selectedRows);
+    if (newSelected.has(testPointId)) {
+      newSelected.delete(testPointId);
+    } else {
+      newSelected.add(testPointId);
+    }
+    setSelectedRows(newSelected);
+    setSelectAll(newSelected.size === testCases.length);
+  };
+
+  // 批量删除处理
+  const handleBatchDelete = async () => {
+    if (selectedRows.size === 0) {
+      showToast.warning('请先选择要删除的测试点');
+      return;
+    }
+
+    const confirmMessage = `确定要删除选中的 ${selectedRows.size} 个测试点吗？此操作不可恢复。`;
+    if (!window.confirm(confirmMessage)) {
+      return;
+    }
+
+    try {
+      const testPointIds = Array.from(selectedRows);
+      await functionalTestCaseService.batchDelete(testPointIds);
+
+      showToast.success(`已成功删除 ${testPointIds.length} 个测试点`);
+
+      // 刷新数据
+      await fetchTestCases();
+
+      // 清空选择
+      setSelectedRows(new Set());
+      setSelectAll(false);
+    } catch (error: any) {
+      console.error('批量删除失败:', error);
+      showToast.error(error.message || '批量删除失败');
+    }
+  };
+
+  // 清空选择
+  useEffect(() => {
+    setSelectedRows(new Set());
+    setSelectAll(false);
+  }, [testCases]);
 
   // 查看详情
   const handleViewDetail = (testCase: any) => {
@@ -127,6 +190,21 @@ export function FunctionalTestCases() {
     try {
       await functionalTestCaseService.delete(id);
       showToast.success('删除成功');
+      loadData();
+    } catch (error: any) {
+      showToast.error('删除失败：' + error.message);
+    }
+  };
+
+  // 删除单个测试点
+  const handleDeleteTestPoint = async (testPointId: number, testPointName: string) => {
+    if (!window.confirm(`确定要删除测试点"${testPointName}"吗？此操作不可恢复。`)) {
+      return;
+    }
+
+    try {
+      await functionalTestCaseService.batchDelete([testPointId]);
+      showToast.success('测试点已删除');
       loadData();
     } catch (error: any) {
       showToast.error('删除失败：' + error.message);
@@ -191,10 +269,28 @@ export function FunctionalTestCases() {
       {/* 页面标题和操作按钮 */}
       <div className="mb-6 flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">功能测试用例</h1>
+          <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-3">
+            功能测试用例
+            {selectedRows.size > 0 && (
+              <span className="inline-flex items-center px-3 py-1 bg-blue-100 text-blue-700
+                             rounded-full text-sm font-medium">
+                已选中 {selectedRows.size} 项
+              </span>
+            )}
+          </h1>
           <p className="text-sm text-gray-500 mt-1">管理和维护功能测试用例库</p>
         </div>
         <div className="flex gap-3">
+          {selectedRows.size > 0 && (
+            <button
+              onClick={handleBatchDelete}
+              className="inline-flex items-center px-4 py-2 bg-red-600 text-white rounded-lg
+                       hover:bg-red-700 transition-colors shadow-md hover:shadow-lg"
+            >
+              <Trash2 className="w-4 h-4 mr-2" />
+              批量删除 ({selectedRows.size})
+            </button>
+          )}
           <button
             onClick={() => navigate('/functional-test-cases/generator')}
             className="inline-flex items-center px-4 py-2 bg-gradient-to-r from-purple-600 to-blue-600
@@ -205,7 +301,7 @@ export function FunctionalTestCases() {
             AI生成器
           </button>
           <button
-            onClick={() => showToast.info('手动创建功能待实现')}
+            onClick={() => navigate('/functional-test-cases/create')}
             className="inline-flex items-center px-4 py-2 bg-white text-gray-700 rounded-lg
                      hover:bg-gray-50 transition-colors border border-gray-300"
           >
@@ -412,8 +508,19 @@ export function FunctionalTestCases() {
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
                 <tr>
+                  <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider w-12">
+                    <input
+                      type="checkbox"
+                      checked={selectAll}
+                      onChange={handleSelectAll}
+                      className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                    />
+                  </th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     序号
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    测试目的
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     测试点名称
@@ -470,9 +577,24 @@ export function FunctionalTestCases() {
                           isFirstRow && idx !== 0 && 'border-t-2 border-gray-300'
                         )}
                       >
+                        {/* 复选框 */}
+                        <td className="px-4 py-3 text-center whitespace-nowrap">
+                          <input
+                            type="checkbox"
+                            checked={selectedRows.has(row.test_point_id)}
+                            onChange={() => handleSelectRow(row.test_point_id)}
+                            className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                          />
+                        </td>
+
                         {/* 前端序号 */}
                         <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">
                           {rowNumber}
+                        </td>
+
+                        {/* 测试目的 */}
+                        <td className="px-4 py-3 text-sm text-gray-700 max-w-xs">
+                          <div className="line-clamp-2">{row.test_purpose || '-'}</div>
                         </td>
 
                         {/* 测试点名称 */}
@@ -482,12 +604,12 @@ export function FunctionalTestCases() {
 
                         {/* 系统 */}
                         <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
-                          {isFirstRow && (row.system || '-')}
+                          {row.system || '-'}
                         </td>
 
                         {/* 模块 */}
                         <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
-                          {isFirstRow && (row.module || '-')}
+                          {row.module || '-'}
                         </td>
 
                         {/* 测试点序号 */}
@@ -531,60 +653,47 @@ export function FunctionalTestCases() {
 
                         {/* 优先级 */}
                         <td className="px-4 py-3 whitespace-nowrap">
-                          {isFirstRow && (
-                            <span className={clsx(
-                              'inline-flex px-2 py-1 text-xs font-medium rounded-md border',
-                              getPriorityColor(row.priority)
-                            )}>
-                              {getPriorityText(row.priority)}
-                            </span>
-                          )}
+                          <span className={clsx(
+                            'inline-flex px-2 py-1 text-xs font-medium rounded-md border',
+                            getPriorityColor(row.priority)
+                          )}>
+                            {getPriorityText(row.priority)}
+                          </span>
                         </td>
 
                         {/* 创建者 */}
                         <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
-                          {isFirstRow && (
-                            <div className="flex items-center">
-                              <User className="h-4 w-4 mr-1 text-gray-400" />
-                              {row.users?.username || '-'}
-                            </div>
-                          )}
+                          <div className="flex items-center">
+                            <User className="h-4 w-4 mr-1 text-gray-400" />
+                            {row.users?.username || '-'}
+                          </div>
                         </td>
 
                         {/* 创建时间 */}
                         <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
-                          {isFirstRow && (
-                            <div className="flex items-center">
-                              <Clock className="h-4 w-4 mr-1 text-gray-400" />
-                              {formatDate(row.created_at)}
-                            </div>
-                          )}
+                          <div className="flex items-center">
+                            <Clock className="h-4 w-4 mr-1 text-gray-400" />
+                            {formatDate(row.created_at)}
+                          </div>
                         </td>
 
                         {/* 操作 */}
                         <td className="px-4 py-3 whitespace-nowrap text-right text-sm font-medium">
                           <div className="flex items-center justify-end space-x-2">
                             <button
-                              onClick={() => handleViewDetail({
-                                ...row,
-                                testPoints: row.test_points,
-                                sectionId: row.section_id,
-                                sectionName: row.section_name
-                              })}
+                              onClick={() => navigate(`/functional-test-cases/test-points/${row.test_point_id}/edit`)}
                               className="text-blue-600 hover:text-blue-900"
-                              title="查看/编辑"
+                              title="编辑测试点"
                             >
                               <Edit3 className="h-4 w-4" />
                             </button>
-                            {isFirstRow && (
-                              <button
-                                onClick={() => handleDelete(row.id, row.name)}
-                                className="text-red-600 hover:text-red-900"
-                                title="删除用例"
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </button>
-                            )}
+                            <button
+                              onClick={() => handleDeleteTestPoint(row.test_point_id, row.test_point_name)}
+                              className="text-red-600 hover:text-red-900"
+                              title="删除此测试点"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
                           </div>
                         </td>
                       </motion.tr>

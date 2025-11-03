@@ -124,6 +124,19 @@ class FunctionalTestCaseService {
   }
 
   /**
+   * 创建测试用例
+   */
+  async create(data: any) {
+    const response = await fetch(`${API_BASE_URL}/functional-test-cases`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify(data)
+    });
+
+    return handleResponse(response);
+  }
+
+  /**
    * 更新测试用例
    */
   async update(id: number, data: any) {
@@ -143,6 +156,44 @@ class FunctionalTestCaseService {
     const response = await fetch(`${API_BASE_URL}/functional-test-cases/${id}`, {
       method: 'DELETE',
       headers: getAuthHeaders()
+    });
+
+    return handleResponse(response);
+  }
+
+  /**
+   * 批量删除测试点
+   */
+  async batchDelete(testPointIds: number[]) {
+    const response = await fetch(`${API_BASE_URL}/functional-test-cases/batch-delete`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ testPointIds })
+    });
+
+    return handleResponse(response);
+  }
+
+  /**
+   * 获取测试点详情（含关联用例信息）
+   */
+  async getTestPointById(id: number) {
+    const response = await fetch(`${API_BASE_URL}/functional-test-cases/test-points/${id}`, {
+      method: 'GET',
+      headers: getAuthHeaders()
+    });
+
+    return handleResponse(response);
+  }
+
+  /**
+   * 更新测试点
+   */
+  async updateTestPoint(id: number, data: any) {
+    const response = await fetch(`${API_BASE_URL}/functional-test-cases/test-points/${id}`, {
+      method: 'PUT',
+      headers: getAuthHeaders(),
+      body: JSON.stringify(data)
     });
 
     return handleResponse(response);

@@ -482,11 +482,11 @@ export function FunctionalTestCaseGenerator() {
           <div className="flex items-center gap-4">
             {/* 进度环 */}
             <div className="relative w-20 h-20">
-              <svg className="w-20 h-20 transform -rotate-90">
+              <svg className="w-20 h-20 transform -rotate-90" viewBox="0 0 80 80">
                 <circle
                   cx="40"
                   cy="40"
-                  r="32"
+                  r="34"
                   stroke="#e5e7eb"
                   strokeWidth="6"
                   fill="none"
@@ -494,11 +494,11 @@ export function FunctionalTestCaseGenerator() {
                 <circle
                   cx="40"
                   cy="40"
-                  r="32"
+                  r="34"
                   stroke="url(#gradient)"
                   strokeWidth="6"
                   fill="none"
-                  strokeDasharray={`${batches.length > 0 ? (currentBatchIndex / batches.length) * 201 : 0} 201`}
+                  strokeDasharray={`${batches.length > 0 ? (currentBatchIndex / batches.length) * 213.6 : 0} 213.6`}
                   className="transition-all duration-500"
                 />
                 <defs>

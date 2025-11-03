@@ -15,6 +15,8 @@ import { Login } from './pages/Login';
 import { UserManagement } from './pages/UserManagement';
 import { FunctionalTestCases } from './pages/FunctionalTestCases';
 import { FunctionalTestCaseGenerator } from './pages/FunctionalTestCaseGenerator';
+import { FunctionalTestCaseCreate } from './pages/FunctionalTestCaseCreate';
+import { FunctionalTestPointEdit } from './pages/FunctionalTestPointEdit';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { ToastProvider } from './components/ui/toast';
 import { NotFoundPage, ServerErrorPage, ForbiddenPage } from './pages/ErrorPage';
@@ -266,6 +268,8 @@ function AppContent() {
                       {/* 功能测试用例路由 */}
                       <Route path="/functional-test-cases" element={<FunctionalTestCases />} />
                       <Route path="/functional-test-cases/generator" element={<FunctionalTestCaseGenerator />} />
+                      <Route path="/functional-test-cases/create" element={<FunctionalTestCaseCreate />} />
+                      <Route path="/functional-test-cases/test-points/:testPointId/edit" element={<FunctionalTestPointEdit />} />
 
                       {/* 测试执行路由 */}
                       <Route path="/test-runs" element={
