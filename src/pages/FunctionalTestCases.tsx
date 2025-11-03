@@ -594,12 +594,16 @@ export function FunctionalTestCases() {
 
                         {/* 测试目的 */}
                         <td className="px-4 py-3 text-sm text-gray-700 max-w-xs">
-                          <div className="line-clamp-2">{row.test_purpose || '-'}</div>
+                          <div className="line-clamp-2" title={row.test_purpose || '-'}>
+                            {row.test_purpose || '-'}
+                          </div>
                         </td>
 
                         {/* 测试点名称 */}
                         <td className="px-4 py-3 text-sm text-gray-900 max-w-xs">
-                          <div className="line-clamp-2 font-medium">{row.test_point_name || '-'}</div>
+                          <div className="line-clamp-2 font-medium" title={row.test_point_name || '-'}>
+                            {row.test_point_name || '-'}
+                          </div>
                         </td>
 
                         {/* 系统 */}
@@ -624,14 +628,14 @@ export function FunctionalTestCases() {
 
                         {/* 测试步骤 */}
                         <td className="px-4 py-3 text-sm text-gray-600 max-w-xs">
-                          <div className="line-clamp-3 whitespace-pre-wrap">
+                          <div className="line-clamp-3 whitespace-pre-wrap" title={row.test_point_steps || '-'}>
                             {row.test_point_steps || '-'}
                           </div>
                         </td>
 
                         {/* 预期结果 */}
                         <td className="px-4 py-3 text-sm text-gray-600 max-w-xs">
-                          <div className="line-clamp-3 whitespace-pre-wrap">
+                          <div className="line-clamp-3 whitespace-pre-wrap" title={row.test_point_expected_result || '-'}>
                             {row.test_point_expected_result || '-'}
                           </div>
                         </td>
