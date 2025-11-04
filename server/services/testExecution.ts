@@ -665,6 +665,13 @@ export class TestExecutionService {
       let previousStepsText = ''; // 🔥 新增：用于防止无限循环
       const maxSteps = 50; // 🔥 新增：最大步骤数限制
 
+      // 🔥 新增：计算总步骤数（预估，用于显示进度）
+      const estimatedTotalSteps = this.estimateStepsCount(testCase.steps);
+      if (testRun) {
+        testRun.totalSteps = estimatedTotalSteps;
+        console.log(`📊 [${runId}] 预估总步骤数: ${estimatedTotalSteps}`);
+      }
+
       // 🔥 详细调试日志：显示测试用例数据
       console.log(`🔍 [${runId}] ===== 测试执行开始调试 =====`);
       console.log(`   测试用例ID: ${testCase.id}`);
@@ -677,6 +684,7 @@ export class TestExecutionService {
       console.log(`🔍 [${runId}] ===== 测试执行开始调试结束 =====\n`);
 
       this.addLog(runId, `🔍 测试数据: 操作步骤${testCase.steps ? '有' : '无'}, 断言${testCase.assertions ? '有' : '无'}`, 'info');
+      this.addLog(runId, `📊 预估总步骤数: ${estimatedTotalSteps}`, 'info');
 
       // 🔥 修正：移除不兼容的代码，使用原有的AI闭环执行流程
 
@@ -773,10 +781,22 @@ export class TestExecutionService {
             return;
           } else {
             this.addLog(runId, `⚠️ 步骤 ${stepIndex} 失败但继续执行: ${executionResult.error}`, 'warning');
-            // 继续执行下一步
+            // 🔥 新增：失败步骤也更新进度
+            if (testRun) {
+              testRun.failedSteps = (testRun.failedSteps || 0) + 1;
+              testRun.completedSteps = stepIndex;
+              testRun.progress = Math.round((stepIndex / Math.max(estimatedTotalSteps, stepIndex)) * 100);
+            }
           }
         } else {
           this.addLog(runId, `✅ 步骤 ${stepIndex} 执行成功`, 'success');
+          // 🔥 新增：更新进度和成功步骤数
+          if (testRun) {
+            testRun.passedSteps = (testRun.passedSteps || 0) + 1;
+            testRun.completedSteps = stepIndex;
+            testRun.progress = Math.round((stepIndex / Math.max(estimatedTotalSteps, stepIndex)) * 100);
+            console.log(`📊 [${runId}] 进度更新: ${testRun.completedSteps}/${testRun.totalSteps} (${testRun.progress}%)`);
+          }
         }
 
         // 🔥 关键修复：操作后等待，确保页面响应
@@ -2374,11 +2394,31 @@ ${elements.map((el, index) => `${index + 1}. ${el.ref}: ${el.role} "${el.text}"`
       }
 
       testRun.status = status;
+
+      // 🔥 新增：实时更新执行时长
+      if (testRun.startTime && (status === 'running' || status === 'completed' || status === 'failed')) {
+        testRun.duration = this.formatDuration(testRun.startTime);
+      }
+
       const logLevel = (status === 'failed' || status === 'error') ? 'error' : 'info';
       if (message) {
         this.addLog(runId, message, logLevel);
       }
-      this.wsManager.broadcast({ type: 'test_update', runId, data: { status: testRun.status } });
+
+      // 🔥 修改：WebSocket 广播包含完整的进度数据
+      this.wsManager.broadcast({
+        type: 'test_update',
+        runId,
+        data: {
+          status: testRun.status,
+          progress: testRun.progress,
+          completedSteps: testRun.completedSteps,
+          totalSteps: testRun.totalSteps,
+          passedSteps: testRun.passedSteps,
+          failedSteps: testRun.failedSteps,
+          duration: testRun.duration
+        }
+      });
 
       // 🔥 异步同步到数据库（不阻塞执行）
       this.syncTestRunToDatabase(runId).catch(err => {
@@ -2484,6 +2524,45 @@ ${elements.map((el, index) => `${index + 1}. ${el.ref}: ${el.role} "${el.text}"`
     if (queue.timer) {
       clearTimeout(queue.timer);
       queue.timer = undefined;
+    }
+  }
+
+  /**
+   * 🔥 新增：预估测试步骤总数
+   * 通过解析步骤文本中的数字编号来预估总步骤数
+   */
+  private estimateStepsCount(stepsText: string): number {
+    if (!stepsText || !stepsText.trim()) {
+      return 1; // 默认至少1步
+    }
+
+    // 尝试匹配步骤编号格式：1. 2. 3. 或 1) 2) 3) 或 步骤1 步骤2
+    const numberMatches = stepsText.match(/(?:^|\n)\s*(\d+)[.、:)]/g);
+    if (numberMatches && numberMatches.length > 0) {
+      return numberMatches.length;
+    }
+
+    // 如果没有编号，按换行符估算（每行一步）
+    const lines = stepsText.split('\n').filter(line => line.trim().length > 0);
+    return Math.max(1, Math.min(lines.length, 20)); // 限制在1-20之间
+  }
+
+  /**
+   * 🔥 新增：格式化执行时长
+   * 将毫秒转换为友好的时间字符串
+   */
+  private formatDuration(startTime: Date): string {
+    const durationMs = Date.now() - startTime.getTime();
+    const seconds = Math.floor(durationMs / 1000);
+    const minutes = Math.floor(seconds / 60);
+    const hours = Math.floor(minutes / 60);
+
+    if (hours > 0) {
+      return `${hours}h ${minutes % 60}m ${seconds % 60}s`;
+    } else if (minutes > 0) {
+      return `${minutes}m ${seconds % 60}s`;
+    } else {
+      return `${seconds}s`;
     }
   }
 
@@ -3861,12 +3940,73 @@ ${elements.map((el, index) => `${index + 1}. ${el.ref}: ${el.role} "${el.text}"`
       // 这里可以扩展保存trace文件、视频录制等
       // 目前作为占位符，未来可以添加更多证据类型
       console.log(`🔍 [${runId}] 检查其他证据类型...`);
-      
+
       // TODO: 如果启用了trace录制，保存trace文件
       // TODO: 如果启用了视频录制，保存视频文件
-      
+
     } catch (error: any) {
       console.error(`❌ [${runId}] 保存其他证据失败:`, error.message);
+    }
+  }
+
+  /**
+   * 批量删除测试运行记录
+   * @param runIds 要删除的测试运行ID数组
+   * @returns 删除的记录数
+   */
+  async batchDeleteTestRuns(runIds: string[]): Promise<{ deletedCount: number }> {
+    try {
+      if (!runIds || runIds.length === 0) {
+        return { deletedCount: 0 };
+      }
+
+      console.log(`🗑️ 开始批量删除 ${runIds.length} 条测试运行记录...`);
+
+      let deletedCount = 0;
+
+      // 🔥 1. 清理内存中的测试运行数据
+      for (const runId of runIds) {
+        if (testRunStore.has(runId)) {
+          // 从 testRunStore 中删除
+          const testRun = testRunStore.get(runId);
+          if (testRun) {
+            // 清理相关资源
+            this.stopLoggingForRun(runId);
+
+            // 从存储中删除
+            (testRunStore as any).runs.delete(runId);
+            console.log(`✅ 已从内存中删除测试运行: ${runId}`);
+          }
+        }
+      }
+
+      // 🔥 2. 从数据库中删除历史记录
+      for (const runId of runIds) {
+        try {
+          const deleted = await this.executionService.deleteExecution(runId);
+          if (deleted) {
+            deletedCount++;
+            console.log(`✅ 已从数据库中删除测试运行: ${runId}`);
+          }
+        } catch (dbError) {
+          console.error(`❌ 从数据库删除测试记录 ${runId} 失败:`, dbError);
+          // 继续删除其他记录
+        }
+      }
+
+      // 🔥 3. 通知前端更新
+      this.wsManager.broadcast({
+        type: 'test_runs_deleted',
+        runIds,
+        deletedCount: runIds.length // 返回请求删除的总数
+      });
+
+      console.log(`✅ 批量删除完成，共删除 ${deletedCount} 条测试运行记录`);
+
+      return { deletedCount };
+    } catch (error: any) {
+      console.error('❌ 批量删除测试运行失败:', error);
+      throw error;
     }
   }
 

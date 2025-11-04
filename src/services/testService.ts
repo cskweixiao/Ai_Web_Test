@@ -739,11 +739,37 @@ export class TestService {
   destroy(): void {
     console.log('🧹 强制清理TestService所有资源...');
     this.closeWebSocket();
-    
+
     // 移除所有事件监听器
     this.listeners.clear();
-    
+
     console.log('✅ TestService资源清理完成');
+  }
+
+  // 🔥 批量删除测试运行记录
+  async batchDeleteTestRuns(runIds: string[]): Promise<{ deletedCount: number }> {
+    try {
+      console.log(`🗑️ 批量删除测试运行，数量: ${runIds.length}`);
+
+      const response = await fetch(`${API_BASE_URL}/tests/runs/batch-delete`, {
+        method: 'POST',
+        headers: this.getAuthHeaders(),
+        body: JSON.stringify({ runIds }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || `批量删除失败: ${response.statusText}`);
+      }
+
+      const result = await response.json();
+      console.log(`✅ 批量删除成功，删除 ${result.data.deletedCount} 条记录`);
+
+      return result.data;
+    } catch (error: any) {
+      console.error('批量删除测试运行失败:', error);
+      throw error;
+    }
   }
 }
 

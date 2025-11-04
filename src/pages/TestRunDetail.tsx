@@ -62,14 +62,38 @@ export function TestRunDetail() {
     if (id) {
       loadTestRun();
 
-      // 设置轮询更新（如果测试正在运行）
+      // 🔥 添加 WebSocket 监听器，实时更新测试状态
+      const handleWebSocketMessage = (message: any) => {
+        // 处理测试运行状态更新（匹配后端的 test_update 类型）
+        if (message.type === 'test_update' && message.runId === id) {
+          console.log('📡 收到测试状态更新:', message);
+          loadTestRun(true); // 静默刷新数据
+        }
+        // 处理测试完成消息
+        else if (message.type === 'test_complete' && message.runId === id) {
+          console.log('📡 收到测试完成消息:', message);
+          loadTestRun(true);
+        }
+        // 处理测试套件更新
+        else if (message.type === 'suiteUpdate' && message.data?.id === id) {
+          console.log('📡 收到测试套件更新:', message.data);
+          loadTestRun(true);
+        }
+      };
+
+      testService.addMessageListener(`test-run-detail-${id}`, handleWebSocketMessage);
+
+      // 设置轮询更新（作为备用机制）
       const pollInterval = setInterval(() => {
         if (testRun?.status === 'running' || testRun?.status === 'queued') {
           loadTestRun(true);
         }
-      }, 2000);
+      }, 5000); // 增加到5秒，减少不必要的请求
 
-      return () => clearInterval(pollInterval);
+      return () => {
+        testService.removeMessageListener(`test-run-detail-${id}`);
+        clearInterval(pollInterval);
+      };
     }
   }, [id]);
 

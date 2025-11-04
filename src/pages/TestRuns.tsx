@@ -17,7 +17,8 @@ import {
   RefreshCw,
   Square,
   AlertTriangle,
-  StopCircle
+  StopCircle,
+  Trash2
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { clsx } from 'clsx';
@@ -67,6 +68,9 @@ export function TestRuns() {
   const [loading, setLoading] = useState(false);
   const [stoppingTests, setStoppingTests] = useState<Set<string>>(new Set());
   const [showStopModal, setShowStopModal] = useState(false);
+  // 🔥 新增：批量选择状态
+  const [selectedRunIds, setSelectedRunIds] = useState<Set<string>>(new Set());
+  const [selectAll, setSelectAll] = useState(false);
   const [activeTab, setActiveTab] = useState<'logs' | 'live' | 'evidence' | 'queue'>(() => {
     const saved = localStorage.getItem('tr-activeTab');
     return saved === 'logs' || saved === 'live' || saved === 'evidence' || saved === 'queue' ? saved : 'logs';
@@ -708,6 +712,74 @@ export function TestRuns() {
     }
   }, [testRuns]);
 
+  // 🔥 新增：全选/取消全选
+  const handleSelectAll = useCallback(() => {
+    if (selectAll) {
+      setSelectedRunIds(new Set());
+      setSelectAll(false);
+    } else {
+      const allIds = new Set(testRuns.map(run => run.id));
+      setSelectedRunIds(allIds);
+      setSelectAll(true);
+    }
+  }, [selectAll, testRuns]);
+
+  // 🔥 新增：单项选择/取消选择
+  const handleSelectRun = useCallback((runId: string) => {
+    setSelectedRunIds(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(runId)) {
+        newSet.delete(runId);
+      } else {
+        newSet.add(runId);
+      }
+      setSelectAll(newSet.size === testRuns.length);
+      return newSet;
+    });
+  }, [testRuns.length]);
+
+  // 🔥 新增：批量删除测试记录
+  const handleBatchDelete = useCallback(async () => {
+    if (selectedRunIds.size === 0) {
+      showToast.warning('请先选择要删除的测试记录');
+      return;
+    }
+
+    const confirmMessage = `确定要删除选中的 ${selectedRunIds.size} 条测试记录吗？此操作不可恢复。`;
+    if (!window.confirm(confirmMessage)) {
+      return;
+    }
+
+    try {
+      const runIds = Array.from(selectedRunIds);
+      console.log(`🗑️ 批量删除 ${runIds.length} 条测试记录`);
+
+      // 🔥 调用后端批量删除API
+      const result = await testService.batchDeleteTestRuns(runIds);
+
+      // 🔥 从前端列表中移除已删除的项
+      setTestRuns(prev => prev.filter(run => !selectedRunIds.has(run.id)));
+
+      showToast.success(`已成功删除 ${result.deletedCount} 条测试记录`);
+
+      // 清空选择
+      setSelectedRunIds(new Set());
+      setSelectAll(false);
+    } catch (error: any) {
+      console.error('批量删除失败:', error);
+      showToast.error(`批量删除失败: ${error.message || '未知错误'}`);
+    }
+  }, [selectedRunIds]);
+
+  // 🔥 数据变化时更新全选状态
+  useEffect(() => {
+    if (testRuns.length > 0 && selectedRunIds.size === testRuns.length) {
+      setSelectAll(true);
+    } else {
+      setSelectAll(false);
+    }
+  }, [testRuns.length, selectedRunIds.size]);
+
   // 修改为导航到详情页面
   const handleViewLogs = useCallback((run: TestRun) => {
     navigate(`/test-runs/${run.id}/detail`);
@@ -928,18 +1000,22 @@ export function TestRuns() {
   };
 
   // 🔥 优化：创建记忆化的测试运行项组件，避免不必要的重渲染
-  const TestRunItem = React.memo(({ 
-    run, 
-    index, 
-    onStopTest, 
+  const TestRunItem = React.memo(({
+    run,
+    index,
+    onStopTest,
     onViewLogs,
-    isStoppingTest 
+    isStoppingTest,
+    isSelected,
+    onSelect
   }: {
     run: TestRun;
     index: number;
     onStopTest: (run: TestRun) => void;
     onViewLogs: (run: TestRun) => void;
     isStoppingTest: boolean;
+    isSelected: boolean;
+    onSelect: (runId: string) => void;
   }) => (
     <motion.div
       key={run.id || index}
@@ -950,6 +1026,14 @@ export function TestRuns() {
     >
       <div className="flex items-center justify-between">
         <div className="flex items-center space-x-4 flex-1">
+          {/* 🔥 批量选择复选框 */}
+          <input
+            type="checkbox"
+            checked={isSelected}
+            onChange={() => onSelect(run.id)}
+            className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+            onClick={(e) => e.stopPropagation()}
+          />
           {getStatusIcon(run.status)}
           <div className="flex-1">
             <div className="flex items-center space-x-3 mb-2">
@@ -1044,7 +1128,8 @@ export function TestRuns() {
       prevProps.run.completedSteps === nextProps.run.completedSteps &&
       prevProps.run.passedSteps === nextProps.run.passedSteps &&
       prevProps.run.failedSteps === nextProps.run.failedSteps &&
-      prevProps.isStoppingTest === nextProps.isStoppingTest
+      prevProps.isStoppingTest === nextProps.isStoppingTest &&
+      prevProps.isSelected === nextProps.isSelected
     );
   });
 
@@ -1207,10 +1292,49 @@ export function TestRuns() {
         {/* 测试运行列表 */}
         {testRuns.length > 0 && !loading && (
           <div className="bg-white rounded-xl shadow-sm border border-gray-200">
-            <div className="px-6 py-4 border-b border-gray-200">
-              <h3 className="text-lg font-semibold text-gray-900">测试执行记录</h3>
-              <p className="text-sm text-gray-600 mt-1">包含测试步骤和断言预期的详细结果</p>
+            {/* 🔥 列表头部 - 包含全选和批量删除 */}
+            <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                {/* 🔥 全选复选框 */}
+                <input
+                  type="checkbox"
+                  checked={selectAll}
+                  onChange={handleSelectAll}
+                  className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                  title={selectAll ? "取消全选" : "全选"}
+                />
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900">测试执行记录</h3>
+                  <p className="text-sm text-gray-600 mt-1">
+                    包含测试步骤和断言预期的详细结果
+                    {selectedRunIds.size > 0 && (
+                      <span className="ml-2 text-blue-600 font-medium">
+                        (已选择 {selectedRunIds.size} 项)
+                      </span>
+                    )}
+                  </p>
+                </div>
+              </div>
+
+              {/* 🔥 批量删除按钮 - 仅在有选中项时显示 */}
+              {selectedRunIds.size > 0 && (
+                <motion.button
+                  initial={{ opacity: 0, scale: 0.9 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.9 }}
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                  onClick={handleBatchDelete}
+                  className="inline-flex items-center px-4 py-2 bg-red-600 text-white rounded-lg
+                             hover:bg-red-700 transition-colors shadow-md hover:shadow-lg"
+                >
+                  <Trash2 className="w-4 h-4 mr-2" />
+                  批量删除 ({selectedRunIds.size})
+                </motion.button>
+              )}
             </div>
+
+            {/* 🔥 测试运行项列表 */}
             <div className="divide-y divide-gray-200">
               {testRuns.map((run, index) => (
                 <TestRunItem
@@ -1220,6 +1344,8 @@ export function TestRuns() {
                   onStopTest={handleStopTest}
                   onViewLogs={handleViewLogs}
                   isStoppingTest={stoppingTests.has(run.id)}
+                  isSelected={selectedRunIds.has(run.id)}
+                  onSelect={handleSelectRun}
                 />
               ))}
             </div>

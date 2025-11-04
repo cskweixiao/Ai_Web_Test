@@ -156,6 +156,35 @@ export function testRoutes(testExecutionService: TestExecutionService): Router {
     }
   });
 
+  // 🔥 批量删除测试运行记录 - 必须在 /runs/:runId 之前
+  router.post('/runs/batch-delete', async (req: Request, res: Response) => {
+    try {
+      const { runIds } = req.body;
+
+      if (!runIds || !Array.isArray(runIds) || runIds.length === 0) {
+        return res.status(400).json({
+          success: false,
+          error: '缺少 runIds 参数或参数格式不正确'
+        });
+      }
+
+      console.log(`🗑️ 批量删除测试运行，数量: ${runIds.length}`);
+
+      const result = await testExecutionService.batchDeleteTestRuns(runIds);
+
+      res.json({
+        success: true,
+        data: result,
+        message: `成功删除 ${result.deletedCount} 条测试运行记录`
+      });
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        error: error.message
+      });
+    }
+  });
+
   // 获取测试运行状态
   router.get('/runs/:runId', async (req: Request, res: Response) => {
     try {
