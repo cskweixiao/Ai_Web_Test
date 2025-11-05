@@ -225,11 +225,16 @@ class FunctionalTestCaseService {
   /**
    * 上传并解析Axure文件（多文件 - HTML + JS）
    */
-  async parseAxureMulti(files: File[]) {
+  async parseAxureMulti(files: File[], pageName?: string) {
     const formData = new FormData();
     files.forEach(file => {
       formData.append('files', file);
     });
+
+    // 添加页面名称
+    if (pageName) {
+      formData.append('pageName', pageName);
+    }
 
     const token = localStorage.getItem(TOKEN_KEY);
     const headers: HeadersInit = {};
@@ -338,6 +343,64 @@ class FunctionalTestCaseService {
     });
 
     return handleResponse(response);
+  }
+
+  /**
+   * 🆕 AI预分析（识别不确定信息）
+   */
+  async preAnalyze(sessionId: string, axureData: any) {
+    console.log('📤 开始请求AI预分析...');
+
+    const response = await fetch(`${API_BASE_URL}/axure/pre-analyze`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ sessionId, axureData })
+    });
+
+    console.log('✅ 收到AI预分析响应');
+    return handleResponse(response);
+  }
+
+  /**
+   * 🆕 生成需求文档（增强版 - 支持用户确认信息）
+   */
+  async generateRequirementEnhanced(
+    sessionId: string,
+    axureData: any,
+    projectInfo: ProjectInfo,
+    enhancedData?: any
+  ) {
+    console.log('📤 开始请求生成需求文档（增强版）...');
+    if (enhancedData) {
+      console.log('   ✅ 包含用户确认的增强数据');
+    }
+
+    // 创建一个超时控制器（3分钟超时）
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 180000);
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/axure/generate-requirement-enhanced`, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ sessionId, axureData, projectInfo, enhancedData }),
+        signal: controller.signal
+      });
+
+      clearTimeout(timeoutId);
+
+      console.log('✅ 收到需求文档响应');
+      const result = await handleResponse(response);
+      console.log('✅ 需求文档解析成功，长度:', result.data?.requirementDoc?.length);
+
+      return result;
+    } catch (error: any) {
+      clearTimeout(timeoutId);
+      if (error.name === 'AbortError') {
+        throw new Error('生成需求文档超时（超过3分钟），请重试或简化原型内容');
+      }
+      throw error;
+    }
   }
 }
 

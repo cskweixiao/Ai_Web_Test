@@ -92,7 +92,9 @@
       "Bash(docker inspect:*)",
       "Bash(docker exec:*)",
       "Bash(docker ps:*)",
-      "Bash(awk:*)"
+      "Bash(awk:*)",
+      "Bash(Select-String -Pattern \"error|Error\" -Context 2)",
+      "Bash(Select-Object -First 10)"
     ],
     "deny": []
   },

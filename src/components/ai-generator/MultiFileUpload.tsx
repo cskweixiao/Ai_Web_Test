@@ -13,6 +13,7 @@ interface UploadedFile {
 
 interface MultiFileUploadProps {
   onFilesChange: (files: File[]) => void;
+  onPageNameChange?: (pageName: string) => void; // 新增:页面名称回调
   maxFiles?: number;
   maxSize?: number; // in bytes
 }
@@ -23,10 +24,12 @@ interface MultiFileUploadProps {
  */
 export function MultiFileUpload({
   onFilesChange,
+  onPageNameChange,
   maxFiles = 20,
   maxSize = 50 * 1024 * 1024 // 50MB
 }: MultiFileUploadProps) {
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
+  const [pageName, setPageName] = useState<string>(''); // 新增:页面名称状态
 
   // 验证文件类型和大小
   const validateFile = (file: File): UploadedFile => {
@@ -103,8 +106,32 @@ export function MultiFileUpload({
   const htmlCount = uploadedFiles.filter(f => f.type === 'html' && f.status === 'valid').length;
   const jsCount = uploadedFiles.filter(f => f.type === 'js' && f.status === 'valid').length;
 
+  // 页面名称变化处理
+  const handlePageNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    setPageName(value);
+    onPageNameChange?.(value);
+  };
+
   return (
     <div className="space-y-4">
+      {/* 页面名称输入框 */}
+      <div className="bg-white rounded-lg p-4 border border-gray-200 shadow-sm">
+        <label className="block text-sm font-medium text-gray-700 mb-2">
+          <span className="text-red-500">*</span> 页面名称
+        </label>
+        <input
+          type="text"
+          value={pageName}
+          onChange={handlePageNameChange}
+          placeholder="请输入页面名称，例如：集配管理（新增）"
+          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+        />
+        <p className="mt-2 text-xs text-gray-500">
+          提示：页面名称将用于标识Axure原型页面，建议使用清晰明确的名称
+        </p>
+      </div>
+
       {/* 拖拽上传区 */}
       <div
         {...getRootProps()}

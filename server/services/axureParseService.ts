@@ -439,12 +439,16 @@ export class AxureParseService {
    * 解析多个文件（HTML + JS）
    * @param htmlFilePaths HTML文件路径数组
    * @param jsFilePaths JS文件路径数组
+   * @param userPageName 用户指定的页面名称（可选）
    * @returns 合并后的解析结果
    */
-  async parseMultipleFiles(htmlFilePaths: string[], jsFilePaths: string[]): Promise<AxureParseResult> {
+  async parseMultipleFiles(htmlFilePaths: string[], jsFilePaths: string[], userPageName?: string): Promise<AxureParseResult> {
     console.log('📄 开始解析多个Axure文件');
     console.log(`  - HTML: ${htmlFilePaths.length} 个`);
     console.log(`  - JS: ${jsFilePaths.length} 个`);
+    if (userPageName) {
+      console.log(`  - 用户指定页面名称: "${userPageName}"`);
+    }
 
     try {
       // 1. 解析所有HTML文件
@@ -454,10 +458,16 @@ export class AxureParseService {
         htmlResults.push(result);
       }
 
-      // 2. 解析所有JS文件
+      // 2. 如果用户指定了页面名称，替换第一个页面的名称
+      if (userPageName && htmlResults.length > 0 && htmlResults[0].pages.length > 0) {
+        console.log(`  🔄 使用用户指定的页面名称: "${htmlResults[0].pages[0].name}" → "${userPageName}"`);
+        htmlResults[0].pages[0].name = userPageName;
+      }
+
+      // 3. 解析所有JS文件
       const jsData = await this.parseJsFiles(jsFilePaths);
 
-      // 3. 合并数据
+      // 4. 合并数据
       const mergedResult = this.mergeResults(htmlResults, jsData);
 
       console.log(`✅ 多文件解析完成: ${mergedResult.pageCount}个页面, ${mergedResult.elementCount}个元素, ${mergedResult.interactionCount}个交互`);

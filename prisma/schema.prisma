@@ -505,23 +505,25 @@ enum test_point_risk_level {
 
 // AI生成会话表
 model ai_generation_sessions {
-  id                  String    @id @db.VarChar(100)
-  user_id             Int
-  axure_filename      String    @db.VarChar(255)
-  axure_file_size     Int
-  project_name        String?   @db.VarChar(255)
-  system_type         String?   @db.VarChar(50)
-  business_domain     String?   @db.VarChar(100)
-  requirement_doc     String?   @db.Text
-  page_count          Int       @default(0)
-  element_count       Int       @default(0)
-  interaction_count   Int       @default(0)
-  total_generated     Int       @default(0)
-  total_saved         Int       @default(0)
-  batches             Json?
-  created_at          DateTime  @default(now()) @db.Timestamp(0)
+  id                    String    @id @db.VarChar(100)
+  user_id               Int
+  axure_filename        String    @db.VarChar(255)
+  axure_file_size       Int
+  project_name          String?   @db.VarChar(255)
+  system_type           String?   @db.VarChar(50)
+  business_domain       String?   @db.VarChar(100)
+  requirement_doc       String?   @db.Text
+  page_count            Int       @default(0)
+  element_count         Int       @default(0)
+  interaction_count     Int       @default(0)
+  total_generated       Int       @default(0)
+  total_saved           Int       @default(0)
+  batches               Json?
+  pre_analysis_result   Json?     // 新增：AI预分析结果
+  enhanced_data         Json?     // 新增：用户确认的增强数据
+  created_at            DateTime  @default(now()) @db.Timestamp(0)
 
-  users               users     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  users                 users     @relation(fields: [user_id], references: [id], onDelete: Cascade)
 
   @@index([user_id])
   @@index([created_at])

@@ -16,6 +16,8 @@ import { DraftCaseCard } from '../components/ai-generator/DraftCaseCard';
 import { MultiFileUpload } from '../components/ai-generator/MultiFileUpload';
 import { MarkdownEditor } from '../components/ai-generator/MarkdownEditor';
 import { TestCaseDetailModal } from '../components/ai-generator/TestCaseDetailModal';
+import { SmartCompletionModal } from '../components/ai-generator/SmartCompletionModal';
+import type { PreAnalysisResult, UserConfirmation, EnhancedAxureData } from '../types/aiPreAnalysis';
 import { clsx } from 'clsx';
 
 const { TextArea } = Input;
@@ -36,6 +38,7 @@ export function FunctionalTestCaseGenerator() {
 
   // 步骤1状态
   const [axureFiles, setAxureFiles] = useState<File[]>([]);
+  const [pageName, setPageName] = useState(''); // 新增:页面名称
   const [projectInfo, setProjectInfo] = useState({
     systemName: '',      // 系统名称
     moduleName: '',      // 模块名称
@@ -48,6 +51,12 @@ export function FunctionalTestCaseGenerator() {
   const [requirementDoc, setRequirementDoc] = useState('');
   const [generating, setGenerating] = useState(false);
   const [sessionId, setSessionId] = useState('');
+
+  // 🆕 预分析相关状态（智能补全）
+  const [preAnalysisResult, setPreAnalysisResult] = useState<PreAnalysisResult | null>(null);
+  const [preAnalyzing, setPreAnalyzing] = useState(false);
+  const [completionModalOpen, setCompletionModalOpen] = useState(false);
+  const [userConfirmations, setUserConfirmations] = useState<UserConfirmation[]>([]);
 
   // 步骤3状态
   const [batches, setBatches] = useState<any[]>([]);
@@ -76,6 +85,10 @@ export function FunctionalTestCaseGenerator() {
     }
 
     // 验证必填字段
+    if (!pageName.trim()) {
+      showToast.error('请填写页面名称');
+      return;
+    }
     if (!projectInfo.systemName.trim()) {
       showToast.error('请填写系统名称');
       return;
@@ -87,18 +100,168 @@ export function FunctionalTestCaseGenerator() {
 
     setParsing(true);
     try {
-      const result = await functionalTestCaseService.parseAxureMulti(axureFiles);
+      const result = await functionalTestCaseService.parseAxureMulti(axureFiles, pageName);
       setParseResult(result.data);
       setSessionId(result.data.sessionId);
       showToast.success('解析成功！');
 
-      // 自动生成需求文档
+      // 🆕 执行AI预分析（智能补全）
       setCurrentStep(1);
-      await generateRequirementDoc(result.data, result.data.sessionId);
+      await performPreAnalysis(result.data, result.data.sessionId);
     } catch (error: any) {
       showToast.error('解析失败：' + error.message);
     } finally {
       setParsing(false);
+    }
+  };
+
+  // 🆕 执行AI预分析（智能补全）
+  const performPreAnalysis = async (axureData: any, sid: string) => {
+    setPreAnalyzing(true);
+    try {
+      console.log('🔍 开始AI预分析...');
+      const result = await functionalTestCaseService.preAnalyze(sid, axureData);
+
+      setPreAnalysisResult(result.data);
+
+      // 如果有不确定信息，打开智能补全对话框
+      if (result.data.uncertainInfo && result.data.uncertainInfo.length > 0) {
+        console.log(`📋 识别到 ${result.data.uncertainInfo.length} 个不确定信息`);
+        setCompletionModalOpen(true);
+      } else {
+        // 没有不确定信息，直接生成需求文档
+        console.log('✅ 没有不确定信息，直接生成需求文档');
+        showToast.info('原型信息完整，直接生成需求文档');
+        await generateRequirementDoc(axureData, sid);
+      }
+    } catch (error: any) {
+      console.error('❌ AI预分析失败:', error);
+      showToast.warning('AI预分析失败，将使用原始方式生成需求文档');
+      // 预分析失败，回退到原始流程
+      await generateRequirementDoc(axureData, sid);
+    } finally {
+      setPreAnalyzing(false);
+    }
+  };
+
+  // 🆕 处理用户确认（智能补全）
+  const handleConfirmations = async (confirmations: UserConfirmation[]) => {
+    setUserConfirmations(confirmations);
+    setCompletionModalOpen(false);
+
+    console.log('✅ 用户确认完成，开始生成增强需求文档');
+    console.log('📊 确认数量:', confirmations.length);
+    console.log('📋 确认详情:', confirmations);
+
+    // 构建增强数据
+    const enhancedData = buildEnhancedData(confirmations);
+
+    console.log('🔥 增强数据构建完成:');
+    console.log('   - 页面类型:', enhancedData.enrichedInfo.pageType);
+    console.log('   - 确认的枚举:', enhancedData.enrichedInfo.confirmedEnums);
+    console.log('   - 确认的规则:', enhancedData.enrichedInfo.confirmedRules);
+
+    // 使用增强API生成需求文档
+    await generateRequirementDocEnhanced(parseResult, sessionId, enhancedData);
+  };
+
+  // 🆕 跳过智能补全
+  const handleSkipCompletion = async () => {
+    setCompletionModalOpen(false);
+    showToast.info('已跳过智能补全，使用原始数据生成需求文档');
+    await generateRequirementDoc(parseResult, sessionId);
+  };
+
+  // 🆕 构建增强数据
+  const buildEnhancedData = (confirmations: UserConfirmation[]): EnhancedAxureData => {
+    if (!preAnalysisResult) {
+      throw new Error('预分析结果不存在');
+    }
+
+    const enrichedInfo = {
+      pageType: undefined as string | undefined,
+      confirmedEnums: {} as Record<string, string[]>,
+      confirmedRules: [] as Array<{ field: string; rule: string }>,
+      confirmedMeanings: {} as Record<string, string>,
+      confirmedValidations: [] as Array<{ field: string; validation: string }>
+    };
+
+    // 处理每个用户确认
+    confirmations.forEach(conf => {
+      if (!conf.confirmed || !conf.userValue) return;
+
+      const uncertainInfo = preAnalysisResult.uncertainInfo.find(u => u.id === conf.id);
+      if (!uncertainInfo) return;
+
+      switch (uncertainInfo.type) {
+        case 'pageType':
+          // 🔥 页面类型确认（最重要！）
+          enrichedInfo.pageType = conf.userValue[0]; // 取第一个值（list/form/detail/mixed）
+          break;
+        case 'enumValues':
+          if (uncertainInfo.field) {
+            enrichedInfo.confirmedEnums[uncertainInfo.field] = conf.userValue;
+          }
+          break;
+        case 'businessRule':
+          if (uncertainInfo.field) {
+            enrichedInfo.confirmedRules.push({
+              field: uncertainInfo.field,
+              rule: conf.userValue.join('; ')
+            });
+          }
+          break;
+        case 'fieldMeaning':
+          if (uncertainInfo.field) {
+            enrichedInfo.confirmedMeanings[uncertainInfo.field] = conf.userValue.join('; ');
+          }
+          break;
+        case 'validationRule':
+          if (uncertainInfo.field) {
+            enrichedInfo.confirmedValidations.push({
+              field: uncertainInfo.field,
+              validation: conf.userValue.join('; ')
+            });
+          }
+          break;
+      }
+    });
+
+    return {
+      originalData: parseResult,
+      preAnalysis: preAnalysisResult,
+      userConfirmations: confirmations,
+      enrichedInfo
+    };
+  };
+
+  // 🆕 生成需求文档（增强版）
+  const generateRequirementDocEnhanced = async (
+    axureData: any,
+    sid: string,
+    enhancedData: EnhancedAxureData
+  ) => {
+    setGenerating(true);
+    try {
+      const businessRules = (projectInfo.businessRules || '').split('\n').filter(r => r.trim());
+
+      const result = await functionalTestCaseService.generateRequirementEnhanced(
+        sid,
+        axureData,
+        {
+          systemName: projectInfo.systemName || '',
+          moduleName: projectInfo.moduleName || '',
+          businessRules
+        },
+        enhancedData
+      );
+
+      setRequirementDoc(result.data.requirementDoc);
+      showToast.success('增强需求文档生成成功！');
+    } catch (error: any) {
+      showToast.error('生成需求文档失败：' + error.message);
+    } finally {
+      setGenerating(false);
     }
   };
 
@@ -302,6 +465,7 @@ export function FunctionalTestCaseGenerator() {
           {/* 多文件上传组件 */}
           <MultiFileUpload
             onFilesChange={setAxureFiles}
+            onPageNameChange={setPageName}
             maxFiles={20}
             maxSize={50 * 1024 * 1024}
           />
@@ -431,9 +595,19 @@ export function FunctionalTestCaseGenerator() {
       description="您可以编辑修改,以获得更精准的测试用例"
       onNext={handlePlanAndGenerate}
       nextButtonText="生成测试用例 →"
-      hideActions={generating}
+      hideActions={preAnalyzing || generating}
     >
-      {generating ? (
+      {preAnalyzing ? (
+        <AIThinking
+          title="AI 正在预分析原型..."
+          subtitle="识别不确定的关键信息，预计需要 10 秒"
+          progressItems={[
+            { label: '分析原型结构和字段', status: 'processing' },
+            { label: '识别不确定信息', status: 'pending' },
+            { label: '生成确认问题', status: 'pending' }
+          ]}
+        />
+      ) : generating ? (
         <AIThinking
           title="AI 正在生成需求文档..."
           subtitle="预计需要 30-90 秒，请耐心等待（最长3分钟）"
@@ -871,6 +1045,17 @@ export function FunctionalTestCaseGenerator() {
           </div>
         </div>
       </div>
+
+      {/* 🆕 智能补全对话框 */}
+      {preAnalysisResult && (
+        <SmartCompletionModal
+          open={completionModalOpen}
+          preAnalysisResult={preAnalysisResult}
+          onConfirm={handleConfirmations}
+          onSkip={handleSkipCompletion}
+          loading={generating}
+        />
+      )}
 
       {/* 测试用例详情对话框 */}
       <TestCaseDetailModal

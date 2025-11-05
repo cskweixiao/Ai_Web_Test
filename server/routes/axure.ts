@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { axureUpload, axureMultiUpload } from '../middleware/upload.js';
 import { AxureParseService } from '../services/axureParseService.js';
 import { functionalTestCaseAIService } from '../services/functionalTestCaseAIService.js';
+import { aiPreAnalysisService } from '../services/aiPreAnalysisService.js';
 import { PrismaClient } from '../../src/generated/prisma/index.js';
 import { DatabaseService } from '../services/databaseService.js';
 import fs from 'fs/promises';
@@ -93,6 +94,12 @@ export function createAxureRoutes(): Router {
 
       console.log(`📤 收到多文件上传: ${req.files.length} 个文件`);
 
+      // 获取页面名称
+      const pageName = req.body.pageName || '';
+      if (pageName) {
+        console.log(`📝 用户指定页面名称: "${pageName}"`);
+      }
+
       // 分类文件
       const htmlFiles = req.files.filter(f => f.originalname.toLowerCase().endsWith('.html') || f.originalname.toLowerCase().endsWith('.htm'));
       const jsFiles = req.files.filter(f => f.originalname.toLowerCase().endsWith('.js'));
@@ -110,7 +117,8 @@ export function createAxureRoutes(): Router {
       // 解析Axure文件
       const parseResult = await parseService.parseMultipleFiles(
         htmlFiles.map(f => f.path),
-        jsFiles.map(f => f.path)
+        jsFiles.map(f => f.path),
+        pageName // 传递页面名称
       );
 
       // 创建AI生成会话记录
@@ -177,6 +185,101 @@ export function createAxureRoutes(): Router {
           system_type: projectInfo.moduleName || '',     // 使用模块名称
           business_domain: '',                           // 不再使用
           requirement_doc: result.requirementDoc
+        }
+      });
+
+      res.json({
+        success: true,
+        data: result
+      });
+    } catch (error: any) {
+      console.error('❌ 生成需求文档失败:', error);
+      res.status(500).json({
+        success: false,
+        error: error.message
+      });
+    }
+  });
+
+  /**
+   * 🆕 POST /api/v1/axure/pre-analyze
+   * AI预分析（识别不确定信息）
+   */
+  router.post('/pre-analyze', async (req: Request, res: Response) => {
+    try {
+      const { sessionId, axureData } = req.body;
+
+      if (!sessionId || !axureData) {
+        return res.status(400).json({
+          success: false,
+          error: '缺少必要参数'
+        });
+      }
+
+      console.log(`🔍 开始AI预分析，会话ID: ${sessionId}`);
+
+      // 调用AI预分析服务
+      const preAnalysisResult = await aiPreAnalysisService.preAnalyze(
+        sessionId,
+        axureData
+      );
+
+      // 保存预分析结果到数据库
+      await prisma.ai_generation_sessions.update({
+        where: { id: sessionId },
+        data: {
+          pre_analysis_result: JSON.stringify(preAnalysisResult)
+        }
+      });
+
+      res.json({
+        success: true,
+        data: preAnalysisResult
+      });
+    } catch (error: any) {
+      console.error('❌ AI预分析失败:', error);
+      res.status(500).json({
+        success: false,
+        error: error.message
+      });
+    }
+  });
+
+  /**
+   * 🆕 POST /api/v1/axure/generate-requirement-enhanced
+   * 生成需求文档（增强版 - 支持用户确认信息）
+   */
+  router.post('/generate-requirement-enhanced', async (req: Request, res: Response) => {
+    try {
+      const { sessionId, axureData, projectInfo, enhancedData } = req.body;
+
+      if (!sessionId || !axureData || !projectInfo) {
+        return res.status(400).json({
+          success: false,
+          error: '缺少必要参数'
+        });
+      }
+
+      console.log(`📝 开始生成需求文档（增强版），会话ID: ${sessionId}`);
+      if (enhancedData) {
+        console.log(`   ✅ 使用用户确认的增强数据`);
+      }
+
+      // 调用AI服务生成需求文档（传入增强数据）
+      const result = await functionalTestCaseAIService.generateRequirementDoc(
+        axureData,
+        projectInfo,
+        enhancedData  // 🆕 传入用户确认的增强数据
+      );
+
+      // 更新会话信息
+      await prisma.ai_generation_sessions.update({
+        where: { id: sessionId },
+        data: {
+          project_name: projectInfo.systemName || '',
+          system_type: projectInfo.moduleName || '',
+          requirement_doc: result.requirementDoc,
+          enhanced_data: enhancedData ? JSON.stringify(enhancedData) : null
         }
       });
 

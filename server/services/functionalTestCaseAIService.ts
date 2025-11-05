@@ -1,4 +1,5 @@
 import type { AxureParseResult } from '../types/axure.js';
+import type { EnhancedAxureData } from '../types/aiPreAnalysis.js';
 import { llmConfigManager } from '../../src/services/llmConfigManager.js';
 import type { LLMConfig } from './aiParser.js';
 import { ProxyAgent } from 'undici';
@@ -240,13 +241,15 @@ export class FunctionalTestCaseAIService {
   }
 
   /**
-   * 生成需求文档
+   * 生成需求文档（支持增强数据）
    * @param axureData Axure解析结果
    * @param projectInfo 项目信息
+   * @param enhancedData 增强数据（可选，来自用户确认）
    */
   async generateRequirementDoc(
     axureData: AxureParseResult,
-    projectInfo: ProjectInfo
+    projectInfo: ProjectInfo,
+    enhancedData?: EnhancedAxureData
   ): Promise<{ requirementDoc: string; completeness: number; suggestions: string[] }> {
     console.log('\n╔═══════════════════════════════════════════════════════════════╗');
     console.log('║           🤖 开始生成需求文档 - 详细日志模式                ║');
@@ -282,7 +285,23 @@ export class FunctionalTestCaseAIService {
     });
     console.log('');
 
+    // 🆕 构建增强上下文（如果有用户确认数据）
+    let enhancedContext = '';
+    if (enhancedData) {
+      console.log('✅ 检测到用户确认的增强数据，将注入到AI提示词中...');
+      console.log('   🔥 页面类型:', enhancedData.enrichedInfo.pageType);
+      console.log('   📊 确认的枚举数量:', Object.keys(enhancedData.enrichedInfo.confirmedEnums).length);
+      console.log('   📊 确认的规则数量:', enhancedData.enrichedInfo.confirmedRules.length);
+      enhancedContext = this.buildEnhancedContext(enhancedData);
+      console.log('   📝 增强上下文长度:', enhancedContext.length, '字符');
+      if (enhancedContext.length > 0) {
+        console.log('   ✅ 增强上下文预览:\n', enhancedContext.substring(0, 500) + '...');
+      }
+    }
+
     const systemPrompt = `你是需求分析专家，基于Axure原型生成详细的功能需求文档。
+
+${enhancedContext}
 
 🚨 核心原则（必须严格遵守）:
 1. 严格基于用户上传的实际原型内容，禁止编造任何字段或功能
@@ -1254,6 +1273,99 @@ ${requirementDoc.substring(0, 1500)}...
       return '5. 所有验证点均通过';
     }
     return '5. 补充验证项符合要求';
+  }
+
+  /**
+   * 🆕 构建增强上下文（将用户确认信息注入到AI提示词）
+   */
+  private buildEnhancedContext(enhancedData: EnhancedAxureData): string {
+    let context = '\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n';
+    context += '📋 【用户确认信息】以下是用户明确确认的关键信息（优先级最高）：\n';
+    context += '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n';
+
+    const { enrichedInfo } = enhancedData;
+    let hasAnyInfo = false;
+
+    // 🔥 0. 确认的页面类型（最重要！）
+    if (enrichedInfo.pageType) {
+      hasAnyInfo = true;
+      context += '## 🔥 确认的页面类型（最高优先级！）\n';
+      context += '⚠️ 这是用户明确确认的页面类型，决定了后续如何解析所有字段！\n\n';
+      context += `**页面类型**: ${enrichedInfo.pageType}\n\n`;
+
+      // 根据页面类型给出明确指导
+      if (enrichedInfo.pageType === 'list') {
+        context += '📝 **解析指导**:\n';
+        context += '- 页面顶部的 input/select 元素应归类为：**查询条件**\n';
+        context += '- 页面的 table/div 元素应归类为：**列表展示字段**\n';
+        context += '- 🚫 不要生成"表单字段"章节！\n';
+        context += '- ✅ 应该生成：查询条件、列表展示字段、操作按钮\n';
+      } else if (enrichedInfo.pageType === 'form') {
+        context += '📝 **解析指导**:\n';
+        context += '- 页面的 input/select 元素应归类为：**表单字段**\n';
+        context += '- 🚫 不要生成"查询条件"章节！\n';
+        context += '- ✅ 应该生成：表单字段、操作按钮\n';
+      } else if (enrichedInfo.pageType === 'detail') {
+        context += '📝 **解析指导**:\n';
+        context += '- 页面的元素应归类为：**详情展示字段**\n';
+        context += '- 🚫 不要生成"查询条件"或"表单字段"章节！\n';
+        context += '- ✅ 应该生成：详情展示字段、操作按钮\n';
+      }
+      context += '\n';
+    }
+
+    // 1. 确认的枚举值
+    if (Object.keys(enrichedInfo.confirmedEnums).length > 0) {
+      hasAnyInfo = true;
+      context += '## 📌 确认的枚举值\n';
+      context += '（生成需求文档时必须使用这些值，不要修改或添加）\n\n';
+      for (const [field, values] of Object.entries(enrichedInfo.confirmedEnums)) {
+        context += `- **${field}**: ${values.join('、')}\n`;
+      }
+      context += '\n';
+    }
+
+    // 2. 确认的业务规则
+    if (enrichedInfo.confirmedRules.length > 0) {
+      hasAnyInfo = true;
+      context += '## 📌 确认的业务规则\n';
+      context += '（这些是用户明确的业务规则，必须体现在需求文档中）\n\n';
+      enrichedInfo.confirmedRules.forEach((rule, index) => {
+        context += `${index + 1}. **${rule.field}**: ${rule.rule}\n`;
+      });
+      context += '\n';
+    }
+
+    // 3. 确认的字段含义
+    if (Object.keys(enrichedInfo.confirmedMeanings).length > 0) {
+      hasAnyInfo = true;
+      context += '## 📌 确认的字段含义\n';
+      context += '（使用这些明确的字段含义，不要猜测）\n\n';
+      for (const [field, meaning] of Object.entries(enrichedInfo.confirmedMeanings)) {
+        context += `- **${field}**: ${meaning}\n`;
+      }
+      context += '\n';
+    }
+
+    // 4. 确认的校验规则
+    if (enrichedInfo.confirmedValidations.length > 0) {
+      hasAnyInfo = true;
+      context += '## 📌 确认的校验规则\n\n';
+      enrichedInfo.confirmedValidations.forEach((val, index) => {
+        context += `${index + 1}. **${val.field}**: ${val.validation}\n`;
+      });
+      context += '\n';
+    }
+
+    if (hasAnyInfo) {
+      context += '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n';
+      context += '💡 请在生成需求文档时，优先使用以上用户确认的信息\n';
+      context += '   标注来源时使用"(来源: 用户确认)"\n';
+      context += '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n';
+      return context;
+    }
+
+    return '';
   }
 
   /**
