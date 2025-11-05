@@ -334,18 +334,27 @@ ${enhancedContext}
 
 🎯 **章节生成规则**：
 
+🔥🔥🔥 **最重要：所有页面类型都必须生成"操作按钮"章节！**
+⚠️ 无论页面类型如何，必须从原型中提取所有 type="button" 的元素！
+
 **对于列表页（list）**：
 - 查询条件：
-  * 从 type="input" 或 type="select" 的元素中提取
+  * 从 **"查询条件字段 - 输入框/下拉框"** 部分的 type="input" 或 type="select" 元素中提取
   * 这些是用户用来过滤列表数据的条件
   * 如果元素有name属性，name就是查询条件字段名
 
-- 列表展示字段：
-  * 从 type="div" 的元素中提取
-  * 这些是列表中展示的数据列
-  * 如果某个字段名已经在查询条件中出现，在列表中就不要重复
+- 列表展示字段（🔥 重要！）：
+  * 从 **"列表字段 - div文本元素"** 部分的 type="div" 元素中提取
+  * 🔥 这些 div 文本就是表格的列头名称！必须全部列出！
+  * 例如看到 '- div: "客户名称"' 就生成一行：| 客户名称 | 文本 | - | 显示客户名称 | 集配管理-div |
+  * 例如看到 '- div: "当前审批节点"' 就生成一行：| 当前审批节点 | 文本 | - | 显示当前审批节点 | 集配管理-div |
+  * 例如看到 '- div: "结算总金额（集采含税采购成本）（元）"' 就生成一行：| 结算总金额（集采含税采购成本）（元）| 金额 | 元 | 显示结算总金额 | 集配管理-div |
+  * ⚠️ 如果某个字段名已经在查询条件中出现，在列表中就不要重复
 
-- 操作按钮：从 type="button" 的元素中提取
+- 🔥 操作按钮（必须章节！）：
+  * 从 **"操作按钮"** 部分的 type="button" 元素中提取 **所有按钮**
+  * 包括：查询、重置、导出、新增、编辑、删除、审核等
+  * 每个按钮都要列出，不要遗漏！
 
 **对于表单页（form）**：
 - 🚫 不要生成"查询条件"章节！
@@ -354,7 +363,10 @@ ${enhancedContext}
   * 这些是用户用来输入/编辑数据的字段
   * 记录字段名、控件类型、必填项、默认值、说明
 
-- 操作按钮：从 type="button" 的元素中提取（通常是"保存"/"提交"/"取消"）
+- 🔥 操作按钮（必须章节！）：
+  * 从 type="button" 的元素中提取 **所有按钮**
+  * 通常包括："保存"/"提交"/"取消"/"返回"等
+  * 每个按钮都要列出，不要遗漏！
 
 **对于详情页（detail）**：
 - 🚫 不要生成"查询条件"章节！
@@ -362,7 +374,17 @@ ${enhancedContext}
   * 从 type="div" 的元素中提取
   * 这些是只读展示的数据字段
 
-- 操作按钮：从 type="button" 的元素中提取（通常是"返回"/"编辑"）
+- 🔥 操作按钮（必须章节！）：
+  * 从 type="button" 的元素中提取 **所有按钮**
+  * 通常包括："返回"/"编辑"/"删除"等
+  * 每个按钮都要列出，不要遗漏！
+
+**对于混合页（mixed）或未知页（unknown）**：
+- 🔥 操作按钮（最重要！绝对不能遗漏！）：
+  * 必须从原型中提取 **所有 type="button" 的元素**
+  * 如果原型中有10个按钮，就必须在表格中列出10行
+  * 如果原型中有20个按钮，就必须在表格中列出20行
+  * 不要因为按钮太多就省略，每个按钮都很重要！
 
 **二、表单详细定义（仅当原型中存在表单时才写）**
 从原型中逐个提取每个字段的:
@@ -414,58 +436,130 @@ ${enhancedContext}
 
 **如果是列表页（list）**，生成以下章节：
 
-#### 1.1.1 查询条件
+#### 1.1.1 页面布局与文案校验
+本章节用于验证页面的基本呈现是否符合设计要求。
+
+**必须验证的内容：**
+1. **页面标题与导航**: 页面标题文案正确，面包屑导航路径准确
+2. **布局结构**: 查询区域、列表区域、按钮区域布局合理，无遮挡或错位
+3. **表格列头**: 所有列头文案与原型一致，顺序正确
+4. **按钮文案**: 所有操作按钮的文案、位置、样式与原型一致
+5. **提示文案**: 空状态提示、加载提示、错误提示等文案友好且准确
+6. **字段标签**: 查询条件的标签文案清晰准确，必填项有明显标识
+
+#### 1.1.2 查询条件
 | 字段名 | 控件类型 | 必填 | 默认值 | 说明 | 来源 |
 |--------|---------|------|--------|------|------|
 （此处填入从原型提取的实际字段，不要写任何占位符）
 
-#### 1.1.2 列表展示字段
+#### 1.1.3 列表展示字段
 | 字段名 | 数据类型 | 格式 | 说明 | 来源 |
 |--------|---------|------|------|------|
 （此处填入从原型提取的实际字段，不要写任何占位符）
 
-#### 1.1.3 操作按钮
-（列出列表中的操作按钮）
+#### 1.1.4 操作按钮 ← 🔥 必须生成！
+| 按钮名称 | 按钮类型 | 权限要求 | 触发条件 | 操作说明 | 来源 |
+|---------|---------|---------|---------|---------|------|
+（此处填入从原型提取的所有按钮，每个按钮一行，格式：按钮名称 | 主要/次要 | 需要XX权限 | 满足XX条件时可用 | 点击后执行XX操作 | 来源页面）
+
+#### 1.1.5 业务规则
+（提取原型中的实际业务规则文案）
 
 **如果是表单页（form）**，生成以下章节：
 
-#### 1.1.1 表单字段
+#### 1.1.1 页面布局与文案校验
+本章节用于验证页面的基本呈现是否符合设计要求。
+
+**必须验证的内容：**
+1. **页面标题与导航**: 页面标题文案正确（如"新增订单"、"编辑订单"），面包屑导航路径准确
+2. **布局结构**: 表单区域布局合理，字段分组清晰，按钮位置符合交互规范
+3. **字段标签**: 所有字段标签文案准确，必填项有红色星号标识
+4. **按钮文案**: 提交/保存/取消等按钮文案与原型一致，主次关系明确
+5. **提示文案**: 字段说明、校验提示、操作提示等文案友好且准确
+6. **默认值显示**: 有默认值的字段正确显示初始值
+
+#### 1.1.2 表单字段
 | 字段名 | 控件类型 | 必填 | 默认值 | 说明 | 来源 |
 |--------|---------|------|--------|------|------|
 （此处填入从原型提取的实际字段，不要写任何占位符）
 
-#### 1.1.2 操作按钮
-（列出表单中的操作按钮，通常是"保存"/"提交"/"取消"等）
+#### 1.1.3 操作按钮 ← 🔥 必须生成！
+| 按钮名称 | 按钮类型 | 权限要求 | 触发条件 | 操作说明 | 来源 |
+|---------|---------|---------|---------|---------|------|
+（此处填入从原型提取的所有按钮，通常是"保存"/"提交"/"取消"等）
+
+#### 1.1.4 业务规则
+（提取原型中的实际业务规则文案）
 
 **如果是详情页（detail）**，生成以下章节：
 
-#### 1.1.1 详情展示字段
+#### 1.1.1 页面布局与文案校验
+本章节用于验证页面的基本呈现是否符合设计要求。
+
+**必须验证的内容：**
+1. **页面标题与导航**: 页面标题文案正确（如"订单详情"、"客户详情"），面包屑导航路径准确
+2. **布局结构**: 详情区域布局合理，信息分组清晰（如基本信息、详细信息、操作记录等）
+3. **字段标签**: 所有字段标签文案准确，与数据对应关系清晰
+4. **按钮文案**: 返回/编辑/删除等按钮文案与原型一致
+5. **提示文案**: 状态提示、操作提示等文案友好且准确
+6. **数据展示格式**: 日期、金额、状态等字段按规定格式展示
+
+#### 1.1.2 详情展示字段
 | 字段名 | 数据类型 | 格式 | 说明 | 来源 |
 |--------|---------|------|------|------|
 （此处填入从原型提取的实际字段，不要写任何占位符）
 
-#### 1.1.2 操作按钮
-（列出详情页中的操作按钮，通常是"返回"/"编辑"等）
+#### 1.1.3 操作按钮 ← 🔥 必须生成！
+| 按钮名称 | 按钮类型 | 权限要求 | 触发条件 | 操作说明 | 来源 |
+|---------|---------|---------|---------|---------|------|
+（此处填入从原型提取的所有按钮，通常是"返回"/"编辑"等）
 
-**如果是混合页（mixed）或未知页（unknown）**，根据实际情况灵活生成章节
+#### 1.1.4 业务规则
+（提取原型中的实际业务规则文案）
 
-#### 1.1.3 操作按钮（仅当原型中存在时）
-| 按钮名称 | 位置 | 触发条件 | 操作说明 | 来源 |
-|---------|------|---------|---------|------|
-（此处填入从原型提取的实际按钮，不要写任何占位符）
+**如果是混合页（mixed）或未知页（unknown）**：
 
-#### 1.1.4 表单字段定义（仅当原型中存在表单时）
+🔥 **重要：无论页面类型如何，必须按以下顺序生成章节！**
+
+#### 1.1.1 页面布局与文案校验
+本章节用于验证页面的基本呈现是否符合设计要求。
+
+**必须验证的内容：**
+1. **页面标题与导航**: 页面标题文案正确，面包屑导航路径准确
+2. **布局结构**: 各功能区域布局合理，无遮挡或错位
+3. **字段与列头**: 所有字段标签、列头文案与原型一致
+4. **按钮文案**: 所有操作按钮的文案、位置、样式与原型一致
+5. **提示文案**: 各类提示信息文案友好且准确
+6. **数据展示格式**: 日期、金额、状态等字段按规定格式展示
+
+#### 1.1.2 查询条件（如果有输入框用于查询）
+| 字段名 | 控件类型 | 必填 | 默认值 | 说明 | 来源 |
+|--------|---------|------|--------|------|------|
+（此处填入从原型提取的实际字段）
+
+#### 1.1.3 列表展示字段（如果有表格或列表）
+| 字段名 | 数据类型 | 格式 | 说明 | 来源 |
+|--------|---------|------|------|------|
+（此处填入从原型提取的实际字段）
+
+#### 1.1.4 操作按钮 ← 🔥🔥🔥 这是最重要的章节，绝对不能遗漏！
+⚠️ **必须从原型中提取所有 type="button" 的元素！**
+
+| 按钮名称 | 按钮类型 | 权限要求 | 触发条件 | 操作说明 | 来源 |
+|---------|---------|---------|---------|---------|------|
+（此处填入从原型提取的**所有按钮**，每个按钮占一行，格式示例：）
+（查询 | 主要 | 无 | 无 | 根据查询条件筛选数据 | 集配管理-button）
+（重置 | 次要 | 无 | 无 | 清空查询条件 | 集配管理-button）
+（新增 | 主要 | 需要新增权限 | 无 | 打开新增弹窗 | 集配管理-button）
+（删除 | 危险 | 需要删除权限 | 选中数据后可用 | 删除选中的数据 | 集配管理-button）
+（如果原型中有10个按钮，就必须列出10行！不要遗漏任何一个按钮！）
+
+#### 1.1.5 表单字段定义（仅当原型中存在表单输入时）
 | 字段名 | 控件类型 | 必填 | 长度/范围 | 默认值 | 选项/说明 | 来源 |
 |--------|---------|------|----------|--------|----------|------|
 （此处填入从原型提取的实际字段，每一行都必须是真实字段）
 
-#### 1.1.5 操作流程
-（描述从原型中观察到的实际操作流程）
-
-#### 1.1.6 校验规则
-（列出基于原型推断的实际校验规则）
-
-#### 1.1.7 业务规则
+#### 1.1.6 业务规则
 （提取原型中的实际业务规则文案）
 
 ### 1.2 [下一个页面名称（如果有）]
@@ -495,6 +589,7 @@ ${enhancedContext}
       pageType: string;
       inputCount: number;
       buttonCount: number;
+      allButtons: string[];  // 🔥 新增：所有按钮列表
       queryButtons: string[];
       formButtons: string[];
       suggestion: string;
@@ -503,6 +598,11 @@ ${enhancedContext}
     (axureData.pages || []).forEach(page => {
       const inputCount = (page.elements || []).filter(e => e.type === 'input' || e.type === 'select').length;
       const buttonCount = (page.elements || []).filter(e => e.type === 'button').length;
+
+      // 🔥 提取所有按钮（这是最重要的！）
+      const allButtons = (page.elements || [])
+        .filter(e => e.type === 'button')
+        .map(e => e.text || e.name || '未命名按钮');
 
       const queryButtons = (page.elements || [])
         .filter(e => e.type === 'button' && e.text && (
@@ -520,13 +620,13 @@ ${enhancedContext}
 
       let suggestion = '';
       if (pageType === 'list') {
-        suggestion = '需要生成：查询条件、列表展示字段、操作按钮';
+        suggestion = '需要生成：查询条件、列表展示字段、操作按钮（必须列出所有按钮！）';
       } else if (pageType === 'form') {
-        suggestion = '需要生成：表单字段、操作按钮（不要生成查询条件）';
+        suggestion = '需要生成：表单字段、操作按钮（必须列出所有按钮！不要生成查询条件）';
       } else if (pageType === 'detail') {
-        suggestion = '需要生成：详情展示字段、操作按钮（不要生成查询条件）';
+        suggestion = '需要生成：详情展示字段、操作按钮（必须列出所有按钮！不要生成查询条件）';
       } else {
-        suggestion = '根据实际情况灵活生成';
+        suggestion = '根据实际情况灵活生成，但操作按钮章节是必须的！';
       }
 
       pageTypeAnalysis.push({
@@ -534,6 +634,7 @@ ${enhancedContext}
         pageType,
         inputCount,
         buttonCount,
+        allButtons,  // 🔥 新增
         queryButtons,
         formButtons,
         suggestion
@@ -546,6 +647,7 @@ ${enhancedContext}
    页面类型: ${p.pageType}
    输入框数量: ${p.inputCount}
    按钮数量: ${p.buttonCount}
+   🔥 所有按钮列表: ${p.allButtons.length > 0 ? p.allButtons.join(', ') : '无'}
    查询按钮: ${p.queryButtons.length > 0 ? p.queryButtons.join(', ') : '无'}
    表单按钮: ${p.formButtons.length > 0 ? p.formButtons.join(', ') : '无'}
    📋 章节建议: ${p.suggestion}`
@@ -577,32 +679,67 @@ ${enhancedContext}
         ).join('\n\n')}\n`
       : '';
 
+    // 🔥 新增：专门提取所有按钮详细信息
+    const buttonDetails: Array<{page: string; buttons: string[]}> = [];
+    (axureData.pages || []).forEach(page => {
+      const buttons = (page.elements || [])
+        .filter(e => e.type === 'button')
+        .map(e => e.text || e.name || '未命名按钮');
+
+      if (buttons.length > 0) {
+        buttonDetails.push({
+          page: page.name || '未命名',
+          buttons
+        });
+      }
+    });
+
+    const buttonDetailSummary = buttonDetails.length > 0
+      ? `\n🔥🔥🔥 【最重要！！！】所有按钮详细列表（必须在"操作按钮"章节中全部列出，一个都不能遗漏！）:\n${buttonDetails.map((bd, i) =>
+          `页面 ${i + 1}: ${bd.page}
+   按钮数量: ${bd.buttons.length}个
+   所有按钮: ${bd.buttons.join(', ')}`
+        ).join('\n\n')}\n`
+      : '';
+
     const userPrompt = `系统: ${projectInfo.systemName || '未指定'}
 模块: ${projectInfo.moduleName || '未指定'}
 ${projectInfo.businessRules && projectInfo.businessRules.length > 0 ? '\n业务规则:\n' + projectInfo.businessRules.map((r, i) => `${i + 1}. ${r}`).join('\n') : ''}
-${pageTypeTable}${longTextSummary}
+${pageTypeTable}${buttonDetailSummary}${longTextSummary}
 Axure原型解析结果 (${axureData.pageCount || 0}页, ${axureData.elementCount || 0}元素):
 
 ${(axureData.pages || []).slice(0, 10).map((page, i) => {
   // 🔍 关键优化: 优先显示所有input/select元素,确保查询条件不会被遗漏
   const inputElements = (page.elements || []).filter(e => e.type === 'input' || e.type === 'select');
-  const otherElements = (page.elements || []).filter(e => e.type !== 'input' && e.type !== 'select');
+  const buttonElements = (page.elements || []).filter(e => e.type === 'button');  // 🔥 专门提取按钮
+  const divElements = (page.elements || []).filter(e => e.type === 'div' && e.text && e.text.length > 0 && e.text.length <= 50 && e.name !== '业务规则说明');  // 🔥 专门提取 div 文本（可能是列表字段）
+  const otherElements = (page.elements || []).filter(e => e.type !== 'input' && e.type !== 'select' && e.type !== 'button' && e.type !== 'div');
 
-  // 构建元素详情: 先显示所有输入框,再显示其他元素
+  // 构建元素详情: 先显示所有输入框，再显示所有按钮，再显示 div 元素，最后显示其他元素
   const inputDetail = inputElements.map(e => {
     if (e.name) return `  - ${e.type}: name="${e.name}"${e.value ? `, value="${e.value}"` : ''}${e.placeholder ? `, placeholder="${e.placeholder}"` : ''}`;
     if (e.placeholder) return `  - ${e.type}: [${e.placeholder}]`;
     return `  - ${e.type}`;
   }).join('\n');
 
-  const otherDetail = otherElements.slice(0, 15).map(e => {
+  // 🔥 按钮详情（显示所有按钮，不截断！）
+  const buttonDetail = buttonElements.map(e => {
+    return `  - button: "${e.text || e.name || '未命名'}"`;
+  }).join('\n');
+
+  // 🔥 div 文本详情（显示所有 div，不截断！这些可能是列表字段）
+  const divDetail = divElements.map(e => {
+    return `  - div: "${e.text}"`;
+  }).join('\n');
+
+  const otherDetail = otherElements.slice(0, 10).map(e => {
     if (e.text) return `  - ${e.type}: "${e.text}"`;
     if (e.placeholder) return `  - ${e.type}: [${e.placeholder}]`;
     if (e.name) return `  - ${e.type}: ${e.name}`;
     return `  - ${e.type}`;
   }).join('\n');
 
-  const elementsDetail = [inputDetail, otherDetail].filter(d => d).join('\n');
+  const elementsDetail = [inputDetail, buttonDetail, divDetail, otherDetail].filter(d => d).join('\n');
 
   const interactionsDetail = (page.interactions || []).slice(0, 10).map(int =>
     `  - ${int.type}${int.trigger ? `: ${int.trigger}` : ''}`
@@ -611,13 +748,19 @@ ${(axureData.pages || []).slice(0, 10).map((page, i) => {
   return `页面${i + 1}: ${page.name || '未命名'}
 ⚠️ 页面类型: ${page.pageType || 'unknown'}
 
-📝 输入框/下拉框 (${inputElements.length}个):
+📝 查询条件字段 - 输入框/下拉框 (${inputElements.length}个):
 ${inputDetail || '  无'}
 
-其他元素(${otherElements.length}个):
+🔘 操作按钮 (${buttonElements.length}个):
+${buttonDetail || '  无'}
+
+📋 列表字段 - div文本元素 (${divElements.length}个):
+${divDetail || '  无'}
+
+🔍 其他元素(${otherElements.length}个):
 ${otherDetail || '  无'}
 
-交互(${(page.interactions || []).length}):
+⚡ 交互(${(page.interactions || []).length}):
 ${interactionsDetail || '  无'}`;
 }).join('\n\n')}
 
@@ -887,6 +1030,16 @@ ${axureData.pageCount > 10 ? `\n(还有${axureData.pageCount - 10}个页面未�
 4. 测试点应标注风险等级（low/medium/high）
 5. **每个测试点必须包含 testPurpose 字段**
 
+🎨 **特殊章节：页面布局与文案校验**
+如果章节名称包含"页面布局与文案校验"或"布局"/"文案"等关键词，需要生成以下类型的测试点：
+1. **页面标题与导航验证**: 检查页面标题文案、面包屑路径是否正确
+2. **布局结构验证**: 检查各功能区域位置、间距、对齐是否符合设计
+3. **字段与列头验证**: 检查所有标签、列头文案是否与原型一致
+4. **按钮文案验证**: 检查所有按钮的文案、样式、位置是否正确
+5. **提示文案验证**: 检查空状态提示、错误提示、操作提示等文案
+6. **数据格式验证**: 检查日期、金额、状态等字段的展示格式
+这类测试点的优先级通常是 medium 或 high，风险等级是 low 或 medium
+
 测试用例结构要求：
 - name: 用例名称（格式：[章节ID]-[测试目的]，如"1.1-订单创建"）
 - testPurpose: 测试目的（简短描述测试目标）
@@ -929,6 +1082,7 @@ ${existingCaseNames || '无'}
 3. 覆盖正常流程、异常流程、边界条件
 4. 标注每个测试点的风险等级
 5. 测试用例名称格式：[章节ID]-[测试目的]
+6. 🎨 **如果章节是"页面布局与文案校验"**，请生成验证页面标题、布局、文案、按钮、提示信息、数据格式等方面的测试点
 
 请输出JSON格式：
 \`\`\`json

@@ -94,7 +94,8 @@
       "Bash(docker ps:*)",
       "Bash(awk:*)",
       "Bash(Select-String -Pattern \"error|Error\" -Context 2)",
-      "Bash(Select-Object -First 10)"
+      "Bash(Select-Object -First 10)",
+      "Bash(Select-Object -Last 200)"
     ],
     "deny": []
   },

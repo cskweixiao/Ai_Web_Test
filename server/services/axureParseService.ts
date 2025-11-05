@@ -297,14 +297,31 @@ export class AxureParseService {
       '.btn',
       '.button',
       '[role="button"]',
-      '[type="submit"]'
+      '[type="submit"]',
+      '.ax_default.label'  // 🔥 新增：Axure 导出的按钮通常是 div.ax_default.label
     ];
 
     $(pageElem)
       .find(selectors.join(', '))
       .each((i, elem) => {
         const $elem = $(elem);
-        const type = elem.tagName ? elem.tagName.toLowerCase() : 'unknown';
+        let type = elem.tagName ? elem.tagName.toLowerCase() : 'unknown';
+
+        // 🔥 关键修复：将 Axure 的 label div 识别为 button
+        if (type === 'div' && $elem.hasClass('ax_default') && $elem.hasClass('label')) {
+          const text = $elem.text().trim();
+          // 如果文本内容看起来像按钮（短文本，不是字段标签），将其识别为按钮
+          if (text.length > 0 && text.length <= 10 &&
+              (text.includes('查询') || text.includes('重置') || text.includes('导出') ||
+               text.includes('新增') || text.includes('编辑') || text.includes('删除') ||
+               text.includes('审核') || text.includes('确认') || text.includes('确定') ||
+               text.includes('取消') || text.includes('保存') || text.includes('提交') ||
+               text.includes('详情') || text.includes('下单') || text.includes('上传') ||
+               text.includes('下载') || text.includes('打印') || text.includes('返回') ||
+               text.includes('关闭') || text.includes('刷新'))) {
+            type = 'button';  // 🔥 强制识别为 button
+          }
+        }
 
         // 🔥 新增:跳过隐藏的元素及其子元素
         const style = $elem.attr('style') || '';
@@ -368,7 +385,51 @@ export class AxureParseService {
         });
       });
 
-    // 🔍 步骤3: 专门提取包含业务规则关键词的长文本div元素
+    // 🔍 步骤3: 提取 div 文本元素（列表字段、业务规则等）
+    $(pageElem).find('div.ax_default.label').each((i, elem) => {
+      const $elem = $(elem);
+      const text = $elem.text().trim();
+
+      // 🔥 跳过隐藏的div
+      const style = $elem.attr('style') || '';
+      const isHidden =
+        /display\s*:\s*none/i.test(style) ||
+        /visibility\s*:\s*hidden/i.test(style) ||
+        $elem.hasClass('ax_default_hidden');
+
+      if (isHidden) {
+        return; // 跳过隐藏元素
+      }
+
+      // 跳过空文本
+      if (!text || text.length === 0) {
+        return;
+      }
+
+      // 避免重复提取(检查是否已经在elements中)
+      const elemId = $elem.attr('id');
+      const alreadyExists = elements.some(e => e.id === elemId);
+
+      if (alreadyExists) {
+        return; // 已经在步骤2中作为按钮提取过了
+      }
+
+      // 🔥 关键改进：提取所有短文本的 div.label 作为列表字段或列头
+      // 之前只识别按钮（≤10字），现在也识别列头（可能更长）
+      if (text.length <= 50) {
+        // 短文本：可能是列头、字段标签或按钮（按钮已在步骤2处理）
+        elements.push({
+          id: elemId || `div-${i}`,
+          type: 'div',
+          name: undefined,
+          placeholder: undefined,
+          text: text,
+          value: undefined
+        });
+      }
+    });
+
+    // 🔍 步骤4: 专门提取包含业务规则关键词的长文本div元素
     $(pageElem).find('div').each((i, elem) => {
       const $elem = $(elem);
       const text = $elem.text().trim();
