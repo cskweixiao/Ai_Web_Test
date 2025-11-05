@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
-import { Modal, Button, Tag, Collapse, Progress, Radio, Space } from 'antd';
+import { Modal, Button, Tag, Collapse, Progress, Radio, Space, Checkbox, Input, InputNumber, Select } from 'antd';
 import { CheckCircle, AlertCircle, HelpCircle, Sparkles } from 'lucide-react';
 import type { PreAnalysisResult, UncertainInfo, UserConfirmation } from '../../types/aiPreAnalysis';
+
+const { TextArea } = Input;
 
 const { Panel } = Collapse;
 
@@ -227,7 +229,7 @@ export function SmartCompletionModal({ open, preAnalysisResult, onConfirm, onSki
 }
 
 /**
- * 单个问题卡片（简化版：统一交互）
+ * 单个问题卡片 - 支持多种类型的交互
  */
 function QuestionCard({
   index,
@@ -248,15 +250,37 @@ function QuestionCard({
     low: 'border-gray-200 bg-gray-50'
   };
 
-  // 🆕 针对特定类型的状态管理
-  const [selectedValue, setSelectedValue] = useState<string | null>(null);
+  // 🎯 统一状态管理
+  const [radioValue, setRadioValue] = useState<string>(''); // 用于单选(pageType, fieldRequired)
+  const [checkboxValues, setCheckboxValues] = useState<string[]>([]); // 用于多选(enumValues)
+  const [textValue, setTextValue] = useState<string>(''); // 用于文本输入(businessRule, fieldMeaning, workflow)
+  const [numberValue, setNumberValue] = useState<number | null>(null); // 用于数字输入(fieldLength)
+  const [customInput, setCustomInput] = useState<string>(''); // 用于自定义输入
+  const [showCustomInput, setShowCustomInput] = useState(false); // 是否显示自定义输入框
 
-  // 🆕 页面类型选项（如果是pageType问题）
+  // 页面类型选项
   const pageTypeOptions = [
     { label: '列表页 (list)', value: 'list', desc: '有查询条件 + 数据列表' },
     { label: '表单页 (form)', value: 'form', desc: '新建/编辑数据' },
     { label: '详情页 (detail)', value: 'detail', desc: '只读展示' },
     { label: '混合页 (mixed)', value: 'mixed', desc: '包含多种功能' }
+  ];
+
+  // 校验规则选项
+  const validationRuleOptions = [
+    { label: '必填', value: '必填' },
+    { label: '邮箱格式', value: '邮箱格式' },
+    { label: '手机号格式', value: '手机号格式' },
+    { label: '身份证格式', value: '身份证格式' },
+    { label: '数字格式', value: '数字格式' },
+    { label: '日期格式', value: '日期格式' },
+    { label: '自定义规则...', value: 'custom' }
+  ];
+
+  // 字段必填选项
+  const fieldRequiredOptions = [
+    { label: '必填', value: '是' },
+    { label: '选填', value: '否' }
   ];
 
   const handleAcceptAI = () => {
@@ -267,14 +291,242 @@ function QuestionCard({
     onConfirm(info, undefined, true);
   };
 
-  // 🆕 处理选择确认
-  const handleSelectConfirm = () => {
-    if (selectedValue) {
-      onConfirm(info, [selectedValue], false);
+  // 🎯 统一确认处理
+  const handleConfirmClick = () => {
+    let userValue: string[] = [];
+
+    switch (info.type) {
+      case 'pageType':
+        userValue = radioValue ? [radioValue] : [];
+        break;
+      case 'enumValues':
+        // 多选 + 自定义输入
+        userValue = [...checkboxValues];
+        if (customInput.trim()) {
+          userValue.push(...customInput.split(',').map(v => v.trim()).filter(v => v));
+        }
+        break;
+      case 'businessRule':
+      case 'fieldMeaning':
+      case 'workflow':
+        userValue = textValue.trim() ? [textValue.trim()] : [];
+        break;
+      case 'validationRule':
+        if (radioValue === 'custom') {
+          userValue = customInput.trim() ? [customInput.trim()] : [];
+        } else {
+          userValue = radioValue ? [radioValue] : [];
+        }
+        break;
+      case 'fieldRequired':
+        userValue = radioValue ? [radioValue] : [];
+        break;
+      case 'fieldLength':
+        userValue = numberValue !== null ? [numberValue.toString()] : [];
+        break;
+      default:
+        userValue = [];
+    }
+
+    if (userValue.length > 0) {
+      onConfirm(info, userValue, false);
+    }
+  };
+
+  // 检查是否可以确认
+  const canConfirm = () => {
+    switch (info.type) {
+      case 'pageType':
+      case 'fieldRequired':
+        return !!radioValue;
+      case 'enumValues':
+        return checkboxValues.length > 0 || customInput.trim().length > 0;
+      case 'businessRule':
+      case 'fieldMeaning':
+      case 'workflow':
+        return textValue.trim().length > 0;
+      case 'validationRule':
+        return radioValue === 'custom' ? customInput.trim().length > 0 : !!radioValue;
+      case 'fieldLength':
+        return numberValue !== null && numberValue > 0;
+      default:
+        return false;
     }
   };
 
   const isAnswered = confirmation?.confirmed || confirmation?.skipped;
+
+  // 渲染输入UI (根据类型)
+  const renderInputUI = () => {
+    if (isAnswered) return null;
+
+    switch (info.type) {
+      // 1. 页面类型 - 单选
+      case 'pageType':
+        return (
+          <div className="mb-3">
+            <div className="text-sm text-gray-600 mb-2">请选择页面类型：</div>
+            <Radio.Group onChange={(e) => setRadioValue(e.target.value)} value={radioValue}>
+              <Space direction="vertical">
+                {pageTypeOptions.map(option => (
+                  <Radio key={option.value} value={option.value}>
+                    <span className="font-medium">{option.label}</span>
+                    <span className="text-gray-500 text-xs ml-2">- {option.desc}</span>
+                  </Radio>
+                ))}
+              </Space>
+            </Radio.Group>
+          </div>
+        );
+
+      // 2. 枚举值 - 多选 + 自定义输入
+      case 'enumValues':
+        return (
+          <div className="mb-3">
+            <div className="text-sm text-gray-600 mb-2">请选择或输入枚举值：</div>
+            {info.aiGuess && info.aiGuess.length > 0 && (
+              <Checkbox.Group
+                value={checkboxValues}
+                onChange={(values) => setCheckboxValues(values as string[])}
+                className="mb-2"
+              >
+                <Space direction="vertical">
+                  {info.aiGuess.map((value, idx) => (
+                    <Checkbox key={idx} value={value}>
+                      {value}
+                    </Checkbox>
+                  ))}
+                </Space>
+              </Checkbox.Group>
+            )}
+            <div className="mt-2">
+              <Input
+                placeholder="输入其他值(逗号分隔,如: 选项1,选项2)"
+                value={customInput}
+                onChange={(e) => setCustomInput(e.target.value)}
+                size="small"
+              />
+            </div>
+          </div>
+        );
+
+      // 3. 字段必填 - 单选(是/否)
+      case 'fieldRequired':
+        return (
+          <div className="mb-3">
+            <div className="text-sm text-gray-600 mb-2">该字段是否必填：</div>
+            <Radio.Group onChange={(e) => setRadioValue(e.target.value)} value={radioValue}>
+              <Space>
+                {fieldRequiredOptions.map(option => (
+                  <Radio key={option.value} value={option.value}>
+                    <span className="font-medium">{option.label}</span>
+                  </Radio>
+                ))}
+              </Space>
+            </Radio.Group>
+          </div>
+        );
+
+      // 4. 校验规则 - 下拉选择 + 自定义输入
+      case 'validationRule':
+        return (
+          <div className="mb-3">
+            <div className="text-sm text-gray-600 mb-2">请选择校验规则：</div>
+            <Radio.Group
+              onChange={(e) => {
+                setRadioValue(e.target.value);
+                setShowCustomInput(e.target.value === 'custom');
+              }}
+              value={radioValue}
+            >
+              <Space direction="vertical">
+                {validationRuleOptions.map(option => (
+                  <Radio key={option.value} value={option.value}>
+                    {option.label}
+                  </Radio>
+                ))}
+              </Space>
+            </Radio.Group>
+            {showCustomInput && (
+              <Input
+                className="mt-2"
+                placeholder="输入自定义规则"
+                value={customInput}
+                onChange={(e) => setCustomInput(e.target.value)}
+                size="small"
+              />
+            )}
+          </div>
+        );
+
+      // 5. 字段长度 - 数字输入
+      case 'fieldLength':
+        return (
+          <div className="mb-3">
+            <div className="text-sm text-gray-600 mb-2">请输入字段最大长度：</div>
+            <InputNumber
+              placeholder="如: 50"
+              value={numberValue}
+              onChange={(value) => setNumberValue(value)}
+              min={1}
+              max={9999}
+              size="small"
+              style={{ width: '200px' }}
+            />
+          </div>
+        );
+
+      // 6. 业务规则 - 文本域
+      case 'businessRule':
+        return (
+          <div className="mb-3">
+            <div className="text-sm text-gray-600 mb-2">请输入业务规则：</div>
+            <TextArea
+              placeholder="描述该功能的业务规则..."
+              value={textValue}
+              onChange={(e) => setTextValue(e.target.value)}
+              rows={3}
+              maxLength={500}
+              showCount
+            />
+          </div>
+        );
+
+      // 7. 字段含义 - 文本输入
+      case 'fieldMeaning':
+        return (
+          <div className="mb-3">
+            <div className="text-sm text-gray-600 mb-2">请输入字段含义：</div>
+            <Input
+              placeholder="描述该字段的含义..."
+              value={textValue}
+              onChange={(e) => setTextValue(e.target.value)}
+              size="small"
+              maxLength={200}
+            />
+          </div>
+        );
+
+      // 8. 工作流 - 文本域
+      case 'workflow':
+        return (
+          <div className="mb-3">
+            <div className="text-sm text-gray-600 mb-2">请输入工作流程：</div>
+            <TextArea
+              placeholder="描述该流程的步骤..."
+              value={textValue}
+              onChange={(e) => setTextValue(e.target.value)}
+              rows={3}
+              maxLength={500}
+              showCount
+            />
+          </div>
+        );
+
+      default:
+        return null;
+    }
+  };
 
   return (
     <div className={`border-2 rounded-lg p-4 ${priorityColors[priority as keyof typeof priorityColors]} ${isAnswered ? 'opacity-60' : ''}`}>
@@ -294,64 +546,44 @@ function QuestionCard({
             📍 {info.context.pageName} {info.field && `· 字段: ${info.field}`}
           </div>
 
-          {/* 🆕 页面类型特殊处理：显示单选按钮 */}
-          {info.type === 'pageType' && !isAnswered ? (
+          {/* AI推测信息(如果有) */}
+          {!isAnswered && info.aiGuess && info.aiGuess.length > 0 && info.type !== 'enumValues' && (
             <div className="mb-3">
-              <div className="text-sm text-gray-600 mb-2">请选择页面类型：</div>
-              <Radio.Group onChange={(e) => setSelectedValue(e.target.value)} value={selectedValue}>
-                <Space direction="vertical">
-                  {pageTypeOptions.map(option => (
-                    <Radio key={option.value} value={option.value}>
-                      <span className="font-medium">{option.label}</span>
-                      <span className="text-gray-500 text-xs ml-2">- {option.desc}</span>
-                    </Radio>
-                  ))}
-                </Space>
-              </Radio.Group>
+              <div className="text-sm text-gray-600">AI推测：</div>
+              <div className="flex flex-wrap gap-2 mt-1">
+                {info.aiGuess.map((value, idx) => (
+                  <Tag key={idx} color="blue">{value}</Tag>
+                ))}
+              </div>
             </div>
-          ) : (
-            /* AI推测 */
-            info.aiGuess && Array.isArray(info.aiGuess) && info.aiGuess.length > 0 ? (
-              <div className="mb-3">
-                <div className="text-sm text-gray-600 mb-2">AI推测：</div>
-                <div className="flex flex-wrap gap-2">
-                  {info.aiGuess.map((value, idx) => (
-                    <Tag key={idx} color="blue">{value}</Tag>
-                  ))}
-                </div>
-              </div>
-            ) : (
-              <div className="mb-3 text-sm text-gray-500 italic">
-                💭 AI无法推测，请根据您的了解回答
-              </div>
-            )
           )}
+
+          {/* 渲染输入UI */}
+          {renderInputUI()}
 
           {/* 操作按钮 */}
           {!isAnswered && (
             <div className="flex gap-2 mt-3">
-              {/* 🆕 pageType专用确认按钮 */}
-              {info.type === 'pageType' ? (
+              {/* AI推测按钮 (仅当有AI推测且非特殊类型) */}
+              {info.aiGuess && info.aiGuess.length > 0 && info.type !== 'enumValues' && (
                 <Button
                   size="small"
-                  type="primary"
-                  disabled={!selectedValue}
-                  onClick={handleSelectConfirm}
+                  type="default"
+                  onClick={handleAcceptAI}
                 >
-                  ✓ 确认选择
+                  ✓ 采纳AI建议
                 </Button>
-              ) : (
-                /* 其他类型的按钮 */
-                info.aiGuess && Array.isArray(info.aiGuess) && info.aiGuess.length > 0 && (
-                  <Button
-                    size="small"
-                    type="primary"
-                    onClick={handleAcceptAI}
-                  >
-                    ✓ 接受AI推测
-                  </Button>
-                )
               )}
+              {/* 确认按钮 */}
+              <Button
+                size="small"
+                type="primary"
+                disabled={!canConfirm()}
+                onClick={handleConfirmClick}
+              >
+                ✓ 确认
+              </Button>
+              {/* 跳过按钮 */}
               <Button
                 size="small"
                 onClick={handleSkip}
@@ -365,7 +597,7 @@ function QuestionCard({
           {isAnswered && (
             <div className="mt-3 text-sm text-green-600 flex items-center gap-2">
               <CheckCircle className="w-4 h-4" />
-              {confirmation.skipped ? '已跳过' : '已确认'}
+              {confirmation.skipped ? '已跳过' : `已确认: ${confirmation.userValue?.join(', ')}`}
             </div>
           )}
         </div>
