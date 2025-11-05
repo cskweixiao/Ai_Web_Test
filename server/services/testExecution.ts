@@ -2900,13 +2900,42 @@ ${elements.map((el, index) => `${index + 1}. ${el.ref}: ${el.role} "${el.text}"`
   private extractAssertionKeywords(assertionDescription: string): string[] {
     const keywords: string[] = [];
 
-    // 提取引号中的文本
-    const quotedMatches = assertionDescription.match(/"([^"]+)"/g) || assertionDescription.match(/'([^']+)'/g);
-    if (quotedMatches) {
-      keywords.push(...quotedMatches.map(match => match.replace(/['"]/g, '')));
+    // 🔥 优先提取引号中的文本（支持中英文引号）
+    // 修复bug: 使用捕获组提取引号内的内容,不是整个匹配
+    const doubleQuotePattern = /"([^"]+)"/g;  // 英文双引号
+    const singleQuotePattern = /'([^']+)'/g;  // 英文单引号
+    const chineseQuotePattern = /["""]([^"""]+)["""]/g;  // 中文引号
+    const chineseQuotePattern2 = /['']([^'']+)['']/g;  // 中文单引号
+
+    let match;
+
+    // 提取英文双引号内容
+    while ((match = doubleQuotePattern.exec(assertionDescription)) !== null) {
+      keywords.push(match[1].trim());  // ✅ 使用捕获组 match[1]
     }
 
-    // 提取常见的业务词汇
+    // 提取英文单引号内容
+    while ((match = singleQuotePattern.exec(assertionDescription)) !== null) {
+      keywords.push(match[1].trim());
+    }
+
+    // 提取中文双引号内容
+    while ((match = chineseQuotePattern.exec(assertionDescription)) !== null) {
+      keywords.push(match[1].trim());
+    }
+
+    // 提取中文单引号内容
+    while ((match = chineseQuotePattern2.exec(assertionDescription)) !== null) {
+      keywords.push(match[1].trim());
+    }
+
+    // 🎯 如果提取到引号内容,优先使用这些关键词
+    if (keywords.length > 0) {
+      console.log(`✅ 从引号中提取到 ${keywords.length} 个关键词`);
+      return keywords;
+    }
+
+    // 提取常见的业务词汇（仅当没有引号内容时）
     const businessTerms = ['商品管理', '用户管理', '订单管理', '系统设置', '数据统计', '权限管理', '首页', '登录', '注册'];
     for (const term of businessTerms) {
       if (assertionDescription.includes(term)) {
@@ -2914,9 +2943,18 @@ ${elements.map((el, index) => `${index + 1}. ${el.ref}: ${el.role} "${el.text}"`
       }
     }
 
-    // 如果没有找到关键词，使用整个描述中的关键部分
+    // 如果仍然没有找到关键词，使用整个描述中的关键部分
     if (keywords.length === 0) {
-      const words = assertionDescription.replace(/[展示|显示|包含|页面]/g, '').trim();
+      // 移除常见的动作词,保留实际内容
+      const words = assertionDescription
+        .replace(/展示/g, '')
+        .replace(/显示/g, '')
+        .replace(/包含/g, '')
+        .replace(/页面/g, '')
+        .replace(/不展示/g, '')
+        .replace(/不显示/g, '')
+        .replace(/不包含/g, '')
+        .trim();
       if (words) {
         keywords.push(words);
       }

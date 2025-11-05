@@ -489,22 +489,72 @@ export class AITestParser {
   }
 
   /**
+   * 🔥 过滤快照中的非功能性错误
+   */
+  private filterSnapshotErrors(snapshot: any): any {
+    if (typeof snapshot === 'string') {
+      console.log(`🧹 开始过滤快照中的Console错误...`);
+
+      // 统计过滤前的错误数量
+      const errorCountBefore = (snapshot.match(/TypeError:|ReferenceError:|SyntaxError:/g) || []).length;
+
+      // 过滤常见的JavaScript错误
+      let filteredSnapshot = snapshot
+        // 过滤 getComputedStyle 错误
+        .replace(/- TypeError: Failed to execute 'getComputedStyle'[^\n]*/g, '')
+        // 过滤 Cannot read properties 错误
+        .replace(/- TypeError: Cannot read properties of undefined[^\n]*/g, '')
+        // 过滤其他常见TypeError
+        .replace(/- TypeError:[^\n]*/g, '')
+        // 过滤 ReferenceError
+        .replace(/- ReferenceError:[^\n]*/g, '')
+        // 过滤 SyntaxError
+        .replace(/- SyntaxError:[^\n]*/g, '')
+        // 过滤错误堆栈信息
+        .replace(/at [a-zA-Z]+ \(https?:\/\/[^\)]+\)[^\n]*/g, '')
+        // 过滤空的 "..." 占位符
+        .replace(/\.\.\.[^\n]*\n/g, '')
+        // 清理多余的空行
+        .replace(/\n\n+/g, '\n\n');
+
+      // 如果 "New console messages" 部分为空,则整个移除
+      filteredSnapshot = filteredSnapshot.replace(/### New console messages\n+###/g, '');
+
+      // 统计过滤后的错误数量
+      const errorCountAfter = (filteredSnapshot.match(/TypeError:|ReferenceError:|SyntaxError:/g) || []).length;
+      const filteredCount = errorCountBefore - errorCountAfter;
+
+      if (filteredCount > 0) {
+        console.log(`✅ 已过滤 ${filteredCount} 个Console错误，剩余 ${errorCountAfter} 个`);
+      } else {
+        console.log(`ℹ️ 快照中没有发现需要过滤的Console错误`);
+      }
+
+      return filteredSnapshot;
+    }
+    return snapshot;
+  }
+
+  /**
    * 🔥 真正的AI解析：根据断言描述和快照生成断言命令
    */
   private async generateAssertionCommand(assertionDescription: string, snapshot: any): Promise<MCPCommand> {
     console.log(`🤖 使用AI解析断言: "${assertionDescription}"`);
 
     try {
-      // 1. 提取页面元素
-      const pageElements = this.extractPageElements(snapshot);
+      // 1. 🔥 过滤快照中的非功能性错误
+      const filteredSnapshot = this.filterSnapshotErrors(snapshot);
 
-      // 2. 构建断言专用的用户提示词
+      // 2. 提取页面元素（使用过滤后的快照）
+      const pageElements = this.extractPageElements(filteredSnapshot);
+
+      // 3. 构建断言专用的用户提示词
       const userPrompt = this.buildAssertionUserPrompt(assertionDescription, pageElements);
 
-      // 3. 调用AI模型（断言模式）
+      // 4. 调用AI模型（断言模式）
       const aiResponse = await this.callLLM(userPrompt, 'assertion');
 
-      // 4. 解析AI响应
+      // 5. 解析AI响应
       const mcpCommand = this.parseAIResponse(aiResponse);
 
       console.log(`✅ AI断言解析成功: ${mcpCommand.name}`);
@@ -796,17 +846,54 @@ ${elementsContext}
 - 将自然语言断言描述转换为精确的JSON格式MCP验证命令
 - 基于页面快照分析当前状态，选择最佳验证策略
 - 专注于验证页面状态、文本内容、元素可见性等断言需求
+- **关键能力：区分功能性问题和非功能性错误**
 
 # 断言验证原则
-- 你处于【断言验证模式】，不执行操作，只进行状态验证
+- 你处于【断言验证模式】，只验证功能性内容，不执行操作
 - 断言目标：验证页面当前状态是否符合预期
 - 优先使用快照分析，必要时结合等待和截图验证
+- **核心原则：忽略非功能性错误，专注核心功能验证**
+
+# ⭐ 错误处理策略（关键）
+## 应该忽略的错误（不影响断言结果）：
+1. **Console JavaScript错误**：
+   - TypeError: Failed to execute 'getComputedStyle' on 'Window'
+   - TypeError: Cannot read properties of undefined
+   - ReferenceError、SyntaxError等前端代码错误
+   - 任何不影响页面核心功能展示的JS错误
+2. **样式和渲染错误**：
+   - CSS加载失败
+   - 图片加载失败（除非断言明确要求验证图片）
+   - 字体加载问题
+3. **第三方库错误**：
+   - 统计脚本错误
+   - 广告加载失败
+   - 第三方组件报错
+
+## 应该关注的错误（影响断言结果）：
+1. **业务逻辑错误**：
+   - 数据显示错误（金额、数量、状态等与预期不符）
+   - 核心功能失效（搜索无结果、提交失败、数据未加载）
+2. **断言明确要求验证的内容**：
+   - 断言描述中明确指出要检查的文本、元素、状态
 
 # 验证策略选择
 1. **文本内容验证** → 使用 browser_snapshot 获取页面状态供应用层分析
 2. **元素可见性验证** → 使用 browser_wait_for 等待元素状态
-3. **页面状态验证** → 使用 browser_snapshot 进行全面检查  
+3. **页面状态验证** → 使用 browser_snapshot 进行全面检查
 4. **视觉证据保存** → 使用 browser_take_screenshot 保存验证截图
+
+# ⭐ 判断标准（重要）
+- ✅ **通过**：断言要求的核心功能/内容正确显示，即使有Console错误
+- ❌ **失败**：断言要求的核心功能/内容缺失或错误
+- ⚠️ **警告**：有次要错误但核心功能正常（应判定为通过）
+
+## 判断流程
+1. 提取断言的核心验证目标（要验证什么？）
+2. 分析页面快照中的核心内容（数据是否存在？）
+3. 过滤Console错误和非功能性问题（标记为"可忽略"）
+4. 判断核心功能是否满足断言要求
+5. 给出明确结论：通过/失败
 
 # 输出格式要求
 <THOUGHTS>
@@ -858,20 +945,95 @@ ${elementsContext}
 
     return `# 当前断言验证任务
 
+## ⭐ 验证目标（核心）
+用户断言: "${assertionDescription}"
+
+**请明确断言的核心验证目标**:
+- 📊 数据验证: 验证特定数据、数量、金额、状态是否正确
+- 📝 文本验证: 验证特定文本内容是否存在/消失
+- 🎯 元素验证: 验证特定元素是否可见/隐藏
+- 🔄 状态验证: 验证页面功能状态是否符合预期
+
 ## 当前页面可用元素
 ${elementsContext}
 
-## 用户断言指令
-"${assertionDescription}"
+## ⚠️ 错误过滤原则（关键）
+**注意：快照已预过滤Console错误，请专注于核心功能验证**
 
-## 分析要求
-请根据断言描述选择最合适的验证策略：
-- 如果是验证文本内容存在/不存在 → 使用 browser_snapshot
-- 如果是验证元素状态变化 → 使用 browser_wait_for  
-- 如果是验证复杂UI状态 → 使用 browser_snapshot + browser_take_screenshot
-- 如果需要等待动态内容加载 → 使用 browser_wait_for
+✅ **应该验证的**（功能性问题）：
+- 断言要求的数据是否正确显示
+- 断言要求的文本是否存在/消失
+- 断言要求的元素是否可见/隐藏
+- 断言要求的功能是否正常执行
 
-请开始分析并生成验证命令：`;
+❌ **应该忽略的**（非功能性问题）：
+- JavaScript Console错误（TypeError、ReferenceError等）
+- CSS样式错误
+- 图片加载失败（除非断言明确要求验证图片）
+- 第三方库错误
+
+## 验证策略选择（按优先级）
+
+### 1️⃣ 快照验证（首选）
+**场景**: 验证文本内容、数据显示、页面状态
+\`\`\`json
+{"name": "browser_snapshot", "args": {}}
+\`\`\`
+**适用于**: 90%的断言场景 - 搜索结果、列表显示、表单内容等
+
+### 2️⃣ 等待验证（动态内容）
+**场景**: 需要等待加载或状态变化
+\`\`\`json
+// 等待文本出现
+{"name": "browser_wait_for", "args": {"text": "预期文本"}}
+
+// 等待元素可见
+{"name": "browser_wait_for", "args": {"ref": "element_ref", "state": "visible"}}
+\`\`\`
+**适用于**: 异步加载、状态切换、弹窗出现等
+
+### 3️⃣ 截图验证（复杂UI）
+**场景**: 需要保存视觉证据
+\`\`\`json
+{"name": "browser_take_screenshot", "args": {"filename": "assertion_proof.png"}}
+\`\`\`
+**适用于**: 复杂布局验证、UI状态记录
+
+## 验证步骤（逐步分析）
+
+### Step 1: 明确核心目标
+- 断言的核心验证点是什么？
+- 成功标准是什么？
+
+### Step 2: 选择验证策略
+- 根据上述策略选择最合适的命令
+- 优先使用 browser_snapshot（简单高效）
+
+### Step 3: 构建验证命令
+- 确保命令参数准确
+- 避免过度验证（只验证核心功能）
+
+### Step 4: 预期结果判断
+- 如果核心功能正确 → 判定为 PASS
+- 如果核心功能错误/缺失 → 判定为 FAIL
+- Console错误不影响判断 → 仍应判定为 PASS
+
+## 示例对比
+
+### ✅ 好的断言（专注核心）
+**断言**: "验证搜索结果包含'测试用例001'"
+**分析**: 核心目标是验证文本存在
+**命令**: {"name": "browser_snapshot", "args": {}}
+**判断**: 文本存在即PASS，忽略Console错误
+
+### ❌ 差的断言（过度敏感）
+**断言**: "验证搜索结果包含'测试用例001'"
+**错误做法**: 因为看到Console有18个TypeError就判定为FAIL
+**问题**: 混淆了功能性问题和非功能性错误
+
+---
+
+请开始分析并生成验证命令（使用 <THOUGHTS> 和 <COMMAND> 格式）：`;
   }
 
   /**
