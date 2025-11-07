@@ -39,6 +39,7 @@ export function FunctionalTestCaseGenerator() {
   // 步骤1状态
   const [axureFiles, setAxureFiles] = useState<File[]>([]);
   const [pageName, setPageName] = useState(''); // 新增:页面名称
+  const [pageMode, setPageMode] = useState<'new' | 'modify'>('new'); // 🆕 页面模式：新增/修改
   const [projectInfo, setProjectInfo] = useState({
     systemName: '',      // 系统名称
     moduleName: '',      // 模块名称
@@ -111,7 +112,8 @@ export function FunctionalTestCaseGenerator() {
       const result = await functionalTestCaseService.generateFromHtmlDirect(
         htmlFile,
         projectInfo.systemName,
-        projectInfo.moduleName
+        projectInfo.moduleName,
+        pageMode // 传递页面模式
       );
 
       // 设置会话ID和需求文档
@@ -703,6 +705,8 @@ export function FunctionalTestCaseGenerator() {
           <MultiFileUpload
             onFilesChange={setAxureFiles}
             onPageNameChange={setPageName}
+            pageMode={pageMode}
+            onPageModeChange={setPageMode}
             maxFiles={20}
             maxSize={50 * 1024 * 1024}
           />

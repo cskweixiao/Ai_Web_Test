@@ -291,14 +291,17 @@ class FunctionalTestCaseService {
    * @param htmlFile HTML文件
    * @param systemName 系统名称
    * @param moduleName 模块名称
+   * @param pageMode 页面模式：'new' (新增页面) | 'modify' (修改页面)
    */
-  async generateFromHtmlDirect(htmlFile: File, systemName: string, moduleName: string) {
+  async generateFromHtmlDirect(htmlFile: File, systemName: string, moduleName: string, pageMode: 'new' | 'modify' = 'new') {
     console.log('📤 直接从HTML生成需求文档（跳过解析和二次确认）...');
+    console.log(`   页面模式: ${pageMode === 'new' ? '新增页面' : '修改页面'}`);
 
     const formData = new FormData();
     formData.append('file', htmlFile);
     formData.append('systemName', systemName);
     formData.append('moduleName', moduleName);
+    formData.append('pageMode', pageMode);
 
     const token = localStorage.getItem(TOKEN_KEY);
     const headers: HeadersInit = {};

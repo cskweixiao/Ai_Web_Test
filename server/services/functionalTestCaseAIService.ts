@@ -1,4 +1,4 @@
-import type { AxureParseResult } from '../types/axure.js';
+import type { AxureParseResult, PageMode } from '../types/axure.js';
 import type { EnhancedAxureData } from '../types/aiPreAnalysis.js';
 import { llmConfigManager } from '../../src/services/llmConfigManager.js';
 import type { LLMConfig } from './aiParser.js';
@@ -885,16 +885,28 @@ ${axureData.pageCount > 10 ? `\n(还有${axureData.pageCount - 10}个页面未�
    */
   async generateRequirementFromHtmlDirect(
     htmlContent: string,
-    projectInfo: { systemName?: string; moduleName?: string }
+    projectInfo: { systemName?: string; moduleName?: string; pageMode?: PageMode }
   ): Promise<{ requirementDoc: string; sections: string[] }> {
+    const pageMode = projectInfo.pageMode || 'new';
+
     console.log('\n╔═══════════════════════════════════════════════════════════════╗');
-    console.log('║       🚀 直接从HTML生成需求文档 - GPT-4o多模态模式          ║');
+    console.log(`║       🚀 直接从HTML生成需求文档 - ${pageMode === 'new' ? '新增页面' : '修改页面'}模式          ║`);
     console.log('╚═══════════════════════════════════════════════════════════════╝\n');
 
     console.log('📊 输入信息:');
+    console.log(`   - 页面模式: ${pageMode === 'new' ? '新增页面' : '修改页面'}`);
     console.log(`   - 系统名称: ${projectInfo.systemName || '未指定'}`);
     console.log(`   - 模块名称: ${projectInfo.moduleName || '未指定'}`);
     console.log(`   - HTML内容长度: ${htmlContent.length} 字符`);
+
+    // 🆕 如果是修改模式，提取红色字段和业务描述
+    let redFields: string[] = [];
+    let businessDescription = '';
+
+    if (pageMode === 'modify') {
+      redFields = this.extractRedFields(htmlContent);
+      businessDescription = this.extractBusinessDescription(htmlContent);
+    }
 
     // 构建系统提示词 - 使用全新的Axure HTML解析策略
     const systemPrompt = `你是一个专业的需求分析专家。你的任务是分析Axure原型导出的HTML文件,并生成结构化的需求文档。
@@ -1138,7 +1150,59 @@ ${axureData.pageCount > 10 ? `\n(还有${axureData.pageCount - 10}个页面未�
 
 ---
 
-请严格按照上述策略分析HTML并生成需求文档。`;
+请严格按照上述策略分析HTML并生成需求文档。
+
+${pageMode === 'modify' ? `
+# 🆕 修改页面模式特别说明
+
+这是一个【修改页面】，页面上的红色标记代表本次迭代新增或修改的UI元素。
+
+## 📋 业务描述（本次迭代的变更说明）
+${businessDescription || '（未找到业务描述，请根据页面红色标记自行推断）'}
+
+## 🔴 页面上的红色字段（新增的UI元素）
+${redFields.length > 0 ? redFields.map((f, i) => `${i + 1}. ${f}`).join('\n') : '（未检测到红色字段）'}
+
+## 你的任务
+
+1. **分析变更内容**：
+   - 从业务描述中识别变更类型：
+     * 包含"新增"、"增加"、"添加" → 🆕 新增功能
+     * 包含"修改"、"调整"、"变更" → ✏️ 修改功能
+     * 包含"删除"、"移除" → ❌ 删除功能
+
+2. **生成需求文档格式**：
+   - 在需求文档开头增加【变更摘要】章节
+   - 标注每个变更点的类型（🆕 ✏️ ❌）
+
+3. **变更摘要格式**：
+\`\`\`markdown
+## 变更摘要
+
+### 🆕 新增功能
+- 列表新增【渠道集采订单编号】字段
+- 列表新增【订单来源】字段
+- 筛选条件新增【订单来源】下拉框
+...
+
+### ✏️ 修改功能
+- 含税采购价计算逻辑调整：根据订单类型采用不同方式
+...
+
+### ❌ 删除功能
+- (如果有)
+
+### ➖ 原有功能（未变更）
+- 订单列表基本展示
+- 供应商筛选
+...（简要列出）
+\`\`\`
+
+4. **测试重点建议**：
+   - 在需求文档末尾增加【测试重点】章节
+   - 标注哪些是新增测试点（需重点测试）
+   - 标注哪些是回归测试点（需验证修改）
+` : ''}`;
 
     // 构建用户提示词 - 配合新的解析策略
     const userPrompt = `请严格按照上述"Axure HTML 解析策略"分析以下HTML文件，生成结构化的需求文档。
@@ -2590,6 +2654,150 @@ ${projectInfo.constraints.map((constraint, i) => `${i + 1}. ${constraint}`).join
 ---
 *本文档由AI自动生成，请人工审核确认*
 `;
+  }
+
+  /**
+   * 🆕 提取页面内容区域的红色字段（用于修改页面模式）
+   * 排除表格区域，只提取页面主体内容中的红色标记
+   */
+  private extractRedFields(htmlContent: string): string[] {
+    console.log('\n🔍 开始提取页面红色字段...');
+
+    try {
+      // 1. 排除表格区域（表格可能包含业务描述）
+      let nonTableContent = htmlContent;
+      const tableMatch = htmlContent.match(/<div[^>]*class=["'][^"']*table[^"']*["'][^>]*>([\s\S]*?)<\/div>/gi);
+      if (tableMatch) {
+        tableMatch.forEach(table => {
+          nonTableContent = nonTableContent.replace(table, '');
+        });
+        console.log('   ✓ 已排除表格区域');
+      }
+
+      // 2. 提取红色文字（支持多种红色表示法）
+      const redPatterns = [
+        /<span[^>]*style=["'][^"']*color:\s*#D9001B[^"']*["'][^>]*>([^<]+)<\/span>/gi,
+        /<span[^>]*style=["'][^"']*color:\s*red[^"']*["'][^>]*>([^<]+)<\/span>/gi,
+        /<span[^>]*style=["'][^"']*color:\s*rgb\(255,\s*0,\s*0\)[^"']*["'][^>]*>([^<]+)<\/span>/gi,
+      ];
+
+      const redFields: string[] = [];
+
+      for (const pattern of redPatterns) {
+        let match;
+        while ((match = pattern.exec(nonTableContent)) !== null) {
+          const text = match[1].trim();
+
+          // 过滤条件：
+          // 1. 长度 > 1
+          // 2. 不是纯符号
+          // 3. 不是纯数字（排除数据值）
+          // 4. 包含中文或英文字母
+          if (
+            text.length > 1 &&
+            !/^[:\s、，。]+$/.test(text) &&
+            !/^\d+$/.test(text) &&
+            /[\u4e00-\u9fa5a-zA-Z]/.test(text) &&
+            !redFields.includes(text)
+          ) {
+            redFields.push(text);
+          }
+        }
+      }
+
+      console.log(`   ✓ 提取到 ${redFields.length} 个红色字段:`);
+      redFields.forEach((field, i) => {
+        console.log(`     ${i + 1}. ${field}`);
+      });
+
+      return redFields;
+    } catch (error) {
+      console.error('   ❌ 提取红色字段失败:', error);
+      return [];
+    }
+  }
+
+  /**
+   * 🆕 提取业务描述区域（用于修改页面模式）
+   * 使用多策略尝试识别业务描述的位置
+   */
+  private extractBusinessDescription(htmlContent: string): string {
+    console.log('\n📋 开始提取业务描述区域...');
+
+    try {
+      // 策略1：查找表格中包含编号列表的单元格（1、2、3...）
+      const tableMatch = htmlContent.match(/<div[^>]*class=["'][^"']*table[^"']*["'][^>]*>([\s\S]*?)<\/div>/i);
+
+      if (tableMatch) {
+        const tableContent = tableMatch[1];
+
+        // 查找包含"1、"、"2、"等编号的文本块
+        const cellMatches = tableContent.match(/<div[^>]*_text[^>]*>([\s\S]*?)<\/div>/gi);
+
+        if (cellMatches) {
+          for (const cell of cellMatches) {
+            // 提取纯文本
+            const text = cell
+              .replace(/<[^>]+>/g, '')
+              .replace(/&nbsp;/g, ' ')
+              .replace(/\s+/g, ' ')
+              .trim();
+
+            // 判断是否包含编号列表（1、或①）
+            if (/[1-9]、|①|②|③/.test(text) && text.length > 50) {
+              console.log(`   ✓ 策略1成功：找到表格中的业务描述（${text.length}字符）`);
+              return text;
+            }
+          }
+        }
+      }
+
+      // 策略2：查找特定 ID 的元素（基于样本规律）
+      const idPatterns = ['u6402', 'u6404', 'u6146', 'u6147'];
+      for (const id of idPatterns) {
+        const match = htmlContent.match(new RegExp(`<div[^>]*id=["']${id}_text["'][^>]*>([\\s\\S]*?)<\\/div>`, 'i'));
+        if (match) {
+          const text = match[1]
+            .replace(/<[^>]+>/g, '')
+            .replace(/&nbsp;/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim();
+
+          if (text.length > 50) {
+            console.log(`   ✓ 策略2成功：找到ID为${id}的业务描述（${text.length}字符）`);
+            return text;
+          }
+        }
+      }
+
+      // 策略3：查找包含关键词的区域
+      const keywords = ['备注', '说明', '业务描述', '需求', '功能说明'];
+      for (const keyword of keywords) {
+        const regex = new RegExp(`<div[^>]*>([\\s\\S]*?${keyword}[\\s\\S]*?)<\\/div>`, 'gi');
+        const matches = htmlContent.match(regex);
+
+        if (matches && matches.length > 0) {
+          const text = matches[0]
+            .replace(/<[^>]+>/g, '')
+            .replace(/&nbsp;/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim();
+
+          if (text.length > 50) {
+            console.log(`   ✓ 策略3成功：找到包含"${keyword}"的业务描述（${text.length}字符）`);
+            return text;
+          }
+        }
+      }
+
+      // 策略4：降级到全文（让 AI 自行识别）
+      console.log('   ⚠️ 无法定位业务描述区域，返回空字符串');
+      return '';
+
+    } catch (error) {
+      console.error('   ❌ 提取业务描述失败:', error);
+      return '';
+    }
   }
 }
 

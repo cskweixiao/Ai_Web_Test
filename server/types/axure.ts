@@ -44,3 +44,10 @@ export interface AxureInteraction {
   target?: string;
   action?: string;
 }
+
+/**
+ * 页面模式枚举（不存储到数据库，仅用于生成时区分）
+ * - new: 新增页面（完整解析）
+ * - modify: 修改页面（识别变更点）
+ */
+export type PageMode = 'new' | 'modify';

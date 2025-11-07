@@ -445,9 +445,18 @@ export function createAxureRoutes(): Router {
         });
       }
 
-      const { systemName, moduleName } = req.body;
+      const { systemName, moduleName, pageMode = 'new' } = req.body;
+
+      // 验证 pageMode
+      if (pageMode && !['new', 'modify'].includes(pageMode)) {
+        return res.status(400).json({
+          success: false,
+          error: 'pageMode 必须是 new 或 modify'
+        });
+      }
 
       console.log(`📤 收到HTML文件: ${req.file.originalname}, 大小: ${req.file.size} bytes`);
+      console.log(`   页面模式: ${pageMode === 'new' ? '新增页面' : '修改页面'}`);
       console.log(`   系统名称: ${systemName || '未指定'}, 模块名称: ${moduleName || '未指定'}`);
 
       const filePath = req.file.path;
@@ -456,12 +465,13 @@ export function createAxureRoutes(): Router {
       const htmlContent = await fs.readFile(filePath, 'utf-8');
       console.log(`📄 HTML文件读取成功，长度: ${htmlContent.length} 字符`);
 
-      // 直接调用AI生成需求文档
+      // 直接调用AI生成需求文档（传递 pageMode）
       const result = await functionalTestCaseAIService.generateRequirementFromHtmlDirect(
         htmlContent,
         {
           systemName,
-          moduleName
+          moduleName,
+          pageMode: pageMode as 'new' | 'modify' // 传递页面模式
         }
       );
 
