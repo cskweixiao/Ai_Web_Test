@@ -97,13 +97,18 @@ export class FunctionalTestCaseAIService {
 
     // 初始化知识库服务
     try {
+      console.log('🔄 正在初始化知识库服务...');
       this.knowledgeBase = new TestCaseKnowledgeBase();
       this.knowledgeBaseAvailable = true;
-      console.log('📚 知识库服务已加载（RAG增强模式）');
+      console.log('✅ 知识库服务已加载（RAG增强模式）');
+      console.log(`📊 知识库状态: knowledgeBaseAvailable = ${this.knowledgeBaseAvailable}`);
     } catch (error: any) {
-      console.warn('⚠️  知识库服务初始化失败，将降级为普通模式:', error.message);
+      console.error('❌ 知识库服务初始化失败，将降级为普通模式');
+      console.error('   错误详情:', error);
+      console.error('   错误堆栈:', error.stack);
       this.knowledgeBaseAvailable = false;
       this.knowledgeBase = null as any;
+      console.log(`📊 知识库状态: knowledgeBaseAvailable = ${this.knowledgeBaseAvailable}`);
     }
   }
 
@@ -1410,10 +1415,12 @@ ${htmlContent}
     // 🔍 查询知识库（RAG增强）
     console.log(`\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
     console.log(`📚 [知识库RAG] 开始检索相关知识...`);
+    console.log(`   检查知识库状态: knowledgeBaseAvailable = ${this.knowledgeBaseAvailable}`);
     console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
 
     let knowledgeContext = '';
     if (this.knowledgeBaseAvailable) {
+      console.log(`✅ 知识库可用，开始RAG检索...`);
       try {
         console.log(`🔍 [RAG-Step1] 准备查询参数:`);
         console.log(`   📌 章节名称: "${sectionName}"`);
@@ -1978,6 +1985,103 @@ ${sectionContents}
       return match ? match[0] : '';
     }).join('\n\n');
 
+    // 🔍 查询知识库（RAG增强）
+    console.log(`\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+    console.log(`📚 [知识库RAG] 开始检索相关知识...`);
+    console.log(`   检查知识库状态: knowledgeBaseAvailable = ${this.knowledgeBaseAvailable}`);
+    console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+
+    let knowledgeContext = '';
+    if (this.knowledgeBaseAvailable) {
+      console.log(`✅ 知识库可用，开始RAG检索...`);
+      try {
+        console.log(`🔍 [RAG-Step1] 准备查询参数:`);
+        console.log(`   📌 测试目的: "${purposeName}"`);
+        console.log(`   📌 描述: "${purposeDescription}"`);
+        console.log(`   📌 内容长度: ${sectionContents.length}字符 (取前500字作为查询上下文)`);
+        console.log(`   📌 检索参数: topK=3, scoreThreshold=0.5`);
+
+        const queryText = `${purposeName}\n${purposeDescription}\n${sectionContents.substring(0, 500)}`;
+        console.log(`   📌 实际查询文本预览: ${queryText.substring(0, 150)}...`);
+
+        console.log(`\n🔍 [RAG-Step2] 调用Qdrant向量数据库进行语义检索...`);
+        const queryStartTime = Date.now();
+
+        const knowledgeResults = await this.knowledgeBase.searchByCategory({
+          query: queryText,
+          topK: 3,
+          scoreThreshold: 0.5
+        });
+
+        const queryDuration = Date.now() - queryStartTime;
+        console.log(`✅ [RAG-Step2] 向量检索完成 (耗时: ${queryDuration}ms)`);
+
+        const totalKnowledge =
+          knowledgeResults.businessRules.length +
+          knowledgeResults.testPatterns.length +
+          knowledgeResults.pitfalls.length +
+          knowledgeResults.riskScenarios.length;
+
+        if (totalKnowledge > 0) {
+          console.log(`\n📊 [RAG-Step3] 知识检索结果汇总:`);
+          console.log(`   ✅ 业务规则: ${knowledgeResults.businessRules.length}条`);
+          if (knowledgeResults.businessRules.length > 0) {
+            knowledgeResults.businessRules.forEach((r: any, i: number) => {
+              console.log(`      ${i+1}. "${r.knowledge.title}" (相似度: ${(r.score * 100).toFixed(1)}%)`);
+            });
+          }
+
+          console.log(`   ✅ 测试模式: ${knowledgeResults.testPatterns.length}条`);
+          if (knowledgeResults.testPatterns.length > 0) {
+            knowledgeResults.testPatterns.forEach((r: any, i: number) => {
+              console.log(`      ${i+1}. "${r.knowledge.title}" (相似度: ${(r.score * 100).toFixed(1)}%)`);
+            });
+          }
+
+          console.log(`   ✅ 历史踩坑点: ${knowledgeResults.pitfalls.length}条`);
+          if (knowledgeResults.pitfalls.length > 0) {
+            knowledgeResults.pitfalls.forEach((r: any, i: number) => {
+              console.log(`      ${i+1}. "${r.knowledge.title}" (相似度: ${(r.score * 100).toFixed(1)}%)`);
+            });
+          }
+
+          console.log(`   ✅ 资损风险场景: ${knowledgeResults.riskScenarios.length}条`);
+          if (knowledgeResults.riskScenarios.length > 0) {
+            knowledgeResults.riskScenarios.forEach((r: any, i: number) => {
+              console.log(`      ${i+1}. "${r.knowledge.title}" (相似度: ${(r.score * 100).toFixed(1)}%)`);
+            });
+          }
+
+          console.log(`   📈 总计检索到: ${totalKnowledge}条相关知识`);
+
+          console.log(`\n🔧 [RAG-Step4] 格式化知识上下文，准备注入AI提示词...`);
+          knowledgeContext = this.buildKnowledgeContext(knowledgeResults);
+          console.log(`✅ [RAG-Step4] 知识上下文构建完成 (长度: ${knowledgeContext.length}字符)`);
+
+          console.log(`\n🎯 [RAG模式] 将使用知识库增强模式生成测试用例`);
+        } else {
+          console.log(`\n⚠️  [RAG-Step3] 未检索到相关知识 (所有知识相似度 < 0.5)`);
+          console.log(`   💡 这可能是因为:`);
+          console.log(`      - 知识库中没有与"${purposeName}"相关的内容`);
+          console.log(`      - 相似度阈值0.5设置过高`);
+          console.log(`      - 需要添加更多业务知识到知识库`);
+          console.log(`\n🔄 [降级处理] 切换到普通模式生成（不使用知识库增强）`);
+        }
+      } catch (error: any) {
+        console.error(`\n❌ [RAG-Error] 知识库查询异常:`);
+        console.error(`   错误类型: ${error.name}`);
+        console.error(`   错误信息: ${error.message}`);
+        console.error(`   错误堆栈: ${error.stack}`);
+        console.warn(`\n🔄 [降级处理] 自动切换到普通模式生成`);
+      }
+    } else {
+      console.log(`⚠️  [RAG状态] 知识库服务未启用`);
+      console.log(`   💡 原因: 服务初始化时出现错误（检查Qdrant连接或配置）`);
+      console.log(`\n🔄 [降级处理] 使用普通模式生成（不使用知识库增强）`);
+    }
+
+    console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`);
+
     const systemPrompt = `你是一个测试用例设计专家。你的任务是为指定的测试目的生成详细的测试点。
 
 ## 测试点生成原则
@@ -1997,6 +2101,44 @@ ${sectionContents}
 - high：核心功能、资金相关、权限控制
 - medium：常用功能、数据校验
 - low：UI展示、文案校验
+
+## 测试点命名规范 ⚠️ 重要！
+
+**测试点名称必须与测试目的保持一致，不要偏离主题！**
+
+### 命名示例对比
+
+**1. 如果测试目的是"多条件组合查询验证"**
+- ✅ 正确示例：
+  - "客户名称+订单编号组合查询"
+  - "时间范围+渠道类型组合查询"
+  - "三个及以上条件组合查询"
+- ❌ 错误示例：
+  - "客户名称模糊匹配查询" （这是单条件，不是组合）
+  - "订单编号精确查询" （这是单条件，不是组合）
+
+**2. 如果测试目的是"边界值和异常输入处理"**
+- ✅ 正确示例：
+  - "客户名称长度边界值测试（0字符、1字符、最大长度）"
+  - "订单编号特殊字符输入测试"
+  - "时间范围空值输入测试"
+- ❌ 错误示例：
+  - "客户名称输入测试" （没有体现边界值）
+  - "订单编号查询" （没有体现异常输入）
+
+**3. 如果测试目的是"单条件查询验证"**
+- ✅ 正确示例：
+  - "客户名称模糊匹配查询"
+  - "订单编号精确匹配查询"
+  - "时间范围筛选查询"
+- ❌ 错误示例：
+  - "客户名称+订单编号查询" （这是组合查询，不是单条件）
+
+### 核心原则
+- 测试点名称要具体、明确，直接反映测试目的的核心关注点
+- 如果测试目的强调"组合"，测试点必须测试多个条件的组合
+- 如果测试目的强调"边界值"，测试点必须测试最小值、最大值、临界值
+- 如果测试目的强调"异常"，测试点必须测试空值、特殊字符、超长输入
 
 ## 输出格式
 
@@ -2045,8 +2187,22 @@ ${sectionContents}
 - 模块名称: ${moduleName}
 - 关联章节: ${relatedSections.join(', ')}
 
+## ⚠️ 特别提醒
+
+当前测试目的是："${purposeName}"
+
+**请确保每个测试点的名称都紧密围绕"${purposeName}"设计，不要偏离主题！**
+
+例如：
+- 如果测试目的强调"组合查询"，测试点必须测试多个条件的组合（如"客户名称+订单编号组合查询"）
+- 如果测试目的强调"边界值"，测试点必须测试最小值、最大值、临界值（如"客户名称长度边界值测试"）
+- 如果测试目的强调"异常输入"，测试点必须测试空值、特殊字符、超长输入（如"订单编号特殊字符输入测试"）
+- 如果测试目的强调"单条件查询"，测试点只能测试单个条件（如"客户名称模糊匹配查询"）
+
 ## 相关需求内容
 ${sectionContents}
+
+${knowledgeContext ? `\n## 🔍 参考知识库（测试经验）\n${knowledgeContext}\n` : ''}
 
 请生成详细的测试点。直接输出JSON格式，不要其他说明文字。`;
 

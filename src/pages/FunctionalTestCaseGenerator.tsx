@@ -63,6 +63,8 @@ export function FunctionalTestCaseGenerator() {
   const [analyzingModules, setAnalyzingModules] = useState(false); // 是否正在分析模块
   const [generatingPurposes, setGeneratingPurposes] = useState<Record<string, boolean>>({}); // 哪些模块正在生成测试目的
   const [generatingPoints, setGeneratingPoints] = useState<Record<string, boolean>>({}); // 哪些测试目的正在生成测试点
+  const [batchGeneratingModule, setBatchGeneratingModule] = useState<string | null>(null); // 正在批量生成的模块ID
+  const [batchGenerateProgress, setBatchGenerateProgress] = useState<{current: number, total: number}>({ current: 0, total: 0 }); // 批量生成进度
   const [expandedModules, setExpandedModules] = useState<Record<string, boolean>>({}); // 哪些模块是展开的
   const [draftCases, setDraftCases] = useState<any[]>([]); // 已生成的测试用例草稿
   const [selectedPurposes, setSelectedPurposes] = useState<Record<string, boolean>>({}); // 已选中的测试目的
@@ -450,6 +452,64 @@ export function FunctionalTestCaseGenerator() {
   // 取消全选
   const deselectAllPurposes = () => {
     setSelectedPurposes({});
+  };
+
+  // 一键生成模块所有测试点（轮询方式）
+  const handleBatchGenerateModulePoints = async (module: any) => {
+    if (!module.testPurposes || module.testPurposes.length === 0) {
+      showToast.warning('该模块暂无测试目的，请先生成测试目的');
+      return;
+    }
+
+    // 筛选出还没生成测试用例的测试目的
+    const pendingPurposes = module.testPurposes.filter((p: any) => !p.testCase);
+
+    if (pendingPurposes.length === 0) {
+      showToast.info('该模块所有测试目的的测试点已全部生成');
+      return;
+    }
+
+    // 设置批量生成状态
+    setBatchGeneratingModule(module.id);
+    setBatchGenerateProgress({ current: 0, total: pendingPurposes.length });
+
+    // 确保模块展开，以便用户看到生成过程
+    setExpandedModules(prev => ({ ...prev, [module.id]: true }));
+
+    console.log(`🚀 开始批量生成模块 [${module.name}] 的测试点，共 ${pendingPurposes.length} 个测试目的`);
+
+    // 轮询生成每个测试目的的测试点
+    for (let i = 0; i < pendingPurposes.length; i++) {
+      const purpose = pendingPurposes[i];
+
+      try {
+        console.log(`📝 [${i + 1}/${pendingPurposes.length}] 正在生成测试目的: ${purpose.name}`);
+
+        // 更新进度
+        setBatchGenerateProgress({ current: i + 1, total: pendingPurposes.length });
+
+        // 调用生成测试点的函数（复用现有逻辑）
+        await handleGeneratePoints(purpose, module);
+
+        console.log(`✅ [${i + 1}/${pendingPurposes.length}] 完成: ${purpose.name}`);
+
+        // 每个测试目的生成完后稍微延迟，避免过快
+        if (i < pendingPurposes.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, 500));
+        }
+      } catch (error: any) {
+        console.error(`❌ [${i + 1}/${pendingPurposes.length}] 生成失败: ${purpose.name}`, error);
+        showToast.error(`生成 "${purpose.name}" 失败: ${error.message}`);
+        // 继续生成下一个，不中断整个流程
+      }
+    }
+
+    // 完成批量生成
+    setBatchGeneratingModule(null);
+    setBatchGenerateProgress({ current: 0, total: 0 });
+
+    showToast.success(`模块 "${module.name}" 的所有测试点已生成完毕！`);
+    console.log(`🎉 批量生成完成！`);
   };
 
   // 生成当前批次
@@ -888,6 +948,21 @@ export function FunctionalTestCaseGenerator() {
                       </div>
 
                       <div className="flex items-center gap-2">
+                        {/* 一键生成所有测试点按钮 */}
+                        {hasPurposes && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleBatchGenerateModulePoints(module)}
+                            isLoading={batchGeneratingModule === module.id}
+                            disabled={batchGeneratingModule === module.id}
+                          >
+                            {batchGeneratingModule === module.id
+                              ? `生成中 (${batchGenerateProgress.current}/${batchGenerateProgress.total})`
+                              : '一键生成所有测试点'}
+                          </Button>
+                        )}
+
                         {!hasPurposes && (
                           <Button
                             variant="default"
