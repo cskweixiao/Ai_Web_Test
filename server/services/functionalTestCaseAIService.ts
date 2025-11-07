@@ -26,6 +26,31 @@ export interface Batch {
 }
 
 /**
+ * 🆕 测试模块（阶段1输出）
+ */
+export interface TestModule {
+  id: string;
+  name: string;
+  description: string;
+  priority: 'high' | 'medium' | 'low';
+  relatedSections: string[]; // 关联的章节ID，如 ["1.1", "1.2"]
+  testPurposes?: TestPurpose[]; // 可选，阶段2生成后才有
+}
+
+/**
+ * 🆕 测试目的（阶段2输出）
+ */
+export interface TestPurpose {
+  id: string;
+  name: string;
+  description: string;
+  coverageAreas: string; // 逗号分隔的覆盖范围
+  estimatedTestPoints: number;
+  priority: 'high' | 'medium' | 'low';
+  testCase?: TestCase; // 可选，阶段3生成后才有
+}
+
+/**
  * 测试点
  */
 export interface TestPoint {
@@ -866,76 +891,399 @@ ${axureData.pageCount > 10 ? `\n(还有${axureData.pageCount - 10}个页面未�
     console.log(`   - 模块名称: ${projectInfo.moduleName || '未指定'}`);
     console.log(`   - HTML内容长度: ${htmlContent.length} 字符`);
 
-    // 构建系统提示词
+    // 构建系统提示词 - 使用全新的Axure HTML解析策略
     const systemPrompt = `你是一个专业的需求分析专家。你的任务是分析Axure原型导出的HTML文件,并生成结构化的需求文档。
 
-## 输出格式要求
+# 📋 Axure HTML 解析策略
 
-需求文档必须使用Markdown格式,章节结构如下:
+## 1️⃣ 页面类型识别
+
+**识别规则：**
+- 如果HTML中有表格结构 (\`<table>\` 或 \`class="table"\`) → **列表页**
+- 如果有大量表单元素 (\`<input>\`, \`<select>\`) 但没有表格 → **表单页**
+- 如果只有文本展示，没有输入控件 → **详情页**
+- 如果页面较小且有"确定"/"取消"按钮 → **弹窗**
+
+## 2️⃣ 查询条件识别（重点！）
+
+**🚨 核心规则：查询条件 ≠ 表单字段**
+
+**识别步骤：**
+1. **先找到"搜索"或"查询"按钮** (文本包含 "搜索"/"查询"/"重置" 的button或div)
+2. **向上遍历DOM树**，找到该按钮所在的父容器（通常是form或div）
+3. **提取该容器内的所有输入控件**（input、select、date-picker等）
+4. 这些控件就是"查询条件"，**不要归类为"表单字段"**
+
+**示例HTML结构：**
+\`\`\`html
+<div class="query-section">
+  <input placeholder="订单号" />
+  <select><option>全部状态</option></select>
+  <button>搜索</button>
+  <button>重置</button>
+</div>
+\`\`\`
+→ 上述input和select应识别为**查询条件**，不是表单字段
+
+## 3️⃣ 列表字段识别
+
+**识别规则：**
+- 找到表格的列头行（通常是 \`<thead>\` 或第一个 \`<tr>\`）
+- 从 \`<th>\` 或 \`<div class="label">\` 中提取字段名
+- 如果有"操作"列，提取该列中的所有按钮（详情、编辑、删除等）
+
+**⚠️ 常见Axure表格结构：**
+\`\`\`html
+<div class="table">
+  <div class="row header">
+    <div class="cell"><div class="label">订单号</div></div>
+    <div class="cell"><div class="label">客户名称</div></div>
+    <div class="cell"><div class="label">操作</div></div>
+  </div>
+</div>
+\`\`\`
+→ 提取字段：订单号、客户名称、操作
+
+## 4️⃣ 操作按钮去重规则
+
+**问题：** 列表页中的"详情"按钮可能在每一行都出现，导致重复识别
+
+**去重策略：**
+1. 提取所有按钮的文本内容（button、a标签、可点击的div）
+2. **如果同一按钮文案出现多次**（如"详情"出现10次）：
+   - 只在"操作按钮"表格中记录**一条**
+   - 在"位置"列标注"每行操作列"或"表格操作列"
+3. 如果按钮只出现一次（如页面顶部的"新增"按钮）：
+   - 正常记录，标注具体位置（如"页面顶部"）
+
+**示例输出：**
+| 按钮名称 | 位置 | 操作说明 |
+|---------|------|---------|
+| 新增 | 页面顶部 | 打开新增弹窗 |
+| 详情 | 表格操作列（每行） | 查看该行数据详情 |
+| 编辑 | 表格操作列（每行） | 编辑该行数据 |
+| 删除 | 表格操作列（每行） | 删除该行数据 |
+
+## 5️⃣ 弹窗/对话框识别
+
+**识别特征：**
+- class名包含 "modal"、"dialog"、"popup"、"layer"
+- 通常有"确定"/"取消"按钮
+- 尺寸较小，位置居中
+
+**处理方式：**
+- 为弹窗创建独立的功能点章节（如 ### 1.2 新增订单弹窗）
+- 提取弹窗内的表单字段和按钮
+
+## 6️⃣ 下拉框选项提取
+
+**识别规则：**
+- 找到所有 \`<select>\` 标签
+- 提取其中所有 \`<option>\` 的文本内容
+- 在"可选值/枚举"列中用斜杠分隔，如："待审核/已审核/已完成/已取消"
+
+## 7️⃣ 业务规则推断
+
+**从HTML中提取业务规则的方法：**
+1. **从字段名推断**：如"审核意见"字段 → 可能有审核流程
+2. **从按钮文案推断**：如"提交审核" → 需要审核权限控制
+3. **从class/id推断**：如 \`class="required"\` → 该字段必填
+4. **从提示文本推断**：如 placeholder="请输入6-20位密码" → 密码长度限制
+
+---
+
+# 📄 输出格式规范
 
 \`\`\`markdown
 # ${projectInfo.systemName || '系统名称'} - ${projectInfo.moduleName || '模块名称'}需求文档
 
 ## 1. 功能模块1
 
-### 1.1 功能点1名称
+### 1.1 功能点名称
 
 #### 功能描述
 简要描述该功能的业务目标和用途。
 
-#### 页面元素
-| 元素名称 | 类型 | 必填 | 说明 | 来源 |
-|---------|------|------|------|------|
-| 客户名称 | 文本 | 是 | 显示客户名称 | HTML中的div/span/input等 |
-| 订单金额 | 数字 | 是 | 显示订单总金额 | ... |
+#### 页面类型
+列表页 / 详情页 / 表单页 / 弹窗
+
+---
+
+### 📋 如果是列表页，必须包含以下章节：
+
+#### 查询条件（如果有查询区域）
+| 字段名 | 控件类型 | 必填 | 默认值 | 说明 | 来源 |
+|--------|---------|------|--------|------|------|
+| 订单号 | 文本框 | 否 | - | 输入订单号进行搜索 | 查询区域input |
+| 订单状态 | 下拉框 | 否 | 全部 | 选择订单状态筛选 | 查询区域select |
+
+#### 列表展示字段（🔥 必须有！）
+| 字段名 | 数据类型 | 格式 | 说明 | 来源 |
+|--------|---------|------|------|------|
+| 订单号 | 文本 | - | 显示订单编号 | 表格列头 |
+| 客户名称 | 文本 | - | 显示客户名称 | 表格列头 |
+| 申请日期 | 日期 | YYYY-MM-DD | 显示申请日期 | 表格列头 |
+| 订单金额 | 数字 | ¥0.00 | 显示订单金额 | 表格列头 |
+| 状态 | 文本 | - | 订单状态 | 表格列头 |
+| 操作 | 按钮组 | - | 包含详情/编辑/删除按钮 | 表格列头 |
+
+#### 操作按钮
+| 按钮名称 | 位置 | 按钮类型 | 触发条件 | 操作说明 | 来源 |
+|---------|------|---------|---------|---------|------|
+| 查询 | 查询区域 | 主要 | 无 | 根据查询条件筛选数据 | 查询按钮 |
+| 重置 | 查询区域 | 次要 | 无 | 清空查询条件 | 重置按钮 |
+| 新增 | 页面顶部 | 主要 | 无 | 打开新增弹窗 | 页面按钮 |
+| 详情 | 表格操作列（每行） | 链接 | 无 | 查看该行数据详情 | 行内按钮 |
+| 编辑 | 表格操作列（每行） | 链接 | 有编辑权限 | 编辑该行数据 | 行内按钮 |
+| 删除 | 表格操作列（每行） | 危险 | 有删除权限 | 删除该行数据 | 行内按钮 |
+
+---
+
+### 📝 如果是表单页，必须包含以下章节：
+
+#### 表单字段
+| 字段名 | 控件类型 | 必填 | 默认值 | 说明 | 可选值/枚举 | 验证规则 | 来源 |
+|--------|---------|------|--------|------|-----------|---------|------|
+| 客户名称 | 文本框 | 是 | - | 输入客户名称 | - | 2-50字符 | input标签 |
+| 订单状态 | 下拉框 | 是 | 待审核 | 选择订单状态 | 待审核/已审核/已完成/已取消 | - | select标签 |
+| 订单金额 | 数字输入框 | 是 | - | 输入订单金额 | - | 大于0 | input[type=number] |
+| 备注 | 多行文本框 | 否 | - | 输入备注信息 | - | 最多500字符 | textarea |
+
+#### 操作按钮
+| 按钮名称 | 按钮类型 | 触发条件 | 操作说明 | 来源 |
+|---------|---------|---------|---------|------|
+| 保存 | 主要 | 表单验证通过 | 保存表单数据 | button标签 |
+| 提交审核 | 主要 | 表单验证通过 | 提交数据并发起审核 | button标签 |
+| 取消 | 次要 | 无 | 关闭表单，不保存 | button标签 |
 
 #### 业务规则
-1. 规则描述1
-2. 规则描述2
-3. ...
+1. 订单金额必须大于0
+2. 提交审核后，订单状态变更为"待审核"，不可再编辑
+3. 只有订单创建人和管理员可以编辑订单
+4. ...
 
 #### 交互说明
-1. 用户点击"提交"按钮时...
-2. 当金额超过限额时...
-3. ...
+1. 用户点击"保存"按钮时，仅保存数据，不改变订单状态
+2. 用户点击"提交审核"按钮时，需二次确认，确认后订单进入审核流程
+3. 当订单金额超过10000元时，需要财务主管审核
+4. ...
 
-### 1.2 功能点2名称
-...
+---
 
-## 2. 功能模块2
-...
+### 📄 如果是详情页：
+
+#### 详情字段
+| 字段名 | 数据类型 | 格式 | 说明 | 来源 |
+|--------|---------|------|------|------|
+| 订单号 | 文本 | - | 订单编号 | 页面div/span |
+| 客户名称 | 文本 | - | 客户名称 | 页面div/span |
+| ...
+
+#### 操作按钮
+| 按钮名称 | 按钮类型 | 触发条件 | 操作说明 |
+|---------|---------|---------|---------|
+| 编辑 | 主要 | 有编辑权限 | 跳转到编辑页面 |
+| 返回 | 次要 | 无 | 返回列表页 |
+
+---
+
+### 🪟 如果是弹窗：
+
+为弹窗创建独立章节，格式与表单页相同
+
 \`\`\`
 
-## 分析要点
+---
 
-1. **识别页面结构**: 从HTML的DOM结构识别页面布局、功能分区
-2. **提取元素信息**: 从input、button、div、span等标签提取字段和控件
-3. **推断业务规则**: 从HTML中的class名称、id、data-属性推断业务逻辑
-4. **识别交互**: 从button、link等元素推断用户操作流程
-5. **章节划分**: 根据页面功能将需求划分为多个章节(### 1.1, ### 1.2...)
+# 🚨 重要规范
 
-## 重要提示
+## 中文术语规范
+**页面类型必须使用中文:**
+- ❌ 不要用: list, dialog, form, detail, modal
+- ✅ 必须用: 列表页, 弹窗, 表单页, 详情页, 对话框
 
-- **章节编号**: 必须使用 ### 1.1、### 1.2、### 2.1 格式
-- **简洁明了**: 需求描述要清晰、准确,避免冗余
-- **来源标注**: 在"来源"列标注HTML中的元素类型(如"登录按钮-button")
-- **推理合理**: 如果HTML信息不足,基于常见业务场景合理推断`;
+**元素类型必须使用中文:**
+- ❌ 不要用: input, button, select, checkbox, radio
+- ✅ 必须用: 文本框, 按钮, 下拉框, 复选框, 单选框
 
-    // 构建用户提示词
-    const userPrompt = `请分析以下Axure原型的HTML文件,生成结构化的需求文档:
+## 查询条件 vs 表单字段
+**🚨 最重要的区分规则：**
+- **查询条件**：位于"搜索"/"查询"按钮附近的输入控件，用于筛选数据
+- **表单字段**：用于新增/编辑数据的输入控件
+
+**判断方法：**
+1. 找到"搜索"/"查询"/"重置"按钮
+2. 该按钮所在容器内的输入控件 → 查询条件
+3. 其他容器内的输入控件 → 表单字段
+
+## 列表展示字段提取
+**🔥 列表页必须有"列表展示字段"章节！**
+- 从表格列头提取所有字段名
+- 包括"操作"列（说明包含哪些按钮）
+- 推断数据类型和格式
+
+## 按钮去重
+- 如果同一按钮出现多次（如"详情"按钮在每行都有）
+- 只记录一条，在"位置"列标注"表格操作列（每行）"
+
+## 下拉框枚举
+- 必须提取select标签中的所有option选项
+- 在"可选值/枚举"列中用斜杠分隔
+- 例如："待审核/已审核/已完成/已取消"
+
+---
+
+请严格按照上述策略分析HTML并生成需求文档。`;
+
+    // 构建用户提示词 - 配合新的解析策略
+    const userPrompt = `请严格按照上述"Axure HTML 解析策略"分析以下HTML文件，生成结构化的需求文档。
 
 ## HTML内容
 \`\`\`html
 ${htmlContent}
 \`\`\`
 
-## 要求
-1. 识别HTML中的所有功能点,为每个功能点创建一个章节(### 1.1、### 1.2格式)
-2. 提取所有表单元素、按钮、文本显示等
-3. 推断业务规则和交互流程
-4. 按照上述Markdown格式输出完整的需求文档
+---
 
-请直接输出Markdown格式的需求文档,不要有其他说明文字。`;
+## 🚨 分析步骤（必须严格按顺序执行）
+
+### Step 1: 识别页面类型
+- 查找HTML中是否有表格结构（\`<table>\`、\`class="table"\`、\`<div class="row">\`等）
+- 如果有表格 → 列表页
+- 如果大量输入控件但无表格 → 表单页
+- 如果只有文本展示 → 详情页
+- 如果有"确定"/"取消"按钮且页面较小 → 弹窗
+
+### Step 2: 如果是列表页，提取查询条件
+**🚨 关键步骤：**
+1. 在HTML中查找包含"搜索"、"查询"、"重置"文本的按钮或div
+2. 找到该按钮所在的父容器（通常是form或div）
+3. 提取该容器内的所有输入控件（input、select等）
+4. 将这些控件归类为"查询条件"，**不要放在"表单字段"中**
+
+**示例识别：**
+\`\`\`html
+<div id="query-area">
+  <input placeholder="机构名称" />
+  <select><option>全部</option></select>
+  <button>搜索</button>
+</div>
+\`\`\`
+→ 上述input和select是"查询条件"，不是"表单字段"
+
+### Step 3: 如果是列表页，提取列表展示字段（🔥 最重要！）
+**提取方法：**
+1. 找到表格的列头行
+   - 查找 \`<thead>\`、\`<th>\`
+   - 或 Axure 特有结构：\`<div class="row header">\` 或 \`<div class="headerRow">\`
+2. 从列头中提取字段名
+   - 从 \`<th>\` 的文本内容提取
+   - 或从 \`<div class="label">\` 的文本内容提取
+3. 列出所有列，包括"操作"列
+
+**⚠️ 常见Axure表格结构：**
+\`\`\`html
+<div class="table">
+  <div class="row header">
+    <div class="cell"><div class="label">机构名称</div></div>
+    <div class="cell"><div class="label">订单号</div></div>
+    <div class="cell"><div class="label">状态</div></div>
+    <div class="cell"><div class="label">操作</div></div>
+  </div>
+</div>
+\`\`\`
+→ 提取字段：机构名称、订单号、状态、操作
+
+### Step 4: 提取操作按钮并去重
+1. 提取所有按钮（button、a标签、可点击的div）
+2. 统计每个按钮文案出现的次数
+3. 如果同一按钮出现多次（如"详情"在表格每行都有）：
+   - 只记录一条
+   - 在"位置"列标注"表格操作列（每行）"
+4. 如果按钮只出现一次（如"新增"）：
+   - 正常记录，标注"页面顶部"或具体位置
+
+### Step 5: 提取下拉框的所有选项
+1. 找到所有 \`<select>\` 标签
+2. 提取其中每个 \`<option>\` 的文本内容
+3. 在"可选值/枚举"列中用斜杠分隔列出
+   - 例如："待审核/已审核/已完成/已取消"
+
+### Step 6: 识别弹窗和对话框
+- 查找class名包含"modal"、"dialog"、"popup"的元素
+- 为弹窗创建独立的章节（### 1.2 xxx弹窗）
+
+### Step 7: 推断业务规则
+- 从字段名推断（如"审核意见" → 审核流程）
+- 从按钮文案推断（如"提交审核" → 需要权限）
+- 从class/id推断（如class="required" → 必填）
+- 从placeholder推断（如"请输入6-20位密码" → 密码长度限制）
+
+---
+
+## 📄 输出要求
+
+1. **必须使用中文术语**：列表页、表单页、详情页、弹窗、文本框、下拉框、按钮（不要用list、form、input、button）
+2. **列表页必须包含"列表展示字段"章节**，从表格列头提取所有字段
+3. **查询条件和表单字段必须明确区分**，通过查找"搜索"/"查询"按钮来识别查询区域
+4. **操作按钮要去重**，重复按钮标注"表格操作列（每行）"
+5. **下拉框必须列出所有选项**，用斜杠分隔
+6. **章节编号使用 ### 1.1、### 1.2 格式**
+
+---
+
+## ✅ 输出示例（列表页）
+
+\`\`\`markdown
+### 1.1 订单管理
+
+#### 功能描述
+管理订单信息，支持查询、查看、编辑、删除订单。
+
+#### 页面类型
+列表页
+
+#### 查询条件
+| 字段名 | 控件类型 | 必填 | 默认值 | 说明 | 来源 |
+|--------|---------|------|--------|------|------|
+| 订单号 | 文本框 | 否 | - | 输入订单号进行搜索 | 查询区域input |
+| 订单状态 | 下拉框 | 否 | 全部 | 选择订单状态筛选 | 查询区域select |
+
+#### 列表展示字段
+| 字段名 | 数据类型 | 格式 | 说明 | 来源 |
+|--------|---------|------|------|------|
+| 订单号 | 文本 | - | 显示订单编号 | 表格列头 |
+| 客户名称 | 文本 | - | 显示客户名称 | 表格列头 |
+| 订单金额 | 数字 | ¥0.00 | 显示订单金额 | 表格列头 |
+| 订单状态 | 文本 | - | 订单状态 | 表格列头 |
+| 创建时间 | 日期 | YYYY-MM-DD HH:mm:ss | 订单创建时间 | 表格列头 |
+| 操作 | 按钮组 | - | 包含详情/编辑/删除按钮 | 表格列头 |
+
+#### 操作按钮
+| 按钮名称 | 位置 | 按钮类型 | 触发条件 | 操作说明 | 来源 |
+|---------|------|---------|---------|---------|------|
+| 查询 | 查询区域 | 主要 | 无 | 根据查询条件筛选数据 | 查询按钮 |
+| 重置 | 查询区域 | 次要 | 无 | 清空查询条件 | 重置按钮 |
+| 新增 | 页面顶部 | 主要 | 无 | 打开新增弹窗 | 页面按钮 |
+| 详情 | 表格操作列（每行） | 链接 | 无 | 查看该行数据详情 | 行内按钮 |
+| 编辑 | 表格操作列（每行） | 链接 | 有编辑权限 | 编辑该行数据 | 行内按钮 |
+| 删除 | 表格操作列（每行） | 危险 | 有删除权限 | 删除该行数据 | 行内按钮 |
+
+#### 业务规则
+1. 只有订单创建人和管理员可以删除订单
+2. 已完成的订单不可编辑
+3. 删除订单需要二次确认
+
+#### 交互说明
+1. 用户点击"查询"按钮时，根据输入的条件刷新列表
+2. 用户点击"重置"按钮时，清空所有查询条件并刷新列表
+3. 用户点击表格行内的"详情"按钮时，跳转到订单详情页
+4. 用户点击"删除"按钮时，弹出确认对话框，确认后删除
+\`\`\`
+
+---
+
+请严格按照上述步骤分析HTML，直接输出Markdown格式的需求文档，不要有其他说明文字。`;
 
     try {
       console.log('\n🤖 正在调用GPT-4o生成需求文档...');
@@ -945,11 +1293,25 @@ ${htmlContent}
       const aiStartTime = Date.now();
 
       // 调用AI（使用更大的token限制,因为HTML可能很长）
-      const requirementDoc = await this.callAI(systemPrompt, userPrompt, 16000);
+      let requirementDoc = await this.callAI(systemPrompt, userPrompt, 16000);
 
       const aiDuration = Date.now() - aiStartTime;
       console.log(`✅ AI生成完成 (耗时: ${aiDuration}ms)`);
-      console.log(`   - 生成文档长度: ${requirementDoc.length} 字符`);
+      console.log(`   - 原始文档长度: ${requirementDoc.length} 字符`);
+
+      // 🔥 清理AI返回内容中的markdown代码块包裹符号
+      console.log(`\n🧹 清理Markdown代码块包裹符号...`);
+
+      // 移除开头的 ```markdown 或 ```
+      requirementDoc = requirementDoc.replace(/^```markdown\s*/i, '').replace(/^```\s*/, '');
+
+      // 移除结尾的 ```
+      requirementDoc = requirementDoc.replace(/\s*```\s*$/, '');
+
+      // 去除首尾空白
+      requirementDoc = requirementDoc.trim();
+
+      console.log(`   ✅ 清理完成,文档长度: ${requirementDoc.length} 字符`);
 
       // 提取章节列表
       const sectionRegex = /###\s+([\d.]+)\s+(.+)/g;
@@ -1379,6 +1741,340 @@ ${existingCaseNames || '无'}
         }],
         testType: '功能测试'
       }];
+    }
+  }
+
+  /**
+   * 🆕 阶段1：智能测试模块拆分
+   * 根据需求文档，识别不同的测试模块（查询条件、列表展示、操作按钮、页面布局等）
+   */
+  async analyzeTestModules(requirementDoc: string): Promise<TestModule[]> {
+    console.log('\n╔═══════════════════════════════════════════════════════════════╗');
+    console.log('║       🎯 阶段1：智能测试模块拆分                            ║');
+    console.log('╚═══════════════════════════════════════════════════════════════╝\n');
+
+    const systemPrompt = `你是一个测试策略规划专家。你的任务是分析需求文档，将测试工作拆分为不同的测试模块。
+
+## 测试模块拆分原则
+
+**根据页面类型识别测试模块：**
+
+### 列表页常见测试模块：
+1. **查询条件测试** - 验证查询功能、边界值、组合查询
+2. **列表展示与数据校验** - 验证列表字段、数据格式、排序分页
+3. **操作按钮与权限** - 验证新增、编辑、删除等操作功能和权限
+4. **页面布局与文案校验** - 验证页面标题、字段标签、按钮文案、提示信息
+
+### 表单页常见测试模块：
+1. **表单字段验证** - 验证必填项、数据类型、长度限制
+2. **字段联动与依赖** - 验证字段之间的联动关系
+3. **提交与保存** - 验证提交、保存、取消等操作
+4. **数据回显与编辑** - 验证编辑时数据回显
+5. **页面布局与文案校验** - 验证页面标题、字段标签、按钮文案
+
+### 详情页常见测试模块：
+1. **详情展示** - 验证所有字段正确显示
+2. **操作按钮** - 验证编辑、返回等操作按钮
+3. **页面布局与文案校验** - 验证页面标题、字段标签
+
+### 弹窗常见测试模块：
+1. **弹窗表单验证** - 验证表单字段和验证规则
+2. **弹窗交互** - 验证打开、关闭、取消等操作
+3. **页面布局与文案校验** - 验证标题、提示文案
+
+## 输出格式
+
+请输出JSON格式：
+\`\`\`json
+{
+  "modules": [
+    {
+      "id": "module-1",
+      "name": "测试模块名称",
+      "description": "该模块的测试目标和范围",
+      "priority": "high|medium|low",
+      "relatedSections": ["1.1", "1.2"]
+    }
+  ]
+}
+\`\`\`
+
+## 重要提示
+- 模块数量控制在3-6个，太多会导致规划过于分散
+- 优先级判断：功能性 > 权限 > 布局文案
+- 每个模块要有清晰的测试边界，避免重叠`;
+
+    const userPrompt = `请分析以下需求文档，拆分出合适的测试模块：
+
+## 需求文档
+${requirementDoc}
+
+请识别页面类型，并根据上述原则拆分测试模块。直接输出JSON格式，不要其他说明文字。`;
+
+    try {
+      console.log('🤖 正在调用AI进行测试模块拆分...');
+      const aiResponse = await this.callAI(systemPrompt, userPrompt, 4000);
+
+      // 解析JSON
+      let jsonText = aiResponse.trim();
+      const jsonMatch = jsonText.match(/```(?:json)?\n?([\s\S]*?)\n?```/) || jsonText.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        jsonText = jsonMatch[1] || jsonMatch[0];
+      }
+
+      const parsed = JSON.parse(jsonText);
+      const modules: TestModule[] = parsed.modules || [];
+
+      console.log(`✅ 成功拆分 ${modules.length} 个测试模块:`);
+      modules.forEach((m, i) => {
+        console.log(`   ${i + 1}. ${m.name} (${m.priority}) - 关联章节: ${m.relatedSections.join(', ')}`);
+      });
+
+      return modules;
+    } catch (error: any) {
+      console.error('❌ 测试模块拆分失败:', error.message);
+      // 回退方案：返回基础模块
+      return [
+        {
+          id: 'module-1',
+          name: '完整功能测试',
+          description: '验证所有功能点',
+          priority: 'high',
+          relatedSections: ['1.1']
+        }
+      ];
+    }
+  }
+
+  /**
+   * 🆕 阶段2：生成测试目的
+   * 为指定测试模块生成多个测试目的
+   */
+  async generateTestPurposes(
+    moduleId: string,
+    moduleName: string,
+    moduleDescription: string,
+    requirementDoc: string,
+    relatedSections: string[]
+  ): Promise<TestPurpose[]> {
+    console.log('\n╔═══════════════════════════════════════════════════════════════╗');
+    console.log(`║       🎯 阶段2：生成测试目的 - ${moduleName}             ║`);
+    console.log('╚═══════════════════════════════════════════════════════════════╝\n');
+
+    // 提取相关章节内容
+    const sectionContents = relatedSections.map(sectionId => {
+      const regex = new RegExp(`###\\s+${sectionId.replace('.', '\\.')}\\s+([\\s\\S]*?)(?=###\\s+[\\d.]+\\s+|$)`);
+      const match = requirementDoc.match(regex);
+      return match ? match[0] : '';
+    }).join('\n\n');
+
+    const systemPrompt = `你是一个测试策略规划专家。你的任务是为指定的测试模块生成多个测试目的（Test Purpose）。
+
+## 测试目的生成原则
+
+**测试目的是什么？**
+- 测试目的是一组相关测试点的集合，代表一个具体的测试意图
+- 例如："单条件查询验证"是一个测试目的，包含多个测试点（完整匹配、模糊查询、不存在的值等）
+
+**如何拆分测试目的？**
+1. 按功能点拆分（如：单条件查询、多条件组合查询）
+2. 按场景拆分（如：正常流程、异常流程、边界条件）
+3. 按优先级拆分（如：核心功能、辅助功能）
+4. 确保每个测试目的职责单一、边界清晰
+
+**数量建议：**
+- 简单模块：2-4个测试目的
+- 复杂模块：5-8个测试目的
+- 避免过度拆分
+
+## 输出格式
+
+请输出JSON格式：
+\`\`\`json
+{
+  "testPurposes": [
+    {
+      "id": "purpose-1-1",
+      "name": "测试目的名称",
+      "description": "测试目的详细描述，说明要验证什么",
+      "coverageAreas": "功能点1,功能点2,功能点3",
+      "estimatedTestPoints": 5,
+      "priority": "high|medium|low"
+    }
+  ]
+}
+\`\`\``;
+
+    const userPrompt = `请为以下测试模块生成测试目的：
+
+## 测试模块信息
+- 模块ID: ${moduleId}
+- 模块名称: ${moduleName}
+- 模块描述: ${moduleDescription}
+- 关联章节: ${relatedSections.join(', ')}
+
+## 相关需求内容
+${sectionContents}
+
+请根据需求内容，为该模块生成合适的测试目的。直接输出JSON格式，不要其他说明文字。`;
+
+    try {
+      console.log(`🤖 正在为模块"${moduleName}"生成测试目的...`);
+      const aiResponse = await this.callAI(systemPrompt, userPrompt, 4000);
+
+      // 解析JSON
+      let jsonText = aiResponse.trim();
+      const jsonMatch = jsonText.match(/```(?:json)?\n?([\s\S]*?)\n?```/) || jsonText.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        jsonText = jsonMatch[1] || jsonMatch[0];
+      }
+
+      const parsed = JSON.parse(jsonText);
+      const purposes: TestPurpose[] = parsed.testPurposes || [];
+
+      console.log(`✅ 成功生成 ${purposes.length} 个测试目的:`);
+      purposes.forEach((p, i) => {
+        console.log(`   ${i + 1}. ${p.name} (${p.priority}) - 预估${p.estimatedTestPoints}个测试点`);
+      });
+
+      return purposes;
+    } catch (error: any) {
+      console.error('❌ 测试目的生成失败:', error.message);
+      // 回退方案
+      return [
+        {
+          id: `purpose-${moduleId}-1`,
+          name: `${moduleName}基本功能验证`,
+          description: `验证${moduleName}的基本功能`,
+          coverageAreas: moduleName,
+          estimatedTestPoints: 3,
+          priority: 'high'
+        }
+      ];
+    }
+  }
+
+  /**
+   * 🆕 阶段3：生成测试点
+   * 为指定测试目的生成详细的测试点
+   */
+  async generateTestPoints(
+    purposeId: string,
+    purposeName: string,
+    purposeDescription: string,
+    requirementDoc: string,
+    systemName: string,
+    moduleName: string,
+    relatedSections: string[]
+  ): Promise<TestCase> {
+    console.log('\n╔═══════════════════════════════════════════════════════════════╗');
+    console.log(`║       🎯 阶段3：生成测试点 - ${purposeName}             ║`);
+    console.log('╚═══════════════════════════════════════════════════════════════╝\n');
+
+    // 提取相关章节内容
+    const sectionContents = relatedSections.map(sectionId => {
+      const regex = new RegExp(`###\\s+${sectionId.replace('.', '\\.')}\\s+([\\s\\S]*?)(?=###\\s+[\\d.]+\\s+|$)`);
+      const match = requirementDoc.match(regex);
+      return match ? match[0] : '';
+    }).join('\n\n');
+
+    const systemPrompt = `你是一个测试用例设计专家。你的任务是为指定的测试目的生成详细的测试点。
+
+## 测试点生成原则
+
+**测试点是什么？**
+- 测试点是一个独立的、可执行的测试项
+- 每个测试点包含：测试点名称、操作步骤、预期结果、风险等级
+- 测试点应该原子化，一个测试点验证一个具体场景
+
+**如何设计测试点？**
+1. **正常流程**：验证标准操作路径
+2. **异常流程**：验证错误处理和提示
+3. **边界条件**：验证特殊值、空值、超长输入等
+4. **权限控制**：验证不同角色的权限限制
+
+**风险等级判断：**
+- high：核心功能、资金相关、权限控制
+- medium：常用功能、数据校验
+- low：UI展示、文案校验
+
+## 输出格式
+
+请输出JSON格式：
+\`\`\`json
+{
+  "testCase": {
+    "name": "测试用例名称",
+    "testPurpose": "测试目的",
+    "system": "系统名",
+    "module": "模块名",
+    "sectionId": "1.1",
+    "sectionName": "章节名称",
+    "priority": "high|medium|low",
+    "tags": ["标签1", "标签2"],
+    "coverageAreas": "功能点1,功能点2",
+    "testPoints": [
+      {
+        "testPurpose": "测试目的",
+        "testPoint": "测试点名称",
+        "steps": "1. 步骤1\\n2. 步骤2\\n3. 步骤3",
+        "expectedResult": "预期结果描述",
+        "riskLevel": "high|medium|low"
+      }
+    ],
+    "steps": "汇总步骤",
+    "assertions": "汇总预期结果",
+    "preconditions": "前置条件",
+    "testData": "测试数据"
+  }
+}
+\`\`\`
+
+## 重要提示
+- 测试点数量根据测试目的的复杂度决定，通常3-10个
+- 每个测试点必须包含 testPurpose 字段
+- 步骤要清晰具体，避免模糊描述`;
+
+    const userPrompt = `请为以下测试目的生成详细的测试点：
+
+## 测试目的信息
+- 目的ID: ${purposeId}
+- 目的名称: ${purposeName}
+- 目的描述: ${purposeDescription}
+- 系统名称: ${systemName}
+- 模块名称: ${moduleName}
+- 关联章节: ${relatedSections.join(', ')}
+
+## 相关需求内容
+${sectionContents}
+
+请生成详细的测试点。直接输出JSON格式，不要其他说明文字。`;
+
+    try {
+      console.log(`🤖 正在为测试目的"${purposeName}"生成测试点...`);
+      const aiResponse = await this.callAI(systemPrompt, userPrompt, 6000);
+
+      // 解析JSON
+      let jsonText = aiResponse.trim();
+      const jsonMatch = jsonText.match(/```(?:json)?\n?([\s\S]*?)\n?```/) || jsonText.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        jsonText = jsonMatch[1] || jsonMatch[0];
+      }
+
+      const parsed = JSON.parse(jsonText);
+      const testCase: TestCase = parsed.testCase;
+
+      // 补充信息
+      testCase.system = systemName;
+      testCase.module = moduleName;
+
+      console.log(`✅ 成功生成测试用例: ${testCase.name}`);
+      console.log(`   测试点数量: ${testCase.testPoints?.length || 0}`);
+
+      return testCase;
+    } catch (error: any) {
+      console.error('❌ 测试点生成失败:', error.message);
+      throw error;
     }
   }
 

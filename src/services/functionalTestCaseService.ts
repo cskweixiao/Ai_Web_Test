@@ -287,6 +287,57 @@ class FunctionalTestCaseService {
   }
 
   /**
+   * 🆕 直接从HTML文件生成需求文档（不经过解析和二次确认）
+   * @param htmlFile HTML文件
+   * @param systemName 系统名称
+   * @param moduleName 模块名称
+   */
+  async generateFromHtmlDirect(htmlFile: File, systemName: string, moduleName: string) {
+    console.log('📤 直接从HTML生成需求文档（跳过解析和二次确认）...');
+
+    const formData = new FormData();
+    formData.append('file', htmlFile);
+    formData.append('systemName', systemName);
+    formData.append('moduleName', moduleName);
+
+    const token = localStorage.getItem(TOKEN_KEY);
+    const headers: HeadersInit = {};
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    // 创建超时控制器（5分钟超时，因为要解析整个HTML）
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 300000); // 5分钟
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/axure/generate-from-html-direct`, {
+        method: 'POST',
+        headers,
+        body: formData,
+        signal: controller.signal
+      });
+
+      clearTimeout(timeoutId);
+
+      console.log('✅ 收到需求文档响应');
+      const result = await handleResponse(response);
+      console.log('✅ 需求文档生成成功');
+      console.log(`   - 会话ID: ${result.data.sessionId}`);
+      console.log(`   - 文档长度: ${result.data.requirementDoc.length} 字符`);
+      console.log(`   - 章节数量: ${result.data.sections.length}`);
+
+      return result;
+    } catch (error: any) {
+      clearTimeout(timeoutId);
+      if (error.name === 'AbortError') {
+        throw new Error('生成需求文档超时（超过5分钟），请重试或简化HTML内容');
+      }
+      throw error;
+    }
+  }
+
+  /**
    * 规划分批策略
    */
   async planBatches(sessionId: string, requirementDoc: string) {
@@ -401,6 +452,77 @@ class FunctionalTestCaseService {
       }
       throw error;
     }
+  }
+
+  /**
+   * 🆕 阶段1：智能测试模块拆分
+   */
+  async analyzeTestModules(requirementDoc: string, sessionId: string) {
+    const response = await fetch(`${API_BASE_URL}/functional-test-cases/analyze-modules`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ requirementDoc, sessionId })
+    });
+
+    return handleResponse(response);
+  }
+
+  /**
+   * 🆕 阶段2：生成测试目的
+   */
+  async generateTestPurposes(
+    moduleId: string,
+    moduleName: string,
+    moduleDescription: string,
+    requirementDoc: string,
+    relatedSections: string[],
+    sessionId: string
+  ) {
+    const response = await fetch(`${API_BASE_URL}/functional-test-cases/generate-purposes`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({
+        moduleId,
+        moduleName,
+        moduleDescription,
+        requirementDoc,
+        relatedSections,
+        sessionId
+      })
+    });
+
+    return handleResponse(response);
+  }
+
+  /**
+   * 🆕 阶段3：生成测试点
+   */
+  async generateTestPoints(
+    purposeId: string,
+    purposeName: string,
+    purposeDescription: string,
+    requirementDoc: string,
+    systemName: string,
+    moduleName: string,
+    relatedSections: string[],
+    sessionId: string
+  ) {
+    const response = await fetch(`${API_BASE_URL}/functional-test-cases/generate-points`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({
+        purposeId,
+        purposeName,
+        purposeDescription,
+        requirementDoc,
+        systemName,
+        moduleName,
+        relatedSections,
+        sessionId
+      })
+    });
+
+    return handleResponse(response);
   }
 }
 

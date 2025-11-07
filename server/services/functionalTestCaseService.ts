@@ -642,6 +642,60 @@ export class FunctionalTestCaseService {
       throw new Error(`更新测试点失败: ${error.message}`);
     }
   }
+  /**
+   * 🆕 阶段1：智能测试模块拆分
+   */
+  async analyzeTestModules(requirementDoc: string) {
+    const { FunctionalTestCaseAIService } = await import('./functionalTestCaseAIService.js');
+    const aiService = new FunctionalTestCaseAIService();
+    return await aiService.analyzeTestModules(requirementDoc);
+  }
+
+  /**
+   * 🆕 阶段2：生成测试目的
+   */
+  async generateTestPurposes(
+    moduleId: string,
+    moduleName: string,
+    moduleDescription: string,
+    requirementDoc: string,
+    relatedSections: string[]
+  ) {
+    const { FunctionalTestCaseAIService } = await import('./functionalTestCaseAIService.js');
+    const aiService = new FunctionalTestCaseAIService();
+    return await aiService.generateTestPurposes(
+      moduleId,
+      moduleName,
+      moduleDescription,
+      requirementDoc,
+      relatedSections
+    );
+  }
+
+  /**
+   * 🆕 阶段3：生成测试点
+   */
+  async generateTestPoints(
+    purposeId: string,
+    purposeName: string,
+    purposeDescription: string,
+    requirementDoc: string,
+    systemName: string,
+    moduleName: string,
+    relatedSections: string[]
+  ) {
+    const { FunctionalTestCaseAIService } = await import('./functionalTestCaseAIService.js');
+    const aiService = new FunctionalTestCaseAIService();
+    return await aiService.generateTestPoints(
+      purposeId,
+      purposeName,
+      purposeDescription,
+      requirementDoc,
+      systemName,
+      moduleName,
+      relatedSections
+    );
+  }
 }
 
 // 导出单例

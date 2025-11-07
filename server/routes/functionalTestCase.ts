@@ -522,5 +522,135 @@ export function createFunctionalTestCaseRoutes(): Router {
     }
   });
 
+  /**
+   * 🆕 POST /api/v1/functional-test-cases/analyze-modules
+   * 阶段1：智能测试模块拆分
+   */
+  router.post('/analyze-modules', async (req: Request, res: Response) => {
+    try {
+      const { requirementDoc, sessionId } = req.body;
+
+      if (!requirementDoc) {
+        return res.status(400).json({
+          success: false,
+          error: '缺少必填参数: requirementDoc'
+        });
+      }
+
+      console.log(`🎯 阶段1：开始测试模块拆分 - sessionId: ${sessionId}`);
+
+      const modules = await functionalTestCaseService.analyzeTestModules(requirementDoc);
+
+      res.json({
+        success: true,
+        data: {
+          modules,
+          sessionId
+        }
+      });
+    } catch (error: any) {
+      console.error('❌ 测试模块拆分失败:', error);
+      res.status(500).json({
+        success: false,
+        error: error.message
+      });
+    }
+  });
+
+  /**
+   * 🆕 POST /api/v1/functional-test-cases/generate-purposes
+   * 阶段2：生成测试目的
+   */
+  router.post('/generate-purposes', async (req: Request, res: Response) => {
+    try {
+      const { moduleId, moduleName, moduleDescription, requirementDoc, relatedSections, sessionId } = req.body;
+
+      if (!moduleId || !moduleName || !requirementDoc || !relatedSections) {
+        return res.status(400).json({
+          success: false,
+          error: '缺少必填参数'
+        });
+      }
+
+      console.log(`🎯 阶段2：为模块 "${moduleName}" 生成测试目的 - sessionId: ${sessionId}`);
+
+      const purposes = await functionalTestCaseService.generateTestPurposes(
+        moduleId,
+        moduleName,
+        moduleDescription,
+        requirementDoc,
+        relatedSections
+      );
+
+      res.json({
+        success: true,
+        data: {
+          purposes,
+          moduleId,
+          sessionId
+        }
+      });
+    } catch (error: any) {
+      console.error('❌ 生成测试目的失败:', error);
+      res.status(500).json({
+        success: false,
+        error: error.message
+      });
+    }
+  });
+
+  /**
+   * 🆕 POST /api/v1/functional-test-cases/generate-points
+   * 阶段3：生成测试点
+   */
+  router.post('/generate-points', async (req: Request, res: Response) => {
+    try {
+      const {
+        purposeId,
+        purposeName,
+        purposeDescription,
+        requirementDoc,
+        systemName,
+        moduleName,
+        relatedSections,
+        sessionId
+      } = req.body;
+
+      if (!purposeId || !purposeName || !requirementDoc || !systemName || !moduleName || !relatedSections) {
+        return res.status(400).json({
+          success: false,
+          error: '缺少必填参数'
+        });
+      }
+
+      console.log(`🎯 阶段3：为测试目的 "${purposeName}" 生成测试点 - sessionId: ${sessionId}`);
+
+      const testCase = await functionalTestCaseService.generateTestPoints(
+        purposeId,
+        purposeName,
+        purposeDescription,
+        requirementDoc,
+        systemName,
+        moduleName,
+        relatedSections
+      );
+
+      res.json({
+        success: true,
+        data: {
+          testCase,
+          purposeId,
+          sessionId
+        }
+      });
+    } catch (error: any) {
+      console.error('❌ 生成测试点失败:', error);
+      res.status(500).json({
+        success: false,
+        error: error.message
+      });
+    }
+  });
+
   return router;
 }

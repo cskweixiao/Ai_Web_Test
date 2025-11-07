@@ -202,4 +202,32 @@ export interface SuiteExecutionOptions {
   executionMode?: 'standard' | 'interactive';
   concurrency?: number;
   continueOnFailure?: boolean;
+}
+
+// 🆕 三阶段渐进式生成相关类型
+
+/**
+ * 测试模块（阶段1输出）
+ */
+export interface TestModule {
+  id: string;
+  name: string;
+  description: string;
+  priority: 'high' | 'medium' | 'low';
+  relatedSections: string[]; // 关联的章节ID，如 ["1.1", "1.2"]
+  testPurposes?: TestPurpose[]; // 可选，阶段2生成后才有
+}
+
+/**
+ * 测试目的（阶段2输出）
+ */
+export interface TestPurpose {
+  id: string;
+  name: string;
+  description: string;
+  coverageAreas: string; // 逗号分隔的覆盖范围
+  estimatedTestPoints: number;
+  priority: 'high' | 'medium' | 'low';
+  testCase?: any; // 可选，阶段3生成后才有（使用any避免循环引用）
+  generating?: boolean; // 是否正在生成测试点（前端状态）
 } 

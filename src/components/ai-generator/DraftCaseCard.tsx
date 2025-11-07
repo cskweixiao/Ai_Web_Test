@@ -20,6 +20,7 @@ interface DraftCaseCardProps {
   testPurpose?: string;
   testCase?: any;  // 完整的测试用例数据
   onViewDetail?: (testCase: any) => void;  // 点击查看详情
+  saved?: boolean;  // 🆕 是否已保存
 }
 
 const priorityMap = {
@@ -53,7 +54,8 @@ export function DraftCaseCard({
   testPointsCount,
   testPurpose,
   testCase,
-  onViewDetail
+  onViewDetail,
+  saved = false
 }: DraftCaseCardProps) {
   return (
     <motion.div
@@ -62,7 +64,9 @@ export function DraftCaseCard({
       className={clsx(
         "relative bg-white rounded-xl p-5 border-2 transition-all duration-200",
         "cursor-pointer hover:shadow-lg",
-        selected
+        saved
+          ? "border-green-300 bg-green-50/30"  // 🆕 已保存的样式
+          : selected
           ? "border-purple-500 shadow-lg ring-4 ring-purple-500/20"
           : "border-gray-200 hover:border-purple-300"
       )}
@@ -75,19 +79,23 @@ export function DraftCaseCard({
         className="absolute top-3 right-3 z-10"
         onClick={(e) => {
           e.stopPropagation();
-          onToggleSelect(id);
+          if (!saved) {  // 🆕 已保存的用例禁用选择
+            onToggleSelect(id);
+          }
         }}
       >
         <motion.div
           className={clsx(
             "w-7 h-7 rounded-full flex items-center justify-center transition-all",
-            selected
+            saved
+              ? "bg-green-500 cursor-not-allowed"  // 🆕 已保存状态
+              : selected
               ? "bg-gradient-to-br from-purple-500 to-blue-500"
               : "bg-gray-200"
           )}
-          whileTap={{ scale: 0.9 }}
+          whileTap={saved ? {} : { scale: 0.9 }}  // 🆕 已保存时不响应点击动画
         >
-          {selected && (
+          {(selected || saved) && (
             <motion.div
               initial={{ scale: 0 }}
               animate={{ scale: 1 }}
@@ -174,6 +182,16 @@ export function DraftCaseCard({
             </span>
           </div>
         </div>
+
+        {/* 🆕 已保存标识 */}
+        {saved && (
+          <div className="mt-3 pt-3 border-t border-green-200">
+            <div className="flex items-center justify-center gap-2 text-green-600">
+              <Check className="w-4 h-4" />
+              <span className="text-sm font-medium">已保存到用例库</span>
+            </div>
+          </div>
+        )}
       </div>
     </motion.div>
   );
