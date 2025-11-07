@@ -6,6 +6,7 @@ import { aiPreAnalysisService } from '../services/aiPreAnalysisService.js';
 import { PrismaClient } from '../../src/generated/prisma/index.js';
 import { DatabaseService } from '../services/databaseService.js';
 import fs from 'fs/promises';
+import { v4 as uuidv4 } from 'uuid';
 
 /**
  * Axure相关API路由
@@ -417,6 +418,84 @@ export function createAxureRoutes(): Router {
       });
     } catch (error: any) {
       console.error('❌ 重新生成失败:', error);
+      res.status(500).json({
+        success: false,
+        error: error.message
+      });
+    }
+  });
+
+  /**
+   * 🆕 POST /api/v1/axure/generate-from-html-direct
+   * 直接从HTML文件生成需求文档（不经过解析，直接传文本给AI）
+   */
+  router.post('/generate-from-html-direct', axureUpload.single('file'), async (req: Request, res: Response) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({
+          success: false,
+          error: '未上传文件'
+        });
+      }
+
+      if (!req.user) {
+        return res.status(401).json({
+          success: false,
+          error: '未授权'
+        });
+      }
+
+      const { systemName, moduleName } = req.body;
+
+      console.log(`📤 收到HTML文件: ${req.file.originalname}, 大小: ${req.file.size} bytes`);
+      console.log(`   系统名称: ${systemName || '未指定'}, 模块名称: ${moduleName || '未指定'}`);
+
+      const filePath = req.file.path;
+
+      // 读取HTML文件内容
+      const htmlContent = await fs.readFile(filePath, 'utf-8');
+      console.log(`📄 HTML文件读取成功，长度: ${htmlContent.length} 字符`);
+
+      // 直接调用AI生成需求文档
+      const result = await functionalTestCaseAIService.generateRequirementFromHtmlDirect(
+        htmlContent,
+        {
+          systemName,
+          moduleName
+        }
+      );
+
+      // 创建会话记录
+      const sessionId = uuidv4();
+      await prisma.ai_generation_sessions.create({
+        data: {
+          id: sessionId,
+          user_id: req.user.id,
+          axure_filename: req.file.originalname,
+          axure_file_size: req.file.size,
+          project_name: systemName || '',
+          system_type: moduleName || '',
+          requirement_doc: result.requirementDoc,
+          page_count: 0,
+          element_count: 0,
+          interaction_count: 0
+        }
+      });
+
+      // 删除临时文件
+      await fs.unlink(filePath);
+      console.log(`🗑️  临时文件已删除: ${filePath}`);
+
+      res.json({
+        success: true,
+        data: {
+          sessionId,
+          requirementDoc: result.requirementDoc,
+          sections: result.sections
+        }
+      });
+    } catch (error: any) {
+      console.error('❌ 直接生成需求文档失败:', error);
       res.status(500).json({
         success: false,
         error: error.message
