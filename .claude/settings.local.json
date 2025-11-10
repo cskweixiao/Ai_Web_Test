@@ -100,7 +100,8 @@
       "Bash(Get-Content \"d:\\AI_mvp\\ai_test\\project\\logs\\server.log\" -Tail 200)",
       "Bash(Get-Content \"d:\\AI_mvp\\ai_test\\project\\logs\\server.log\" -Tail 100)",
       "Bash(Select-String -Pattern \"补充业务规则|businessRules|系统提示词|generateRequirementDoc\" -Context 2)",
-      "Bash(git mv:*)"
+      "Bash(git mv:*)",
+      "Bash(test:*)"
     ],
     "deny": []
   },
