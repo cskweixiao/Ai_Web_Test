@@ -77,7 +77,7 @@ export function Logo({ size = 'md', showText = true, className = '' }: LogoProps
           </motion.span>
           {size !== 'sm' && (
             <motion.span 
-              className="text-xs text-gray-500 dark:text-gray-400 font-medium tracking-wide"
+              className="text-sm text-gray-700 dark:text-gray-600 font-medium tracking-wide"
               initial={{ opacity: 0, x: -10 }}
               animate={{ opacity: 1, x: 0 }}
               transition={{ delay: 0.2 }}

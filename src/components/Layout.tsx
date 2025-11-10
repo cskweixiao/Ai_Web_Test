@@ -78,8 +78,8 @@ export function Layout({ children }: LayoutProps) {
       label: (
         <div className="px-2 py-1">
           <div className="font-medium">{user?.username}</div>
-          {user?.accountName && <div className="text-xs text-gray-500">{user.accountName}</div>}
-          {user?.department && <div className="text-xs text-gray-400">{user.department}</div>}
+          {user?.accountName && <div className="text-sm text-gray-700">{user.accountName}</div>}
+          {user?.department && <div className="text-sm text-gray-600">{user.department}</div>}
           {user?.isSuperAdmin && (
             <div className="mt-1 text-xs text-purple-600 font-medium">超级管理员</div>
           )}
@@ -123,7 +123,7 @@ export function Layout({ children }: LayoutProps) {
                 <Logo size="md" showText={true} />
                 <motion.button
                   onClick={() => setSidebarOpen(false)}
-                  className="p-2 rounded-xl text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                  className="p-2 rounded-xl text-gray-600 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
                   whileHover={{ scale: 1.1 }}
                   whileTap={{ scale: 0.9 }}
                 >
@@ -167,7 +167,7 @@ export function Layout({ children }: LayoutProps) {
                         >
                           <Icon className={clsx(
                             "mr-4 h-5 w-5 transition-transform group-hover:scale-110",
-                            isActive ? "text-white" : "text-gray-500 dark:text-gray-400"
+                            isActive ? "text-white" : "text-gray-500 dark:text-gray-600"
                           )} />
                           <span className="relative">{item.name}</span>
                         </motion.div>
@@ -223,7 +223,7 @@ export function Layout({ children }: LayoutProps) {
                     >
                       <Icon className={clsx(
                         "mr-4 h-5 w-5 transition-transform group-hover:scale-110",
-                        isActive ? "text-white" : "text-gray-500 dark:text-gray-400"
+                        isActive ? "text-white" : "text-gray-500 dark:text-gray-600"
                       )} />
                       <span className="relative">{item.name}</span>
                     </motion.div>

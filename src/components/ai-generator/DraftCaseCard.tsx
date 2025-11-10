@@ -140,7 +140,7 @@ export function DraftCaseCard({
 
         {/* 章节名称 */}
         {sectionName && (
-          <p className="text-xs text-gray-400 mb-4">
+          <p className="text-sm text-gray-600 mb-4">
             📄 {sectionName}
           </p>
         )}
@@ -149,7 +149,7 @@ export function DraftCaseCard({
         <div className="flex items-center justify-between pt-4 border-t border-gray-100">
           {/* 优先级 */}
           <div className="flex items-center gap-2">
-            <Tag className="w-4 h-4 text-gray-400" />
+            <Tag className="w-4 h-4 text-gray-600" />
             <span className={clsx(
               "text-xs font-medium",
               priority === 'critical' && "text-red-600",
@@ -163,12 +163,12 @@ export function DraftCaseCard({
 
           {/* 测试点数量 */}
           {testPointsCount && testPointsCount > 0 ? (
-            <div className="flex items-center gap-1 text-xs text-gray-500">
+            <div className="flex items-center gap-1 text-sm text-gray-700">
               <List className="w-4 h-4" />
               <span>{testPointsCount} 个测试点</span>
             </div>
           ) : stepsCount > 0 ? (
-            <div className="flex items-center gap-1 text-xs text-gray-500">
+            <div className="flex items-center gap-1 text-sm text-gray-700">
               <List className="w-4 h-4" />
               <span>{stepsCount} 步</span>
             </div>

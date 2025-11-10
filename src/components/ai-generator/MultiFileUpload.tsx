@@ -132,7 +132,7 @@ export function MultiFileUpload({
           placeholder="请输入页面名称，例如：集配管理（新增）"
           className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
         />
-        <p className="mt-2 text-xs text-gray-500">
+        <p className="mt-2 text-sm text-gray-700">
           提示：页面名称将用于标识Axure原型页面，建议使用清晰明确的名称
         </p>
       </div>
@@ -221,7 +221,7 @@ export function MultiFileUpload({
                 <span className="font-medium text-gray-700">
                   已选择 {validFileCount} 个文件
                 </span>
-                <span className="text-gray-400">|</span>
+                <span className="text-gray-600">|</span>
                 <span className="text-orange-600">{htmlCount} HTML</span>
                 <span className="text-blue-600">{jsCount} JS</span>
               </div>
@@ -266,7 +266,7 @@ export function MultiFileUpload({
                       )}>
                         {item.file.name}
                       </p>
-                      <p className="text-xs text-gray-500">
+                      <p className="text-sm text-gray-700">
                         {(item.file.size / 1024).toFixed(1)} KB
                         {item.error && ` • ${item.error}`}
                       </p>
@@ -284,7 +284,7 @@ export function MultiFileUpload({
                   {/* 删除按钮 */}
                   <button
                     onClick={() => removeFile(index)}
-                    className="ml-3 p-1 rounded-lg hover:bg-gray-200 text-gray-400 hover:text-red-600 transition-colors"
+                    className="ml-3 p-1 rounded-lg hover:bg-gray-200 text-gray-600 hover:text-red-600 transition-colors"
                   >
                     <X className="w-4 h-4" />
                   </button>

@@ -75,7 +75,7 @@ export const StatCard: React.FC<StatCardProps> = ({
           >
             <Statistic
               title={
-                <span className="text-gray-600 dark:text-gray-400 text-sm font-medium mb-2">
+                <span className="text-gray-600 dark:text-gray-600 text-sm font-medium mb-2">
                   {title}
                 </span>
               }

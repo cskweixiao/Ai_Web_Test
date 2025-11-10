@@ -130,7 +130,7 @@ export function TestCaseCard({
               e.stopPropagation();
               onEdit?.(id);
             }}
-            className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50
+            className="p-1.5 text-gray-600 hover:text-blue-600 hover:bg-blue-50
                      rounded-lg transition-all"
             title="编辑"
           >
@@ -141,7 +141,7 @@ export function TestCaseCard({
               e.stopPropagation();
               onDelete?.(id, name);
             }}
-            className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50
+            className="p-1.5 text-gray-600 hover:text-red-600 hover:bg-red-50
                      rounded-lg transition-all"
             title="删除"
           >
@@ -165,14 +165,14 @@ export function TestCaseCard({
 
         {/* 章节名称 */}
         {sectionName && (
-          <p className="text-xs text-gray-500 mb-2">
+          <p className="text-sm text-gray-700 mb-2">
             📄 {sectionName}
           </p>
         )}
 
         {/* 系统/模块 */}
         {(system || module) && (
-          <div className="flex items-center gap-2 text-xs text-gray-500 mb-2">
+          <div className="flex items-center gap-2 text-sm text-gray-700 mb-2">
             {system && <span>🖥️ {system}</span>}
             {system && module && <span>•</span>}
             {module && <span>📦 {module}</span>}
@@ -193,7 +193,7 @@ export function TestCaseCard({
             </span>
           ))}
           {tags.split(',').length > 3 && (
-            <span className="text-xs text-gray-400 px-2 py-0.5">
+            <span className="text-sm text-gray-600 px-2 py-0.5">
               +{tags.split(',').length - 3}
             </span>
           )}
@@ -202,7 +202,7 @@ export function TestCaseCard({
 
       {/* 底部元数据 */}
       <div className="flex items-center justify-between pt-3 border-t border-gray-100">
-        <div className="flex items-center gap-3 text-xs text-gray-500">
+        <div className="flex items-center gap-3 text-sm text-gray-700">
           {/* 优先级 */}
           <div className="flex items-center gap-1">
             <Tag className="w-3.5 h-3.5" />
@@ -231,7 +231,7 @@ export function TestCaseCard({
       </div>
 
       {/* 创建者和时间 */}
-      <div className="flex items-center justify-between mt-3 pt-3 border-t border-gray-100 text-xs text-gray-400">
+      <div className="flex items-center justify-between mt-3 pt-3 border-t border-gray-100 text-sm text-gray-600">
         <div className="flex items-center gap-1">
           <User className="w-3.5 h-3.5" />
           <span>{creator || '未知'}</span>

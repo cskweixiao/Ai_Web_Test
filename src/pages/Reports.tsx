@@ -214,7 +214,7 @@ export function Reports() {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100">测试报告</h2>
-          <p className="text-gray-600 dark:text-gray-400">分析测试执行趋势和性能指标</p>
+          <p className="text-gray-600 dark:text-gray-600">分析测试执行趋势和性能指标</p>
         </div>
         <div className="flex items-center space-x-3 flex-wrap">
           <RangePicker
@@ -261,7 +261,7 @@ export function Reports() {
             >
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm font-medium text-gray-600 dark:text-gray-400">BUG总数</p>
+                  <p className="text-sm font-medium text-gray-600 dark:text-gray-600">BUG总数</p>
                   <p className="text-3xl font-bold text-gray-900 dark:text-gray-100">{bugStats.totalBugs}</p>
                   <p className={`text-sm flex items-center mt-1 ${bugStats.trend.bugsChange > 0 ? 'text-red-600' : 'text-green-600'}`}>
                     {bugStats.trend.bugsChange > 0 ? <TrendingUp className="h-4 w-4 mr-1" /> : <TrendingDown className="h-4 w-4 mr-1" />}
@@ -282,7 +282,7 @@ export function Reports() {
             >
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm font-medium text-gray-600 dark:text-gray-400">通过用例</p>
+                  <p className="text-sm font-medium text-gray-600 dark:text-gray-600">通过用例</p>
                   <p className="text-3xl font-bold text-gray-900 dark:text-gray-100">{bugStats.passedCases}</p>
                   <p className={`text-sm flex items-center mt-1 ${bugStats.trend.passedChange > 0 ? 'text-green-600' : 'text-red-600'}`}>
                     {bugStats.trend.passedChange > 0 ? <TrendingUp className="h-4 w-4 mr-1" /> : <TrendingDown className="h-4 w-4 mr-1" />}
@@ -303,7 +303,7 @@ export function Reports() {
             >
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm font-medium text-gray-600 dark:text-gray-400">成功率</p>
+                  <p className="text-sm font-medium text-gray-600 dark:text-gray-600">成功率</p>
                   <p className="text-3xl font-bold text-gray-900 dark:text-gray-100">{bugStats.successRate}%</p>
                   <p className={`text-sm flex items-center mt-1 ${bugStats.trend.successRateChange > 0 ? 'text-green-600' : 'text-red-600'}`}>
                     {bugStats.trend.successRateChange > 0 ? <TrendingUp className="h-4 w-4 mr-1" /> : <TrendingDown className="h-4 w-4 mr-1" />}
@@ -324,7 +324,7 @@ export function Reports() {
             >
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm font-medium text-gray-600 dark:text-gray-400">平均执行时长</p>
+                  <p className="text-sm font-medium text-gray-600 dark:text-gray-600">平均执行时长</p>
                   <p className="text-3xl font-bold text-gray-900 dark:text-gray-100">{bugStats.avgDuration.toFixed(1)}分</p>
                   <p className={`text-sm flex items-center mt-1 ${bugStats.trend.durationChange < 0 ? 'text-green-600' : 'text-red-600'}`}>
                     {bugStats.trend.durationChange < 0 ? <TrendingDown className="h-4 w-4 mr-1" /> : <TrendingUp className="h-4 w-4 mr-1" />}
@@ -398,7 +398,7 @@ export function Reports() {
                           className="h-3 w-3 rounded-full mr-2"
                           style={{ backgroundColor: FAILURE_COLORS[index % FAILURE_COLORS.length] }}
                         ></div>
-                        <span className="text-sm text-gray-600 dark:text-gray-400">{item.categoryName}</span>
+                        <span className="text-sm text-gray-600 dark:text-gray-600">{item.categoryName}</span>
                       </div>
                       <span className="text-sm font-medium text-gray-900 dark:text-gray-100">{item.percentage}%</span>
                     </div>
@@ -406,7 +406,7 @@ export function Reports() {
                 </div>
               </>
             ) : (
-              <div className="flex items-center justify-center h-64 text-gray-400">暂无数据</div>
+              <div className="flex items-center justify-center h-64 text-gray-600">暂无数据</div>
             )}
           </motion.div>
         </div>

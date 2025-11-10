@@ -342,7 +342,7 @@ export function FunctionalTestCaseCreate() {
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  标签 <span className="text-gray-400 text-xs">(逗号分隔)</span>
+                  标签 <span className="text-gray-600 text-xs">(逗号分隔)</span>
                 </label>
                 <input
                   type="text"

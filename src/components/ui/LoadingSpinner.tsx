@@ -74,7 +74,7 @@ export function PageLoading() {
       >
         <LoadingSpinner size="lg" />
         <motion.p
-          className="text-gray-600 dark:text-gray-400 font-medium"
+          className="text-gray-600 dark:text-gray-600 font-medium"
           animate={{
             opacity: [0.5, 1, 0.5]
           }}

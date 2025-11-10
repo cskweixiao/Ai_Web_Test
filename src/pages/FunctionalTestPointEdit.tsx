@@ -252,24 +252,24 @@ export function FunctionalTestPointEdit() {
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="text-xs text-gray-500 mb-1 block">用例名称</label>
+                  <label className="text-sm text-gray-700 mb-1 block">用例名称</label>
                   <p className="text-sm font-medium text-gray-900">{testCaseInfo.name}</p>
                 </div>
                 {testCaseInfo.system && (
                   <div>
-                    <label className="text-xs text-gray-500 mb-1 block">系统</label>
+                    <label className="text-sm text-gray-700 mb-1 block">系统</label>
                     <p className="text-sm text-gray-700">{testCaseInfo.system}</p>
                   </div>
                 )}
                 {testCaseInfo.module && (
                   <div>
-                    <label className="text-xs text-gray-500 mb-1 block">模块</label>
+                    <label className="text-sm text-gray-700 mb-1 block">模块</label>
                     <p className="text-sm text-gray-700">{testCaseInfo.module}</p>
                   </div>
                 )}
                 {testCaseInfo.sectionName && (
                   <div>
-                    <label className="text-xs text-gray-500 mb-1 block">章节</label>
+                    <label className="text-sm text-gray-700 mb-1 block">章节</label>
                     <p className="text-sm text-gray-700">{testCaseInfo.sectionName}</p>
                   </div>
                 )}
@@ -285,7 +285,7 @@ export function FunctionalTestPointEdit() {
               {/* 测试目的 */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  测试目的 <span className="text-gray-400 text-xs">(可选)</span>
+                  测试目的 <span className="text-gray-600 text-xs">(可选)</span>
                 </label>
                 <input
                   type="text"

@@ -120,7 +120,7 @@ export function TestPointsEditor({
               {!readOnly && (
                 <button
                   onClick={() => deleteTestPoint(index)}
-                  className="absolute top-3 right-3 p-2 text-gray-400 hover:text-red-500 hover:bg-red-50
+                  className="absolute top-3 right-3 p-2 text-gray-600 hover:text-red-500 hover:bg-red-50
                            rounded-lg transition-all group"
                   title="删除此测试点"
                   disabled={testPoints.length === 1}
@@ -140,7 +140,7 @@ export function TestPointsEditor({
                     {/* 测试目的 */}
                     <div>
                       <label className="text-sm font-medium text-gray-700 mb-2 block">
-                        测试目的 <span className="text-gray-400 text-xs">(可选)</span>
+                        测试目的 <span className="text-gray-600 text-xs">(可选)</span>
                       </label>
                       <input
                         type="text"
@@ -175,7 +175,7 @@ export function TestPointsEditor({
 
                 {/* 风险等级选择 */}
                 <div className="ml-3">
-                  <label className="text-xs text-gray-500 mb-1 block">风险等级</label>
+                  <label className="text-sm text-gray-700 mb-1 block">风险等级</label>
                   <select
                     value={point.riskLevel}
                     onChange={(e) => updateTestPoint(index, 'riskLevel', e.target.value as TestPoint['riskLevel'])}

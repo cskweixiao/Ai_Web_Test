@@ -275,7 +275,7 @@ export function LLMAssistant() {
                 <CheckCircle className="h-5 w-5 text-green-600" />
                 <div>
                   <p className="text-sm font-medium text-green-900">智能生成</p>
-                  <p className="text-xs text-green-700">从自然语言生成测试用例</p>
+                  <p className="text-sm text-green-600">从自然语言生成测试用例</p>
                 </div>
               </div>
               <div className="flex items-center space-x-3 p-3 bg-blue-50 rounded-lg">
@@ -309,7 +309,7 @@ export function LLMAssistant() {
                     whileHover={{ scale: 1.1 }}
                     whileTap={{ scale: 0.9 }}
                     onClick={() => copyToClipboard(generatedTestCase.code)}
-                    className="p-2 text-gray-400 hover:text-blue-600 transition-colors"
+                    className="p-2 text-gray-600 hover:text-blue-600 transition-colors"
                     title="复制代码"
                   >
                     <Copy className="h-4 w-4" />
@@ -317,7 +317,7 @@ export function LLMAssistant() {
                   <motion.button
                     whileHover={{ scale: 1.1 }}
                     whileTap={{ scale: 0.9 }}
-                    className="p-2 text-gray-400 hover:text-green-600 transition-colors"
+                    className="p-2 text-gray-600 hover:text-green-600 transition-colors"
                     title="下载文件"
                   >
                     <Download className="h-4 w-4" />
@@ -325,7 +325,7 @@ export function LLMAssistant() {
                   <motion.button
                     whileHover={{ scale: 1.1 }}
                     whileTap={{ scale: 0.9 }}
-                    className="p-2 text-gray-400 hover:text-purple-600 transition-colors"
+                    className="p-2 text-gray-600 hover:text-purple-600 transition-colors"
                     title="重新生成"
                   >
                     <RefreshCw className="h-4 w-4" />

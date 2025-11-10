@@ -1045,7 +1045,7 @@ export function TestRuns() {
                 {getStatusText(run.status)}
               </span>
               {run.error && (
-                <span className="text-xs text-red-600 bg-red-50 px-2 py-1 rounded">
+                <span className="text-sm text-red-600 bg-red-50 px-2 py-1 rounded font-medium">
                   错误: {run.error}
                 </span>
               )}
@@ -1091,7 +1091,7 @@ export function TestRuns() {
                 "p-2 transition-colors",
                 isStoppingTest
                   ? "text-orange-500 cursor-not-allowed"
-                  : "text-gray-400 hover:text-red-600"
+                  : "text-gray-600 hover:text-red-600"
               )}
               title={isStoppingTest ? "正在停止..." : "停止测试"}
             >
@@ -1109,7 +1109,7 @@ export function TestRuns() {
               whileHover={{ scale: 1.1 }}
               whileTap={{ scale: 0.9 }}
               onClick={() => onViewLogs(run)}
-              className="p-2 text-gray-400 hover:text-blue-600 transition-colors"
+              className="p-2 text-gray-600 hover:text-blue-600 transition-colors"
               title="查看详细执行日志"
             >
               <Terminal className="h-4 w-4" />
@@ -1280,7 +1280,7 @@ export function TestRuns() {
         {testRuns.length === 0 && !loading && (
           <div className="text-center py-16">
             <div className="mx-auto w-32 h-32 mb-6 rounded-full bg-gray-100 flex items-center justify-center">
-              <Activity className="h-16 w-16 text-gray-400" />
+              <Activity className="h-16 w-16 text-gray-600" />
             </div>
             <h3 className="text-xl font-semibold text-gray-900 mb-3">暂无测试运行记录</h3>
             <p className="text-gray-600 mb-6 max-w-md mx-auto">
@@ -1385,7 +1385,7 @@ export function TestRuns() {
                     </div>
                     <button
                       onClick={() => setShowLogs(false)}
-                      className="text-gray-400 hover:text-gray-600"
+                      className="text-gray-600 hover:text-gray-600"
                     >
                       ✕
                     </button>
@@ -1485,7 +1485,7 @@ export function TestRuns() {
                           className="px-2 py-1 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-200"
                         />
                         <div className="ml-auto flex items-center gap-3">
-                          <span className="text-xs text-gray-500">
+                          <span className="text-sm text-gray-700">
                             显示 {displayLogs.length}/{filteredLogs.length}
                           </span>
                           {filteredLogs.length > displayLogs.length && (
@@ -1545,7 +1545,7 @@ export function TestRuns() {
                               <div className={clsx("font-medium break-words", getLogLevelColor(log.level))}>
                                 {highlightText(log.message, logSearch)}
                               </div>
-                              <div className="text-xs text-gray-500 mt-1">
+                              <div className="text-sm text-gray-700 mt-1">
                                 {safeFormat(log.timestamp, 'HH:mm:ss.SSS')}
                               </div>
                             </div>
@@ -1707,7 +1707,7 @@ export function TestRuns() {
                         <div key={run.id} className="flex items-center justify-between py-2 border-b border-gray-200 last:border-b-0">
                           <div className="flex-1">
                             <p className="text-sm font-medium text-gray-900">{run.name}</p>
-                            <p className="text-xs text-gray-500">
+                            <p className="text-sm text-gray-700">
                               {run.status === 'running' ? '执行中' : '队列中'} | 
                               进度: {run.progress}% | 
                               ID: {run.id.slice(0, 8)}...

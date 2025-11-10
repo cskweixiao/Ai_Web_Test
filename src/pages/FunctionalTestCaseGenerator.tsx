@@ -741,16 +741,16 @@ export function FunctionalTestCaseGenerator() {
                   <div className="grid grid-cols-2 gap-4">
                     <div className="text-center">
                       <div className="text-2xl font-bold text-green-700">{requirementDoc.length}</div>
-                      <div className="text-xs text-green-600 mt-1">文档字符数</div>
+                      <div className="text-sm text-green-600 mt-1">文档字符数</div>
                     </div>
                     <div className="text-center">
                       <div className="text-2xl font-bold text-green-700">
                         {(requirementDoc.match(/###\s+[\d.]+/g) || []).length}
                       </div>
-                      <div className="text-xs text-green-600 mt-1">识别章节数</div>
+                      <div className="text-sm text-green-600 mt-1">识别章节数</div>
                     </div>
                   </div>
-                  <div className="mt-4 text-xs text-green-700 bg-green-100 rounded-lg p-3">
+                  <div className="mt-4 text-sm text-green-600 bg-green-100 rounded-lg p-3">
                     💡 AI已直接分析HTML并生成需求文档，无需二次确认！
                   </div>
                 </div>
@@ -772,7 +772,7 @@ export function FunctionalTestCaseGenerator() {
                 <h3 className="text-lg font-semibold text-gray-900">
                   补充项目信息
                 </h3>
-                <p className="text-xs text-gray-500">可选,帮助 AI 更好理解业务</p>
+                <p className="text-sm text-gray-700">可选,帮助 AI 更好理解业务</p>
               </div>
             </div>
 
@@ -803,7 +803,7 @@ export function FunctionalTestCaseGenerator() {
                     </Radio.Button>
                   </div>
                 </Radio.Group>
-                <p className="text-xs text-gray-500 mt-1">
+                <p className="text-sm text-gray-700 mt-1">
                   {platformType === 'web' ?
                     '识别PC端Web页面（列表页、表单页、详情页、弹窗等）' :
                     '识别移动端页面（TabBar导航、卡片列表、长屏详情、多状态画面等）'}
@@ -836,7 +836,7 @@ export function FunctionalTestCaseGenerator() {
                     </Radio.Button>
                   </div>
                 </Radio.Group>
-                <p className="text-xs text-gray-500 mt-1">
+                <p className="text-sm text-gray-700 mt-1">
                   {pageMode === 'new' ?
                     '完整解析页面所有元素和功能' :
                     '识别红色标记的变更点，生成变更摘要'}
@@ -853,7 +853,7 @@ export function FunctionalTestCaseGenerator() {
                   value={projectInfo.systemName}
                   onChange={e => setProjectInfo(prev => ({ ...prev, systemName: e.target.value }))}
                 />
-                <p className="text-xs text-gray-500 mt-1">生成的测试用例会自动填充此系统名称</p>
+                <p className="text-sm text-gray-700 mt-1">生成的测试用例会自动填充此系统名称</p>
               </div>
 
               {/* 模块名称 */}
@@ -866,13 +866,13 @@ export function FunctionalTestCaseGenerator() {
                   value={projectInfo.moduleName}
                   onChange={e => setProjectInfo(prev => ({ ...prev, moduleName: e.target.value }))}
                 />
-                <p className="text-xs text-gray-500 mt-1">生成的测试用例会自动填充此模块名称</p>
+                <p className="text-sm text-gray-700 mt-1">生成的测试用例会自动填充此模块名称</p>
               </div>
 
               {/* 补充业务规则 */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  补充业务规则 <span className="text-gray-400">(选填，辅助AI理解)</span>
+                  补充业务规则 <span className="text-gray-600">(选填，辅助AI理解)</span>
                 </label>
                 <TextArea
                   rows={6}
@@ -880,7 +880,7 @@ export function FunctionalTestCaseGenerator() {
                   value={projectInfo.businessRules}
                   onChange={e => setProjectInfo(prev => ({ ...prev, businessRules: e.target.value }))}
                 />
-                <p className="text-xs text-gray-500 mt-1">
+                <p className="text-sm text-gray-700 mt-1">
                   💡 这些规则将作为AI提示词的一部分，帮助AI更准确地理解需求和生成测试点，不会直接出现在需求文档中
                 </p>
               </div>
@@ -1005,7 +1005,7 @@ export function FunctionalTestCaseGenerator() {
                           )}>
                             {module.priority === 'high' ? '高优先级' : module.priority === 'medium' ? '中优先级' : '低优先级'}
                           </span>
-                          <span className="text-xs text-gray-500">
+                          <span className="text-sm text-gray-700">
                             关联章节: {module.relatedSections.join(', ')}
                           </span>
                         </div>
@@ -1131,7 +1131,7 @@ export function FunctionalTestCaseGenerator() {
                                     <p className="text-sm text-gray-600 mb-2">
                                       {purpose.description}
                                     </p>
-                                    <div className="flex items-center gap-4 text-xs text-gray-500">
+                                    <div className="flex items-center gap-4 text-sm text-gray-700">
                                       <span>覆盖范围: {purpose.coverageAreas}</span>
                                       <span>预估 {purpose.estimatedTestPoints} 个测试点</span>
                                     </div>
@@ -1239,7 +1239,7 @@ export function FunctionalTestCaseGenerator() {
             <h3 className="text-lg font-semibold text-gray-900 mb-2">
               暂无测试模块
             </h3>
-            <p className="text-sm text-gray-400">
+            <p className="text-sm text-gray-600">
               点击上方"立即生成测试用例"按钮开始分析
             </p>
           </div>
@@ -1361,7 +1361,7 @@ export function FunctionalTestCaseGenerator() {
                 </div>
                 <div>
                   <div className="text-2xl font-bold text-gray-900">{draftCases.length}</div>
-                  <div className="text-xs text-gray-500">总用例</div>
+                  <div className="text-sm text-gray-700">总用例</div>
                 </div>
               </div>
 
@@ -1373,7 +1373,7 @@ export function FunctionalTestCaseGenerator() {
                 </div>
                 <div>
                   <div className="text-2xl font-bold text-gray-900">{selectedCount}</div>
-                  <div className="text-xs text-gray-500">已选中</div>
+                  <div className="text-sm text-gray-700">已选中</div>
                 </div>
               </div>
 
@@ -1386,7 +1386,7 @@ export function FunctionalTestCaseGenerator() {
                     </div>
                     <div>
                       <div className="text-2xl font-bold text-gray-900">{avgQuality}</div>
-                      <div className="text-xs text-gray-500">平均质量</div>
+                      <div className="text-sm text-gray-700">平均质量</div>
                     </div>
                   </div>
                 </>

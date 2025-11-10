@@ -125,7 +125,7 @@ export function MarkdownEditor({
               dangerouslySetInnerHTML={{ __html: htmlContent }}
             />
           ) : (
-            <div className="text-center py-12 text-gray-400">
+            <div className="text-center py-12 text-gray-600">
               暂无内容
             </div>
           )}
@@ -142,7 +142,7 @@ export function MarkdownEditor({
           <span>{value.split('\n').length} 行</span>
         </div>
         {mode === 'preview' && (
-          <div className="text-xs text-gray-400">
+          <div className="text-sm text-gray-600">
             💡 点击右上角"编辑"按钮可修改内容
           </div>
         )}

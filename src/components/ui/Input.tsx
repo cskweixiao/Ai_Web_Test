@@ -92,10 +92,10 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(({
   );
   
   const helperTextClasses = clsx(
-    'mt-2 text-xs',
-    error ? 'text-red-600 dark:text-red-400' : 
+    'mt-2 text-sm',
+    error ? 'text-red-600 dark:text-red-400 font-medium' :
     success ? 'text-green-600 dark:text-green-400' :
-    'text-gray-500 dark:text-gray-400'
+    'text-gray-600 dark:text-gray-400'
   );
   
   return (
@@ -117,7 +117,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(({
         transition={{ duration: 0.1 }}
       >
         {leftIcon && (
-          <div className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 dark:text-gray-500">
+          <div className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-600 dark:text-gray-500">
             {leftIcon}
           </div>
         )}
@@ -166,7 +166,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(({
             <motion.button
               type=\"button\"
               onClick={handleTogglePassword}
-              className=\"text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300 transition-colors\"
+              className=\"text-gray-600 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300 transition-colors\"
               whileHover={{ scale: 1.1 }}
               whileTap={{ scale: 0.9 }}
             >
@@ -176,7 +176,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(({
           
           {/* Custom Right Icon */}
           {rightIcon && !error && !success && !isPassword && (
-            <div className=\"text-gray-400 dark:text-gray-500\">
+            <div className=\"text-gray-600 dark:text-gray-500\">
               {rightIcon}
             </div>
           )}

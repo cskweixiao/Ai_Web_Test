@@ -440,7 +440,7 @@ export function TestCaseDetail() {
                   <button
                     type="button"
                     onClick={() => setStepsHelpOpen(!stepsHelpOpen)}
-                    className="text-gray-400 hover:text-gray-600"
+                    className="text-gray-600 hover:text-gray-600"
                   >
                     <HelpCircle className="h-4 w-4" />
                   </button>

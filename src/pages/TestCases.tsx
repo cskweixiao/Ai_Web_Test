@@ -1133,7 +1133,7 @@ export function TestCases() {
         <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
           {/* Search */}
           <div className="relative md:col-span-2">
-            <Search className="absolute left-3 top-3 h-5 w-5 text-gray-400" />
+            <Search className="absolute left-3 top-3 h-5 w-5 text-gray-600" />
             <input
               type="text"
               placeholder={activeTab === 'cases' ? '搜索测试用例...' : '搜索测试套件...'}
@@ -1216,7 +1216,7 @@ export function TestCases() {
               `显示 ${filteredTestSuites.length} / ${testSuites.length} 个套件`
             )}
           </div>
-          <div className="text-xs text-gray-500">
+          <div className="text-sm text-gray-700">
             {(searchTerm || selectedTag || selectedPriority || selectedSystem) && (
               `已应用 ${[searchTerm, selectedTag, selectedPriority, selectedSystem].filter(Boolean).length} 个筛选条件`
             )}
@@ -1231,7 +1231,7 @@ export function TestCases() {
           {testCases.length === 0 && !testCasesLoading && (
             <div className="text-center py-16">
               <div className="mx-auto w-32 h-32 mb-6 rounded-full bg-gray-100 flex items-center justify-center">
-                <FileText className="h-16 w-16 text-gray-400" />
+                <FileText className="h-16 w-16 text-gray-600" />
               </div>
               <h3 className="text-xl font-semibold text-gray-900 mb-3">暂无测试用例</h3>
               <p className="text-gray-600 mb-6 max-w-md mx-auto">
@@ -1324,7 +1324,7 @@ export function TestCases() {
               {testSuites.length === 0 && !loading && (
                 <div className="text-center py-16">
                   <div className="mx-auto w-32 h-32 mb-6 rounded-full bg-gray-100 flex items-center justify-center">
-                    <Package className="h-16 w-16 text-gray-400" />
+                    <Package className="h-16 w-16 text-gray-600" />
                   </div>
                   <h3 className="text-xl font-semibold text-gray-900 mb-3">暂无测试套件</h3>
                   <p className="text-gray-600 mb-6 max-w-md mx-auto">
@@ -1393,7 +1393,7 @@ export function TestCases() {
                                 "p-1 transition-colors",
                                 runningSuiteId === testSuite.id 
                                   ? "text-blue-600 cursor-not-allowed" 
-                                  : "text-gray-400 hover:text-blue-600"
+                                  : "text-gray-600 hover:text-blue-600"
                               )}
                               title={runningSuiteId === testSuite.id ? "执行中..." : "运行套件"}
                             >
@@ -1407,7 +1407,7 @@ export function TestCases() {
                               whileHover={{ scale: 1.1 }}
                               whileTap={{ scale: 0.9 }}
                               onClick={() => handleEditTestSuite(testSuite)}
-                              className="p-1 text-gray-400 hover:text-green-600 transition-colors"
+                              className="p-1 text-gray-600 hover:text-green-600 transition-colors"
                               title="编辑测试套件"
                             >
                               <Edit3 className="h-4 w-4" />
@@ -1416,7 +1416,7 @@ export function TestCases() {
                               whileHover={{ scale: 1.1 }}
                               whileTap={{ scale: 0.9 }}
                               onClick={() => handleDeleteTestSuite(testSuite)}
-                              className="p-1 text-gray-400 hover:text-red-600 transition-colors"
+                              className="p-1 text-gray-600 hover:text-red-600 transition-colors"
                               title="删除测试套件"
                             >
                               <Trash2 className="h-4 w-4" />
@@ -1547,7 +1547,7 @@ export function TestCases() {
                   placeholder="输入测试用例名称"
                 />
                 {nameTouched && !formData.name.trim() && (
-                  <p id="caseName-error" className="mt-1 text-xs text-red-600">请输入测试用例名称</p>
+                  <p id="caseName-error" className="mt-1 text-sm text-red-600 font-medium">请输入测试用例名称</p>
                 )}
               </div>
 
@@ -1658,7 +1658,7 @@ export function TestCases() {
                       onChange={handleStepsDataChange}
                     />
                     {stepsTouched && stepsData.length === 0 && (
-                      <p className="mt-1 text-xs text-red-600">请添加至少一个测试步骤</p>
+                      <p className="mt-1 text-sm text-red-600 font-medium">请添加至少一个测试步骤</p>
                     )}
                   </>
                 ) : (
@@ -1689,9 +1689,9 @@ export function TestCases() {
                       placeholder="例如：&#10;1、打开登录页面&#10;2、输入用户名和密码&#10;3、点击登录按钮&#10;4、验证页面跳转"
                     />
                     {stepsTouched && !formData.steps.trim() && (
-                      <p id="caseSteps-error" className="mt-1 text-xs text-red-600">请输入测试步骤</p>
+                      <p id="caseSteps-error" className="mt-1 text-sm text-red-600 font-medium">请输入测试步骤</p>
                     )}
-                    <div className="mt-1 flex justify-between text-xs text-gray-500">
+                    <div className="mt-1 flex justify-between text-sm text-gray-700">
                       <span>行数: {formData.steps ? formData.steps.split(/\r\n|\n/).length : 0} · 支持数字编号粘贴自动拆分</span>
                       <span>字符: {formData.steps.length}</span>
                     </div>
@@ -1709,7 +1709,7 @@ export function TestCases() {
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none h-32 overflow-y-auto"
                   placeholder="例如：&#10;• 页面成功跳转到首页&#10;• 显示用户昵称&#10;• 退出按钮可见"
                 />
-                <div className="mt-1 flex justify-between text-xs text-gray-500">
+                <div className="mt-1 flex justify-between text-sm text-gray-700">
                   <span>行数: {formData.assertions ? formData.assertions.split(/\r\n|\n/).length : 0}</span>
                   <span>字符: {formData.assertions.length}</span>
                 </div>
@@ -1822,7 +1822,7 @@ export function TestCases() {
                 placeholder="输入测试套件名称"
               />
               {suiteNameTouched && !suiteFormData.name.trim() && (
-                <p id="suiteName-error" className="mt-1 text-xs text-red-600">请输入测试套件名称</p>
+                <p id="suiteName-error" className="mt-1 text-sm text-red-600 font-medium">请输入测试套件名称</p>
               )}
             </div>
             <div>
@@ -1836,7 +1836,7 @@ export function TestCases() {
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-y"
                 placeholder="描述这个测试套件的用途和覆盖范围"
               />
-              <div className="mt-1 flex justify-between text-xs text-gray-500">
+              <div className="mt-1 flex justify-between text-sm text-gray-700">
                 <span>行数: {suiteFormData.description ? suiteFormData.description.split(/\r\n|\n/).length : 0}</span>
                 <span>字符: {suiteFormData.description.length}</span>
               </div>
@@ -1847,7 +1847,7 @@ export function TestCases() {
               </label>
               <div className="flex items-center gap-2 mb-2">
                 <div className="relative flex-1">
-                  <Search className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
+                  <Search className="absolute left-3 top-2.5 h-4 w-4 text-gray-600" />
                   <input
                     type="text"
                     value={suiteCaseSearch}
@@ -1856,7 +1856,7 @@ export function TestCases() {
                     className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
                   />
                 </div>
-                <span className="text-xs text-gray-500 whitespace-nowrap">
+                <span className="text-sm text-gray-700 whitespace-nowrap">
                   匹配 {testCases.filter(tc => tc.name.toLowerCase().includes(suiteCaseSearch.toLowerCase())).length} 条
                 </span>
                 <button

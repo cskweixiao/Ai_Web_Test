@@ -9,7 +9,7 @@ const buttonVariants = {
     destructive: "bg-gradient-to-r from-red-500 to-red-600 text-white shadow-lg hover:shadow-xl hover:from-red-600 hover:to-red-700 focus:ring-red-500",
     outline: "border-2 border-gray-300 text-gray-700 bg-white hover:bg-gray-50 hover:border-gray-400 dark:border-gray-600 dark:text-gray-300 dark:bg-gray-800 dark:hover:bg-gray-700 focus:ring-blue-500",
     secondary: "bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 focus:ring-gray-400",
-    ghost: "text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100 focus:ring-gray-400",
+    ghost: "text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-600 dark:hover:bg-gray-800 dark:hover:text-gray-100 focus:ring-gray-400",
     link: "text-blue-600 underline-offset-4 hover:underline dark:text-blue-400 focus:ring-blue-500"
   },
   size: {

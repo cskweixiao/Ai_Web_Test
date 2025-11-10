@@ -478,7 +478,7 @@ export function AIBulkUpdateModal({
                         className={clsx(
                           'w-5 h-5',
                           isActive ? 'text-white' : 
-                          isAccessible ? 'text-gray-600' : 'text-gray-400'
+                          isAccessible ? 'text-gray-600' : 'text-gray-600'
                         )} 
                       />
                     )}
@@ -499,7 +499,7 @@ export function AIBulkUpdateModal({
                       'text-sm font-medium transition-colors',
                       isActive ? 'text-purple-700' : 
                       isCompleted ? 'text-green-700' :
-                      isAccessible ? 'text-gray-700' : 'text-gray-400'
+                      isAccessible ? 'text-gray-700' : 'text-gray-600'
                     )}>
                       {step.label}
                     </span>
@@ -726,7 +726,7 @@ export function AIBulkUpdateModal({
                         : '✓ 长度符合要求'
                       }
                     </div>
-                    <div className="text-sm text-gray-400">
+                    <div className="text-sm text-gray-600">
                       {formData.changeBrief.length} 字符
                     </div>
                   </div>
@@ -832,7 +832,7 @@ export function AIBulkUpdateModal({
                   <div className="flex items-center justify-center w-16 h-16 bg-purple-50 rounded-full">
                     <div className={clsx(
                       "text-2xl font-bold",
-                      selectedProposals.length > 0 ? "text-purple-600" : "text-gray-400"
+                      selectedProposals.length > 0 ? "text-purple-600" : "text-gray-600"
                     )}>
                       {Math.round((selectedProposals.length / sessionResult.proposals.length) * 100)}%
                     </div>
@@ -924,7 +924,7 @@ export function AIBulkUpdateModal({
                               <h4 className="text-lg font-semibold text-gray-900 leading-tight">
                                 {isSimplified ? proposal.case_title : proposal.case_title}
                               </h4>
-                              <span className="inline-flex items-center text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded-full">
+                              <span className="inline-flex items-center text-sm text-gray-700 bg-gray-100 px-2 py-1 rounded-full">
                                 <Hash className="h-3 w-3 mr-1" />
                                 #{proposal.case_id}
                               </span>

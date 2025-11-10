@@ -542,7 +542,7 @@ function QuestionCard({
             </Tag>
           </div>
 
-          <div className="text-xs text-gray-500 mb-3">
+          <div className="text-sm text-gray-700 mb-3">
             📍 {info.context.pageName} {info.field && `· 字段: ${info.field}`}
           </div>
 

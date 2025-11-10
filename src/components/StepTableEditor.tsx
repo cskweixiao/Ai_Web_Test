@@ -69,7 +69,7 @@ export function StepTableEditor({ steps, onChange, readOnly = false }: StepTable
       {/* 表格主体 */}
       <div className="divide-y max-h-[28vh] overflow-y-auto">
         {safeSteps.length === 0 ? (
-          <div className="py-12 text-center text-gray-400">
+          <div className="py-12 text-center text-gray-600">
             暂无步骤，点击下方"添加步骤"按钮开始
           </div>
         ) : (
@@ -99,7 +99,7 @@ export function StepTableEditor({ steps, onChange, readOnly = false }: StepTable
                   <div
                     onClick={() => startEditing(step.id, 'action')}
                     className={`px-2 py-1 rounded cursor-text min-h-[40px] text-sm ${
-                      step.action ? 'text-gray-900' : 'text-gray-400'
+                      step.action ? 'text-gray-900' : 'text-gray-600'
                     } ${!readOnly && 'hover:bg-gray-100'}`}
                   >
                     {step.action || '点击输入操作步骤...'}
@@ -130,7 +130,7 @@ export function StepTableEditor({ steps, onChange, readOnly = false }: StepTable
       {/* 底部添加按钮和统计 */}
       {!readOnly && (
         <div className="border-t bg-gray-50 px-3 py-2 flex items-center justify-between gap-3">
-          <div className="text-xs text-gray-500">
+          <div className="text-sm text-gray-700">
             共 {steps.length} 个步骤
           </div>
           <Button

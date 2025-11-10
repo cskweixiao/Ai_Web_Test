@@ -252,7 +252,7 @@ export const LiveView: React.FC<LiveViewProps> = React.memo(({ runId, testStatus
           )}
         </div>
         {error && (
-          <span className="text-xs text-red-500">{error}</span>
+          <span className="text-sm text-red-600 font-medium">{error}</span>
         )}
       </div>
       

@@ -65,7 +65,7 @@ export const FlakyTestsRanking: React.FC<FlakyTestsRankingProps> = ({
               <span className="font-semibold">不稳定用例排名 Top {maxItems}</span>
             </div>
             <Tooltip title="失败率高于15%的测试用例">
-              <AlertCircle className="h-4 w-4 text-gray-400 cursor-help" />
+              <AlertCircle className="h-4 w-4 text-gray-600 cursor-help" />
             </Tooltip>
           </div>
         }
@@ -95,7 +95,7 @@ export const FlakyTestsRanking: React.FC<FlakyTestsRankingProps> = ({
                     </span>
                     <span className="font-medium text-gray-900">{test.name}</span>
                   </div>
-                  <div className="flex items-center space-x-3 text-xs text-gray-500 ml-8">
+                  <div className="flex items-center space-x-3 text-sm text-gray-700 ml-8">
                     <span>总运行: {test.totalRuns}次</span>
                     <span>•</span>
                     <span>上次失败: {test.lastFailure}</span>

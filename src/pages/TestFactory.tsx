@@ -18,7 +18,7 @@ export function TestFactory() {
             </p>
             <div className="mt-4 flex justify-center px-6 pt-5 pb-6 border-2 border-gray-300 border-dashed rounded-md">
               <div className="space-y-1 text-center">
-                <svg className="mx-auto h-12 w-12 text-gray-400" stroke="currentColor" fill="none" viewBox="0 0 48 48" aria-hidden="true">
+                <svg className="mx-auto h-12 w-12 text-gray-600" stroke="currentColor" fill="none" viewBox="0 0 48 48" aria-hidden="true">
                   <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
                 <div className="flex text-sm text-gray-600">
@@ -28,7 +28,7 @@ export function TestFactory() {
                   </label>
                   <p className="pl-1">或拖拽到这里</p>
                 </div>
-                <p className="text-xs text-gray-500">仅支持 .xmind 文件</p>
+                <p className="text-sm text-gray-700">仅支持 .xmind 文件</p>
               </div>
             </div>
           </div>
@@ -41,7 +41,7 @@ export function TestFactory() {
             </p>
             <div className="mt-4 flex justify-center px-6 pt-5 pb-6 border-2 border-gray-300 border-dashed rounded-md">
               <div className="space-y-1 text-center">
-                 <svg className="mx-auto h-12 w-12 text-gray-400" stroke="currentColor" fill="none" viewBox="0 0 48 48" aria-hidden="true">
+                 <svg className="mx-auto h-12 w-12 text-gray-600" stroke="currentColor" fill="none" viewBox="0 0 48 48" aria-hidden="true">
                   <path d="M9 17v-7a4 4 0 014-4h11l5 5h5a4 4 0 014 4v18a4 4 0 01-4 4H13a4 4 0 01-4-4v-3" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"></path>
                 </svg>
                 <div className="flex text-sm text-gray-600">
@@ -51,7 +51,7 @@ export function TestFactory() {
                   </label>
                   <p className="pl-1">或拖拽到这里</p>
                 </div>
-                <p className="text-xs text-gray-500">支持 .md, .txt, .docx</p>
+                <p className="text-sm text-gray-700">支持 .md, .txt, .docx</p>
               </div>
             </div>
           </div>

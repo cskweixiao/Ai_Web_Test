@@ -143,7 +143,7 @@ export const ChartCard: React.FC<ChartCardProps> = ({
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
-              className="flex flex-col items-center justify-center text-gray-500 dark:text-gray-400"
+              className="flex flex-col items-center justify-center text-gray-500 dark:text-gray-600"
               style={{
                 height: height - 120,
               }}

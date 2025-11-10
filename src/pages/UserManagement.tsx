@@ -248,7 +248,7 @@ export function UserManagement() {
       >
         <div>
           <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-gray-900 dark:text-gray-100">用户管理</h1>
-          <p className="mt-1 text-sm sm:text-base text-gray-600 dark:text-gray-400">
+          <p className="mt-1 text-sm sm:text-base text-gray-600 dark:text-gray-600">
             管理系统用户账户和权限
           </p>
         </div>

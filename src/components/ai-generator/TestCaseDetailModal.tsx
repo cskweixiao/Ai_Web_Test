@@ -131,26 +131,26 @@ export function TestCaseDetailModal({
         <div className="bg-gradient-to-br from-purple-50 to-blue-50 rounded-lg p-5 border border-purple-200">
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="text-xs text-gray-500 mb-1 block">用例名称</label>
+              <label className="text-sm text-gray-700 mb-1 block">用例名称</label>
               <p className="text-sm font-semibold text-gray-900">{testCase.name}</p>
             </div>
             <div>
-              <label className="text-xs text-gray-500 mb-1 block">章节</label>
+              <label className="text-sm text-gray-700 mb-1 block">章节</label>
               <p className="text-sm text-gray-700">
                 {testCase.sectionId ? `${testCase.sectionId} ${testCase.sectionName}` : '未指定'}
               </p>
             </div>
             <div>
-              <label className="text-xs text-gray-500 mb-1 block">测试目的</label>
+              <label className="text-sm text-gray-700 mb-1 block">测试目的</label>
               <p className="text-sm text-gray-700">{testCase.testPurpose || testCase.description || '无'}</p>
             </div>
             <div className="grid grid-cols-2 gap-2">
               <div>
-                <label className="text-xs text-gray-500 mb-1 block">系统</label>
+                <label className="text-sm text-gray-700 mb-1 block">系统</label>
                 <p className="text-sm text-gray-700">{testCase.system || '未指定'}</p>
               </div>
               <div>
-                <label className="text-xs text-gray-500 mb-1 block">模块</label>
+                <label className="text-sm text-gray-700 mb-1 block">模块</label>
                 <p className="text-sm text-gray-700">{testCase.module || '未指定'}</p>
               </div>
             </div>
@@ -178,7 +178,7 @@ export function TestCaseDetailModal({
                 {/* 删除按钮 */}
                 <button
                   onClick={() => deleteTestPoint(index)}
-                  className="absolute top-3 right-3 p-2 text-gray-400 hover:text-red-500 hover:bg-red-50
+                  className="absolute top-3 right-3 p-2 text-gray-600 hover:text-red-500 hover:bg-red-50
                            rounded-lg transition-all group"
                   title="删除此测试点"
                 >
@@ -210,7 +210,7 @@ export function TestCaseDetailModal({
 
                   {/* 风险等级选择 */}
                   <div className="ml-3">
-                    <label className="text-xs text-gray-500 mb-1 block">风险等级</label>
+                    <label className="text-sm text-gray-700 mb-1 block">风险等级</label>
                     <select
                       value={point.riskLevel || 'medium'}
                       onChange={(e) => updateTestPoint(index, 'riskLevel', e.target.value)}
@@ -264,7 +264,7 @@ export function TestCaseDetailModal({
           {/* 空状态 */}
           {editedTestPoints.length === 0 && (
             <div className="text-center py-12 bg-gray-50 rounded-lg border-2 border-dashed border-gray-300">
-              <Tag className="w-12 h-12 text-gray-400 mx-auto mb-3" />
+              <Tag className="w-12 h-12 text-gray-600 mx-auto mb-3" />
               <p className="text-gray-500">暂无测试点</p>
             </div>
           )}

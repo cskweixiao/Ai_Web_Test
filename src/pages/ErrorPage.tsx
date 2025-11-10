@@ -106,7 +106,7 @@ export const ErrorPage: React.FC<ErrorPageProps> = ({
               <div className="text-sm font-semibold text-red-800 mb-2">
                 详细错误信息 (仅开发环境可见):
               </div>
-              <pre className="text-xs text-red-700 whitespace-pre-wrap font-mono">
+              <pre className="text-sm text-red-600 font-medium whitespace-pre-wrap font-mono">
                 {errorState.details}
               </pre>
             </div>

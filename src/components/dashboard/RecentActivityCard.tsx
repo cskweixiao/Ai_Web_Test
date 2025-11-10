@@ -42,7 +42,7 @@ export const RecentActivityCard: React.FC<RecentActivityCardProps> = ({
       case 'info':
         return <Info {...iconProps} className="text-blue-500" />;
       default:
-        return <Clock {...iconProps} className="text-gray-400" />;
+        return <Clock {...iconProps} className="text-gray-600" />;
     }
   };
 
@@ -152,7 +152,7 @@ export const RecentActivityCard: React.FC<RecentActivityCardProps> = ({
                         {getStatusBadge(item.status)}
                       </div>
                       
-                      <div className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
+                      <div className="flex items-center justify-between text-sm text-gray-700 dark:text-gray-600">
                         {item.user && (
                           <span className="font-medium">{item.user}</span>
                         )}
@@ -175,7 +175,7 @@ export const RecentActivityCard: React.FC<RecentActivityCardProps> = ({
               transition={{ delay: 0.5 }}
               className="mt-6 pt-4 border-t border-gray-200 dark:border-gray-700 text-center"
             >
-              <Text className="text-xs text-gray-500 dark:text-gray-400">
+              <Text className="text-sm text-gray-700 dark:text-gray-600">
                 显示最近 {maxItems} 条，共 {activities.length} 条活动
               </Text>
             </motion.div>
@@ -185,7 +185,7 @@ export const RecentActivityCard: React.FC<RecentActivityCardProps> = ({
             <motion.div
               initial={{ opacity: 0, scale: 0.9 }}
               animate={{ opacity: 1, scale: 1 }}
-              className="flex flex-col items-center justify-center py-12 text-gray-500 dark:text-gray-400"
+              className="flex flex-col items-center justify-center py-12 text-gray-500 dark:text-gray-600"
             >
               <div className="w-16 h-16 bg-gradient-to-br from-gray-200 to-gray-300 dark:from-gray-700 dark:to-gray-600 rounded-2xl flex items-center justify-center mb-4">
                 <Clock size={24} className="opacity-50" />

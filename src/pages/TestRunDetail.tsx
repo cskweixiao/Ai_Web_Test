@@ -369,14 +369,14 @@ export function TestRunDetail() {
               <div className="space-y-2">
                 <div className="flex items-center justify-between mb-4">
                   <h3 className="text-lg font-semibold text-gray-900">执行日志</h3>
-                  <button className="text-sm text-blue-600 hover:text-blue-700">
+                  <button className="text-base text-blue-600 hover:text-blue-700">
                     <Download className="inline h-4 w-4 mr-1" />
                     导出日志
                   </button>
                 </div>
                 <div className="bg-gray-900 rounded-lg p-4 max-h-[600px] overflow-y-auto font-mono text-sm">
                   {testRun.logs.length === 0 ? (
-                    <div className="text-gray-400 text-center py-8">暂无日志</div>
+                    <div className="text-gray-600 text-center py-8">暂无日志</div>
                   ) : (
                     testRun.logs.map((log) => (
                       <div key={log.id} className="flex items-start gap-3 py-1 hover:bg-gray-800 px-2 rounded">
@@ -399,7 +399,7 @@ export function TestRunDetail() {
                   <LiveView runId={testRun.id} />
                 ) : (
                   <div className="bg-gray-50 rounded-lg p-8 text-center">
-                    <AlertCircle className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                    <AlertCircle className="h-12 w-12 text-gray-600 mx-auto mb-4" />
                     <p className="text-gray-600">测试未在运行中，无法查看实时画面</p>
                   </div>
                 )}
@@ -413,7 +413,7 @@ export function TestRunDetail() {
                   <EvidenceViewer runId={testRun.id} screenshots={testRun.screenshots} />
                 ) : (
                   <div className="bg-gray-50 rounded-lg p-8 text-center">
-                    <ImageIcon className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                    <ImageIcon className="h-12 w-12 text-gray-600 mx-auto mb-4" />
                     <p className="text-gray-600">暂无测试截图</p>
                   </div>
                 )}

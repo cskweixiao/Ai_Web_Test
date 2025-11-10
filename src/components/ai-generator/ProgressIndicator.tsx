@@ -61,7 +61,7 @@ export function ProgressIndicator({ currentStep, totalSteps, steps }: ProgressIn
             {/* 步骤名称 */}
             <span className={clsx(
               "text-sm font-medium transition-colors text-center",
-              index <= currentStep ? "text-gray-900" : "text-gray-400"
+              index <= currentStep ? "text-gray-900" : "text-gray-600"
             )}>
               {step.name}
             </span>

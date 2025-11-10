@@ -278,7 +278,7 @@ export function FunctionalTestCases() {
               </span>
             )}
           </h1>
-          <p className="text-sm text-gray-500 mt-1">管理和维护功能测试用例库</p>
+          <p className="text-sm text-gray-600 mt-1">管理和维护功能测试用例库</p>
         </div>
         <div className="flex gap-3">
           {selectedRows.size > 0 && (
@@ -315,7 +315,7 @@ export function FunctionalTestCases() {
       <div className="mb-4 bg-white rounded-lg border border-gray-200 p-4">
         <div className="flex items-center gap-3 mb-3">
           <div className="flex-1 relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-600" />
             <input
               type="text"
               placeholder="搜索用例名称或描述..."
@@ -497,11 +497,11 @@ export function FunctionalTestCases() {
         {loading ? (
           <div className="text-center py-12">
             <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-            <p className="text-gray-500 mt-2">加载中...</p>
+            <p className="text-gray-600 mt-2 text-base">加载中...</p>
           </div>
         ) : testCases.length === 0 ? (
           <div className="text-center py-12">
-            <p className="text-gray-500">暂无测试用例数据</p>
+            <p className="text-gray-600 text-base">暂无测试用例数据</p>
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -668,7 +668,7 @@ export function FunctionalTestCases() {
                         {/* 创建者 */}
                         <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
                           <div className="flex items-center">
-                            <User className="h-4 w-4 mr-1 text-gray-400" />
+                            <User className="h-4 w-4 mr-1 text-gray-600" />
                             {row.users?.username || '-'}
                           </div>
                         </td>
@@ -676,7 +676,7 @@ export function FunctionalTestCases() {
                         {/* 创建时间 */}
                         <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
                           <div className="flex items-center">
-                            <Clock className="h-4 w-4 mr-1 text-gray-400" />
+                            <Clock className="h-4 w-4 mr-1 text-gray-600" />
                             {formatDate(row.created_at)}
                           </div>
                         </td>
@@ -724,7 +724,7 @@ export function FunctionalTestCases() {
               className={clsx(
                 'px-3 py-2 rounded-lg border transition-colors',
                 pagination.page === 1
-                  ? 'border-gray-200 text-gray-400 cursor-not-allowed'
+                  ? 'border-gray-200 text-gray-600 cursor-not-allowed'
                   : 'border-gray-300 text-gray-700 hover:bg-gray-50'
               )}
             >
@@ -736,7 +736,7 @@ export function FunctionalTestCases() {
               className={clsx(
                 'px-3 py-2 rounded-lg border transition-colors',
                 pagination.page === 1
-                  ? 'border-gray-200 text-gray-400 cursor-not-allowed'
+                  ? 'border-gray-200 text-gray-600 cursor-not-allowed'
                   : 'border-gray-300 text-gray-700 hover:bg-gray-50'
               )}
             >
@@ -751,7 +751,7 @@ export function FunctionalTestCases() {
               className={clsx(
                 'px-3 py-2 rounded-lg border transition-colors',
                 pagination.page >= pagination.totalPages
-                  ? 'border-gray-200 text-gray-400 cursor-not-allowed'
+                  ? 'border-gray-200 text-gray-600 cursor-not-allowed'
                   : 'border-gray-300 text-gray-700 hover:bg-gray-50'
               )}
             >
@@ -763,7 +763,7 @@ export function FunctionalTestCases() {
               className={clsx(
                 'px-3 py-2 rounded-lg border transition-colors',
                 pagination.page >= pagination.totalPages
-                  ? 'border-gray-200 text-gray-400 cursor-not-allowed'
+                  ? 'border-gray-200 text-gray-600 cursor-not-allowed'
                   : 'border-gray-300 text-gray-700 hover:bg-gray-50'
               )}
             >

@@ -123,7 +123,7 @@ export const TagInput: React.FC<TagInputProps> = ({
         onKeyDown={handleKeyDown}
         onPaste={handlePaste}
         onBlur={handleBlur}
-        className="flex-1 min-w-[8rem] px-1 py-1 outline-none text-sm text-gray-900 placeholder:text-gray-400"
+        className="flex-1 min-w-[8rem] px-1 py-1 outline-none text-sm text-gray-900 placeholder:text-gray-600"
         placeholder={placeholder}
         aria-label="添加标签"
       />

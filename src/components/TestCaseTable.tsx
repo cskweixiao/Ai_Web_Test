@@ -166,7 +166,7 @@ export function TestCaseTable({
 
   const SortIcon = ({ field }: { field: SortField }) => {
     if (sortField !== field) {
-      return <ArrowUpDown className="h-4 w-4 text-gray-400" />;
+      return <ArrowUpDown className="h-4 w-4 text-gray-600" />;
     }
     return sortDirection === 'asc'
       ? <ArrowUp className="h-4 w-4 text-blue-600" />
@@ -271,7 +271,7 @@ export function TestCaseTable({
                   <td className="px-4 py-4">
                     <button
                       onClick={() => toggleRowExpansion(testCase.id)}
-                      className="text-gray-400 hover:text-gray-600 transition-colors"
+                      className="text-gray-600 hover:text-gray-600 transition-colors"
                       title={expandedRows.has(testCase.id) ? "收起详情" : "展开详情"}
                     >
                       {expandedRows.has(testCase.id)
@@ -287,7 +287,7 @@ export function TestCaseTable({
                       {testCase.name}
                     </div>
                     {testCase.author && (
-                      <div className="flex items-center text-xs text-gray-500 mt-1">
+                      <div className="flex items-center text-sm text-gray-700 mt-1">
                         <User className="h-3 w-3 mr-1" />
                         {testCase.author}
                       </div>
@@ -304,7 +304,7 @@ export function TestCaseTable({
                         <div className="text-gray-500 text-xs">{testCase.module}</div>
                       )}
                       {!testCase.system && !testCase.module && (
-                        <span className="text-gray-400 text-sm">-</span>
+                        <span className="text-gray-600 text-sm">-</span>
                       )}
                     </div>
                   </td>
@@ -342,10 +342,10 @@ export function TestCaseTable({
                           </span>
                         ))
                       ) : (
-                        <span className="text-gray-400 text-sm">-</span>
+                        <span className="text-gray-600 text-sm">-</span>
                       )}
                       {testCase.tags && testCase.tags.length > 2 && (
-                        <span className="text-xs text-gray-500">+{testCase.tags.length - 2}</span>
+                        <span className="text-sm text-gray-700">+{testCase.tags.length - 2}</span>
                       )}
                     </div>
                   </td>
@@ -365,7 +365,7 @@ export function TestCaseTable({
                         </span>
                       </div>
                     ) : (
-                      <span className="text-gray-400 text-sm">-</span>
+                      <span className="text-gray-600 text-sm">-</span>
                     )}
                   </td>
 
@@ -399,7 +399,7 @@ export function TestCaseTable({
                           "p-1.5 rounded transition-colors",
                           runningTestId === testCase.id
                             ? "text-blue-600 cursor-not-allowed bg-blue-50"
-                            : "text-gray-400 hover:text-blue-600 hover:bg-blue-50"
+                            : "text-gray-600 hover:text-blue-600 hover:bg-blue-50"
                         )}
                         title={runningTestId === testCase.id ? "执行中..." : "运行测试"}
                       >
@@ -411,14 +411,14 @@ export function TestCaseTable({
                       </button>
                       <button
                         onClick={() => onEditTestCase(testCase)}
-                        className="p-1.5 rounded text-gray-400 hover:text-green-600 hover:bg-green-50 transition-colors"
+                        className="p-1.5 rounded text-gray-600 hover:text-green-600 hover:bg-green-50 transition-colors"
                         title="编辑测试用例"
                       >
                         <Edit3 className="h-4 w-4" />
                       </button>
                       <button
                         onClick={() => onDeleteTestCase(testCase)}
-                        className="p-1.5 rounded text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+                        className="p-1.5 rounded text-gray-600 hover:text-red-600 hover:bg-red-50 transition-colors"
                         title="删除测试用例"
                       >
                         <Trash2 className="h-4 w-4" />
@@ -538,7 +538,7 @@ export function TestCaseTable({
                 className={clsx(
                   'p-2 rounded',
                   pagination.page === 1
-                    ? 'text-gray-400 cursor-not-allowed'
+                    ? 'text-gray-600 cursor-not-allowed'
                     : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
                 )}
                 title="第一页"
@@ -553,7 +553,7 @@ export function TestCaseTable({
                 className={clsx(
                   'p-2 rounded',
                   pagination.page === 1
-                    ? 'text-gray-400 cursor-not-allowed'
+                    ? 'text-gray-600 cursor-not-allowed'
                     : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
                 )}
                 title="上一页"
@@ -586,7 +586,7 @@ export function TestCaseTable({
                 className={clsx(
                   'p-2 rounded',
                   pagination.page === pagination.totalPages
-                    ? 'text-gray-400 cursor-not-allowed'
+                    ? 'text-gray-600 cursor-not-allowed'
                     : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
                 )}
                 title="下一页"
@@ -601,7 +601,7 @@ export function TestCaseTable({
                 className={clsx(
                   'p-2 rounded',
                   pagination.page === pagination.totalPages
-                    ? 'text-gray-400 cursor-not-allowed'
+                    ? 'text-gray-600 cursor-not-allowed'
                     : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
                 )}
                 title="最后一页"

@@ -36,7 +36,7 @@ export const EmptyState: React.FC<EmptyStateProps> = ({
           className="mb-6"
         >
           <div className="h-20 w-20 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center">
-            <Icon className="h-10 w-10 text-gray-400 dark:text-gray-600" />
+            <Icon className="h-10 w-10 text-gray-600 dark:text-gray-600" />
           </div>
         </motion.div>
       )}
@@ -55,7 +55,7 @@ export const EmptyState: React.FC<EmptyStateProps> = ({
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ delay: 0.4 }}
-          className="text-sm text-gray-500 dark:text-gray-400 text-center max-w-md mb-6"
+          className="text-sm text-gray-500 dark:text-gray-600 text-center max-w-md mb-6"
         >
           {description}
         </motion.p>

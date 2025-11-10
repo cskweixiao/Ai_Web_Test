@@ -152,7 +152,7 @@ export const QueueStatus: React.FC = () => {
         <div className="bg-white border rounded-lg p-3">
           <div className="flex items-center justify-between mb-2">
             <div className="text-sm text-gray-700">并发使用率</div>
-            <div className="text-xs text-gray-500">
+            <div className="text-sm text-gray-700">
               {status.global.pending}/{status.global.concurrency} ({usedPercent}%)
             </div>
           </div>
@@ -186,7 +186,7 @@ export const QueueStatus: React.FC = () => {
                   </div>
                   <div className="flex items-center gap-1">
                     <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-                    <span className="text-xs text-green-600">执行中</span>
+                    <span className="text-sm text-green-600">执行中</span>
                   </div>
                 </div>
               </div>
@@ -218,13 +218,13 @@ export const QueueStatus: React.FC = () => {
                           {task.priority}
                         </span>
                         <span className="text-xs text-gray-600">{task.type}</span>
-                        <span className="text-xs text-gray-500">等待: {formatShort(waitSec)}</span>
+                        <span className="text-sm text-gray-700">等待: {formatShort(waitSec)}</span>
                       </div>
                       <div className="text-sm text-gray-600 mt-1">
                         用户: {task.userId} | 创建时间: {new Date(task.createdAt).toLocaleString()}
                       </div>
                       <div className="mt-2">
-                        <div className="flex items-center justify-between text-xs text-gray-500 mb-1">
+                        <div className="flex items-center justify-between text-sm text-gray-700 mb-1">
                           <span>等待时长</span>
                           <span>{percent}%</span>
                         </div>
