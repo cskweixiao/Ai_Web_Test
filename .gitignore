@@ -80,10 +80,13 @@ screenshots/assertion-*-failed.png
 screenshots/index/
 screenshots/*_screenshots.json
 
-# PNG files (except public assets)
+# PNG files (except public assets and documentation)
 *.png
 !public/*.png
 !src/assets/*.png
+!docs/images/*.png
+!docs/images/*.jpg
+!docs/images/*.jpeg
 
 # Screenshots directory (completely ignored)
 screenshots/
