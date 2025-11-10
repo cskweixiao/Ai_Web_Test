@@ -2,6 +2,9 @@
 
 <div align="center">
 
+<!-- 项目封面图片 - 请替换为实际图片 -->
+<img src="docs/images/testflow-banner.png" alt="TestFlow Banner" width="100%" />
+
 [![Version](https://img.shields.io/badge/version-2.4.0-blue.svg)](https://github.com/testflow/testflow)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Node](https://img.shields.io/badge/node-%3E%3D18.0.0-brightgreen.svg)](https://nodejs.org)
@@ -47,7 +50,7 @@
 - 📋 全流程审计日志
 
 ### 📊 现代化的管理界面
-**React 18 + Ant Design 企业级 UI**
+**React 18 + Tailwind CSS 企业级 UI**
 - 🎨 精美的视觉设计和流畅动画
 - 📱 完全响应式,支持多设备
 - 🚀 极速加载,优秀的用户体验
@@ -66,14 +69,14 @@
 │ ┌─────────────┐ │ ┌───────────────┐ │ ┌───────────────────────┐ │
 │ │ React 18    │ │ │ Express API   │ │ │ AI Parser             │ │
 │ │ TypeScript  │◄┼─┤ WebSocket     │◄┼─┤ Axure Parser          │ │
-│ │ Ant Design  │ │ │ Prisma ORM    │ │ │ MCP Client            │ │
-│ │ Tailwind    │ │ │ JWT Auth      │ │ │ Test Generator        │ │
+│ │ Tailwind    │ │ │ Prisma ORM    │ │ │ MCP Client            │ │
+│ │ Framer      │ │ │ JWT Auth      │ │ │ Test Generator        │ │
 │ └─────────────┘ │ └───────────────┘ │ └───────────────────────┘ │
 │                 │                   │             │             │
 │ ┌─────────────┐ │ ┌───────────────┐ │ ┌───────────┼───────────┐ │
 │ │ • 测试管理  │ │ │ • 数据存储    │ │ │ • 大模型  │ Playwright│ │
 │ │ • 用例编辑  │ │ │ • 用户认证    │ │ │ • AI生成  │ 浏览器    │ │
-│ │ │ • 套件管理  │ │ │ • 状态同步    │ │ │ • 智能分析│ 自动化    │ │
+│ │ • 套件管理  │ │ │ • 状态同步    │ │ │ • 智能分析│ 自动化    │ │
 │ │ • AI生成器  │ │ │ • API 服务    │ │ │ • 批量修改│ 截图保存  │ │
 │ └─────────────┘ │ └───────────────┘ │ └───────────┴───────────┘ │
 └─────────────────┴───────────────────┴───────────────────────────┘
@@ -150,7 +153,7 @@ npm run dev
 **说明**:
 - RAG 功能为可选,不影响基础功能使用
 - 启用后,测试用例生成质量和专业度会显著提升
-- 详细配置见 [RAG 知识库增强](#6-🔍-rag-知识库增强-向量数据库-🆕) 章节
+- 详细配置见 [RAG 知识库增强](#6--rag-知识库增强-向量数据库-) 章节
 
 ---
 
@@ -212,7 +215,7 @@ npm run dev
 | **功能覆盖率** | 60-70% | 85-95% | **+25-35%** |
 | **UI/文案覆盖率** 🆕 | 0-20% | 80-95% | **+60-95%** |
 | **规范性** | 70-80% | 95%+ | **+15-25%** |
-| **人力成本** | 100% | 10-20% | **节省 80-90%** |
+| **人力成本节省** | 100% | 10-20% | **节省 80-90%** |
 
 #### 使用示例
 
@@ -222,8 +225,6 @@ http://localhost:5173/functional-test-cases/generator
 
 # 或导航到: 功能测试用例 → AI 生成器
 ```
-
-详细文档: [AI 测试用例生成器完整介绍](docs/AXURE_FEATURE_INTRO.md)
 
 ---
 
@@ -407,14 +408,6 @@ EMBEDDING_MODEL=text-embedding-v4
 # 获取 API Key: https://dashscope.console.aliyun.com/apiKey
 ```
 
-**添加自定义知识** (API 或 Web 界面)
-```bash
-# 通过 Qdrant Web UI 管理
-http://localhost:6333/dashboard
-
-# 或使用 TestFlow 知识库管理 (规划中)
-```
-
 ---
 
 ### 7. 🧪 测试套件管理
@@ -442,7 +435,7 @@ http://localhost:6333/dashboard
 - **覆盖率报告**: 用例覆盖率分析
 
 #### 可视化展示
-- 趋势图表 (Ant Design Charts)
+- 趋势图表 (ECharts)
 - 数据仪表板
 - 实时统计更新
 
@@ -536,30 +529,6 @@ LOG_LEVEL=info                     # 日志级别: debug / info / warn / error
 LOG_FULL_PROMPT=false              # 是否记录完整 AI Prompt
 ```
 
-### MCP 服务器配置 (`mcp-config.json`)
-
-```json
-{
-  "mcpServers": {
-    "playwright": {
-      "command": "npx",
-      "args": ["@anthropic-ai/mcp-server-playwright"],
-      "env": {
-        "PLAYWRIGHT_HEADLESS": "true",
-        "PLAYWRIGHT_BROWSER": "chromium"
-      }
-    }
-  },
-  "defaults": {
-    "timeout": 30000,
-    "retries": 2,
-    "screenshot": true,
-    "trace": "retain-on-failure",
-    "video": "retain-on-failure"
-  }
-}
-```
-
 ### 数据库迁移
 
 ```bash
@@ -580,71 +549,26 @@ npx prisma migrate reset
 
 ## 📁 项目结构
 
+详细的项目结构说明请查看 [PROJECT_STRUCTURE.md](PROJECT_STRUCTURE.md)
+
 ```
 project/
-├── src/                                      # 前端源码
-│   ├── components/                           # React 组件
-│   │   ├── ui/                               # UI 基础组件
-│   │   ├── ai-generator/                     # AI 生成器组件 🆕
-│   │   ├── AIBulkUpdateModal.tsx             # AI 批量修改
-│   │   └── TestResult.tsx                    # 测试结果
-│   ├── pages/                                # 页面组件
-│   │   ├── Login.tsx                         # 登录页
-│   │   ├── Dashboard.tsx                     # 仪表板
-│   │   ├── TestCases.tsx                     # 测试用例管理
-│   │   ├── FunctionalTestCases.tsx           # 功能测试用例 🆕
-│   │   ├── FunctionalTestCaseGenerator.tsx   # AI 生成器 🆕
-│   │   ├── TestRuns.tsx                      # 测试运行
-│   │   ├── TestReports.tsx                   # 测试报告 🆕
-│   │   ├── Reports.tsx                       # 统计报告
-│   │   ├── UserManagement.tsx                # 用户管理 🆕
-│   │   └── Settings.tsx                      # 设置
-│   ├── contexts/                             # React Context
-│   │   └── AuthContext.tsx                   # 认证上下文 🆕
-│   ├── services/                             # API 服务
-│   │   ├── testService.ts                    # 测试服务
-│   │   ├── authService.ts                    # 认证服务 🆕
-│   │   └── functionalTestCaseService.ts      # Axure 服务 🆕
-│   └── types/                                # TypeScript 类型
-│       └── test.ts                           # 测试类型定义
-├── server/                                   # 后端源码
-│   ├── services/                             # 业务服务
-│   │   ├── testExecution.ts                  # 测试执行
-│   │   ├── mcpClient.ts                      # MCP 客户端
-│   │   ├── authService.ts                    # 认证服务 🆕
-│   │   ├── websocket.ts                      # WebSocket
-│   │   ├── axureParseService.ts              # Axure 解析 🆕
-│   │   ├── functionalTestCaseAIService.ts    # AI 生成 🆕
-│   │   ├── testCaseKnowledgeBase.ts          # RAG 知识库 🆕
-│   │   └── aiParser.ts                       # AI 解析器
-│   ├── routes/                               # API 路由
-│   │   ├── auth.ts                           # 认证路由 🆕
-│   │   ├── test.ts                           # 测试路由
-│   │   ├── suite.ts                          # 套件路由
-│   │   ├── aiBulkUpdate.ts                   # AI 批量修改
-│   │   └── functionalTestCase.ts             # Axure 路由 🆕
-│   ├── middleware/                           # 中间件
-│   │   ├── authMiddleware.ts                 # 认证中间件 🆕
-│   │   └── upload.ts                         # 文件上传 🆕
-│   └── types/                                # 后端类型
-│       └── axure.ts                          # Axure 类型 🆕
-├── prisma/                                   # 数据库
-│   ├── schema.prisma                         # 数据库模式
-│   └── migrations/                           # 迁移文件
-├── scripts/                                  # 工具脚本
-│   ├── start.cjs                             # 启动脚本
-│   ├── cleanup-debug-files.cjs               # 清理脚本
-│   └── create-admin.ts                       # 创建管理员
-├── uploads/                                  # 上传文件 🆕
-│   └── axure/                                # Axure HTML
-├── screenshots/                              # 测试截图
-├── docs/                                     # 文档 🆕
-│   ├── AXURE_FEATURE_INTRO.md                # Axure 功能介绍
-│   ├── AXURE_FEATURE_MIGRATION.md            # 迁移指南
-│   ├── page-layout-copywriting-test-feature.md  # 页面布局与文案校验功能 🆕
-│   ├── TEST-LAYOUT-COPYWRITING-FEATURE.md    # 布局文案功能测试指南 🆕
-│   └── CHANGELOG-layout-copywriting-test.md  # 布局文案功能更新日志 🆕
-└── README.md                                 # 本文件
+├── src/                    # 前端源码
+│   ├── components/         # React 组件
+│   ├── pages/             # 页面组件
+│   ├── services/          # API 服务
+│   └── types/             # TypeScript 类型
+├── server/                # 后端源码
+│   ├── routes/            # API 路由
+│   ├── services/          # 业务服务
+│   └── middleware/        # 中间件
+├── prisma/                # 数据库
+│   ├── schema.prisma      # 数据库模式
+│   └── migrations/        # 迁移文件
+├── docs/                  # 文档目录
+│   └── tech-docs/         # 技术文档
+├── scripts/               # 工具脚本
+└── README.md             # 本文件
 ```
 
 ---
@@ -656,11 +580,9 @@ project/
 |------|------|------|
 | React | 18.3.1 | 现代化前端框架 |
 | TypeScript | 5.5.3 | 类型安全的 JavaScript |
-| Ant Design | 5.26.7 | 企业级 UI 组件库 |
 | Tailwind CSS | 3.4.1 | 实用优先的 CSS 框架 |
 | Framer Motion | 10.16.16 | 流畅的动画库 |
 | Vite | 5.4.2 | 极速构建工具 |
-| Zustand | 4.4.7 | 轻量级状态管理 |
 
 ### 后端技术
 | 技术 | 版本 | 说明 |
@@ -670,9 +592,7 @@ project/
 | Prisma | 6.11.1 | 现代化 ORM |
 | MySQL | >= 8.0 | 关系型数据库 |
 | JWT | 9.0.2 | 身份认证 |
-| bcrypt | 6.0.0 | 密码加密 |
 | WebSocket (ws) | 8.18.3 | 实时通信 |
-| Bull | 4.16.5 | 任务队列 |
 
 ### AI 与测试
 | 技术 | 版本 | 说明 |
@@ -680,165 +600,8 @@ project/
 | MCP SDK | 1.0.0 | 模型上下文协议 |
 | Playwright | 1.54.2 | 浏览器自动化 |
 | Cheerio | 1.1.2 | HTML 解析 |
-| Multer | 2.0.2 | 文件上传 |
 | **Qdrant** | **1.12+** | **向量数据库 (RAG)** 🆕 |
 | **阿里通义 Embedding** | **v4** | **1024维向量化 (RAG)** 🆕 |
-
----
-
-## 📡 API 接口文档
-
-### 认证接口
-
-```bash
-# 用户登录
-POST /api/auth/login
-Content-Type: application/json
-{
-  "username": "admin",
-  "password": "admin123"
-}
-
-# 用户注册
-POST /api/auth/register
-{
-  "username": "newuser",
-  "email": "user@example.com",
-  "password": "password123",
-  "department": "测试部"
-}
-
-# 获取当前用户
-GET /api/auth/me
-Authorization: Bearer <token>
-
-# 登出
-POST /api/auth/logout
-Authorization: Bearer <token>
-```
-
-### 测试用例接口
-
-```bash
-# 获取测试用例列表
-GET /api/tests/cases?system=电商系统&module=用户管理
-Authorization: Bearer <token>
-
-# 创建测试用例
-POST /api/tests/cases
-Authorization: Bearer <token>
-{
-  "name": "用户登录测试",
-  "steps": [...],
-  "system": "电商系统",
-  "module": "用户管理",
-  "priority": "high"
-}
-
-# 更新测试用例
-PUT /api/tests/cases/:id
-Authorization: Bearer <token>
-
-# 删除测试用例
-DELETE /api/tests/cases/:id
-Authorization: Bearer <token>
-```
-
-### Axure AI 生成接口 🆕
-
-```bash
-# 上传并解析 Axure 原型
-POST /api/v1/axure/parse
-Authorization: Bearer <token>
-Content-Type: multipart/form-data
-{
-  "file": <axure_html_file>,
-  "projectName": "电商后台管理系统",
-  "systemType": "Web应用",
-  "businessDomain": "电商/零售"
-}
-
-# 生成需求文档
-POST /api/v1/functional-cases/generate-requirement
-Authorization: Bearer <token>
-{
-  "sessionId": "xxx-xxx-xxx",
-  "axureData": {...}
-}
-
-# 规划测试用例批次
-POST /api/v1/functional-cases/plan-batches
-Authorization: Bearer <token>
-{
-  "sessionId": "xxx-xxx-xxx",
-  "requirementDoc": "# 需求文档..."
-}
-
-# 生成指定批次测试用例
-POST /api/v1/functional-cases/generate-batch
-Authorization: Bearer <token>
-{
-  "sessionId": "xxx-xxx-xxx",
-  "batchId": "batch-1"
-}
-
-# 批量保存测试用例
-POST /api/v1/functional-cases/batch-save
-Authorization: Bearer <token>
-{
-  "testCases": [...]
-}
-```
-
-### AI 批量修改接口
-
-```bash
-# 创建修改会话 (干跑)
-POST /api/v1/ai-bulk/dry-run
-Authorization: Bearer <token>
-{
-  "system": "电商系统",
-  "module": "用户管理",
-  "changeBrief": "将登录按钮改为双击"
-}
-
-# 应用修改提案
-POST /api/v1/ai-bulk/apply
-Authorization: Bearer <token>
-{
-  "sessionId": 123,
-  "selectedProposals": [1, 2, 3]
-}
-```
-
-### WebSocket 事件
-
-```javascript
-// 连接认证
-ws://localhost:3001?token=<jwt_token>
-
-// 测试状态更新
-{
-  "type": "test_update",
-  "runId": "uuid",
-  "data": {
-    "status": "running",
-    "progress": 75,
-    "currentStep": "点击登录按钮"
-  }
-}
-
-// 测试完成
-{
-  "type": "test_complete",
-  "runId": "uuid",
-  "data": {
-    "status": "passed",
-    "duration": 45000,
-    "screenshots": ["step1.png"]
-  }
-}
-```
 
 ---
 
@@ -881,9 +644,6 @@ npx playwright install chromium
 # 清理缓存
 npx playwright uninstall
 npx playwright install
-
-# Linux 依赖
-sudo apt-get install libnss3 libatk-bridge2.0-0
 ```
 
 ### 4. 端口占用
@@ -893,121 +653,23 @@ sudo apt-get install libnss3 libatk-bridge2.0-0
 netstat -ano | findstr :3001
 netstat -ano | findstr :5173
 
-# Linux/Mac 查看端口
-lsof -i :3001
-lsof -i :5173
-
 # 修改端口 (.env)
 PORT=3002
 VITE_PORT=5174
 ```
 
-### 5. AI 生成失败
-
-```bash
-# 检查 AI 配置
-echo $AI_API_KEY
-echo $AI_MODEL_PROVIDER
-
-# 查看详细日志
-tail -f logs/server.log
-
-# 开启 Prompt 日志
-export LOG_FULL_PROMPT=true
-```
-
-### 6. RAG 知识库连接失败 🆕
+### 5. RAG 知识库连接失败 🆕
 
 ```bash
 # 检查 Qdrant 服务状态
 curl http://localhost:6333/health
-# 或访问: http://localhost:6333/dashboard
 
 # 重启 Qdrant (Docker)
 docker restart <qdrant_container_id>
 
-# 检查 Embedding API 配置
-echo $EMBEDDING_API_KEY
-echo $EMBEDDING_PROVIDER
-
 # 查看 RAG 检索日志
 tail -f logs/server.log | grep "RAG"
-
-# 如果 Qdrant 无法连接,系统会自动降级到普通模式
-# 日志会显示: "⚠️ [RAG状态] 知识库服务未启用"
 ```
-
-### 常见错误码
-
-| 错误码 | 说明 | 解决方案 |
-|--------|------|----------|
-| `ECONNREFUSED` | 数据库连接拒绝 | 检查 MySQL 服务 |
-| `EADDRINUSE` | 端口被占用 | 修改端口或终止进程 |
-| `P1001` | 数据库不可访问 | 启动 MySQL 服务 |
-| `UNAUTHORIZED` | 认证失败 | 检查 Token 有效性 |
-| `PLAYWRIGHT_TIMEOUT` | 浏览器超时 | 检查网络和目标站点 |
-| `QDRANT_CONNECTION_ERROR` 🆕 | Qdrant 连接失败 | 检查 Qdrant 服务和配置 |
-| `EMBEDDING_API_ERROR` 🆕 | Embedding API 调用失败 | 检查 API Key 和网络 |
-
----
-
-## 🛣️ 开发路线图
-
-### ✅ v2.4.0 (当前版本 - 2025-10)
-- [x] Axure 原型解析与 AI 测试用例生成
-- [x] **RAG 知识库增强 (Qdrant + 通义千问 Embedding)** 🆕
-- [x] 完整的用户认证和权限管理
-- [x] AI 批量修改测试用例
-- [x] 测试报告和统计分析
-- [x] 现代化 Ant Design UI 升级
-
-### 🚧 v2.5.0 (2025-11 计划)
-- [ ] 实时测试画面展示 (MJPEG 流)
-- [ ] 测试复盘工具 (Trace 文件 + 视频)
-- [ ] **知识库管理界面 (Web UI 管理测试知识)** 🆕
-- [ ] **RAG 知识自动学习 (从执行历史中提取经验)** 🆕
-- [ ] 自动资源清理和性能优化
-- [ ] 多租户支持
-- [ ] SSO 单点登录
-
-### 📋 v3.0.0 (2025-12 规划)
-- [ ] Figma / Sketch 原型支持
-- [ ] 可视化测试用例编辑器 (拖拽式)
-- [ ] 多浏览器支持 (Firefox, Safari)
-- [ ] 高级统计分析和趋势预测
-- [ ] 测试报告导出 (PDF, HTML, Excel)
-
-### 🔮 未来愿景
-- [ ] 移动端 App (iOS / Android)
-- [ ] 分布式执行支持
-- [ ] CI/CD 深度集成
-- [ ] 接口测试 (REST / GraphQL)
-- [ ] 性能测试集成
-- [ ] 可视化回归测试
-
----
-
-## 📈 性能指标
-
-### 系统性能
-
-| 指标 | 数值 | 说明 |
-|------|------|------|
-| 文件解析速度 | 5-10s | 50MB Axure HTML |
-| 需求生成速度 | 30-60s | 依赖 AI 模型 |
-| 单批用例生成 | 20-40s | 10 个场景 |
-| 数据库保存 | < 1s | 100 个用例批量插入 |
-| 页面加载时间 | < 2s | 首次加载 |
-| 动画帧率 | 60 FPS | 流畅度 |
-
-### 业务价值
-
-| 指标 | 数值 | 对比 |
-|------|------|------|
-| 用例生成速度 | 10-30 分钟 | 传统 2-3 天 |
-| 测试覆盖率 | 85-95% | 传统 60-70% |
-| 用例规范性 | 95%+ | 传统 70-80% |
-| 人力成本节省 | 80-90% | - |
 
 ---
 
@@ -1045,21 +707,7 @@ tail -f logs/server.log | grep "RAG"
 ❌ 差: 登录
 ```
 
-### 3. 权限管理建议
-
-- 定期审查用户权限
-- 遵循最小权限原则
-- 及时禁用离职用户账号
-- 定期更新密码策略
-
-### 4. 性能优化建议
-
-- 定期清理老旧截图和日志
-- 限制并发测试数量
-- 使用队列管理测试任务
-- 监控系统资源使用
-
-### 5. RAG 知识库使用建议 🆕
+### 3. RAG 知识库使用建议 🆕
 
 **知识质量优于数量**
 ```
@@ -1072,21 +720,6 @@ tail -f logs/server.log | grep "RAG"
 - 更新过时的测试模式
 - 删除低相似度的检索结果
 - 补充新的业务规则和风险场景
-
-**监控 RAG 检索效果**
-```bash
-# 查看 RAG 检索日志,评估相似度分数
-tail -f logs/server.log | grep "RAG-Step3"
-
-# 如果相似度普遍低于 0.5,说明知识库需要补充
-# 如果相似度高于 0.8,说明检索效果良好
-```
-
-**知识库分类管理**
-- **业务规则**: 来自产品文档和需求规范
-- **测试模式**: 来自成熟的测试设计方法论
-- **易错点**: 来自历史缺陷和回归测试
-- **风险场景**: 来自安全审计和渗透测试
 
 ---
 
@@ -1110,46 +743,11 @@ tail -f logs/server.log | grep "RAG-Step3"
 - ✅ 添加必要的注释和文档
 - ✅ 保持代码简洁易读
 
-### 提交信息规范
-
-```bash
-# 功能
-feat: 添加 Figma 原型解析支持
-
-# 修复
-fix: 修复 WebSocket 连接断开问题
-
-# 文档
-docs: 更新 API 接口文档
-
-# 样式
-style: 优化登录页面样式
-
-# 重构
-refactor: 重构 AI 解析服务
-
-# 测试
-test: 添加用户认证单元测试
-
-# 构建
-chore: 升级 Playwright 版本
-```
-
 ---
 
 ## 📄 开源许可
 
 本项目采用 MIT License - 详见 [LICENSE](LICENSE) 文件
-
-```
-MIT License
-
-Copyright (c) 2025 TestFlow Team
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction...
-```
 
 ---
 
@@ -1160,38 +758,36 @@ in the Software without restriction...
 - 📧 **邮件**: support@testflow.dev
 - 💬 **讨论**: [GitHub Discussions](https://github.com/testflow/testflow/discussions)
 - 🐛 **Bug 反馈**: [GitHub Issues](https://github.com/testflow/testflow/issues)
-- 📚 **在线文档**: [https://docs.testflow.dev](https://docs.testflow.dev) (规划中)
 
 ### 文档资源
 
-- [快速入门指南](docs/QUICK_START.md)
-- [AI 生成器完整介绍](docs/AXURE_FEATURE_INTRO.md)
-- [API 接口文档](docs/API_REFERENCE.md)
-- [部署指南](docs/DEPLOYMENT.md)
-- [常见问题 FAQ](docs/FAQ.md)
+- [项目结构说明](PROJECT_STRUCTURE.md)
+- [字体使用规范](TYPOGRAPHY_GUIDE.md)
+- [Claude Code 指南](CLAUDE.md)
+- [更新日志](CHANGES.md)
 
 ---
 
 ## 📸 产品截图
 
 ### 登录界面
-![登录界面](docs/screenshots/login.png)
+<!-- 图片路径: docs/screenshots/login.png -->
 *现代化的登录设计,支持"记住我"功能,安全的 JWT 认证*
 
 ### 测试用例管理
-![测试用例管理](docs/screenshots/test-cases.png)
+<!-- 图片路径: docs/screenshots/test-cases.png -->
 *精美的卡片式设计,智能筛选,系统模块分类管理*
 
 ### AI 测试用例生成器 ⭐
-![AI 生成器](docs/screenshots/ai-generator.png)
+<!-- 图片路径: docs/screenshots/ai-generator.png -->
 *三步流程: 上传 Axure → 生成需求 → 批量生成测试用例*
 
 ### AI 批量修改界面
-![AI 批量修改](docs/screenshots/bulk-update.png)
+<!-- 图片路径: docs/screenshots/bulk-update.png -->
 *直观的修改对比,美观的提案卡片,风险评估和版本控制*
 
 ### 测试执行监控
-![测试执行](docs/screenshots/test-execution.png)
+<!-- 图片路径: docs/screenshots/test-execution.png -->
 *实时状态更新,详细执行日志,自动截图保存*
 
 ---
@@ -1200,26 +796,11 @@ in the Software without restriction...
 
 感谢所有为 TestFlow 做出贡献的开发者!
 
-### 核心团队
-- [@testflow-team](https://github.com/testflow-team) - 核心开发团队
-
 ### 特别感谢
 - [Anthropic](https://www.anthropic.com) - MCP 协议和 Claude AI
 - [Playwright Team](https://playwright.dev) - 浏览器自动化引擎
-- [Ant Design Team](https://ant.design) - 企业级 UI 组件库
-
-### 开源社区
-感谢所有使用 TestFlow 并提供反馈的用户!
-
----
-
-## 📊 项目统计
-
-![GitHub Stars](https://img.shields.io/github/stars/testflow/testflow?style=social)
-![GitHub Forks](https://img.shields.io/github/forks/testflow/testflow?style=social)
-![GitHub Issues](https://img.shields.io/github/issues/testflow/testflow)
-![GitHub Pull Requests](https://img.shields.io/github/issues-pr/testflow/testflow)
-![License](https://img.shields.io/github/license/testflow/testflow)
+- [React Team](https://reactjs.org) - 现代化前端框架
+- [Tailwind CSS](https://tailwindcss.com) - 实用优先的 CSS 框架
 
 ---
 
