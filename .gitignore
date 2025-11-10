@@ -50,10 +50,12 @@ mcp.log
 pw.log
 debug-execution.log
 
-# Temp files
+# Runtime generated directories
+artifacts/
 temp/
 backups/
 uploads/
+logs/
 
 # Config files (keep templates)
 mcp-config.json
@@ -95,3 +97,12 @@ screenshots/
 *_SUMMARY.md
 *_README.md
 *_GUIDE.md
+
+# Font optimization scripts (temporary)
+scripts/font-optimization.js
+scripts/font-optimization-report.js
+FONT_OPTIMIZATION_REPORT.md
+
+# Python temporary scripts
+*.py
+!scripts/*.py
