@@ -1,9 +1,0 @@
-{
-  "screenshotsDirectory": "D:\\AI_mvp\\ai_test\\project\\screenshots",
-  "enableFileVerification": false,
-  "enableAutoCleanup": true,
-  "retentionDays": 30,
-  "enableBackup": true,
-  "backupDirectory": "D:\\AI_mvp\\ai_test\\project\\screenshots\\backup",
-  "logLevel": "info"
-}

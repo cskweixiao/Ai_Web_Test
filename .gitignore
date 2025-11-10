@@ -106,3 +106,46 @@ FONT_OPTIMIZATION_REPORT.md
 # Python temporary scripts
 *.py
 !scripts/*.py
+
+# Root directory cleanup rules
+# 防止临时文件堆积在根目录
+
+# 临时测试脚本
+test-*.js
+test-*.cjs
+test-*.html
+*-demo.js
+*-test.js
+check-*.js
+check-*.cjs
+check-*.html
+check-*.txt
+debug-*.js
+demo-*.js
+simple-*.js
+find-*.js
+find-*.cjs
+
+# 临时优化脚本
+*-optimization.ts
+*-optimization.js
+*-patch.ts
+update_*.py
+
+# 临时配置文件和备份
+defaultProfile.*
+mcp-config.json
+screenshot-config.json
+
+# SQL脚本（migrations目录除外）
+/*.sql
+
+# 临时文本文件
+testfile.txt
+check-output.txt
+*.log.txt
+
+# 其他临时文件
+nul
+start-server.js
+create-test-*.js
