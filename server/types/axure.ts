@@ -51,3 +51,21 @@ export interface AxureInteraction {
  * - modify: 修改页面（识别变更点）
  */
 export type PageMode = 'new' | 'modify';
+
+/**
+ * 平台类型枚举
+ * - web: Web端（PC端浏览器）
+ * - mobile: 移动端（H5/iOS/Android App）
+ */
+export type PlatformType = 'web' | 'mobile';
+
+/**
+ * 项目信息接口（用于需求文档生成）
+ */
+export interface ProjectInfo {
+  systemName?: string;
+  moduleName?: string;
+  pageMode?: PageMode;
+  platformType?: PlatformType;
+  businessRules?: string[];
+}

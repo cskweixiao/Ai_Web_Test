@@ -445,7 +445,7 @@ export function createAxureRoutes(): Router {
         });
       }
 
-      const { systemName, moduleName, pageMode = 'new' } = req.body;
+      const { systemName, moduleName, pageMode = 'new', platformType = 'web', businessRules } = req.body;
 
       // 验证 pageMode
       if (pageMode && !['new', 'modify'].includes(pageMode)) {
@@ -455,9 +455,21 @@ export function createAxureRoutes(): Router {
         });
       }
 
+      // 验证 platformType
+      if (platformType && !['web', 'mobile'].includes(platformType)) {
+        return res.status(400).json({
+          success: false,
+          error: 'platformType 必须是 web 或 mobile'
+        });
+      }
+
       console.log(`📤 收到HTML文件: ${req.file.originalname}, 大小: ${req.file.size} bytes`);
+      console.log(`   平台类型: ${platformType === 'web' ? 'Web端' : '移动端'}`);
       console.log(`   页面模式: ${pageMode === 'new' ? '新增页面' : '修改页面'}`);
       console.log(`   系统名称: ${systemName || '未指定'}, 模块名称: ${moduleName || '未指定'}`);
+      if (businessRules) {
+        console.log(`   补充业务规则: ${businessRules.split('\n').length} 行`);
+      }
 
       const filePath = req.file.path;
 
@@ -465,13 +477,20 @@ export function createAxureRoutes(): Router {
       const htmlContent = await fs.readFile(filePath, 'utf-8');
       console.log(`📄 HTML文件读取成功，长度: ${htmlContent.length} 字符`);
 
-      // 直接调用AI生成需求文档（传递 pageMode）
+      // 将补充业务规则转换为数组（按行分割，过滤空行）
+      const businessRulesArray = businessRules
+        ? businessRules.split('\n').map((r: string) => r.trim()).filter((r: string) => r.length > 0)
+        : [];
+
+      // 直接调用AI生成需求文档（传递 pageMode、platformType 和 businessRules）
       const result = await functionalTestCaseAIService.generateRequirementFromHtmlDirect(
         htmlContent,
         {
           systemName,
           moduleName,
-          pageMode: pageMode as 'new' | 'modify' // 传递页面模式
+          pageMode: pageMode as 'new' | 'modify', // 传递页面模式
+          platformType: platformType as 'web' | 'mobile', // 传递平台类型
+          businessRules: businessRulesArray // 传递补充业务规则
         }
       );
 

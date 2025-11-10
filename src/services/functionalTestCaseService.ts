@@ -293,8 +293,17 @@ class FunctionalTestCaseService {
    * @param moduleName 模块名称
    * @param pageMode 页面模式：'new' (新增页面) | 'modify' (修改页面)
    */
-  async generateFromHtmlDirect(htmlFile: File, systemName: string, moduleName: string, pageMode: 'new' | 'modify' = 'new') {
+  async generateFromHtmlDirect(
+    htmlFile: File,
+    systemName: string,
+    moduleName: string,
+    pageMode: 'new' | 'modify' = 'new',
+    businessRules?: string,
+    platformType?: 'web' | 'mobile'
+  ) {
+    const platform = platformType || 'web';
     console.log('📤 直接从HTML生成需求文档（跳过解析和二次确认）...');
+    console.log(`   平台类型: ${platform === 'web' ? 'Web端' : '移动端'}`);
     console.log(`   页面模式: ${pageMode === 'new' ? '新增页面' : '修改页面'}`);
 
     const formData = new FormData();
@@ -302,6 +311,11 @@ class FunctionalTestCaseService {
     formData.append('systemName', systemName);
     formData.append('moduleName', moduleName);
     formData.append('pageMode', pageMode);
+    formData.append('platformType', platform);
+    if (businessRules) {
+      formData.append('businessRules', businessRules);
+      console.log('   ✅ 包含补充业务规则');
+    }
 
     const token = localStorage.getItem(TOKEN_KEY);
     const headers: HeadersInit = {};

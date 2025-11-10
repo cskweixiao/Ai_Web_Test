@@ -137,66 +137,6 @@ export function MultiFileUpload({
         </p>
       </div>
 
-      {/* 🆕 页面模式选择器 */}
-      <div className="bg-white rounded-lg p-4 border border-gray-200 shadow-sm">
-        <label className="block text-sm font-medium text-gray-700 mb-3">
-          <span className="text-red-500">*</span> 页面模式
-        </label>
-        <Radio.Group
-          value={pageMode}
-          onChange={e => onPageModeChange?.(e.target.value)}
-          className="w-full"
-        >
-          <div className="grid grid-cols-2 gap-3">
-            <Radio.Button
-              value="new"
-              className={clsx(
-                "!h-auto !px-4 !py-3 !rounded-lg !border-2 !text-left transition-all",
-                pageMode === 'new'
-                  ? "!border-blue-500 !bg-blue-50"
-                  : "!border-gray-300 hover:!border-blue-300"
-              )}
-            >
-              <div>
-                <div className="font-semibold text-gray-900 mb-1">🆕 新增页面</div>
-                <div className="text-xs text-gray-600">
-                  完整的页面设计，AI将完整解析整个原型
-                </div>
-              </div>
-            </Radio.Button>
-            <Radio.Button
-              value="modify"
-              className={clsx(
-                "!h-auto !px-4 !py-3 !rounded-lg !border-2 !text-left transition-all",
-                pageMode === 'modify'
-                  ? "!border-orange-500 !bg-orange-50"
-                  : "!border-gray-300 hover:!border-orange-300"
-              )}
-            >
-              <div>
-                <div className="font-semibold text-gray-900 mb-1">✏️ 修改页面</div>
-                <div className="text-xs text-gray-600">
-                  修改现有页面，AI将识别红色标记的变更点
-                </div>
-              </div>
-            </Radio.Button>
-          </div>
-        </Radio.Group>
-        <div className={clsx(
-          "mt-3 p-3 rounded-lg text-xs transition-all",
-          pageMode === 'new' ? "bg-blue-50 text-blue-700" : "bg-orange-50 text-orange-700"
-        )}>
-          {pageMode === 'new' ? (
-            <p>
-              💡 <strong>新增页面模式：</strong>AI将分析整个页面结构和交互，生成完整的需求文档
-            </p>
-          ) : (
-            <p>
-              💡 <strong>修改页面模式：</strong>AI将重点识别页面上的<strong className="text-red-600">红色标记</strong>（新增/修改的UI元素）和<strong>业务描述</strong>（迭代变更说明），生成变更摘要和测试重点
-            </p>
-          )}
-        </div>
-      </div>
 
       {/* 拖拽上传区 */}
       <div

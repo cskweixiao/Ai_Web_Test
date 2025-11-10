@@ -40,6 +40,7 @@ export function FunctionalTestCaseGenerator() {
   const [axureFiles, setAxureFiles] = useState<File[]>([]);
   const [pageName, setPageName] = useState(''); // 新增:页面名称
   const [pageMode, setPageMode] = useState<'new' | 'modify'>('new'); // 🆕 页面模式：新增/修改
+  const [platformType, setPlatformType] = useState<'web' | 'mobile'>('web'); // 🆕 平台类型：Web端/移动端
   const [projectInfo, setProjectInfo] = useState({
     systemName: '',      // 系统名称
     moduleName: '',      // 模块名称
@@ -113,7 +114,9 @@ export function FunctionalTestCaseGenerator() {
         htmlFile,
         projectInfo.systemName,
         projectInfo.moduleName,
-        pageMode // 传递页面模式
+        pageMode, // 传递页面模式
+        projectInfo.businessRules, // 传递补充业务规则
+        platformType // 传递平台类型
       );
 
       // 设置会话ID和需求文档
@@ -774,6 +777,72 @@ export function FunctionalTestCaseGenerator() {
             </div>
 
             <div className="space-y-5">
+              {/* 平台类型 */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  平台类型 <span className="text-red-500">*</span>
+                </label>
+                <Radio.Group
+                  value={platformType}
+                  onChange={e => setPlatformType(e.target.value)}
+                  className="w-full"
+                  buttonStyle="solid"
+                >
+                  <div className="grid grid-cols-2 gap-3">
+                    <Radio.Button
+                      value="web"
+                      className="text-center h-10 leading-10"
+                    >
+                      🖥️ Web端
+                    </Radio.Button>
+                    <Radio.Button
+                      value="mobile"
+                      className="text-center h-10 leading-10"
+                    >
+                      📱 移动端
+                    </Radio.Button>
+                  </div>
+                </Radio.Group>
+                <p className="text-xs text-gray-500 mt-1">
+                  {platformType === 'web' ?
+                    '识别PC端Web页面（列表页、表单页、详情页、弹窗等）' :
+                    '识别移动端页面（TabBar导航、卡片列表、长屏详情、多状态画面等）'}
+                </p>
+              </div>
+
+              {/* 页面模式 */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  页面模式 <span className="text-red-500">*</span>
+                </label>
+                <Radio.Group
+                  value={pageMode}
+                  onChange={e => setPageMode(e.target.value)}
+                  className="w-full"
+                  buttonStyle="solid"
+                >
+                  <div className="grid grid-cols-2 gap-3">
+                    <Radio.Button
+                      value="new"
+                      className="text-center h-10 leading-10"
+                    >
+                      🆕 新增页面
+                    </Radio.Button>
+                    <Radio.Button
+                      value="modify"
+                      className="text-center h-10 leading-10"
+                    >
+                      ✏️ 修改页面
+                    </Radio.Button>
+                  </div>
+                </Radio.Group>
+                <p className="text-xs text-gray-500 mt-1">
+                  {pageMode === 'new' ?
+                    '完整解析页面所有元素和功能' :
+                    '识别红色标记的变更点，生成变更摘要'}
+                </p>
+              </div>
+
               {/* 系统名称 */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
