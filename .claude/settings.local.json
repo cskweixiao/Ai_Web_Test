@@ -96,7 +96,8 @@
       "Bash(Select-String -Pattern \"error|Error\" -Context 2)",
       "Bash(Select-Object -First 10)",
       "Bash(Select-Object -Last 200)",
-      "Bash(python replace_step3.py:*)"
+      "Bash(python replace_step3.py:*)",
+      "Bash(Get-Content \"d:\\AI_mvp\\ai_test\\project\\logs\\server.log\" -Tail 200)"
     ],
     "deny": []
   },

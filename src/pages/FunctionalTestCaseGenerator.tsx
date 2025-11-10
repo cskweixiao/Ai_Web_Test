@@ -803,7 +803,7 @@ export function FunctionalTestCaseGenerator() {
               {/* 补充业务规则 */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  补充业务规则 <span className="text-gray-400">(选填)</span>
+                  补充业务规则 <span className="text-gray-400">(选填，辅助AI理解)</span>
                 </label>
                 <TextArea
                   rows={6}
@@ -811,6 +811,9 @@ export function FunctionalTestCaseGenerator() {
                   value={projectInfo.businessRules}
                   onChange={e => setProjectInfo(prev => ({ ...prev, businessRules: e.target.value }))}
                 />
+                <p className="text-xs text-gray-500 mt-1">
+                  💡 这些规则将作为AI提示词的一部分，帮助AI更准确地理解需求和生成测试点，不会直接出现在需求文档中
+                </p>
               </div>
 
               {/* 提示信息 */}
@@ -818,7 +821,7 @@ export function FunctionalTestCaseGenerator() {
                 <h4 className="text-sm font-medium text-blue-900 mb-2">💡 填写说明</h4>
                 <ul className="text-xs text-blue-700 space-y-1 leading-relaxed">
                   <li>• <strong>系统名称</strong> 和 <strong>模块名称</strong> 为必填项，会自动填充到生成的测试用例中</li>
-                  <li>• <strong>补充业务规则</strong> 可选填，帮助 AI 生成更准确的边界条件和异常场景测试</li>
+                  <li>• <strong>补充业务规则</strong> 作为AI辅助提示，帮助生成更准确的边界条件、异常场景和风险测试点</li>
                   <li>• 页面名称会从 PRD 文档中自动提取，无需手动填写</li>
                 </ul>
               </div>

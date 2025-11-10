@@ -734,7 +734,6 @@ ${enhancedContext}
 
     const userPrompt = `系统: ${projectInfo.systemName || '未指定'}
 模块: ${projectInfo.moduleName || '未指定'}
-${projectInfo.businessRules && projectInfo.businessRules.length > 0 ? '\n业务规则:\n' + projectInfo.businessRules.map((r, i) => `${i + 1}. ${r}`).join('\n') : ''}
 ${pageTypeTable}${buttonDetailSummary}${longTextSummary}
 Axure原型解析结果 (${axureData.pageCount || 0}页, ${axureData.elementCount || 0}元素):
 
@@ -908,10 +907,29 @@ ${axureData.pageCount > 10 ? `\n(还有${axureData.pageCount - 10}个页面未�
       businessDescription = this.extractBusinessDescription(htmlContent);
     }
 
+    // 📊 业务规则日志
+    if (projectInfo.businessRules && projectInfo.businessRules.length > 0) {
+      console.log(`\n🎯 【步骤 3/5】用户提供的补充业务规则:`);
+      projectInfo.businessRules.forEach((rule, i) => {
+        console.log(`   ${i + 1}. ${rule}`);
+      });
+      console.log(`   💡 这些规则将作为AI提示词的一部分，辅助AI理解需求\n`);
+    }
+
     // 构建系统提示词 - 使用全新的Axure HTML解析策略
     const systemPrompt = `你是一个专业的需求分析专家。你的任务是分析Axure原型导出的HTML文件,并生成结构化的需求文档。
 
-# 📋 Axure HTML 解析策略
+${projectInfo.businessRules && projectInfo.businessRules.length > 0 ? `# 🎯 补充业务规则（辅助解析指导）
+以下是用户提供的补充业务规则，这些规则应该帮助你更好地理解需求文档的业务背景和约束条件：
+${projectInfo.businessRules.map((r, i) => `${i + 1}. ${r}`).join('\n')}
+
+**注意**: 这些规则是用来辅助你理解和解析需求的，不需要直接出现在生成的需求文档中。你应该利用这些规则来:
+- 更准确地推断业务逻辑和流程
+- 生成更合理的边界条件和异常场景
+- 识别隐含的业务约束和验证规则
+- 补充可能遗漏的重要测试点
+
+` : ''}# 📋 Axure HTML 解析策略
 
 ## 1️⃣ 页面类型识别
 
@@ -981,16 +999,40 @@ ${axureData.pageCount > 10 ? `\n(还有${axureData.pageCount - 10}个页面未�
 | 编辑 | 表格操作列（每行） | 编辑该行数据 |
 | 删除 | 表格操作列（每行） | 删除该行数据 |
 
-## 5️⃣ 弹窗/对话框识别
+## 5️⃣ 弹窗/对话框识别（针对Axure原型增强）
 
-**识别特征：**
-- class名包含 "modal"、"dialog"、"popup"、"layer"
-- 通常有"确定"/"取消"按钮
-- 尺寸较小，位置居中
+**🔥 Axure弹窗特征识别（优先级从高到低）**:
+
+1️⃣ **通过data-label属性识别**（最准确）:
+   - 查找 \`data-label\` 属性包含"弹窗"、"对话框"、"确认"、"提示"、"审核"、"下单"等关键词的元素
+   - 示例: \`<div data-label="审核弹窗">\`, \`<div data-label="下单确认弹窗">\`
+   - **必须使用data-label的值作为弹窗名称**
+
+2️⃣ **通过class名识别**:
+   - class包含: "modal"、"dialog"、"popup"、"layer"、"panel_state"
+   - Axure特有: \`class="ax_default_hidden"\` 表示默认隐藏的弹窗
+   - 组合识别: \`<div id="uXXXX" class="ax_default" data-label="XXX弹窗">\`
+
+3️⃣ **通过结构特征识别**:
+   - 包含"确定"和"取消"按钮的容器
+   - 包含"同意"/"拒绝"、"是"/"否"等对立选项的容器
+   - 有单选框(radio)或多选框(checkbox)组合表单的独立容器
+   - 尺寸固定且相对较小的独立容器
+
+4️⃣ **通过style属性识别**:
+   - \`display:none\` 或 \`visibility: hidden\` 表示初始隐藏
+   - \`position: fixed\` 或 \`position: absolute\` 表示浮层
+
+**⚠️ 错误弹窗过滤规则**:
+- **忽略导航相关**: 用户信息下拉框(如"修改密码"/"退出"菜单)、侧边栏菜单
+- **忽略下拉选项**: 下拉菜单的选项列表、更多操作的下拉面板
+- **只识别业务操作弹窗**: 与数据提交、审核、确认等业务操作相关的模态弹窗
 
 **处理方式：**
-- 为弹窗创建独立的功能点章节（如 ### 1.2 新增订单弹窗）
-- 提取弹窗内的表单字段和按钮
+- 为每个弹窗创建独立的功能点章节（如 ### 1.2 审核弹窗）
+- 章节标题必须使用data-label属性值或从弹窗内容推断的准确名称
+- 完整提取弹窗内的表单字段、单选框、多选框、输入框和按钮
+- 在章节开头标注弹窗来源（如: 来源: data-label="审核弹窗"）
 
 ## 6️⃣ 下拉框选项提取
 
@@ -999,13 +1041,87 @@ ${axureData.pageCount > 10 ? `\n(还有${axureData.pageCount - 10}个页面未�
 - 提取其中所有 \`<option>\` 的文本内容
 - 在"可选值/枚举"列中用斜杠分隔，如："待审核/已审核/已完成/已取消"
 
-## 7️⃣ 业务规则推断
+## 7️⃣ 业务规则提取（重点增强！）
 
-**从HTML中提取业务规则的方法：**
-1. **从字段名推断**：如"审核意见"字段 → 可能有审核流程
-2. **从按钮文案推断**：如"提交审核" → 需要审核权限控制
-3. **从class/id推断**：如 \`class="required"\` → 该字段必填
-4. **从提示文本推断**：如 placeholder="请输入6-20位密码" → 密码长度限制
+**🔥 从Axure注释表格中提取业务规则**（关键！）
+
+**识别场景**:
+Axure原型中常见的业务规则表达方式:
+1. **独立的业务规则说明表格**（class="table"且包含"业务规则"列）
+2. **字段说明表格中的"备注"/"需求描述"列**
+3. **按钮/功能说明表格中的"备注"/"需求描述"/"补充说明"列**
+4. **红色文字标注的重要规则**（style="color:#D9001B" 或 style="color:red"）
+
+**提取规则**:
+
+1️⃣ **查找业务规则表格结构**:
+\`\`\`html
+<!-- 典型的Axure业务规则表格 -->
+<div class="table">
+  <div class="row header">
+    <div class="cell">按钮/图标/模块</div>
+    <div class="cell">备注</div>
+  </div>
+  <div class="row">
+    <div class="cell">列表数据</div>
+    <div class="cell">
+      1、结算总金额计算规则...
+      2、审核规则...
+      3、拦截规则...
+    </div>
+  </div>
+</div>
+\`\`\`
+
+2️⃣ **识别关键特征**:
+- **表头包含**: "备注"、"需求描述"、"业务规则"、"注意事项"、"补充说明"
+- **单元格内容特征**:
+  - 包含数字编号(1、 2、 3、 或 1. 2. 3.)
+  - 包含红色文字标注（极重要！）
+  - 包含长段落文字说明（超过50个字符）
+- **内容关键词**: "需要"、"必须"、"禁止"、"校验"、"拦截"、"提示"、"计算"、"拉取"、"自动"、"超时"
+
+3️⃣ **红色文字识别**（极重要！）:
+\`\`\`html
+<!-- 红色文字通常表示核心业务规则、校验规则、拦截规则 -->
+<span style="color:#D9001B;">审核通过时,需要校验库存...</span>
+<span style="color:red;">必须拦截并提示...</span>
+\`\`\`
+→ **凡是红色文字,必须作为核心业务规则提取到需求文档的"业务规则"章节**
+→ 可以在规则前加 ⚠️ 标记表示这是从红色文字提取的重要规则
+
+4️⃣ **提取并格式化输出**:
+- 将表格中的所有业务规则提取到"#### 业务规则"章节
+- 保持原有的数字编号格式（1、或1.）
+- 红色文字规则要特别标注（加⚠️前缀）或放在开头
+- **完整保留原文表述**，不要简化、改写或省略
+- 如果规则很长，保持完整的多行格式
+
+5️⃣ **从其他元素推断业务规则**:
+- **从字段名推断**：如"审核意见"字段 → 可能有审核流程
+- **从按钮文案推断**：如"提交审核" → 需要审核权限控制
+- **从class/id推断**：如 \`class="required"\` → 该字段必填
+- **从提示文本推断**：如 placeholder="请输入6-20位密码" → 密码长度限制
+
+**输出示例**:
+#### 业务规则
+1. **结算总金额（集采含税采购成本）（元）**: 显示询价单内所有商品的含税采购成本之和+运费
+2. **结算总金额（集采含税V链供应价）（元）**: 显示询价单内所有商品的含税V链供应价之和+运费（也就是SaaS后台能看到的价格）
+3. **审核流程规则**:
+   - 平台采购点击审核通过后，礼品公司方可进入下一步上传地址或手动取消
+   - ⚠️ **审核通过时，需要输入期望回复时效，礼品公司超时未上传则询价单自动终止结束**
+   - ⚠️ **审核同意时需要校验库存是否能扣减成功，若库存不够则无法审核通过**
+   - ⚠️ **审核同意时需要校验商品是否能正常拉取含税采购成本（商品状态是否可售挑选），否则将无法审核通过**
+   - 当礼品公司上传完地址后，则采购审核地址确认下单即正式下单
+   - 当礼品公司手动取消后，该询价单终止，状态为终止
+4. **确认下单规则**:
+   - 平台采购点击后，若审核通过则正式进入下单；如拒绝，则该询价单状态为已拒绝，流程结束
+   - 下单后的订单及商品金额以询价单内的价格为准
+   - ⚠️ **当存在商品运费拉取失败时，审核通过需要拦截并提示"存在商品运费拉取失败，请核查处理后刷新重试"**
+   - 审核拒绝时，无需拦截
+5. **导出规则**: 除操作栏，其他字段均需导出
+
+（注：⚠️ 标记表示从原型红色文字规则提取的核心规则）
 
 ---
 
@@ -2729,6 +2845,7 @@ ${requirementDoc.substring(0, 1500)}...
 
   /**
    * 构建模拟需求文档（临时实现）
+   * 注意：补充业务规则不应出现在需求文档中，它只是辅助AI理解需求的提示
    */
   private buildMockRequirementDoc(axureData: AxureParseResult, projectInfo: ProjectInfo): string {
     return `# ${projectInfo.projectName} 需求文档
@@ -2759,11 +2876,7 @@ ${page.elements.slice(0, 5).map(e => `- ${e.type}: ${e.name || e.text || e.place
 ${page.interactions.slice(0, 3).map(int => `- ${int.type}: ${int.trigger}`).join('\n')}
 `).join('\n')}
 
-## 四、业务规则
-
-${projectInfo.businessRules.map((rule, i) => `${i + 1}. ${rule}`).join('\n')}
-
-## 五、约束条件
+## 四、约束条件
 
 ${projectInfo.constraints.map((constraint, i) => `${i + 1}. ${constraint}`).join('\n')}
 
