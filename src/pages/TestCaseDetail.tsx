@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { testService } from '../services/testService';
+import * as systemService from '../services/systemService';
 import type { TestCase, TestStepRow } from '../types/test';
 import { showToast } from '../utils/toast';
 import { Button } from '../components/ui/button';
@@ -39,6 +40,7 @@ export function TestCaseDetail() {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [testCase, setTestCase] = useState<TestCase | null>(null);
+  const [systemOptions, setSystemOptions] = useState<Array<{ id: number; name: string }>>([]);
   const [formData, setFormData] = useState<TestCaseForm>({
     name: '',
     steps: '',
@@ -70,6 +72,20 @@ export function TestCaseDetail() {
     if (savedMode) {
       setStepsEditorMode(savedMode);
     }
+  }, []);
+
+  // 加载系统字典选项
+  useEffect(() => {
+    const loadSystems = async () => {
+      try {
+        const systems = await systemService.getActiveSystems();
+        setSystemOptions(systems);
+      } catch (error) {
+        console.error('加载系统列表失败:', error);
+        showToast.error('加载系统列表失败');
+      }
+    };
+    loadSystems();
   }, []);
 
   // 加载测试用例数据（编辑模式）
@@ -362,14 +378,17 @@ export function TestCaseDetail() {
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   所属系统
                 </label>
-                <input
-                  type="text"
+                <select
                   name="system"
                   value={formData.system}
                   onChange={handleInputChange}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="请输入所属系统"
-                />
+                >
+                  <option value="">请选择系统</option>
+                  {systemOptions.map(sys => (
+                    <option key={sys.id} value={sys.name}>{sys.name}</option>
+                  ))}
+                </select>
               </div>
 
               <div>

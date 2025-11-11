@@ -1,9 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { ArrowLeft, Save, X, Loader2 } from 'lucide-react';
 import { TestPointsEditor, TestPoint } from '../components/functional-test-case/TestPointsEditor';
 import { functionalTestCaseService } from '../services/functionalTestCaseService';
+import * as systemService from '../services/systemService';
+import type { SystemOption } from '../types/test';
 import { showToast } from '../utils/toast';
 
 /**
@@ -32,6 +34,9 @@ export function FunctionalTestCaseCreate() {
   const navigate = useNavigate();
   const [saving, setSaving] = useState(false);
 
+  // 🔥 新增：系统字典列表
+  const [systemOptions, setSystemOptions] = useState<SystemOption[]>([]);
+
   // 表单数据状态
   const [formData, setFormData] = useState<FormData>({
     name: '',
@@ -56,6 +61,20 @@ export function FunctionalTestCaseCreate() {
       }
     ]
   });
+
+  // 🔥 新增：加载系统字典列表
+  useEffect(() => {
+    const loadSystems = async () => {
+      try {
+        const systems = await systemService.getActiveSystems();
+        setSystemOptions(systems);
+      } catch (error) {
+        console.error('加载系统列表失败:', error);
+        showToast('加载系统列表失败', 'error');
+      }
+    };
+    loadSystems();
+  }, []);
 
   /**
    * 处理输入字段变更
@@ -264,10 +283,9 @@ export function FunctionalTestCaseCreate() {
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
                 >
                   <option value="">请选择系统</option>
-                  <option value="电商系统">电商系统</option>
-                  <option value="OA系统">OA系统</option>
-                  <option value="CRM系统">CRM系统</option>
-                  <option value="其他">其他</option>
+                  {systemOptions.map(sys => (
+                    <option key={sys.id} value={sys.name}>{sys.name}</option>
+                  ))}
                 </select>
               </div>
 

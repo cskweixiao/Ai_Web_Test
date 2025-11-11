@@ -547,3 +547,23 @@ enum functional_test_source {
   MANUAL
   AI_GENERATED
 }
+
+// 🔥 新增：系统字典表
+model systems {
+  id          Int           @id @default(autoincrement())
+  name        String        @unique @db.VarChar(100) // 系统名称（唯一）
+  description String?       @db.Text // 系统描述
+  status      system_status @default(active) // 状态（启用/禁用）
+  sort_order  Int           @default(0) // 排序顺序
+  created_at  DateTime      @default(now()) @db.Timestamp(0)
+  updated_at  DateTime      @updatedAt @db.Timestamp(0)
+
+  @@index([status])
+  @@index([sort_order])
+}
+
+// 系统状态枚举
+enum system_status {
+  active
+  inactive
+}

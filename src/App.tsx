@@ -17,6 +17,7 @@ import { FunctionalTestCases } from './pages/FunctionalTestCases';
 import { FunctionalTestCaseGenerator } from './pages/FunctionalTestCaseGenerator';
 import { FunctionalTestCaseCreate } from './pages/FunctionalTestCaseCreate';
 import { FunctionalTestPointEdit } from './pages/FunctionalTestPointEdit';
+import SystemManagement from './pages/SystemManagement';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { ToastProvider } from './components/ui/toast';
 import { NotFoundPage, ServerErrorPage, ForbiddenPage } from './pages/ErrorPage';
@@ -282,6 +283,9 @@ function AppContent() {
                       <Route path="/reports" element={<TestReports />} />
                       <Route path="/llm-assistant" element={<LLMAssistant />} />
                       <Route path="/test-factory" element={<TestFactory />} />
+
+                      {/* 系统字典管理 */}
+                      <Route path="/systems" element={<SystemManagement />} />
 
                       {/* 用户管理 - 仅超级管理员可访问 */}
                       <Route path="/user-management" element={

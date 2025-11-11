@@ -16,6 +16,8 @@ import {
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { functionalTestCaseService } from '../services/functionalTestCaseService';
+import * as systemService from '../services/systemService';
+import type { SystemOption } from '../types/test';
 import { showToast } from '../utils/toast';
 import { useAuth } from '../contexts/AuthContext';
 import { TestCaseDetailModal } from '../components/ai-generator/TestCaseDetailModal';
@@ -51,6 +53,9 @@ export function FunctionalTestCases() {
   });
   const [showFilters, setShowFilters] = useState(false);
 
+  // 🔥 新增：系统字典列表
+  const [systemOptions, setSystemOptions] = useState<SystemOption[]>([]);
+
   // 复选框状态
   const [selectedRows, setSelectedRows] = useState<Set<number>>(new Set());
   const [selectAll, setSelectAll] = useState(false);
@@ -81,6 +86,19 @@ export function FunctionalTestCases() {
       setLoading(false);
     }
   };
+
+  // 🔥 新增：加载系统字典列表
+  useEffect(() => {
+    const loadSystems = async () => {
+      try {
+        const systems = await systemService.getActiveSystems();
+        setSystemOptions(systems);
+      } catch (error) {
+        console.error('加载系统列表失败:', error);
+      }
+    };
+    loadSystems();
+  }, []);
 
   useEffect(() => {
     loadData();
@@ -373,9 +391,9 @@ export function FunctionalTestCases() {
                              focus:ring-blue-500 focus:border-transparent"
                   >
                     <option value="">全部系统</option>
-                    <option value="电商系统">电商系统</option>
-                    <option value="OA系统">OA系统</option>
-                    <option value="CRM系统">CRM系统</option>
+                    {systemOptions.map(sys => (
+                      <option key={sys.id} value={sys.name}>{sys.name}</option>
+                    ))}
                   </select>
 
                   <select

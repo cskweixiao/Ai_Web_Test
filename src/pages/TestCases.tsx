@@ -27,7 +27,8 @@ import {
 import { clsx } from 'clsx';
 import { Layout } from '../components/Layout';
 import { testService } from '../services/testService';
-import type { TestCase, TestSuite as TestSuiteType, TestStepRow } from '../types/test';
+import * as systemService from '../services/systemService';
+import type { TestCase, TestSuite as TestSuiteType, TestStepRow, SystemOption } from '../types/test';
 import { useNavigate } from 'react-router-dom';
 import { Modal, ConfirmModal } from '../components/ui/modal';
 import { Button } from '../components/ui/button';
@@ -102,7 +103,10 @@ export function TestCases() {
   // 🔥 新增：AI批量更新状态管理
   const [aiFeatureAvailable, setAiFeatureAvailable] = useState(false);
   const [checkingFeature, setCheckingFeature] = useState(true);
-  
+
+  // 🔥 新增：系统字典列表
+  const [systemOptions, setSystemOptions] = useState<SystemOption[]>([]);
+
   const [formData, setFormData] = useState<CreateTestCaseForm>({
     name: '',
     steps: '',
@@ -140,6 +144,20 @@ export function TestCases() {
   // 🔥 新增：步骤编辑器模式和结构化数据
   const [stepsEditorMode, setStepsEditorMode] = useState<'text' | 'table'>('table'); // 默认表格模式
   const [stepsData, setStepsData] = useState<TestStepRow[]>([]);
+
+  // 🔥 新增：加载系统字典列表
+  useEffect(() => {
+    const loadSystems = async () => {
+      try {
+        const systems = await systemService.getActiveSystems();
+        setSystemOptions(systems);
+      } catch (error) {
+        console.error('加载系统列表失败:', error);
+        showToast('加载系统列表失败', 'error');
+      }
+    };
+    loadSystems();
+  }, []);
 
   // 🔥 新增：初始化时加载用户偏好的编辑器模式
   useEffect(() => {
@@ -782,7 +800,6 @@ export function TestCases() {
 
   const allTags = Array.from(new Set(testCases.flatMap(tc => tc.tags)));
   const allSuiteTags = Array.from(new Set(testSuites.flatMap(suite => suite.tags || [])));
-  const systemOptions = Array.from(new Set(testCases.map(tc => tc.system).filter(Boolean)));
   const moduleOptions = Array.from(new Set(testCases.map(tc => tc.module).filter(Boolean)));
 
   // 🔥 移除前端过滤逻辑：现在由后端分页API处理所有过滤
@@ -1180,8 +1197,8 @@ export function TestCases() {
             className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
           >
             <option value="">所有系统</option>
-            {Array.from(new Set(testCases.map(tc => tc.system).filter(Boolean))).map(system => (
-              <option key={system} value={system}>{system}</option>
+            {systemOptions.map(sys => (
+              <option key={sys.id} value={sys.name}>{sys.name}</option>
             ))}
           </select>
 
@@ -1722,19 +1739,16 @@ export function TestCases() {
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   系统
                 </label>
-                <input
-                  type="text"
-                  list="systemOptions"
+                <select
                   value={formData.system}
                   onChange={(e) => setFormData(prev => ({ ...prev, system: e.target.value }))}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="如：电商系统"
-                />
-                <datalist id="systemOptions">
-                  {systemOptions.map((opt) => (
-                    <option key={opt as string} value={opt as string}></option>
+                >
+                  <option value="">请选择系统</option>
+                  {systemOptions.map((sys) => (
+                    <option key={sys.id} value={sys.name}>{sys.name}</option>
                   ))}
-                </datalist>
+                </select>
               </div>
 
               <div>

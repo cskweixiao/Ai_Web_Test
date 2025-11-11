@@ -25,6 +25,8 @@ import { createReportsRoutes } from './routes/reports.js';
 // 🔥 新增：功能测试用例相关路由
 import { createAxureRoutes } from './routes/axure.js';
 import { createFunctionalTestCaseRoutes } from './routes/functionalTestCase.js';
+// 🔥 新增：系统字典管理路由
+import systemsRouter from './routes/systems.js';
 // 🔥 新增：初始化功能开关和权限
 import { initializeAllFeatureFlags } from './middleware/featureFlag.js';
 import { PermissionService } from './middleware/auth.js';
@@ -570,6 +572,10 @@ async function startServer() {
     console.log('🔧 注册功能测试用例相关路由...');
     app.use('/api/v1/axure', authenticate, createAxureRoutes());
     app.use('/api/v1/functional-test-cases', authenticate, createFunctionalTestCaseRoutes());
+
+    // 🔥 新增：系统字典管理路由
+    console.log('🔧 注册系统字典管理路由...');
+    app.use('/api/v1/systems', authenticate, systemsRouter);
 
     console.log('✅ API路由注册完成');
 

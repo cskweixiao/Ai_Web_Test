@@ -230,4 +230,63 @@ export interface TestPurpose {
   priority: 'high' | 'medium' | 'low';
   testCase?: any; // 可选，阶段3生成后才有（使用any避免循环引用）
   generating?: boolean; // 是否正在生成测试点（前端状态）
+}
+
+// 🔥 新增：系统字典相关类型
+
+/**
+ * 系统状态枚举
+ */
+export type SystemStatus = 'active' | 'inactive';
+
+/**
+ * 系统接口
+ */
+export interface System {
+  id: number;
+  name: string;
+  description?: string | null;
+  status: SystemStatus;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+}
+
+/**
+ * 创建系统输入
+ */
+export interface CreateSystemInput {
+  name: string;
+  description?: string;
+  status?: SystemStatus;
+  sort_order?: number;
+}
+
+/**
+ * 更新系统输入
+ */
+export interface UpdateSystemInput {
+  name?: string;
+  description?: string;
+  status?: SystemStatus;
+  sort_order?: number;
+}
+
+/**
+ * 系统列表响应
+ */
+export interface SystemsResponse {
+  data: System[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+}
+
+/**
+ * 简化的系统选项（用于下拉选择）
+ */
+export interface SystemOption {
+  id: number;
+  name: string;
 } 

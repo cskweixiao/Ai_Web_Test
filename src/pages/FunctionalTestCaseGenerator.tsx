@@ -1,12 +1,13 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Input, Radio } from 'antd';
+import { Input, Radio, Select } from 'antd';
 import {
   Sparkles, Upload as UploadIcon, FileText, Zap, Shield,
   ArrowLeft, ArrowRight, Save, FileX, CheckCircle
 } from 'lucide-react';
 import { functionalTestCaseService } from '../services/functionalTestCaseService';
+import * as systemService from '../services/systemService';
 import { showToast } from '../utils/toast';
 import { Button } from '../components/ui/button';
 import { ProgressIndicator } from '../components/ai-generator/ProgressIndicator';
@@ -36,6 +37,9 @@ export function FunctionalTestCaseGenerator() {
   const navigate = useNavigate();
   const [currentStep, setCurrentStep] = useState(0);
 
+  // 系统字典选项
+  const [systemOptions, setSystemOptions] = useState<Array<{ id: number; name: string }>>([]);
+
   // 步骤1状态
   const [axureFiles, setAxureFiles] = useState<File[]>([]);
   const [pageName, setPageName] = useState(''); // 新增:页面名称
@@ -48,6 +52,20 @@ export function FunctionalTestCaseGenerator() {
   });
   const [parseResult, setParseResult] = useState<any>(null);
   const [parsing, setParsing] = useState(false);
+
+  // 加载系统字典选项
+  useEffect(() => {
+    const loadSystems = async () => {
+      try {
+        const systems = await systemService.getActiveSystems();
+        setSystemOptions(systems);
+      } catch (error) {
+        console.error('加载系统列表失败:', error);
+        showToast.error('加载系统列表失败');
+      }
+    };
+    loadSystems();
+  }, []);
 
   // 步骤2状态
   const [requirementDoc, setRequirementDoc] = useState('');
@@ -848,10 +866,20 @@ export function FunctionalTestCaseGenerator() {
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   系统名称 <span className="text-red-500">*</span>
                 </label>
-                <Input
-                  placeholder="例如：电商后台管理系统"
-                  value={projectInfo.systemName}
-                  onChange={e => setProjectInfo(prev => ({ ...prev, systemName: e.target.value }))}
+                <Select
+                  className="w-full"
+                  placeholder="请选择系统"
+                  value={projectInfo.systemName || undefined}
+                  onChange={(value) => setProjectInfo(prev => ({ ...prev, systemName: value }))}
+                  showSearch
+                  optionFilterProp="children"
+                  filterOption={(input, option) =>
+                    (option?.label ?? '').toLowerCase().includes(input.toLowerCase())
+                  }
+                  options={systemOptions.map(sys => ({
+                    label: sys.name,
+                    value: sys.name
+                  }))}
                 />
                 <p className="text-sm text-gray-700 mt-1">生成的测试用例会自动填充此系统名称</p>
               </div>
