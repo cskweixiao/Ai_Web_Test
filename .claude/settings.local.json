@@ -102,7 +102,9 @@
       "Bash(Select-String -Pattern \"补充业务规则|businessRules|系统提示词|generateRequirementDoc\" -Context 2)",
       "Bash(git mv:*)",
       "Bash(test:*)",
-      "Bash(git check-ignore:*)"
+      "Bash(git check-ignore:*)",
+      "Bash(git remote set-url:*)",
+      "Bash(git remote add:*)"
     ],
     "deny": []
   },
