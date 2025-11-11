@@ -19,7 +19,10 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "setup": "npm install",
-    "test": "jest"
+    "test": "jest",
+    "knowledge:status": "node scripts/showKnowledgeStatus.mjs",
+    "knowledge:init": "node scripts/createCollectionsForAllSystems.mjs",
+    "systems:list": "node scripts/listSystems.mjs"
   },
   "dependencies": {
     "@ant-design/charts": "^2.6.1",

@@ -15,6 +15,7 @@ import {
   Users,
   ClipboardList,
   Database,
+  BookOpen,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { clsx } from 'clsx';
@@ -45,6 +46,7 @@ const navigationItems: NavigationItem[] = [
   // { name: '测试工厂', href: '/test-factory', icon: Factory },
   // { name: 'AI 助手', href: '/llm-assistant', icon: Bot },
   { name: '系统字典', href: '/systems', icon: Database },
+  { name: '知识库', href: '/knowledge', icon: BookOpen },
   { name: '用户管理', href: '/user-management', icon: Users },
   { name: '设置', href: '/settings', icon: Settings },
 ];

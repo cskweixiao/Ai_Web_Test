@@ -109,7 +109,10 @@
       "Bash(ssh-keygen:*)",
       "Bash(git checkout:*)",
       "Bash(git fetch:*)",
-      "Bash(git stash:*)"
+      "Bash(git stash:*)",
+      "Bash(python -m json.tool:*)",
+      "Bash(Get-Content \"d:\\AI_mvp\\ai_test\\project\\logs\\server.log\" -Tail 50)",
+      "Bash(Select-String -Pattern \"knowledge|search|collection|Qdrant|向量\" -Context 1)"
     ],
     "deny": []
   },

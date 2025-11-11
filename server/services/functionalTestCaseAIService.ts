@@ -93,27 +93,22 @@ export interface TestCase {
  */
 export class FunctionalTestCaseAIService {
   private useConfigManager: boolean = true;
-  private knowledgeBase: TestCaseKnowledgeBase;
+  private knowledgeBase: TestCaseKnowledgeBase | null = null; // 🔥 改为可选
   private knowledgeBaseAvailable: boolean = false;
 
   constructor() {
     console.log('🤖 功能测试用例AI服务已初始化');
 
-    // 初始化知识库服务
-    try {
-      console.log('🔄 正在初始化知识库服务...');
-      this.knowledgeBase = new TestCaseKnowledgeBase();
-      this.knowledgeBaseAvailable = true;
-      console.log('✅ 知识库服务已加载（RAG增强模式）');
-      console.log(`📊 知识库状态: knowledgeBaseAvailable = ${this.knowledgeBaseAvailable}`);
-    } catch (error: any) {
-      console.error('❌ 知识库服务初始化失败，将降级为普通模式');
-      console.error('   错误详情:', error);
-      console.error('   错误堆栈:', error.stack);
-      this.knowledgeBaseAvailable = false;
-      this.knowledgeBase = null as any;
-      console.log(`📊 知识库状态: knowledgeBaseAvailable = ${this.knowledgeBaseAvailable}`);
-    }
+    // 🔥 不再在构造函数中初始化知识库，改为在使用时动态初始化
+    console.log('💡 知识库服务将按需动态初始化（支持多系统）');
+  }
+
+  /**
+   * 🔥 新增：获取或创建指定系统的知识库实例
+   */
+  private getKnowledgeBase(systemName?: string): TestCaseKnowledgeBase {
+    // 每次都创建新实例,确保使用正确的系统集合
+    return new TestCaseKnowledgeBase(systemName);
   }
 
   /**
@@ -1072,15 +1067,17 @@ ${getCommonSystemInstructions()}`;
 
     console.log(`📄 提取章节内容 - ${sectionId} ${sectionName} (${sectionContent.length}字符)`);
 
-    // 🔍 查询知识库（RAG增强）
+    // 🔍 查询知识库（RAG增强）- 🔥 使用系统特定的知识库
     console.log(`\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
     console.log(`📚 [知识库RAG] 开始检索相关知识...`);
-    console.log(`   检查知识库状态: knowledgeBaseAvailable = ${this.knowledgeBaseAvailable}`);
+    console.log(`   🎯 目标系统: ${systemName || '默认'}`);
     console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
 
     let knowledgeContext = '';
-    if (this.knowledgeBaseAvailable) {
-      console.log(`✅ 知识库可用，开始RAG检索...`);
+    try {
+      // 🔥 获取系统特定的知识库实例
+      const knowledgeBase = this.getKnowledgeBase(systemName);
+      console.log(`✅ 知识库实例已创建（系统：${systemName || '默认'}），开始RAG检索...`);
       try {
         console.log(`🔍 [RAG-Step1] 准备查询参数:`);
         console.log(`   📌 章节名称: "${sectionName}"`);
@@ -1093,7 +1090,7 @@ ${getCommonSystemInstructions()}`;
         console.log(`\n🔍 [RAG-Step2] 调用Qdrant向量数据库进行语义检索...`);
         const queryStartTime = Date.now();
 
-        const knowledgeResults = await this.knowledgeBase.searchByCategory({
+        const knowledgeResults = await knowledgeBase.searchByCategory({
           query: queryText,
           topK: 3,
           scoreThreshold: 0.5
@@ -1160,10 +1157,10 @@ ${getCommonSystemInstructions()}`;
         console.error(`   错误堆栈: ${error.stack}`);
         console.warn(`\n🔄 [降级处理] 自动切换到普通模式生成`);
       }
-    } else {
-      console.log(`⚠️  [RAG状态] 知识库服务未启用`);
-      console.log(`   💡 原因: 服务初始化时出现错误（检查Qdrant连接或配置）`);
-      console.log(`\n🔄 [降级处理] 使用普通模式生成（不使用知识库增强）`);
+    } catch (outerError: any) {
+      console.error(`❌ [RAG-Error] 知识库初始化失败:`);
+      console.error(`   错误信息: ${outerError.message}`);
+      console.warn(`\n🔄 [降级处理] 自动切换到普通模式生成`);
     }
 
     console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`);
@@ -1734,15 +1731,17 @@ ${isModifyMode ? `
       return match ? match[0] : '';
     }).join('\n\n');
 
-    // 🔍 查询知识库（RAG增强）
+    // 🔍 查询知识库（RAG增强）- 🔥 使用系统特定的知识库
     console.log(`\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
     console.log(`📚 [知识库RAG] 开始检索相关知识...`);
-    console.log(`   检查知识库状态: knowledgeBaseAvailable = ${this.knowledgeBaseAvailable}`);
+    console.log(`   🎯 目标系统: ${systemName || '默认'}`);
     console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
 
     let knowledgeContext = '';
-    if (this.knowledgeBaseAvailable) {
-      console.log(`✅ 知识库可用，开始RAG检索...`);
+    try {
+      // 🔥 获取系统特定的知识库实例
+      const knowledgeBase = this.getKnowledgeBase(systemName);
+      console.log(`✅ 知识库实例已创建（系统：${systemName || '默认'}），开始RAG检索...`);
       try {
         console.log(`🔍 [RAG-Step1] 准备查询参数:`);
         console.log(`   📌 测试目的: "${purposeName}"`);
@@ -1756,7 +1755,7 @@ ${isModifyMode ? `
         console.log(`\n🔍 [RAG-Step2] 调用Qdrant向量数据库进行语义检索...`);
         const queryStartTime = Date.now();
 
-        const knowledgeResults = await this.knowledgeBase.searchByCategory({
+        const knowledgeResults = await knowledgeBase.searchByCategory({
           query: queryText,
           topK: 3,
           scoreThreshold: 0.5
@@ -1823,10 +1822,10 @@ ${isModifyMode ? `
         console.error(`   错误堆栈: ${error.stack}`);
         console.warn(`\n🔄 [降级处理] 自动切换到普通模式生成`);
       }
-    } else {
-      console.log(`⚠️  [RAG状态] 知识库服务未启用`);
-      console.log(`   💡 原因: 服务初始化时出现错误（检查Qdrant连接或配置）`);
-      console.log(`\n🔄 [降级处理] 使用普通模式生成（不使用知识库增强）`);
+    } catch (outerError: any) {
+      console.error(`❌ [RAG-Error] 知识库初始化失败:`);
+      console.error(`   错误信息: ${outerError.message}`);
+      console.warn(`\n🔄 [降级处理] 自动切换到普通模式生成`);
     }
 
     console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`);

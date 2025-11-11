@@ -26,7 +26,8 @@ export interface SearchResult {
 export class TestCaseKnowledgeBase {
   private qdrant: QdrantClient;
   private openai: OpenAI;
-  private collectionName = 'test_knowledge';
+  private collectionName: string; // 🔥 改为动态集合名称
+  private systemName?: string; // 🔥 新增：系统名称
   private useGemini: boolean;
   private embeddingProvider: string;
 
@@ -41,7 +42,26 @@ export class TestCaseKnowledgeBase {
     });
   }
 
-  constructor() {
+  /**
+   * 🔥 新增：根据系统名称生成集合名称
+   */
+  private static getCollectionName(systemName?: string): string {
+    if (!systemName) {
+      return 'test_knowledge_default'; // 默认集合
+    }
+    // 清理系统名称，确保是有效的集合名称（只保留字母、数字、下划线）
+    const cleanName = systemName.replace(/[^a-zA-Z0-9_\u4e00-\u9fa5]/g, '_').toLowerCase();
+    return `test_knowledge_${cleanName}`;
+  }
+
+  /**
+   * 构造函数
+   * @param systemName 可选的系统名称，用于隔离不同系统的知识库
+   */
+  constructor(systemName?: string) {
+    this.systemName = systemName;
+    this.collectionName = TestCaseKnowledgeBase.getCollectionName(systemName);
+
     // 连接Qdrant
     const qdrantUrl = process.env.QDRANT_URL || 'http://localhost:6333';
     this.qdrant = new QdrantClient({ url: qdrantUrl });
@@ -58,7 +78,7 @@ export class TestCaseKnowledgeBase {
       }
       // Gemini不使用OpenAI SDK，会在generateEmbedding中直接调用
       this.openai = null as any; // 占位，不使用
-      console.log(`🔗 知识库服务初始化: Qdrant=${qdrantUrl}, Embedding=Google Gemini（免费）`);
+      console.log(`🔗 知识库服务初始化: Qdrant=${qdrantUrl}, System=${systemName || 'default'}, Collection=${this.collectionName}, Embedding=Google Gemini（免费）`);
     } else {
       // 使用OpenAI兼容的API（如OpenAI、Jina等）
       const apiBaseUrl = process.env.EMBEDDING_API_BASE_URL || 'https://api.openai.com/v1';
@@ -68,7 +88,7 @@ export class TestCaseKnowledgeBase {
         baseURL: apiBaseUrl,
         apiKey: apiKey
       });
-      console.log(`🔗 知识库服务初始化: Qdrant=${qdrantUrl}, Embedding=${apiBaseUrl}`);
+      console.log(`🔗 知识库服务初始化: Qdrant=${qdrantUrl}, System=${systemName || 'default'}, Collection=${this.collectionName}, Embedding=${apiBaseUrl}`);
     }
   }
 
@@ -264,6 +284,9 @@ export class TestCaseKnowledgeBase {
         scoreThreshold = 0.5  // 降低默认阈值，适应中文语义搜索
       } = params;
 
+      // 🔍 日志：显示搜索参数和目标集合
+      console.log(`🔍 知识库搜索 - 集合: ${this.collectionName}, 查询: "${query}", topK: ${topK}`);
+
       // 生成查询向量
       const queryVector = await this.generateEmbedding(query);
 
@@ -409,5 +432,106 @@ export class TestCaseKnowledgeBase {
       console.error('❌ 清空知识库失败:', error);
       throw error;
     }
+  }
+
+  // 🔥 ===== 新增：多系统集合管理方法 ===== 🔥
+
+  /**
+   * 获取所有已存在的知识库集合
+   */
+  async listAllCollections(): Promise<string[]> {
+    try {
+      const collections = await this.qdrant.getCollections();
+      return collections.collections
+        .map(c => c.name)
+        .filter(name => name.startsWith('test_knowledge_'));
+    } catch (error) {
+      console.error('❌ 获取集合列表失败:', error);
+      return [];
+    }
+  }
+
+  /**
+   * 检查指定系统的集合是否存在
+   */
+  async collectionExists(systemName?: string): Promise<boolean> {
+    try {
+      const collectionName = TestCaseKnowledgeBase.getCollectionName(systemName);
+      const collections = await this.qdrant.getCollections();
+      return collections.collections.some(c => c.name === collectionName);
+    } catch (error) {
+      console.error('❌ 检查集合是否存在失败:', error);
+      return false;
+    }
+  }
+
+  /**
+   * 为指定系统创建知识库集合
+   */
+  async createCollectionForSystem(systemName: string): Promise<void> {
+    const tempKnowledgeBase = new TestCaseKnowledgeBase(systemName);
+    await tempKnowledgeBase.initCollection();
+  }
+
+  /**
+   * 删除指定系统的知识库集合
+   */
+  async deleteCollectionForSystem(systemName: string): Promise<void> {
+    try {
+      const collectionName = TestCaseKnowledgeBase.getCollectionName(systemName);
+      await this.qdrant.deleteCollection(collectionName);
+      console.log(`✅ 已删除系统 "${systemName}" 的知识库集合: ${collectionName}`);
+    } catch (error) {
+      console.error(`❌ 删除系统 "${systemName}" 的知识库失败:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * 获取所有系统的知识库统计
+   */
+  async getAllSystemsStats(): Promise<Array<{
+    systemName: string;
+    collectionName: string;
+    totalCount: number;
+    categoryCounts: { [key: string]: number };
+  }>> {
+    try {
+      const collections = await this.listAllCollections();
+      const stats = [];
+
+      for (const collectionName of collections) {
+        // 从集合名称提取系统名称
+        const systemName = collectionName.replace('test_knowledge_', '');
+        const tempKnowledgeBase = new TestCaseKnowledgeBase(systemName === 'default' ? undefined : systemName);
+        const collectionStats = await tempKnowledgeBase.getStats();
+
+        stats.push({
+          systemName: systemName === 'default' ? '默认' : systemName,
+          collectionName,
+          totalCount: collectionStats.totalCount,
+          categoryCounts: collectionStats.categoryCounts
+        });
+      }
+
+      return stats;
+    } catch (error) {
+      console.error('❌ 获取所有系统统计信息失败:', error);
+      return [];
+    }
+  }
+
+  /**
+   * 获取当前系统名称
+   */
+  getSystemName(): string | undefined {
+    return this.systemName;
+  }
+
+  /**
+   * 获取当前集合名称
+   */
+  getCollectionName(): string {
+    return this.collectionName;
   }
 }

@@ -18,6 +18,7 @@ import { FunctionalTestCaseGenerator } from './pages/FunctionalTestCaseGenerator
 import { FunctionalTestCaseCreate } from './pages/FunctionalTestCaseCreate';
 import { FunctionalTestPointEdit } from './pages/FunctionalTestPointEdit';
 import SystemManagement from './pages/SystemManagement';
+import KnowledgeManagement from './pages/KnowledgeManagement';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { ToastProvider } from './components/ui/toast';
 import { NotFoundPage, ServerErrorPage, ForbiddenPage } from './pages/ErrorPage';
@@ -286,6 +287,9 @@ function AppContent() {
 
                       {/* 系统字典管理 */}
                       <Route path="/systems" element={<SystemManagement />} />
+
+                      {/* 知识库管理 */}
+                      <Route path="/knowledge" element={<KnowledgeManagement />} />
 
                       {/* 用户管理 - 仅超级管理员可访问 */}
                       <Route path="/user-management" element={

@@ -1,7 +1,9 @@
 import express, { Request, Response } from 'express';
 import * as systemService from '../services/systemService';
+import { KnowledgeManagementService } from '../services/knowledgeManagementService.js';
 
 const router = express.Router();
+const knowledgeService = new KnowledgeManagementService();
 
 /**
  * GET /api/v1/systems
@@ -190,6 +192,110 @@ router.put('/batch/order', async (req: Request, res: Response) => {
     console.error('更新系统排序失败:', error);
     res.status(500).json({
       error: '更新系统排序失败',
+      message: error instanceof Error ? error.message : '未知错误'
+    });
+  }
+});
+
+// 🔥 ===== 知识库集合管理API ===== 🔥
+
+/**
+ * POST /api/v1/systems/:id/knowledge-collection
+ * 为系统创建知识库集合
+ */
+router.post('/:id/knowledge-collection', async (req: Request, res: Response) => {
+  try {
+    const id = parseInt(req.params.id);
+    const system = await systemService.getSystemById(id);
+
+    if (!system) {
+      return res.status(404).json({ error: '系统不存在' });
+    }
+
+    // 检查集合是否已存在
+    const exists = await knowledgeService.collectionExists(system.name);
+    if (exists) {
+      return res.status(400).json({ error: '该系统的知识库集合已存在' });
+    }
+
+    await knowledgeService.createCollectionForSystem(system.name);
+    res.status(201).json({
+      message: '知识库集合创建成功',
+      systemName: system.name,
+      collectionName: `test_knowledge_${system.name.toLowerCase()}`
+    });
+  } catch (error) {
+    console.error('创建知识库集合失败:', error);
+    res.status(500).json({
+      error: '创建知识库集合失败',
+      message: error instanceof Error ? error.message : '未知错误'
+    });
+  }
+});
+
+/**
+ * GET /api/v1/systems/:id/knowledge-collection
+ * 获取系统的知识库集合统计
+ */
+router.get('/:id/knowledge-collection', async (req: Request, res: Response) => {
+  try {
+    const id = parseInt(req.params.id);
+    const system = await systemService.getSystemById(id);
+
+    if (!system) {
+      return res.status(404).json({ error: '系统不存在' });
+    }
+
+    const exists = await knowledgeService.collectionExists(system.name);
+    if (!exists) {
+      return res.json({
+        exists: false,
+        systemName: system.name,
+        message: '该系统尚未创建知识库集合'
+      });
+    }
+
+    const stats = await knowledgeService.getStats(system.name);
+    res.json({
+      exists: true,
+      ...stats
+    });
+  } catch (error) {
+    console.error('获取知识库统计失败:', error);
+    res.status(500).json({
+      error: '获取知识库统计失败',
+      message: error instanceof Error ? error.message : '未知错误'
+    });
+  }
+});
+
+/**
+ * DELETE /api/v1/systems/:id/knowledge-collection
+ * 删除系统的知识库集合
+ */
+router.delete('/:id/knowledge-collection', async (req: Request, res: Response) => {
+  try {
+    const id = parseInt(req.params.id);
+    const system = await systemService.getSystemById(id);
+
+    if (!system) {
+      return res.status(404).json({ error: '系统不存在' });
+    }
+
+    const exists = await knowledgeService.collectionExists(system.name);
+    if (!exists) {
+      return res.status(404).json({ error: '该系统的知识库集合不存在' });
+    }
+
+    await knowledgeService.deleteCollectionForSystem(system.name);
+    res.json({
+      message: '知识库集合删除成功',
+      systemName: system.name
+    });
+  } catch (error) {
+    console.error('删除知识库集合失败:', error);
+    res.status(500).json({
+      error: '删除知识库集合失败',
       message: error instanceof Error ? error.message : '未知错误'
     });
   }

@@ -176,7 +176,7 @@ export default function SystemManagement() {
   };
 
   return (
-    <div className="p-8 max-w-7xl mx-auto">
+    <div className="p-8 max-w-[1600px] mx-auto">
       {/* 页面标题 */}
       <div className="mb-8">
         <div className="flex items-center gap-3 mb-2">
@@ -356,7 +356,7 @@ export default function SystemManagement() {
       {/* 创建/编辑弹窗 */}
       {showModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+          <div className="bg-white rounded-lg shadow-xl max-w-3xl w-full max-h-[90vh] overflow-y-auto">
             <div className="p-6 border-b border-gray-200 flex items-center justify-between sticky top-0 bg-white">
               <h2 className="text-2xl font-bold text-gray-900">
                 {modalMode === 'create' ? '新建系统' : '编辑系统'}
