@@ -2,9 +2,6 @@
 
 <div align="center">
 
-<!-- 项目封面图片 - 请替换为实际图片 -->
-<img src="docs/images/testflow-banner.png" alt="TestFlow Banner" width="100%" />
-
 [![Version](https://img.shields.io/badge/version-2.5.0-blue.svg)](https://github.com/testflow/testflow)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Node](https://img.shields.io/badge/node-%3E%3D18.0.0-brightgreen.svg)](https://nodejs.org)
@@ -830,8 +827,6 @@ tail -f logs/server.log | grep "RAG"
 
 ### 获取帮助
 
-- 📧 **邮件**: support@testflow.dev
-- 💬 **讨论**: [GitHub Discussions](https://github.com/testflow/testflow/discussions)
 - 🐛 **Bug 反馈**: [GitHub Issues](https://github.com/testflow/testflow/issues)
 
 ### 文档资源
