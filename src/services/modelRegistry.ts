@@ -4,6 +4,8 @@ export interface ModelDefinition {
   name: string;
   provider: string;
   openRouterModel: string;
+  customBaseUrl?: string;        // 自定义 API 端点（用于本地或自托管服务）
+  requiresCustomAuth?: boolean;  // 是否需要自定义认证格式（非 OpenRouter 标准）
   defaultConfig: {
     temperature: number;
     maxTokens: number;
@@ -59,6 +61,21 @@ export class ModelRegistry {
         capabilities: ['text-generation', 'multimodal', 'reasoning', 'code-analysis', 'long-context'],
         description: 'Anthropic Claude Sonnet 4.5模型，平衡性能与成本，支持长上下文',
         costLevel: 'medium'
+      },
+      {
+        id: 'gemini-2.5-flash-local',
+        name: 'Gemini 2.5 Flash (Local)',
+        provider: 'Google (Local)',
+        openRouterModel: 'gemini-2.5-flash',
+        customBaseUrl: 'http://localhost:3000/v1',
+        requiresCustomAuth: true,
+        defaultConfig: {
+          temperature: 0.3,
+          maxTokens: 2000
+        },
+        capabilities: ['text-generation', 'multimodal', 'reasoning', 'code-analysis', 'image-understanding', 'audio-understanding'],
+        description: '本地部署的 Gemini 2.5 Flash 模型，支持文本、图片、音频多模态输入',
+        costLevel: 'low'
       }
     ];
   }

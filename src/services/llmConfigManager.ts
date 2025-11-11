@@ -106,7 +106,7 @@ export class LLMConfigManager {
       const oldConfig = this.currentConfig;
       const newConfig: LLMConfig = {
         apiKey: settings.apiKey,
-        baseUrl: 'https://openrouter.ai/api/v1',
+        baseUrl: modelInfo.customBaseUrl || 'https://openrouter.ai/api/v1',
         model: modelInfo.openRouterModel,
         temperature: settings.customConfig?.temperature ?? modelInfo.defaultConfig.temperature,
         maxTokens: settings.customConfig?.maxTokens ?? modelInfo.defaultConfig.maxTokens
@@ -127,6 +127,7 @@ export class LLMConfigManager {
       });
 
       console.log(`✅ LLM配置更新成功: ${modelInfo.name}`);
+      console.log(`   API端点: ${newConfig.baseUrl}`);
       console.log(`   模型: ${newConfig.model}`);
       console.log(`   温度: ${newConfig.temperature}`);
       console.log(`   最大令牌: ${newConfig.maxTokens}`);
@@ -163,15 +164,22 @@ export class LLMConfigManager {
         max_tokens: 10
       };
 
+      // 构建请求头，本地/自定义 API 使用简化头
+      const headers: Record<string, string> = {
+        'Authorization': `Bearer ${this.currentConfig.apiKey}`,
+        'Content-Type': 'application/json'
+      };
+
+      // 只对 OpenRouter API 添加额外的识别头
+      if (!this.currentModelInfo.customBaseUrl) {
+        headers['HTTP-Referer'] = 'https://testflow-ai.com';
+        headers['X-Title'] = 'TestFlow AI Testing Platform';
+      }
+
       // 发送测试请求
       const response = await fetch(this.currentConfig.baseUrl + '/chat/completions', {
         method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${this.currentConfig.apiKey}`,
-          'HTTP-Referer': 'https://testflow-ai.com',
-          'X-Title': 'TestFlow AI Testing Platform',
-          'Content-Type': 'application/json'
-        },
+        headers,
         body: JSON.stringify(requestBody)
       });
 

@@ -1,290 +1,189 @@
 {
   "tasks": [
     {
-      "id": "657f9512-8390-4c63-848b-7a371a257af9",
-      "name": "创建步骤编辑器包装组件",
-      "description": "创建 StepsEditor 组件，包装现有的 StepTableEditor，负责将数据库的 Text 格式步骤转换为表格编辑器可用的结构化数据，并在保存时转换回 Text 格式。复用 stepConverter 工具函数。",
-      "notes": "这是一个轻量级包装组件，主要功能是数据格式转换。完全复用 StepTableEditor 的 UI 和交互逻辑。",
+      "id": "092c5f51-7ba4-4ade-a590-9fa672141fa4",
+      "name": "扩展 ModelDefinition 接口支持自定义 API 端点",
+      "description": "在 src/services/modelRegistry.ts 中扩展 ModelDefinition 接口，添加 customBaseUrl 和 requiresCustomAuth 可选字段，以支持自定义 API 端点和认证格式。同时添加 Gemini 2.5 Flash (Local) 模型定义到 models 数组中。",
+      "notes": "此任务是基础任务，其他任务依赖此接口扩展。确保向后兼容，现有模型（GPT-4o, DeepSeek, Claude Sonnet 4.5）不受影响。",
       "status": "completed",
       "dependencies": [],
-      "createdAt": "2025-11-03T09:26:03.179Z",
-      "updatedAt": "2025-11-03T09:42:36.612Z",
+      "createdAt": "2025-11-11T03:16:24.300Z",
+      "updatedAt": "2025-11-11T03:20:49.713Z",
       "relatedFiles": [
         {
-          "path": "src/components/StepTableEditor.tsx",
-          "type": "DEPENDENCY",
-          "description": "复用表格编辑器组件"
-        },
-        {
-          "path": "src/utils/stepConverter.ts",
-          "type": "DEPENDENCY",
-          "description": "复用步骤转换工具"
-        },
-        {
-          "path": "src/components/functional-test-case/StepsEditor.tsx",
-          "type": "CREATE",
-          "description": "新建步骤编辑器包装组件"
-        }
-      ],
-      "implementationGuide": "1. 创建文件 src/components/functional-test-case/StepsEditor.tsx\\n2. 导入依赖：StepTableEditor, parseStepsText, serializeStepsToText\\n3. Props 接口：stepsText(string), onChange((text: string) => void), readOnly(boolean)\\n4. 内部状态：使用 useState 管理 TestStepRow[]\\n5. useEffect：监听 stepsText 变化，使用 parseStepsText 解析为数组\\n6. handleChange 函数：接收 StepTableEditor 的 onChange，使用 serializeStepsToText 转换后调用父组件 onChange\\n7. 渲染 StepTableEditor，传入解析后的数组和 handleChange\\n8. 支持 readOnly 模式",
-      "verificationCriteria": "1. 组件正确渲染 StepTableEditor\\n2. 文本格式正确转换为表格数据\\n3. 表格数据修改后正确转换回文本\\n4. onChange 回调正确触发\\n5. readOnly 模式生效\\n6. 空文本和无效文本正确处理",
-      "analysisResult": "完善功能测试用例的手动创建与编辑功能。创建页面用于创建包含多个测试点的测试用例；编辑页面以测试点为维度编辑单个测试点。测试步骤字段使用表格编辑器（复用StepTableEditor），通过stepConverter工具进行文本和结构化数据的转换。",
-      "summary": "StepsEditor 组件已成功创建。这是一个轻量级包装组件，完全复用 StepTableEditor 的 UI 和交互逻辑。主要功能：1) 使用 parseStepsText 将数据库 Text 格式转换为结构化数据；2) 渲染 StepTableEditor 进行编辑；3) 使用 serializeStepsToText 将修改转换回 Text 格式并通知父组件。支持 readOnly 模式，包含错误处理。代码简洁（~60行），职责单一。",
-      "completedAt": "2025-11-03T09:42:36.605Z"
-    },
-    {
-      "id": "ff13c325-d97a-4800-b85a-90d9f4236fcd",
-      "name": "修改TestPointsEditor集成步骤编辑器",
-      "description": "修改已创建的 TestPointsEditor 组件，将测试步骤字段从 textarea 改为使用 StepsEditor 组件，支持表格形式编辑测试步骤。",
-      "notes": "这是对现有组件的修改。需要确保 steps 字段在整个数据流中保持为 string 类型。StepsEditor 内部处理格式转换。",
-      "status": "completed",
-      "dependencies": [
-        {
-          "taskId": "657f9512-8390-4c63-848b-7a371a257af9"
-        }
-      ],
-      "createdAt": "2025-11-03T09:26:03.179Z",
-      "updatedAt": "2025-11-03T10:35:16.825Z",
-      "relatedFiles": [
-        {
-          "path": "src/components/functional-test-case/TestPointsEditor.tsx",
+          "path": "src/services/modelRegistry.ts",
           "type": "TO_MODIFY",
-          "description": "修改测试点编辑器组件"
-        },
-        {
-          "path": "src/components/functional-test-case/StepsEditor.tsx",
-          "type": "DEPENDENCY",
-          "description": "依赖步骤编辑器组件"
+          "description": "模型注册表核心文件，定义 ModelDefinition 接口和所有可用模型",
+          "lineStart": 2,
+          "lineEnd": 63
         }
       ],
-      "implementationGuide": "1. 编辑文件 src/components/functional-test-case/TestPointsEditor.tsx\\n2. 导入 StepsEditor 组件\\n3. 修改 TestPoint 接口的 steps 字段类型保持为 string\\n4. 在测试点卡片中，将测试步骤的 textarea 替换为 StepsEditor 组件\\n5. 传入 props：stepsText={point.steps}, onChange={(text) => updateTestPoint(index, 'steps', text)}, readOnly={readOnly}\\n6. 调整布局：StepsEditor 需要更多垂直空间，可能需要调整卡片高度或添加折叠功能\\n7. 保持其他字段不变",
-      "verificationCriteria": "1. TestPointsEditor 正确渲染 StepsEditor\\n2. steps 字段使用表格编辑器而非文本框\\n3. 添加/删除/编辑步骤功能正常\\n4. onChange 正确传递步骤文本\\n5. 布局美观，空间充足\\n6. readOnly 模式下步骤编辑器只读",
-      "analysisResult": "完善功能测试用例的手动创建与编辑功能。创建页面用于创建包含多个测试点的测试用例；编辑页面以测试点为维度编辑单个测试点。测试步骤字段使用表格编辑器（复用StepTableEditor），通过stepConverter工具进行文本和结构化数据的转换。",
-      "summary": "TestPointsEditor 组件已成功修改。将测试步骤字段的 textarea 替换为 StepsEditor 组件。导入了 StepsEditor，并将原来的 textarea（行196-210）替换为 StepsEditor，传入正确的 props：stepsText={point.steps}, onChange={(text) => updateTestPoint(index, 'steps', text)}, readOnly={readOnly}。steps 字段保持为 string 类型，StepsEditor 内部处理格式转换。",
-      "completedAt": "2025-11-03T10:35:16.815Z"
+      "implementationGuide": "1. 在 ModelDefinition 接口中添加两个可选字段：\n   - customBaseUrl?: string (用于指定自定义 API 端点)\n   - requiresCustomAuth?: boolean (标记是否需要自定义认证格式)\n\n2. 在 models 数组末尾添加新模型定义：\n   {\n     id: 'gemini-2.5-flash-local',\n     name: 'Gemini 2.5 Flash (Local)',\n     provider: 'Google (Local)',\n     openRouterModel: 'gemini-2.5-flash',\n     customBaseUrl: 'http://localhost:3000/v1',\n     requiresCustomAuth: true,\n     defaultConfig: { temperature: 0.3, maxTokens: 2000 },\n     capabilities: ['text-generation', 'multimodal', 'reasoning', 'code-analysis', 'image-understanding', 'audio-understanding'],\n     description: '本地部署的 Gemini 2.5 Flash 模型，支持文本、图片、音频多模态输入',\n     costLevel: 'low'\n   }\n\n注意：新增字段为可选字段，不影响现有模型定义的兼容性。",
+      "verificationCriteria": "1. ModelDefinition 接口包含 customBaseUrl 和 requiresCustomAuth 可选字段\n2. models 数组包含 gemini-2.5-flash-local 模型定义\n3. 执行 npm run build 无 TypeScript 错误\n4. 现有模型定义不受影响（GPT-4o, DeepSeek, Claude Sonnet 4.5）",
+      "analysisResult": "配置本地 Gemini 2.5 Flash API 对接，支持自定义 API 端点和认证方式，实现与 GPT-4o、DeepSeek V3、Claude Sonnet 4.5 一致的前端模型切换体验。核心目标：扩展现有架构，支持自定义 baseUrl 和认证格式，不破坏现有功能，确保安全性（API Key 从环境变量读取）。",
+      "summary": "✅ 任务完成，成功扩展 ModelDefinition 接口并添加 Gemini 2.5 Flash (Local) 模型。\n\n**完成内容**：\n1. ✅ ModelDefinition 接口已添加 customBaseUrl 和 requiresCustomAuth 可选字段\n2. ✅ models 数组包含 gemini-2.5-flash-local 模型定义，配置完整\n3. ✅ TypeScript 编译通过（npx tsc --noEmit），无类型错误\n4. ✅ 现有模型（GPT-4o, DeepSeek, Claude Sonnet 4.5）不受影响，向后兼容\n\n**实施细节**：\n- customBaseUrl 设置为 'http://localhost:3000/v1'\n- requiresCustomAuth 标记为 true\n- 添加了 6 个 capabilities，包括多模态支持（image-understanding, audio-understanding）\n- costLevel 设置为 'low'，适合本地部署场景\n\n**验证结果**：所有验证标准已满足，代码质量良好。",
+      "completedAt": "2025-11-11T03:20:49.708Z"
     },
     {
-      "id": "188beb3d-3195-4cf2-9ea6-e673324a15b0",
-      "name": "创建测试用例创建页面",
-      "description": "创建 FunctionalTestCaseCreate.tsx 页面组件，用于创建包含多个测试点的新测试用例。使用修改后的 TestPointsEditor 管理测试点列表，每个测试点使用 StepsEditor 编辑步骤。",
-      "notes": "参考 TestCaseDetail.tsx 的布局和交互模式。system 和 module 下拉选项可以硬编码（电商系统、OA系统、CRM系统）或从 API 获取。",
+      "id": "608a44d0-d047-4bef-80ea-26e60b13b1fa",
+      "name": "修改 LLMConfigManager 支持自定义 baseUrl",
+      "description": "在 src/services/llmConfigManager.ts 的 updateConfig 方法中，修改配置构建逻辑，支持从 modelInfo.customBaseUrl 读取自定义 API 端点。如果模型定义了 customBaseUrl，则使用自定义端点；否则使用默认的 OpenRouter 端点。",
+      "notes": "这是运行时配置管理的核心变更，确保所有调用 getCurrentConfig() 的服务都能获取正确的 baseUrl。testConnection 方法无需修改，会自动使用更新后的配置。",
       "status": "completed",
       "dependencies": [
         {
-          "taskId": "ff13c325-d97a-4800-b85a-90d9f4236fcd"
+          "taskId": "092c5f51-7ba4-4ade-a590-9fa672141fa4"
         }
       ],
-      "createdAt": "2025-11-03T09:26:03.179Z",
-      "updatedAt": "2025-11-03T10:44:33.686Z",
+      "createdAt": "2025-11-11T03:16:24.300Z",
+      "updatedAt": "2025-11-11T03:24:05.258Z",
       "relatedFiles": [
         {
-          "path": "src/pages/TestCaseDetail.tsx",
-          "type": "REFERENCE",
-          "description": "参考页面布局和交互"
+          "path": "src/services/llmConfigManager.ts",
+          "type": "TO_MODIFY",
+          "description": "LLM 配置管理器，负责配置的加载、更新和连接测试",
+          "lineStart": 89,
+          "lineEnd": 138
         },
         {
-          "path": "src/components/functional-test-case/TestPointsEditor.tsx",
+          "path": "src/services/modelRegistry.ts",
           "type": "DEPENDENCY",
-          "description": "使用测试点编辑器"
-        },
-        {
-          "path": "src/pages/FunctionalTestCaseCreate.tsx",
-          "type": "CREATE",
-          "description": "新建创建页面"
+          "description": "依赖 ModelDefinition 接口的 customBaseUrl 字段"
         }
       ],
-      "implementationGuide": "1. 创建文件 src/pages/FunctionalTestCaseCreate.tsx\\n2. 页面布局参考 TestCaseDetail.tsx：顶部导航（返回+标题+保存/取消按钮）、表单卡片区域\\n3. 表单字段分组：\\n   - 基本信息：name(必填), description, system(下拉), module(下拉)\\n   - 测试配置：priority(下拉,默认medium), status(下拉,默认DRAFT), testType, tags(逗号分隔)\\n   - 测试详情：preconditions(多行), testData(多行), sectionName, coverageAreas\\n   - 测试点列表：使用 TestPointsEditor 组件\\n4. 默认值：priority=medium, status=DRAFT, testPoints 包含1个空测试点\\n5. 表单验证：name 必填不超过255字符、testPoints 至少1个且每个必填字段完整\\n6. 提交：调用 functionalTestCaseService.create，成功后跳转列表页\\n7. 取消：带确认对话框，跳转列表页",
-      "verificationCriteria": "1. 页面布局与 TestCaseDetail 风格一致\\n2. 所有表单字段正确渲染\\n3. 表单验证生效\\n4. TestPointsEditor 集成正常\\n5. 提交成功后跳转列表页\\n6. 取消带确认对话框\\n7. 错误提示清晰",
-      "analysisResult": "完善功能测试用例的手动创建与编辑功能。创建页面用于创建包含多个测试点的测试用例；编辑页面以测试点为维度编辑单个测试点。测试步骤字段使用表格编辑器（复用StepTableEditor），通过stepConverter工具进行文本和结构化数据的转换。",
-      "summary": "FunctionalTestCaseCreate 页面已成功创建。完整实现了创建功能测试用例的所有功能：1) 参考 TestCaseDetail 的页面布局（顶部导航+表单卡片）；2) 表单字段分为4个section（基本信息、测试配置、测试详情、测试点列表）；3) 集成 TestPointsEditor 组件管理测试点；4) 完整的表单验证（name必填、testPoints至少1个且必填字段完整）；5) 提交成功跳转列表页；6) 取消带确认对话框。UI风格与现有页面完全一致，使用渐变色按钮和圆角卡片。",
-      "completedAt": "2025-11-03T10:44:33.676Z"
+      "implementationGuide": "修改 updateConfig 方法中的配置构建部分（约第107-113行）：\n\npseudocode:\n  const newConfig: LLMConfig = {\n    apiKey: settings.apiKey,\n    baseUrl: modelInfo.customBaseUrl || 'https://openrouter.ai/api/v1', // 优先使用自定义端点\n    model: modelInfo.openRouterModel,\n    temperature: settings.customConfig?.temperature ?? modelInfo.defaultConfig.temperature,\n    maxTokens: settings.customConfig?.maxTokens ?? modelInfo.defaultConfig.maxTokens\n  };\n\n核心逻辑：使用逻辑或运算符 (||) 实现回退机制，优先使用 customBaseUrl，不存在时使用默认值。",
+      "verificationCriteria": "1. 选择 Gemini 2.5 Flash (Local) 模型时，getCurrentConfig().baseUrl 返回 'http://localhost:3000/v1'\n2. 选择其他模型时，getCurrentConfig().baseUrl 返回 'https://openrouter.ai/api/v1'\n3. 执行配置更新后，getConfigSummary() 返回正确的模型信息\n4. 无 TypeScript 编译错误",
+      "analysisResult": "配置本地 Gemini 2.5 Flash API 对接，支持自定义 API 端点和认证方式，实现与 GPT-4o、DeepSeek V3、Claude Sonnet 4.5 一致的前端模型切换体验。核心目标：扩展现有架构，支持自定义 baseUrl 和认证格式，不破坏现有功能，确保安全性（API Key 从环境变量读取）。",
+      "summary": "✅ 任务完成，成功修改 LLMConfigManager 支持自定义 baseUrl。\n\n**完成内容**：\n1. ✅ 修改 updateConfig 方法，使用 modelInfo.customBaseUrl || 默认值 的逻辑\n2. ✅ Gemini 模型将使用 'http://localhost:3000/v1' 作为 baseUrl\n3. ✅ 其他模型（GPT-4o, DeepSeek, Claude）继续使用 'https://openrouter.ai/api/v1'\n4. ✅ TypeScript 编译通过，无类型错误\n5. ✅ 增强日志输出，添加 API 端点信息便于调试\n\n**实施细节**：\n- 修改位置：llmConfigManager.ts 第 109 行\n- 核心逻辑：baseUrl: modelInfo.customBaseUrl || 'https://openrouter.ai/api/v1'\n- 使用逻辑或运算符实现回退机制，确保向后兼容\n- testConnection 方法无需修改，自动使用更新后的 baseUrl\n\n**验证结果**：满足所有验证标准，代码质量良好，日志清晰。",
+      "completedAt": "2025-11-11T03:24:05.252Z"
     },
     {
-      "id": "0d6cd422-f337-4712-8afa-db162973a39d",
-      "name": "创建测试点编辑页面",
-      "description": "创建 FunctionalTestPointEdit.tsx 页面组件，用于编辑单个测试点的所有字段。显示关联的测试用例信息（只读），使用 StepsEditor 编辑测试步骤。",
-      "notes": "页面布局参考 TestCaseDetail。关联用例信息使用渐变背景卡片突出显示。只编辑测试点字段，不能修改用例信息。",
+      "id": "c55b2848-4477-4eb7-975e-675e87894300",
+      "name": "放宽前端 API Key 验证逻辑",
+      "description": "修改 src/services/settingsService.ts 中的 validateLLMSettings 方法，放宽 API Key 格式验证。对于标记为 requiresCustomAuth 的模型，跳过 'sk-' 前缀检查；对于标准 OpenRouter 模型，保持现有验证逻辑。",
+      "notes": "前端和后端的 settingsService 验证逻辑需保持一致。此任务仅修改前端验证，后端验证在下一个任务中处理。",
       "status": "completed",
       "dependencies": [
         {
-          "taskId": "657f9512-8390-4c63-848b-7a371a257af9"
+          "taskId": "092c5f51-7ba4-4ade-a590-9fa672141fa4"
         }
       ],
-      "createdAt": "2025-11-03T09:29:35.615Z",
-      "updatedAt": "2025-11-03T10:54:21.519Z",
+      "createdAt": "2025-11-11T03:16:24.300Z",
+      "updatedAt": "2025-11-11T03:25:58.320Z",
       "relatedFiles": [
         {
-          "path": "src/pages/TestCaseDetail.tsx",
-          "type": "REFERENCE",
-          "description": "参考页面布局"
+          "path": "src/services/settingsService.ts",
+          "type": "TO_MODIFY",
+          "description": "前端设置服务，负责 localStorage 配置管理和验证",
+          "lineStart": 132,
+          "lineEnd": 175
         },
         {
-          "path": "src/components/functional-test-case/StepsEditor.tsx",
+          "path": "src/services/modelRegistry.ts",
           "type": "DEPENDENCY",
-          "description": "使用步骤编辑器"
-        },
-        {
-          "path": "src/pages/FunctionalTestPointEdit.tsx",
-          "type": "CREATE",
-          "description": "新建测试点编辑页面"
+          "description": "需要读取 ModelDefinition 的 requiresCustomAuth 字段"
         }
       ],
-      "implementationGuide": "1. 创建文件 src/pages/FunctionalTestPointEdit.tsx\\n2. 使用 useParams 获取 testPointId\\n3. useEffect 加载测试点数据：调用 functionalTestCaseService.getTestPointById(testPointId)\\n4. 页面布局：顶部导航（返回+标题+保存/取消）\\n5. 关联用例信息卡片（只读，渐变背景）：显示用例名称、系统、模块、章节\\n6. 测试点表单（白色卡片）：\\n   - testPurpose(可选,500字符)\\n   - testPointName(必填,500字符)\\n   - steps(必填,使用StepsEditor)\\n   - expectedResult(必填,多行文本)\\n   - riskLevel(必填,下拉选择，带颜色)\\n7. 表单验证：必填字段和长度验证\\n8. 提交：调用 functionalTestCaseService.updateTestPoint，成功后跳转列表页",
-      "verificationCriteria": "1. 页面正确加载测试点数据\\n2. 关联用例信息正确显示\\n3. 表单字段正确填充\\n4. StepsEditor 正常工作\\n5. 表单验证生效\\n6. 提交成功后跳转列表页\\n7. 字段映射正确（snake_case转camelCase）",
-      "analysisResult": "完善功能测试用例的手动创建与编辑功能。创建页面用于创建包含多个测试点的测试用例；编辑页面以测试点为维度编辑单个测试点。",
-      "summary": "FunctionalTestPointEdit.tsx 页面已成功创建。页面使用 useParams 获取 testPointId，通过 getTestPointById 加载测试点数据和关联用例信息。顶部导航包含返回按钮、标题、取消和保存按钮。关联用例信息显示在渐变紫蓝色背景卡片中（只读），包含用例名称、系统、模块、章节。测试点表单使用白色卡片，包含 testPurpose（可选）、testPointName（必填）、steps（使用StepsEditor）、expectedResult（必填）、riskLevel（必填，带颜色选择）。实现了完整的表单验证（必填字段、长度限制）。提交时调用 updateTestPoint API，正确处理字段映射（camelCase→snake_case），成功后跳转到列表页",
-      "completedAt": "2025-11-03T10:54:21.504Z"
+      "implementationGuide": "修改 validateLLMSettings 方法中的 API Key 验证部分（约第151-162行）：\n\npseudocode:\n  // 验证API密钥\n  if (!settings.apiKey || settings.apiKey.trim() === '') {\n    errors.push({\n      field: 'apiKey',\n      message: 'API密钥不能为空',\n      code: 'REQUIRED'\n    });\n  } else {\n    const model = modelRegistry.getModelById(settings.selectedModelId);\n    // 只对标准 OpenRouter 模型进行 sk- 格式验证\n    if (!model?.requiresCustomAuth && !settings.apiKey.startsWith('sk-')) {\n      errors.push({\n        field: 'apiKey',\n        message: 'OpenRouter API密钥必须以 sk- 开头',\n        code: 'INVALID_FORMAT'\n      });\n    }\n  }\n\n核心逻辑：通过检查 model.requiresCustomAuth 来决定是否应用严格的格式验证。",
+      "verificationCriteria": "1. 选择 Gemini 模型时，输入任意格式的 API Key（如 '123456'）验证通过\n2. 选择 GPT-4o 模型时，输入非 'sk-' 开头的 API Key 验证失败\n3. 空 API Key 始终验证失败\n4. 验证错误信息准确清晰",
+      "analysisResult": "配置本地 Gemini 2.5 Flash API 对接，支持自定义 API 端点和认证方式，实现与 GPT-4o、DeepSeek V3、Claude Sonnet 4.5 一致的前端模型切换体验。核心目标：扩展现有架构，支持自定义 baseUrl 和认证格式，不破坏现有功能，确保安全性（API Key 从环境变量读取）。",
+      "summary": "✅ 任务完成，成功放宽前端 API Key 验证逻辑，支持自定义认证格式。修改了 validateLLMSettings 方法，添加了模型类型检查，对 requiresCustomAuth 模型跳过 sk- 前缀验证，对标准 OpenRouter 模型保持严格验证。TypeScript 编译通过，逻辑清晰，错误提示准确。",
+      "completedAt": "2025-11-11T03:25:58.314Z"
     },
     {
-      "id": "9df7e251-0259-4131-a54b-4aa2cb37c1ba",
-      "name": "后端添加创建测试用例API",
-      "description": "在 server/routes/functionalTestCase.ts 添加 POST /api/v1/functional-test-cases 端点，在服务层实现 create 方法，使用 Prisma 事务同时创建测试用例和关联的测试点。",
-      "notes": "端点位置在 GET /:id 之前。使用事务确保原子性。注意字段名称转换。",
+      "id": "98678480-2372-4aab-9184-c7846358e1e9",
+      "name": "放宽后端 API Key 验证逻辑",
+      "description": "修改 server/services/settingsService.ts 中的 validateLLMSettings 方法，与前端保持一致的验证逻辑。对于 requiresCustomAuth 模型，跳过 'sk-' 前缀检查。",
+      "notes": "后端验证是最后的防线，确保数据库存储的配置有效。测试时需要同时验证前端和后端的验证逻辑。",
+      "status": "completed",
+      "dependencies": [
+        {
+          "taskId": "092c5f51-7ba4-4ade-a590-9fa672141fa4"
+        }
+      ],
+      "createdAt": "2025-11-11T03:16:24.300Z",
+      "updatedAt": "2025-11-11T03:27:20.920Z",
+      "relatedFiles": [
+        {
+          "path": "server/services/settingsService.ts",
+          "type": "TO_MODIFY",
+          "description": "后端设置服务，负责数据库配置管理和验证",
+          "lineStart": 79,
+          "lineEnd": 151
+        },
+        {
+          "path": "src/services/modelRegistry.ts",
+          "type": "DEPENDENCY",
+          "description": "后端需要导入 modelRegistry 以读取模型信息"
+        }
+      ],
+      "implementationGuide": "修改 BackendSettingsService 类的 validateLLMSettings 方法（约第79-151行）：\n\npseudocode:\n  // 验证API密钥\n  if (!settings.apiKey || settings.apiKey.trim() === '') {\n    errors.push({\n      field: 'apiKey',\n      message: 'API密钥不能为空',\n      code: 'REQUIRED'\n    });\n  } else {\n    const model = modelRegistry.getModelById(settings.selectedModelId);\n    // 只对标准 OpenRouter 模型进行 sk- 格式验证\n    if (!model?.requiresCustomAuth && !settings.apiKey.startsWith('sk-')) {\n      errors.push({\n        field: 'apiKey',\n        message: 'OpenRouter API密钥必须以 sk- 开头',\n        code: 'INVALID_FORMAT'\n      });\n    }\n  }\n\n与前端验证保持完全一致的逻辑。",
+      "verificationCriteria": "1. 通过 POST /api/config/llm 提交 Gemini 配置（自定义 API Key）验证通过\n2. 通过 POST /api/config/llm 提交 GPT-4o 配置（非 sk- 前缀）验证失败\n3. 验证错误响应格式正确（validationErrors 字段）\n4. 数据库成功保存有效配置",
+      "analysisResult": "配置本地 Gemini 2.5 Flash API 对接，支持自定义 API 端点和认证方式，实现与 GPT-4o、DeepSeek V3、Claude Sonnet 4.5 一致的前端模型切换体验。核心目标：扩展现有架构，支持自定义 baseUrl 和认证格式，不破坏现有功能，确保安全性（API Key 从环境变量读取）。",
+      "summary": "✅ 任务完成，成功修改后端 API Key 验证逻辑，与前端保持一致。后端验证现在支持自定义认证格式，对 requiresCustomAuth 模型跳过 sk- 前缀检查，确保前后端验证逻辑统一。TypeScript 编译通过，代码质量良好。",
+      "completedAt": "2025-11-11T03:27:20.913Z"
+    },
+    {
+      "id": "c41a8fa9-6aa9-4c6e-acd9-bc1ef046705c",
+      "name": "添加环境变量配置文档",
+      "description": "在 .env.example 文件中添加 Gemini 本地 API 的配置示例，包括 GEMINI_LOCAL_BASE_URL 和 GEMINI_LOCAL_API_KEY。提供清晰的注释说明用途和安全注意事项。",
+      "notes": "这是文档任务，不涉及代码逻辑。确保用户理解如何配置本地 API 认证。实际的 .env 文件由用户创建，不提交到仓库。",
       "status": "completed",
       "dependencies": [],
-      "createdAt": "2025-11-03T09:29:35.615Z",
-      "updatedAt": "2025-11-03T10:51:22.235Z",
+      "createdAt": "2025-11-11T03:16:24.300Z",
+      "updatedAt": "2025-11-11T03:29:15.660Z",
       "relatedFiles": [
         {
-          "path": "server/routes/functionalTestCase.ts",
+          "path": ".env.example",
           "type": "TO_MODIFY",
-          "description": "添加POST端点"
+          "description": "环境变量配置示例文件，提供给用户参考",
+          "lineStart": 1,
+          "lineEnd": 38
         },
         {
-          "path": "server/services/functionalTestCaseService.ts",
-          "type": "TO_MODIFY",
-          "description": "添加create方法"
-        },
-        {
-          "path": "prisma/schema.prisma",
+          "path": ".gitignore",
           "type": "REFERENCE",
-          "description": "参考数据库结构",
-          "lineStart": 438,
-          "lineEnd": 497
+          "description": "确认 .env 文件已被排除，保护敏感信息"
         }
       ],
-      "implementationGuide": "1. 编辑 server/routes/functionalTestCase.ts，在现有路由之前添加 POST / 端点\\n2. 验证：name必填、testPoints至少1个、每个测试点必填字段完整\\n3. 调用 functionalTestCaseService.create(data, req.user.id)\\n4. 编辑 server/services/functionalTestCaseService.ts，添加 create 方法\\n5. 使用 prisma.transaction 创建：\\n   - 创建 functional_test_cases 记录（source=MANUAL, creator_id=userId）\\n   - 批量创建 functional_test_points 记录（test_point_index从1开始）\\n6. 字段映射：camelCase转snake_case\\n7. 查询并返回包含测试点的完整数据",
-      "verificationCriteria": "1. POST端点可访问\\n2. 验证逻辑生效\\n3. 事务正确执行\\n4. 字段映射正确\\n5. 返回完整数据\\n6. 日志输出正确",
-      "analysisResult": "完善功能测试用例的手动创建与编辑功能。创建页面用于创建包含多个测试点的测试用例；编辑页面以测试点为维度编辑单个测试点。",
-      "summary": "成功添加了后端创建测试用例API。在 server/routes/functionalTestCase.ts 添加了 POST / 端点，位置在 GET /:id 之前。实现了完整的验证逻辑：验证name必填、testPoints至少1个、每个测试点的必填字段完整。在 server/services/functionalTestCaseService.ts 添加了 create 方法，使用 Prisma 事务同时创建 functional_test_cases 记录（source=MANUAL, creator_id=userId）和批量创建 functional_test_points 记录（test_point_index从1开始）。正确处理了字段映射（camelCase转snake_case）：testPointName→test_point_name, testPurpose→test_purpose, testType→test_type等。查询并返回包含测试点和用户信息的完整数据，支持前端直接使用",
-      "completedAt": "2025-11-03T10:51:22.225Z"
+      "implementationGuide": "在 .env.example 文件的 AI 服务配置部分（约第6-11行之后）添加：\n\n# 🤖 本地 Gemini API 配置（可选）\nGEMINI_LOCAL_BASE_URL=http://localhost:3000/v1\nGEMINI_LOCAL_API_KEY=your_local_api_key_here\n\n# 安全提示：\n# - GEMINI_LOCAL_API_KEY 替换为实际的认证密钥\n# - 生产环境请使用强密码，避免使用默认值\n# - .env 文件已在 .gitignore 中排除，不会提交到版本控制\n\n注释清晰说明配置用途和安全性。",
+      "verificationCriteria": "1. .env.example 包含 GEMINI_LOCAL_BASE_URL 和 GEMINI_LOCAL_API_KEY 配置项\n2. 注释清晰说明配置用途\n3. 包含安全提示\n4. 格式与现有配置项一致",
+      "analysisResult": "配置本地 Gemini 2.5 Flash API 对接，支持自定义 API 端点和认证方式，实现与 GPT-4o、DeepSeek V3、Claude Sonnet 4.5 一致的前端模型切换体验。核心目标：扩展现有架构，支持自定义 baseUrl 和认证格式，不破坏现有功能，确保安全性（API Key 从环境变量读取）。",
+      "summary": "✅ 任务完成，成功添加 Gemini 本地 API 环境变量配置文档。在 .env.example 中添加了 GEMINI_LOCAL_BASE_URL 和 GEMINI_LOCAL_API_KEY 配置项，包含清晰的用途说明和全面的安全提示。格式与现有配置一致，.env 文件已在 .gitignore 中排除，确保敏感信息安全。",
+      "completedAt": "2025-11-11T03:29:15.652Z"
     },
     {
-      "id": "44c23d58-c416-4e43-a9a0-6fd3c9e27e10",
-      "name": "后端添加测试点CRUD API",
-      "description": "添加测试点级别的查询和更新API：GET /api/v1/functional-test-cases/test-points/:id 获取测试点详情（含用例信息），PUT /api/v1/functional-test-cases/test-points/:id 更新测试点。",
-      "notes": "测试点API独立于测试用例API。getTestPointById需要返回关联用例信息用于页面显示。",
-      "status": "completed",
-      "dependencies": [],
-      "createdAt": "2025-11-03T09:29:35.615Z",
-      "updatedAt": "2025-11-03T10:52:37.719Z",
-      "relatedFiles": [
-        {
-          "path": "server/routes/functionalTestCase.ts",
-          "type": "TO_MODIFY",
-          "description": "添加测试点API端点"
-        },
-        {
-          "path": "server/services/functionalTestCaseService.ts",
-          "type": "TO_MODIFY",
-          "description": "添加测试点服务方法"
-        }
-      ],
-      "implementationGuide": "1. 编辑 server/routes/functionalTestCase.ts\\n2. 添加 GET /test-points/:id 端点：\\n   - 调用服务层 getTestPointById(id)\\n   - 返回测试点数据+关联用例信息\\n3. 添加 PUT /test-points/:id 端点：\\n   - 验证必填字段\\n   - 调用服务层 updateTestPoint(id, data)\\n4. 编辑 server/services/functionalTestCaseService.ts\\n5. 添加 getTestPointById 方法：\\n   - 查询 functional_test_points，include 关联的 functional_test_cases\\n6. 添加 updateTestPoint 方法：\\n   - 更新 functional_test_points 记录\\n   - 字段映射",
-      "verificationCriteria": "1. GET端点返回正确数据\\n2. 关联用例信息正确\\n3. PUT端点更新成功\\n4. 字段映射正确\\n5. 验证逻辑生效",
-      "analysisResult": "完善功能测试用例的手动创建与编辑功能。创建页面用于创建包含多个测试点的测试用例；编辑页面以测试点为维度编辑单个测试点。",
-      "summary": "成功添加了测试点级别的CRUD API。在 server/routes/functionalTestCase.ts 添加了两个端点：1) GET /test-points/:id 获取测试点详情，调用 getTestPointById 并返回测试点数据和关联用例信息（id, name, system, module, section_name）；2) PUT /test-points/:id 更新测试点，完整验证了testPointName、steps、expectedResult必填字段，调用 updateTestPoint 方法。在 server/services/functionalTestCaseService.ts 添加了 getTestPointById 方法（使用 include 查询关联用例）和 updateTestPoint 方法。正确处理了字段映射（camelCase→snake_case）：testPurpose→test_purpose, testPointName→test_point_name等。测试点API独立于测试用例API，支持编辑页面单独操作测试点",
-      "completedAt": "2025-11-03T10:52:37.706Z"
-    },
-    {
-      "id": "4fd0380d-92d6-4fb5-9cf5-1bfb4c7c455e",
-      "name": "前端服务层添加API方法",
-      "description": "在 src/services/functionalTestCaseService.ts 添加 create、getTestPointById、updateTestPoint 方法，调用对应的后端API。",
-      "notes": "复用现有的认证和响应处理逻辑。方法位置保持代码组织清晰。",
+      "id": "144733b5-2933-439c-95ea-8abfd6e1392c",
+      "name": "优化前端设置页面的 API Key 提示文案",
+      "description": "在 src/pages/Settings.tsx 中，根据选择的模型动态显示 API Key 获取提示。对于 requiresCustomAuth 的模型，显示自定义提示；对于标准 OpenRouter 模型，显示 OpenRouter 链接。",
+      "notes": "这是用户体验优化任务，可选实现。如果时间紧张可跳过，不影响核心功能。建议在所有核心功能完成后实施。",
       "status": "completed",
       "dependencies": [
         {
-          "taskId": "9df7e251-0259-4131-a54b-4aa2cb37c1ba"
+          "taskId": "092c5f51-7ba4-4ade-a590-9fa672141fa4"
+        }
+      ],
+      "createdAt": "2025-11-11T03:16:24.300Z",
+      "updatedAt": "2025-11-11T03:30:19.049Z",
+      "relatedFiles": [
+        {
+          "path": "src/pages/Settings.tsx",
+          "type": "TO_MODIFY",
+          "description": "设置页面 UI 组件",
+          "lineStart": 532,
+          "lineEnd": 552
         },
         {
-          "taskId": "44c23d58-c416-4e43-a9a0-6fd3c9e27e10"
+          "path": "src/services/modelRegistry.ts",
+          "type": "DEPENDENCY",
+          "description": "读取 ModelDefinition 的 requiresCustomAuth 和 provider 字段"
         }
       ],
-      "createdAt": "2025-11-03T09:35:14.574Z",
-      "updatedAt": "2025-11-03T10:53:40.440Z",
-      "relatedFiles": [
-        {
-          "path": "src/services/functionalTestCaseService.ts",
-          "type": "TO_MODIFY",
-          "description": "添加API方法",
-          "lineStart": 125,
-          "lineEnd": 150
-        }
-      ],
-      "implementationGuide": "1. 编辑 src/services/functionalTestCaseService.ts\\n2. 添加 create 方法（在update之后）：\\n   - POST /functional-test-cases\\n   - 使用 getAuthHeaders() 和 handleResponse()\\n3. 添加 getTestPointById 方法：\\n   - GET /functional-test-cases/test-points/${id}\\n4. 添加 updateTestPoint 方法：\\n   - PUT /functional-test-cases/test-points/${id}",
-      "verificationCriteria": "1. create方法正确发送POST请求\\n2. getTestPointById正确获取数据\\n3. updateTestPoint正确更新数据\\n4. 请求头包含认证\\n5. 响应正确处理",
-      "analysisResult": "完善功能测试用例的手动创建与编辑功能",
-      "summary": "成功在前端服务层添加了三个API方法。在 src/services/functionalTestCaseService.ts 添加：1) create方法 - POST /functional-test-cases，用于创建包含多个测试点的新测试用例；2) getTestPointById方法 - GET /functional-test-cases/test-points/${id}，获取单个测试点详情及关联用例信息；3) updateTestPoint方法 - PUT /functional-test-cases/test-points/${id}，更新单个测试点的所有字段。所有方法都复用了现有的 getAuthHeaders() 和 handleResponse() 逻辑，确保认证和错误处理的一致性。方法位置合理，create在update之前，测试点方法在batchDelete之后，保持代码组织清晰",
-      "completedAt": "2025-11-03T10:53:40.422Z"
-    },
-    {
-      "id": "b9e11001-cad3-4eab-93a1-ded15ed0632d",
-      "name": "更新路由配置",
-      "description": "在 src/App.tsx 添加创建和编辑页面的路由配置，确保路由顺序正确避免冲突。",
-      "notes": "路由顺序：列表、generator、create、test-points/:id/edit。create和generator必须在:id/edit之前。",
-      "status": "completed",
-      "dependencies": [
-        {
-          "taskId": "188beb3d-3195-4cf2-9ea6-e673324a15b0"
-        },
-        {
-          "taskId": "0d6cd422-f337-4712-8afa-db162973a39d"
-        }
-      ],
-      "createdAt": "2025-11-03T09:35:14.574Z",
-      "updatedAt": "2025-11-03T10:55:22.635Z",
-      "relatedFiles": [
-        {
-          "path": "src/App.tsx",
-          "type": "TO_MODIFY",
-          "description": "添加路由配置",
-          "lineStart": 266,
-          "lineEnd": 269
-        }
-      ],
-      "implementationGuide": "1. 编辑 src/App.tsx\\n2. 导入组件：FunctionalTestCaseCreate, FunctionalTestPointEdit\\n3. 在功能测试用例路由组添加（在generator之后）：\\n   - /functional-test-cases/create\\n   - /functional-test-cases/test-points/:testPointId/edit\\n4. 确保路由在 ProtectedRoute 内部",
-      "verificationCriteria": "1. 两个路由可访问\\n2. 路由不冲突\\n3. 路由在ProtectedRoute保护下\\n4. 导航正常",
-      "analysisResult": "完善功能测试用例的手动创建与编辑功能",
-      "summary": "成功在 src/App.tsx 添加了创建和编辑页面的路由配置。导入了 FunctionalTestCaseCreate 和 FunctionalTestPointEdit 两个组件。在功能测试用例路由组中添加了两个路由：1) /functional-test-cases/create - 创建测试用例页面；2) /functional-test-cases/test-points/:testPointId/edit - 编辑测试点页面。路由顺序正确：列表路由在最前，然后是 generator、create、test-points/:testPointId/edit，确保具体路径在参数路由之前，避免路由冲突。所有路由都在 ProtectedRoute 内部，受到认证保护。路由配置完整，支持页面导航功能",
-      "completedAt": "2025-11-03T10:55:22.619Z"
-    },
-    {
-      "id": "d7109806-fc55-45ef-9024-4ae472d4dbb0",
-      "name": "更新列表页面集成跳转",
-      "description": "更新 src/pages/FunctionalTestCases.tsx，将手动创建按钮连接到创建页面，将编辑按钮连接到测试点编辑页面。",
-      "notes": "编辑按钮跳转到测试点编辑页面，使用test_point_id。保留弹窗用于快速查看。",
-      "status": "completed",
-      "dependencies": [
-        {
-          "taskId": "b9e11001-cad3-4eab-93a1-ded15ed0632d"
-        }
-      ],
-      "createdAt": "2025-11-03T09:35:14.574Z",
-      "updatedAt": "2025-11-03T10:57:16.824Z",
-      "relatedFiles": [
-        {
-          "path": "src/pages/FunctionalTestCases.tsx",
-          "type": "TO_MODIFY",
-          "description": "更新按钮跳转逻辑",
-          "lineStart": 176,
-          "lineEnd": 310
-        }
-      ],
-      "implementationGuide": "1. 编辑 src/pages/FunctionalTestCases.tsx\\n2. 修改手动创建按钮onClick（第304行）：navigate('/functional-test-cases/create')\\n3. 修改编辑按钮（第683-694行）：navigate(`/functional-test-cases/test-points/${row.test_point_id}/edit`)\\n4. 删除 handleEdit 函数（第177-182行）或修改为跳转逻辑\\n5. 保留 TestCaseDetailModal 用于快速查看",
-      "verificationCriteria": "1. 手动创建按钮跳转正确\\n2. 编辑按钮跳转正确（带test_point_id）\\n3. 详情弹窗保留\\n4. 无控制台错误\\n5. 导航流畅",
-      "analysisResult": "完善功能测试用例的手动创建与编辑功能",
-      "summary": "成功更新了 src/pages/FunctionalTestCases.tsx 的按钮跳转逻辑。手动创建按钮（第304行）现在跳转到 '/functional-test-cases/create' 创建页面。编辑按钮（第684行）改为跳转到测试点编辑页面 `/functional-test-cases/test-points/${row.test_point_id}/edit`，使用 test_point_id 参数正确路由。保留了 TestCaseDetailModal 和 handleViewDetail 函数用于快速查看功能（虽然当前编辑按钮改为页面跳转，但详情弹窗代码保留以备将来使用）。按钮标题也更新为\"编辑测试点\"以准确反映功能。所有修改确保了页面导航流畅，用户可以通过列表页快速进入创建和编辑页面",
-      "completedAt": "2025-11-03T10:57:16.809Z"
+      "implementationGuide": "修改 Settings.tsx 中 API 密钥输入框下方的提示文案（约第549-551行）：\n\npseudocode:\n  <p className=\"mt-1 text-sm text-gray-500\">\n    {selectedModel?.requiresCustomAuth \n      ? `从 ${selectedModel.provider} 获取认证密钥（参考项目文档配置）` \n      : (\n        <>\n          从 <a href=\"https://openrouter.ai\" target=\"_blank\" rel=\"noopener noreferrer\" className=\"text-blue-600 hover:underline\">OpenRouter</a> 获取 API 密钥\n        </>\n      )\n    }\n  </p>\n\n核心逻辑：根据 selectedModel.requiresCustomAuth 动态渲染不同的提示内容。",
+      "verificationCriteria": "1. 选择 Gemini 模型时，显示 '从 Google (Local) 获取认证密钥（参考项目文档配置）'\n2. 选择 GPT-4o 模型时，显示 '从 OpenRouter 获取 API 密钥' 及链接\n3. 提示文案清晰易懂\n4. 样式与现有 UI 一致",
+      "analysisResult": "配置本地 Gemini 2.5 Flash API 对接，支持自定义 API 端点和认证方式，实现与 GPT-4o、DeepSeek V3、Claude Sonnet 4.5 一致的前端模型切换体验。核心目标：扩展现有架构，支持自定义 baseUrl 和认证格式，不破坏现有功能，确保安全性（API Key 从环境变量读取）。",
+      "summary": "✅ 任务完成，成功优化前端设置页面的 API Key 提示文案。实现了根据模型类型动态显示不同提示：对于 requiresCustomAuth 模型显示自定义提示（如 Gemini Local），对于标准 OpenRouter 模型显示 OpenRouter 链接。提升了用户体验，提示清晰准确。TypeScript 编译通过，UI 样式一致。",
+      "completedAt": "2025-11-11T03:30:19.041Z"
     }
   ]
 }

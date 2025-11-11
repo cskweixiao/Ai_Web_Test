@@ -547,7 +547,14 @@ export function Settings() {
               <p className="mt-1 text-sm text-red-600">{getFieldError('apiKey')}</p>
             )}
             <p className="mt-1 text-sm text-gray-500">
-              从 <a href="https://openrouter.ai" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">OpenRouter</a> 获取API密钥
+              {selectedModel?.requiresCustomAuth
+                ? `从 ${selectedModel.provider} 获取认证密钥（参考项目文档配置）`
+                : (
+                  <>
+                    从 <a href="https://openrouter.ai" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">OpenRouter</a> 获取API密钥
+                  </>
+                )
+              }
             </p>
           </div>
 

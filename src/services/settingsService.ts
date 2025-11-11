@@ -155,12 +155,16 @@ export class SettingsService {
         message: 'API密钥不能为空',
         code: 'REQUIRED'
       });
-    } else if (!settings.apiKey.startsWith('sk-')) {
-      errors.push({
-        field: 'apiKey',
-        message: 'API密钥格式无效',
-        code: 'INVALID_FORMAT'
-      });
+    } else {
+      const model = modelRegistry.getModelById(settings.selectedModelId);
+      // 只对标准 OpenRouter 模型进行 sk- 格式验证
+      if (!model?.requiresCustomAuth && !settings.apiKey.startsWith('sk-')) {
+        errors.push({
+          field: 'apiKey',
+          message: 'OpenRouter API密钥必须以 sk- 开头',
+          code: 'INVALID_FORMAT'
+        });
+      }
     }
 
     // 验证自定义配置

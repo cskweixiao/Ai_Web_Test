@@ -5,7 +5,7 @@
 <!-- 项目封面图片 - 请替换为实际图片 -->
 <img src="docs/images/testflow-banner.png" alt="TestFlow Banner" width="100%" />
 
-[![Version](https://img.shields.io/badge/version-2.4.0-blue.svg)](https://github.com/testflow/testflow)
+[![Version](https://img.shields.io/badge/version-2.5.0-blue.svg)](https://github.com/testflow/testflow)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Node](https://img.shields.io/badge/node-%3E%3D18.0.0-brightgreen.svg)](https://nodejs.org)
 [![React](https://img.shields.io/badge/react-18.3.1-blue.svg)](https://reactjs.org)
@@ -26,6 +26,7 @@
 - 🧠 AI 智能生成结构化需求文档,忠实原型无编造
 - ✨ 批量生成高质量测试用例,覆盖率达 85-95%
 - 🔍 **RAG知识库增强**: 向量数据库检索历史经验,提升测试用例专业度
+- 🔄 **多模型支持**: GPT-4o / DeepSeek / Claude / Gemini,一键切换 🆕
 - 💾 一键保存到用例库,支持迭代优化
 
 ### 🤖 AI 批量修改引擎
@@ -483,6 +484,68 @@ http://localhost:5173/login
 报告 → 选择时间范围 → 查看统计图表
 ```
 
+### 5. 配置 AI 模型 🆕
+
+TestFlow 现已支持 **4 种 AI 模型**,可在前端设置页面一键切换:
+
+#### 支持的 AI 模型
+
+| 模型 | 提供商 | 特点 | 成本级别 | 推荐场景 |
+|------|--------|------|---------|---------|
+| **GPT-4o** | OpenAI | 高性能,多模态 | 高 | 复杂测试用例生成 |
+| **DeepSeek Chat V3** | DeepSeek | 高性价比,中文友好 | 低 | 日常测试,批量处理 |
+| **Claude Sonnet 4.5** | Anthropic | 平衡性能,长上下文 | 中 | 大规模用例分析 |
+| **Gemini 2.5 Flash (Local)** 🆕 | Google (本地) | 多模态,本地部署 | 低 | 本地环境,离线使用 |
+
+#### 配置步骤
+
+**方式 1: 使用 OpenRouter (GPT-4o, DeepSeek, Claude)**
+
+```bash
+# 1. 在 .env 文件中配置
+OPENROUTER_API_KEY=sk-or-v1-xxxxx  # 从 https://openrouter.ai 获取
+
+# 2. 前端设置
+设置 → LLM 模型配置 → 选择模型 → 输入 API Key → 测试连接 → 保存设置
+```
+
+**方式 2: 使用本地 Gemini API**
+
+```bash
+# 1. 启动本地 Gemini API 服务 (端口 3000)
+# 确保服务运行在 http://localhost:3000
+
+# 2. 在 .env 文件中配置 (可选)
+GEMINI_LOCAL_BASE_URL=http://localhost:3000/v1
+GEMINI_LOCAL_API_KEY=your_api_key_here
+
+# 3. 前端设置
+设置 → LLM 模型配置 → 选择 "Gemini 2.5 Flash (Local)"
+→ 输入 API Key → 测试连接 → 保存设置
+```
+
+#### 模型切换
+
+所有模型配置保存在数据库中,支持随时切换:
+
+```bash
+# 在设置页面
+设置 → LLM 模型配置 → 下拉菜单选择模型 → 保存设置
+
+# 前后端自动同步,无需重启服务
+```
+
+#### 故障排查
+
+**CORS 错误** (本地 Gemini API):
+- ✅ 已自动处理,本地 API 不发送自定义请求头
+- 确保本地 API 服务正常运行
+
+**连接测试失败**:
+1. 检查 API Key 是否正确
+2. 确认网络连接 (OpenRouter 需要外网访问)
+3. 查看浏览器控制台错误信息
+
 ---
 
 ## 🔧 配置说明
@@ -510,12 +573,24 @@ PLAYWRIGHT_BROWSER=chromium        # 浏览器: chromium / firefox / webkit
 TEST_TIMEOUT=600000                # 测试超时: 10 分钟
 MAX_CONCURRENT_TESTS=6             # 最大并发数
 
-# ========== AI 模型配置 (可选) ==========
-AI_MODEL_PROVIDER=anthropic        # AI 提供商: anthropic / openai
-AI_MODEL_NAME=claude-3-5-sonnet    # 模型名称
-AI_API_KEY=your_api_key_here       # API 密钥
-AI_MAX_TOKENS=4000                 # 最大 token 数
-AI_TEMPERATURE=0.7                 # 生成温度 (0-1)
+# ========== AI 模型配置 (支持多模型切换) 🆕 ==========
+# TestFlow 现已支持 4 种 AI 模型,可在前端设置页面一键切换
+
+# OpenRouter 配置 (支持 GPT-4o, DeepSeek, Claude)
+OPENROUTER_API_KEY=your_openrouter_api_key_here
+OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
+DEFAULT_MODEL=openai/gpt-4o        # 默认模型
+DEFAULT_TEMPERATURE=0.3
+DEFAULT_MAX_TOKENS=4000
+
+# 本地 Gemini API 配置 (可选)
+# 用于本地部署的 Gemini 2.5 Flash 模型,支持文本、图片、音频多模态输入
+GEMINI_LOCAL_BASE_URL=http://localhost:3000/v1
+GEMINI_LOCAL_API_KEY=your_local_api_key_here
+
+# 代理配置 (用于访问国外 API,可选)
+HTTP_PROXY=http://127.0.0.1:10808
+HTTPS_PROXY=http://127.0.0.1:10808
 
 # ========== RAG 知识库配置 (向量数据库) 🆕 ==========
 QDRANT_URL=http://localhost:6333   # Qdrant 向量数据库地址
@@ -792,12 +867,40 @@ tail -f logs/server.log | grep "RAG"
 
 ---
 
+## 📝 更新日志
+
+### Version 2.5.0 (Latest) 🆕
+**发布日期**: 2025-11-11
+
+**新增功能**:
+- ✨ **多 AI 模型支持**: 新增支持 4 种 AI 模型 (GPT-4o, DeepSeek, Claude, Gemini Local)
+- 🔄 **前端一键切换**: 在设置页面可随时切换 AI 模型,配置自动同步
+- 🏠 **本地模型部署**: 支持本地 Gemini 2.5 Flash API,离线环境可用
+- 🌐 **自定义 API 端点**: 支持配置自定义 baseUrl 和认证方式
+- 🔧 **CORS 优化**: 智能请求头管理,本地 API 无 CORS 问题
+
+**优化改进**:
+- 🚀 AI 模型配置管理架构优化
+- 📊 新增 API 端点日志输出
+- 🎯 API Key 验证逻辑优化,支持自定义认证格式
+- 📝 完善文档和环境变量配置示例
+
+**技术细节**:
+- 新增 `ModelDefinition` 接口字段: `customBaseUrl`, `requiresCustomAuth`
+- 修改文件: `modelRegistry.ts`, `llmConfigManager.ts`, `settingsService.ts` (前后端)
+- CORS 处理: 根据模型类型动态构建请求头
+
+---
+
 ## 🌟 致谢
 
 感谢所有为 TestFlow 做出贡献的开发者!
 
 ### 特别感谢
 - [Anthropic](https://www.anthropic.com) - MCP 协议和 Claude AI
+- [OpenAI](https://openai.com) - GPT-4o AI 模型
+- [DeepSeek](https://www.deepseek.com) - DeepSeek Chat V3 高性价比模型
+- [Google](https://ai.google.dev) - Gemini 2.5 Flash 多模态模型
 - [Playwright Team](https://playwright.dev) - 浏览器自动化引擎
 - [React Team](https://reactjs.org) - 现代化前端框架
 - [Tailwind CSS](https://tailwindcss.com) - 实用优先的 CSS 框架
