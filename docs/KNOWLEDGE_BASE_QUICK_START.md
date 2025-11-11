@@ -50,7 +50,7 @@ QDRANT_URL=http://localhost:6333
 
 # Embedding API配置（使用现有的OpenRouter）
 EMBEDDING_API_BASE_URL=https://openrouter.ai/api/v1
-EMBEDDING_API_KEY=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
+EMBEDDING_API_KEY=your_openrouter_api_key_here
 EMBEDDING_MODEL=openai/text-embedding-3-small
 ```
 

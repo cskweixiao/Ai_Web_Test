@@ -16,11 +16,11 @@ async function initializeConfig() {
       return;
     }
     
-    // 创建默认配置
+    // 创建默认配置(从环境变量读取)
     const defaultSettings = {
       llm: {
         selectedModelId: 'deepseek-chat-v3', // 使用deepseek作为默认
-        apiKey: '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',
+        apiKey: process.env.OPENROUTER_API_KEY || '',
         customConfig: {
           temperature: 0.2,
           maxTokens: 2000

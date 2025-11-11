@@ -271,7 +271,7 @@ export class BackendSettingsService {
     const defaultModel = modelRegistry.getModelById('deepseek-chat-v3') || modelRegistry.getDefaultModel();
     return {
       selectedModelId: 'deepseek-chat-v3',
-      apiKey: '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',
+      apiKey: process.env.OPENROUTER_API_KEY || '',
       customConfig: {
         ...defaultModel.defaultConfig
       }

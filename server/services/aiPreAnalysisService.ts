@@ -63,9 +63,9 @@ export class AIPreAnalysisService {
       }
     }
 
-    // 回退到默认配置
+    // 回退到默认配置(从环境变量读取)
     const defaultConfig = {
-      apiKey: process.env.OPENROUTER_API_KEY || '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',
+      apiKey: process.env.OPENROUTER_API_KEY || '',
       baseUrl: process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1',
       model: process.env.DEFAULT_MODEL || 'openai/gpt-4o',
       temperature: parseFloat(process.env.DEFAULT_TEMPERATURE || '0.2'),

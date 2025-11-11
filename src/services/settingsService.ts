@@ -356,7 +356,7 @@ export class SettingsService {
     const defaultModel = modelRegistry.getDefaultModel();
     return {
       selectedModelId: defaultModel.id,
-      apiKey: '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', // 使用现有的API密钥
+      apiKey: '', // API密钥应从环境变量或数据库获取
       customConfig: {
         ...defaultModel.defaultConfig
       }

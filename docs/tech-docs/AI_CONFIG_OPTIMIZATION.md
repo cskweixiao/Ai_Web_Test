@@ -13,7 +13,7 @@
 添加了完整的 AI 配置环境变量：
 ```env
 # 🤖 AI服务配置 (OpenRouter)
-OPENROUTER_API_KEY=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
+OPENROUTER_API_KEY=your_openrouter_api_key_here
 OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
 DEFAULT_MODEL=openai/gpt-4o
 DEFAULT_TEMPERATURE=0.3
