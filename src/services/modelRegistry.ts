@@ -46,6 +46,19 @@ export class ModelRegistry {
         capabilities: ['text-generation', 'reasoning', 'code-analysis', 'chinese-friendly'],
         description: 'DeepSeek聊天模型，高性价比，中文友好',
         costLevel: 'low'
+      },
+      {
+        id: 'claude-sonnet-4.5',
+        name: 'Claude Sonnet 4.5',
+        provider: 'Anthropic',
+        openRouterModel: 'anthropic/claude-sonnet-4.5',
+        defaultConfig: {
+          temperature: 0.3,
+          maxTokens: 2000
+        },
+        capabilities: ['text-generation', 'multimodal', 'reasoning', 'code-analysis', 'long-context'],
+        description: 'Anthropic Claude Sonnet 4.5模型，平衡性能与成本，支持长上下文',
+        costLevel: 'medium'
       }
     ];
   }
