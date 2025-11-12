@@ -112,7 +112,8 @@
       "Bash(git stash:*)",
       "Bash(python -m json.tool:*)",
       "Bash(Get-Content \"d:\\AI_mvp\\ai_test\\project\\logs\\server.log\" -Tail 50)",
-      "Bash(Select-String -Pattern \"knowledge|search|collection|Qdrant|向量\" -Context 1)"
+      "Bash(Select-String -Pattern \"knowledge|search|collection|Qdrant|向量\" -Context 1)",
+      "Bash(copy:*)"
     ],
     "deny": []
   },
