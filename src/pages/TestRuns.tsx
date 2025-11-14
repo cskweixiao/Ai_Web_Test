@@ -150,7 +150,7 @@ export function TestRuns() {
         headers['Authorization'] = `Bearer ${token}`;
       }
 
-      const response = await fetch(`http://${window.location.hostname}:3001/api/tests/runs`, {
+      const response = await fetch(import.meta.env.DEV ? '/api/tests/runs' : `http://${window.location.hostname}:4001/api/tests/runs`, {
         headers
       });
       
@@ -264,7 +264,7 @@ export function TestRuns() {
         
         // 尝试加载套件运行数据
         try {
-          const suiteResponse = await fetch(`http://${window.location.hostname}:3001/api/suites/runs`);
+          const suiteResponse = await fetch(import.meta.env.DEV ? '/api/suites/runs' : `http://${window.location.hostname}:4001/api/suites/runs`);
           const suiteData = await suiteResponse.json();
           
           console.log('📊 套件数据:', { success: suiteData.success, count: suiteData.data?.length || 0 });
@@ -1017,11 +1017,8 @@ export function TestRuns() {
     isSelected: boolean;
     onSelect: (runId: string) => void;
   }) => (
-    <motion.div
+    <div
       key={run.id || index}
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ delay: index * 0.1 }}
       className="px-6 py-4 hover:bg-gray-50 transition-colors"
     >
       <div className="flex items-center justify-between">
@@ -1031,7 +1028,7 @@ export function TestRuns() {
             type="checkbox"
             checked={isSelected}
             onChange={() => onSelect(run.id)}
-            className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+            className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 focus:ring-offset-0 cursor-pointer transition-none"
             onClick={(e) => e.stopPropagation()}
           />
           {getStatusIcon(run.status)}
@@ -1058,11 +1055,9 @@ export function TestRuns() {
                   <span>{run.progress}%</span>
                 </div>
                 <div className="w-full bg-gray-200 rounded-full h-2">
-                  <motion.div
-                    className="bg-blue-600 h-2 rounded-full"
-                    initial={{ width: 0 }}
-                    animate={{ width: `${run.progress}%` }}
-                    transition={{ duration: 0.5 }}
+                  <div
+                    className="bg-blue-600 h-2 rounded-full transition-all duration-150"
+                    style={{ width: `${run.progress}%` }}
                   />
                 </div>
               </div>
@@ -1118,7 +1113,7 @@ export function TestRuns() {
 
         </div>
       </div>
-    </motion.div>
+    </div>
   ), (prevProps, nextProps) => {
     // 🔥 自定义比较函数，只有关键属性变化时才重新渲染
     return (
@@ -1300,7 +1295,7 @@ export function TestRuns() {
                   type="checkbox"
                   checked={selectAll}
                   onChange={handleSelectAll}
-                  className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                  className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 focus:ring-offset-0 cursor-pointer transition-none"
                   title={selectAll ? "取消全选" : "全选"}
                 />
                 <div>

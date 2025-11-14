@@ -113,7 +113,11 @@
       "Bash(python -m json.tool:*)",
       "Bash(Get-Content \"d:\\AI_mvp\\ai_test\\project\\logs\\server.log\" -Tail 50)",
       "Bash(Select-String -Pattern \"knowledge|search|collection|Qdrant|向量\" -Context 1)",
-      "Bash(copy:*)"
+      "Bash(copy:*)",
+      "Bash(ren \"d:\\AI_mvp\\ai_test\\project\\docs\\USER_MANUAL_v3.md\" \"USER_MANUAL.md\")",
+      "Bash(Get-Content \"d:\\AI_mvp\\ai_test\\project\\debug-execution.log\" -Tail 100)",
+      "Bash(start \"\" \"d:\\AI_mvp\\ai_test\\project\\docs\\test-case-generation-flow.html\")",
+      "Bash(Select-String -Pattern \"runTest|测试.*开始|findTestCaseById|执行测试\" -Context 2)"
     ],
     "deny": []
   },

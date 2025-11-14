@@ -57,6 +57,19 @@ export function TestRunDetail() {
   const [activeTab, setActiveTab] = useState<'logs' | 'live' | 'evidence'>('logs');
   const [stopping, setStopping] = useState(false);
 
+  // 🔥 安全的日期格式化函数
+  const safeFormatDate = (date: any, formatStr: string): string => {
+    try {
+      if (!date) return '未知';
+      const dateObj = date instanceof Date ? date : new Date(date);
+      if (isNaN(dateObj.getTime())) return '无效日期';
+      return format(dateObj, formatStr);
+    } catch (error) {
+      console.error('日期格式化错误:', error, date);
+      return '格式化错误';
+    }
+  };
+
   // 加载测试运行数据
   useEffect(() => {
     if (id) {
@@ -103,12 +116,25 @@ export function TestRunDetail() {
     try {
       if (!silent) setLoading(true);
 
-      // 从 testService 获取运行记录
-      const runs = await testService.getAllTestRuns();
-      const run = runs.find(r => r.id === id);
+      // 🚀 性能优化：直接根据 ID 获取单条记录，而不是获取所有记录再过滤
+      const startTime = Date.now();
+      const run = await testService.getTestRunById(id);
+      const duration = Date.now() - startTime;
+
+      console.log(`⚡ loadTestRun 总耗时: ${duration}ms`);
 
       if (run) {
-        setTestRun(run);
+        // 🔥 确保日期字段被正确转换为 Date 对象
+        const processedRun = {
+          ...run,
+          startTime: run.startTime ? new Date(run.startTime) : new Date(),
+          endTime: run.endTime ? new Date(run.endTime) : undefined,
+          logs: (run.logs || []).map(log => ({
+            ...log,
+            timestamp: log.timestamp ? new Date(log.timestamp) : new Date()
+          }))
+        };
+        setTestRun(processedRun);
       } else {
         showToast.error('找不到该测试运行记录');
         navigate('/test-runs');
@@ -303,7 +329,7 @@ export function TestRunDetail() {
               <div className="text-sm text-gray-500 mb-2">执行时长</div>
               <div className="text-2xl font-bold text-gray-900">{testRun.duration}</div>
               <div className="text-sm text-gray-600">
-                {format(new Date(testRun.startTime), 'yyyy-MM-dd HH:mm:ss')}
+                {safeFormatDate(testRun.startTime, 'yyyy-MM-dd HH:mm:ss')}
               </div>
             </div>
           </div>
@@ -381,7 +407,7 @@ export function TestRunDetail() {
                     testRun.logs.map((log) => (
                       <div key={log.id} className="flex items-start gap-3 py-1 hover:bg-gray-800 px-2 rounded">
                         <span className="text-gray-500 flex-shrink-0">
-                          {format(new Date(log.timestamp), 'HH:mm:ss.SSS')}
+                          {safeFormatDate(log.timestamp, 'HH:mm:ss.SSS')}
                         </span>
                         <span className="flex-shrink-0">{getLevelIcon(log.level)}</span>
                         <span className="text-gray-300 break-all">{log.message}</span>

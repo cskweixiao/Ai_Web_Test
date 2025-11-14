@@ -51,7 +51,7 @@ import os from 'os';
 import fs from 'fs';
 
 const app = express();
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.PORT || 4001;
 
 // 🔥 使用数据库服务替代直接创建PrismaClient
 const databaseService = DatabaseService.getInstance({
@@ -495,7 +495,7 @@ async function startServer() {
     evidenceService = new EvidenceService(
       prisma,
       path.join(process.cwd(), 'artifacts'),
-      process.env.BASE_URL || 'http://localhost:3001'
+      process.env.BASE_URL || 'http://localhost:4001'
     );
     console.log('✅ 证据服务初始化完成');
 
@@ -608,7 +608,8 @@ async function startServer() {
     console.log('✅ 定时清理任务设置完成');
 
     console.log('🔧 准备启动HTTP服务器...');
-    server.listen(PORT, () => {
+    // 修复 Windows 权限问题：明确监听 IPv4 地址 127.0.0.1
+    server.listen(PORT, '127.0.0.1', () => {
       console.log('✅ HTTP服务器监听回调被调用');
       logServerInfo();
     });

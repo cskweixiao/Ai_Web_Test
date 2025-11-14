@@ -475,6 +475,8 @@ export class TestExecutionService {
       userId?: string
     } = {}
   ): Promise<string> {
+    // 🚀 性能监控：记录开始时间
+    const apiStartTime = Date.now();
     const runId = uuidv4();
     const userId = options.userId || 'system';
 
@@ -515,9 +517,12 @@ export class TestExecutionService {
     });
     console.log(`📡 [${runId}] 立即广播测试创建事件（占位符）`);
 
-    // 🔥 异步获取实际测试用例名称并更新（不阻塞）+ 保存到数据库
+    // 🔥 性能优化：提前查询测试用例，避免后续重复查询
     console.log(`🔍 [${runId}] 开始查询测试用例信息 testCaseId=${testCaseId}...`);
-    this.findTestCaseById(testCaseId).then(async testCase => {
+    const testCasePromise = this.findTestCaseById(testCaseId);
+
+    // 🔥 异步获取实际测试用例名称并更新（不阻塞）+ 保存到数据库
+    testCasePromise.then(async testCase => {
       console.log(`✅ [${runId}] 测试用例查询成功，testCase=${testCase ? 'found' : 'null'}`);
 
       const actualName = testCase?.name || placeholderName;
@@ -555,29 +560,39 @@ export class TestExecutionService {
 
     this.addLog(runId, `测试 #${testCaseId} 已加入队列，环境: ${environment}`);
 
-    // 🔥 修正：创建队列任务
+    // 🔥 修正：创建队列任务，并传递 testCase Promise 以避免重复查询
     const queueTask: QueueTask = {
       id: runId,
       userId,
       type: 'test',
       priority: 'medium',
-      payload: { testCaseId, environment, executionMode, options },
+      payload: { testCaseId, environment, executionMode, options, testCasePromise },
       createdAt: new Date()
     };
 
-    // 🔥 修正：使用队列执行
+    // 🔥 修正：使用队列执行，传递已缓存的 testCase
     this.queueService.enqueue(queueTask, async (task) => {
-      await this.executeTestInternal(task.id, task.payload.testCaseId);
+      // 🚀 性能优化：复用已查询的 testCase，避免重复数据库查询
+      const cachedTestCase = await task.payload.testCasePromise;
+      await this.executeTestInternal(task.id, task.payload.testCaseId, cachedTestCase);
     }).catch(error => {
       console.error(`[${runId}] 队列执行过程中发生错误:`, error);
       this.updateTestRunStatus(runId, 'error', `队列执行失败: ${error.message}`);
     });
 
+    // 🚀 性能监控：记录 API 响应时间
+    const apiDuration = Date.now() - apiStartTime;
+    console.log(`⚡ [${runId}] runTest API 响应时间: ${apiDuration}ms`);
+    if (apiDuration > 1000) {
+      console.warn(`⚠️ [${runId}] API 响应时间过长 (${apiDuration}ms)，建议检查性能瓶颈`);
+    }
+
     return runId;
   }
 
   // 🔥 修正：执行测试的实际逻辑（修正作用域和取消检查）
-  private async executeTestInternal(runId: string, testCaseId: number): Promise<void> {
+  // 🚀 性能优化：添加可选的 cachedTestCase 参数，避免重复查询数据库
+  private async executeTestInternal(runId: string, testCaseId: number, cachedTestCase?: TestCase | null): Promise<void> {
     // 🚀 Phase 4-5: 全面性能监控开始
     const executionStartTime = Date.now();
     const useOptimization = this.performanceMonitor.optimizationMode !== 'stable' && 
@@ -600,10 +615,15 @@ export class TestExecutionService {
       return;
     }
 
-    const testCase = await this.findTestCaseById(testCaseId);
+    // 🚀 性能优化：优先使用缓存的 testCase，避免重复数据库查询
+    const testCase = cachedTestCase || await this.findTestCaseById(testCaseId);
     if (!testCase || !testCase.steps) {
       this.updateTestRunStatus(runId, 'failed', `测试用例未找到`);
       return;
+    }
+
+    if (cachedTestCase) {
+      console.log(`⚡ [${runId}] 使用缓存的测试用例数据，跳过数据库查询`);
     }
 
     console.log(`🚀 [${runId}] 开始执行 [${testCase.name}]`);
@@ -4008,8 +4028,8 @@ ${elements.map((el, index) => `${index + 1}. ${el.ref}: ${el.role} "${el.text}"`
           // 从 testRunStore 中删除
           const testRun = testRunStore.get(runId);
           if (testRun) {
-            // 清理相关资源
-            this.stopLoggingForRun(runId);
+            // 清理相关资源 (日志清理等)
+            // 注意：如果后续需要日志清理功能，可以在这里实现
 
             // 从存储中删除
             (testRunStore as any).runs.delete(runId);

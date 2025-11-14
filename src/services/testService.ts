@@ -9,8 +9,8 @@ export interface WebSocketMessage {
   suiteRun?: any;
 }
 
-const API_BASE_URL = `http://${window.location.hostname}:3001/api`;
-const WS_URL = `ws://${window.location.hostname}:3001`;
+const API_BASE_URL = import.meta.env.DEV ? '/api' : `http://${window.location.hostname}:4001/api`;
+const WS_URL = `ws://${window.location.hostname}:4001`;
 const TOKEN_KEY = 'authToken';
 
 export class TestService {
@@ -494,6 +494,32 @@ export class TestService {
       return data.data;
     } catch (error) {
       console.error('获取测试运行列表失败:', error);
+      throw error;
+    }
+  }
+
+  // 🚀 性能优化：根据 ID 获取单个测试运行记录
+  async getTestRunById(runId: string): Promise<TestRun | null> {
+    try {
+      const startTime = Date.now();
+      const response = await fetch(`${API_BASE_URL}/tests/runs/${runId}`, {
+        headers: this.getAuthHeaders()
+      });
+      const data = await response.json();
+
+      if (!data.success) {
+        if (data.error?.includes('不存在')) {
+          return null;
+        }
+        throw new Error(data.error || '获取测试运行详情失败');
+      }
+
+      const duration = Date.now() - startTime;
+      console.log(`⚡ [${runId}] getTestRunById 响应时间: ${duration}ms`);
+
+      return data.data;
+    } catch (error) {
+      console.error('获取测试运行详情失败:', error);
       throw error;
     }
   }

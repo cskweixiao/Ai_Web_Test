@@ -98,7 +98,7 @@ export const LiveView: React.FC<LiveViewProps> = React.memo(({ runId, testStatus
 
     const img = imgRef.current;
     const token = getAuthToken();
-    const streamUrl = `http://${window.location.hostname}:3001/api/stream/live/${runId}?token=${token}`;
+    const streamUrl = import.meta.env.DEV ? `/api/stream/live/${runId}?token=${token}` : `http://${window.location.hostname}:4001/api/stream/live/${runId}?token=${token}`;
 
     // 🚀 优化：只在首次连接时输出日志
     console.log('🔍 [LiveView] 连接MJPEG流:', runId.substring(0, 8));

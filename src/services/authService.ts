@@ -1,6 +1,7 @@
 import axios from 'axios';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || `http://${window.location.hostname}:3001`;
+// 在开发环境使用Vite代理(相对路径),生产环境使用环境变量或当前域名
+const API_BASE_URL = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? '' : `http://${window.location.hostname}:4001`);
 const TOKEN_KEY = 'authToken';
 
 export interface AuthUser {

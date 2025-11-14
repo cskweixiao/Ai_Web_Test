@@ -6,7 +6,7 @@ import type {
   UpdateSystemInput
 } from '../types/test';
 
-const API_BASE_URL = `http://${window.location.hostname}:3001/api/v1/systems`;
+const API_BASE_URL = import.meta.env.DEV ? '/api/v1/systems' : `http://${window.location.hostname}:4001/api/v1/systems`;
 const TOKEN_KEY = 'authToken';
 
 /**

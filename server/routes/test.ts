@@ -185,11 +185,46 @@ export function testRoutes(testExecutionService: TestExecutionService): Router {
     }
   });
 
-  // 获取测试运行状态
+  // 🚀 性能优化：获取单个测试运行（优先内存，回退到数据库）
   router.get('/runs/:runId', async (req: Request, res: Response) => {
+    const startTime = Date.now();
     try {
       const { runId } = req.params;
-      const testRun = testExecutionService.getTestRun(runId);
+
+      // 🚀 优先从内存获取（最快，用于正在运行的测试）
+      let testRun = testExecutionService.getTestRun(runId);
+
+      // 如果内存中没有，从数据库查询历史记录
+      if (!testRun) {
+        console.log(`📊 [${runId}] 内存中未找到，尝试从数据库查询...`);
+        const executionService = (testExecutionService as any).executionService;
+        const dbRun = await executionService.getExecutionById(runId);
+
+        if (dbRun) {
+          // 转换数据库记录到前端格式
+          testRun = {
+            id: dbRun.id,
+            testCaseId: dbRun.testCaseId,
+            name: dbRun.testCaseTitle,
+            status: dbRun.status,
+            startTime: dbRun.startedAt || dbRun.queuedAt,
+            endTime: dbRun.finishedAt,
+            duration: dbRun.durationMs ? `${(dbRun.durationMs / 1000).toFixed(1)}s` : '0s',
+            progress: dbRun.progress || 0,
+            totalSteps: dbRun.totalSteps || 0,
+            completedSteps: dbRun.completedSteps || 0,
+            passedSteps: dbRun.passedSteps || 0,
+            failedSteps: dbRun.failedSteps || 0,
+            executor: dbRun.executorUserId ? `User-${dbRun.executorUserId}` : 'System',
+            environment: dbRun.environment || 'default',
+            logs: dbRun.logs || [],
+            screenshots: []
+          };
+          console.log(`✅ [${runId}] 从数据库查询成功`);
+        }
+      } else {
+        console.log(`⚡ [${runId}] 从内存获取成功`);
+      }
 
       if (!testRun) {
         return res.status(404).json({
@@ -198,11 +233,15 @@ export function testRoutes(testExecutionService: TestExecutionService): Router {
         });
       }
 
+      const duration = Date.now() - startTime;
+      console.log(`⚡ [${runId}] GET /runs/:runId 响应时间: ${duration}ms`);
+
       res.json({
         success: true,
         data: testRun
       });
     } catch (error) {
+      console.error('获取测试运行失败:', error);
       res.status(500).json({
         success: false,
         error: error.message

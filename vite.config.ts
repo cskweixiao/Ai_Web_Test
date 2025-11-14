@@ -9,7 +9,7 @@ export default defineConfig({
     proxy: {
       // 将所有以 /api 开头的请求代理到后端服务器
       '/api': {
-        target: 'http://localhost:3001',
+        target: 'http://localhost:4001',
         changeOrigin: true,
         secure: false,
       },

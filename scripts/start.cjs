@@ -70,7 +70,7 @@ function createDirectories() {
 function startServices() {
   console.log('🔥 启动 TestFlow 服务...');
   console.log('📍 前端地址: http://localhost:5173');
-  console.log('📍 后端地址: http://localhost:3001');
+  console.log('📍 后端地址: http://localhost:4001');
   console.log('📍 按 Ctrl+C 停止服务');
   console.log('====================');
   

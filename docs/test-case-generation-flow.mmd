@@ -1,0 +1,164 @@
+flowchart TB
+    Start([用户开始生成用例]) --> UploadFiles[步骤1: 上传Axure文件]
+
+    subgraph Step1[步骤1: 上传原型文件]
+        UploadFiles --> FileSelect{文件选择}
+        FileSelect --> |选择HTML文件|FileValidation[验证文件类型]
+        FileValidation --> FillInfo[填写项目信息]
+
+        subgraph ProjectInfo[项目信息表单]
+            FillInfo --> Platform[选择平台类型: Web/移动端]
+            Platform --> PageMode[选择页面模式: 新增/修改]
+            PageMode --> SystemName[填写系统名称*]
+            SystemName --> ModuleName[填写模块名称*]
+            ModuleName --> BusinessRules[补充业务规则 可选]
+        end
+
+        BusinessRules --> ClickParse[点击生成需求文档按钮]
+    end
+
+    ClickParse --> DirectGenerate[直接解析HTML生成需求]
+
+    subgraph APICall1[后端API: /axure/generate-from-html-direct]
+        DirectGenerate --> ParseHTML[解析HTML文件内容]
+        ParseHTML --> ExtractElements[提取页面元素]
+        ExtractElements --> |使用 Cheerio|IdentifyFields[识别字段/按钮/表格]
+        IdentifyFields --> CallAI1[调用AI模型]
+
+        subgraph AIProcess1[AI分析过程]
+            CallAI1 --> AnalyzeStructure[分析页面结构]
+            AnalyzeStructure --> RecognizeType[识别页面类型]
+            RecognizeType --> |列表/表单/详情/混合|GenerateSections[生成章节化需求]
+            GenerateSections --> ApplyBusinessRules[应用补充业务规则]
+        end
+
+        ApplyBusinessRules --> CreateSession[创建AI会话]
+        CreateSession --> ReturnRequirement[返回需求文档]
+    end
+
+    ReturnRequirement --> ShowRequirement[步骤2: 显示需求文档]
+
+    subgraph Step2[步骤2: 需求文档编辑]
+        ShowRequirement --> MarkdownEditor[Markdown编辑器]
+        MarkdownEditor --> EditDoc{用户编辑?}
+        EditDoc --> |编辑修改|UpdateDoc[更新文档内容]
+        EditDoc --> |直接进入下一步|ClickGenerate
+        UpdateDoc --> ClickGenerate[点击生成测试用例按钮]
+    end
+
+    ClickGenerate --> PhaseAnalysis[阶段1: 智能测试模块拆分]
+
+    subgraph APICall2[后端API: /functional-test-cases/analyze-modules]
+        PhaseAnalysis --> AnalyzeDoc[分析需求文档]
+        AnalyzeDoc --> CallAI2[调用AI模型]
+
+        subgraph AIProcess2[AI模块拆分]
+            CallAI2 --> RecognizeModules[识别测试模块]
+            RecognizeModules --> |查询/列表/操作/表单|CategorizeModules[分类模块]
+            CategorizeModules --> SetPriority[设置优先级]
+            SetPriority --> LinkSections[关联需求章节]
+        end
+
+        LinkSections --> ReturnModules[返回测试模块列表]
+    end
+
+    ReturnModules --> ShowModules[步骤3: 显示测试模块]
+
+    subgraph Step3[步骤3: 三阶段渐进式生成]
+        ShowModules --> SelectModule{用户选择模块}
+        SelectModule --> |点击生成测试目的|GeneratePurposes[阶段2: 生成测试目的]
+
+        subgraph APICall3[后端API: /functional-test-cases/generate-purposes]
+            GeneratePurposes --> ExtractModuleInfo[提取模块信息]
+            ExtractModuleInfo --> CallAI3[调用AI模型]
+
+            subgraph AIProcess3[AI目的生成]
+                CallAI3 --> AnalyzeModule[分析模块功能]
+                AnalyzeModule --> IdentifyScenarios[识别测试场景]
+                IdentifyScenarios --> |正常/异常/边界|CreatePurposes[创建测试目的]
+                CreatePurposes --> EstimatePoints[预估测试点数量]
+            end
+
+            EstimatePoints --> ReturnPurposes[返回测试目的列表]
+        end
+
+        ReturnPurposes --> ShowPurposes[显示测试目的列表]
+        ShowPurposes --> SelectPurpose{用户选择测试目的}
+
+        SelectPurpose --> |单个生成|GenerateSinglePoint[阶段3: 生成测试点]
+        SelectPurpose --> |批量生成|GenerateBatchPoints[批量生成所有测试点]
+
+        GenerateBatchPoints --> LoopPurposes[轮询生成每个测试目的]
+        LoopPurposes --> GenerateSinglePoint
+
+        subgraph APICall4[后端API: /functional-test-cases/generate-points]
+            GenerateSinglePoint --> GetPurposeInfo[获取测试目的信息]
+            GetPurposeInfo --> CallAI4[调用AI模型]
+
+            subgraph AIProcess4[AI测试点生成]
+                CallAI4 --> DecomposePurpose[分解测试目的]
+                DecomposePurpose --> GenerateSteps[生成测试步骤]
+                GenerateSteps --> GenerateExpected[生成预期结果]
+                GenerateExpected --> GenerateTestData[生成测试数据]
+                GenerateTestData --> AddValidations[添加校验规则]
+                AddValidations --> QualityScore[计算质量评分]
+            end
+
+            QualityScore --> ReturnTestCase[返回完整测试用例]
+        end
+
+        ReturnTestCase --> AddToDraft[添加到草稿箱]
+        AddToDraft --> MarkGenerated[标记已生成]
+    end
+
+    MarkGenerated --> ViewDraft[查看草稿箱]
+
+    subgraph DraftManagement[草稿箱管理]
+        ViewDraft --> SelectCases{用户选择用例}
+        SelectCases --> |勾选|CheckboxSelect[勾选测试目的]
+        CheckboxSelect --> ViewDetail[查看用例详情]
+        ViewDetail --> EditCase{编辑用例?}
+        EditCase --> |编辑|UpdateCase[修改用例内容]
+        EditCase --> |不编辑|SelectMore
+        UpdateCase --> SelectMore{继续选择?}
+        SelectMore --> |是|SelectCases
+        SelectMore --> |否|SaveCases
+
+        SelectCases --> |点击保存|SaveCases[保存选中用例]
+    end
+
+    subgraph APICall5[后端API: /functional-test-cases/batch-save]
+        SaveCases --> ValidateCases[验证用例数据]
+        ValidateCases --> CreateTransaction[开启数据库事务]
+        CreateTransaction --> SaveTestCase[保存测试用例主表]
+        SaveTestCase --> SaveTestPoints[保存测试点明细]
+        SaveTestPoints --> LinkSession[关联AI会话]
+        LinkSession --> CommitTransaction[提交事务]
+    end
+
+    CommitTransaction --> MarkSaved[标记为已保存]
+    MarkSaved --> SuccessToast[显示成功提示]
+
+    SuccessToast --> ContinueGen{继续生成?}
+    ContinueGen --> |是|SelectModule
+    ContinueGen --> |否|SaveAndFinish[保存并完成]
+
+    SaveAndFinish --> NavigateToList[跳转到用例库]
+    NavigateToList --> End([结束])
+
+    style Start fill:#e1f5e1
+    style End fill:#ffe1e1
+    style Step1 fill:#e3f2fd
+    style Step2 fill:#fff3e0
+    style Step3 fill:#f3e5f5
+    style APICall1 fill:#fce4ec
+    style APICall2 fill:#fce4ec
+    style APICall3 fill:#fce4ec
+    style APICall4 fill:#fce4ec
+    style APICall5 fill:#fce4ec
+    style AIProcess1 fill:#fff9c4
+    style AIProcess2 fill:#fff9c4
+    style AIProcess3 fill:#fff9c4
+    style AIProcess4 fill:#fff9c4
+    style ProjectInfo fill:#e0f7fa
+    style DraftManagement fill:#f1f8e9

@@ -438,7 +438,7 @@ export class AIBulkUpdateService {
   initializeWebSocket(): Promise<void> {
     return new Promise((resolve, reject) => {
       try {
-        const wsUrl = `ws://${window.location.hostname}:3001/ws?userId=${this.getCurrentUserId()}`;
+        const wsUrl = `ws://${window.location.hostname}:4001/ws?userId=${this.getCurrentUserId()}`;
         this.wsManager = new WebSocket(wsUrl);
 
         this.wsManager.onopen = () => {
