@@ -132,7 +132,7 @@ project/
 │   ├── CONFIGURATION.md
 │   └── TROUBLESHOOTING.md
 ├── scripts/               # 工具脚本
-│   └── start.js
+│   └── start.cjs
 └── README.md             # 主文档
 ```
 

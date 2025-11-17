@@ -196,7 +196,7 @@ git clone https://github.com/testflow/testflow.git
 cd testflow
 
 # 一键启动（自动安装依赖、配置环境、启动服务）
-node scripts/start.js
+npm start
 ```
 
 ### 访问系统

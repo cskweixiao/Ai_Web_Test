@@ -247,10 +247,10 @@ export function TestRunDetail() {
   }
 
   return (
-    <div className="min-h-screen bg-[var(--color-bg-primary)]">
-      <div className="max-w-7xl mx-auto p-6">
+    <div className="min-h-screen bg-[var(--color-bg-primary)] flex flex-col">
+      <div className="flex-1 flex flex-col px-4 py-3">
         {/* 顶部导航栏 */}
-        <div className="mb-6 flex items-center justify-between">
+        <div className="mb-3 flex items-center justify-between">
           <div className="flex items-center gap-4">
             <button
               onClick={() => navigate('/test-runs')}
@@ -290,30 +290,30 @@ export function TestRunDetail() {
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6"
+          className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 mb-3"
         >
-          <div className="grid grid-cols-4 gap-6">
+          <div className="grid grid-cols-4 gap-4">
             <div>
-              <div className="text-sm text-gray-500 mb-2">状态</div>
+              <div className="text-xs text-gray-500 mb-1">状态</div>
               <div className="flex items-center gap-2">
                 {getStatusIcon(testRun.status)}
-                <span className={clsx('px-3 py-1 rounded-full text-sm font-medium', getStatusColor(testRun.status))}>
+                <span className={clsx('px-2 py-0.5 rounded-full text-xs font-medium', getStatusColor(testRun.status))}>
                   {getStatusText(testRun.status)}
                 </span>
               </div>
             </div>
 
             <div>
-              <div className="text-sm text-gray-500 mb-2">进度</div>
-              <div className="text-2xl font-bold text-gray-900">{testRun.progress}%</div>
-              <div className="text-sm text-gray-600">
+              <div className="text-xs text-gray-500 mb-1">进度</div>
+              <div className="text-xl font-bold text-gray-900">{testRun.progress}%</div>
+              <div className="text-xs text-gray-600">
                 {testRun.completedSteps} / {testRun.totalSteps} 步骤
               </div>
             </div>
 
             <div>
-              <div className="text-sm text-gray-500 mb-2">执行结果</div>
-              <div className="flex items-center gap-4">
+              <div className="text-xs text-gray-500 mb-1">执行结果</div>
+              <div className="flex items-center gap-3">
                 <div className="flex items-center gap-1">
                   <CheckCircle className="h-4 w-4 text-green-600" />
                   <span className="text-sm font-medium text-green-600">{testRun.passedSteps}</span>
@@ -326,10 +326,10 @@ export function TestRunDetail() {
             </div>
 
             <div>
-              <div className="text-sm text-gray-500 mb-2">执行时长</div>
-              <div className="text-2xl font-bold text-gray-900">{testRun.duration}</div>
-              <div className="text-sm text-gray-600">
-                {safeFormatDate(testRun.startTime, 'yyyy-MM-dd HH:mm:ss')}
+              <div className="text-xs text-gray-500 mb-1">执行时长</div>
+              <div className="text-xl font-bold text-gray-900">{testRun.duration}</div>
+              <div className="text-xs text-gray-600">
+                {safeFormatDate(testRun.startTime, 'MM-dd HH:mm')}
               </div>
             </div>
           </div>
@@ -348,59 +348,59 @@ export function TestRunDetail() {
         </motion.div>
 
         {/* 标签页 */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-          <div className="border-b border-gray-200">
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden flex-1 flex flex-col">
+          <div className="border-b border-gray-200 flex-shrink-0">
             <div className="flex">
               <button
                 onClick={() => setActiveTab('logs')}
                 className={clsx(
-                  'px-6 py-3 text-sm font-medium border-b-2 transition-colors',
+                  'px-4 py-2 text-sm font-medium border-b-2 transition-colors',
                   activeTab === 'logs'
                     ? 'border-blue-600 text-blue-600'
                     : 'border-transparent text-gray-500 hover:text-gray-700'
                 )}
               >
-                <Terminal className="inline h-4 w-4 mr-2" />
+                <Terminal className="inline h-4 w-4 mr-1.5" />
                 执行日志
               </button>
               <button
                 onClick={() => setActiveTab('live')}
                 className={clsx(
-                  'px-6 py-3 text-sm font-medium border-b-2 transition-colors',
+                  'px-4 py-2 text-sm font-medium border-b-2 transition-colors',
                   activeTab === 'live'
                     ? 'border-blue-600 text-blue-600'
                     : 'border-transparent text-gray-500 hover:text-gray-700'
                 )}
               >
-                <Play className="inline h-4 w-4 mr-2" />
+                <Play className="inline h-4 w-4 mr-1.5" />
                 实时画面
               </button>
               <button
                 onClick={() => setActiveTab('evidence')}
                 className={clsx(
-                  'px-6 py-3 text-sm font-medium border-b-2 transition-colors',
+                  'px-4 py-2 text-sm font-medium border-b-2 transition-colors',
                   activeTab === 'evidence'
                     ? 'border-blue-600 text-blue-600'
                     : 'border-transparent text-gray-500 hover:text-gray-700'
                 )}
               >
-                <ImageIcon className="inline h-4 w-4 mr-2" />
+                <ImageIcon className="inline h-4 w-4 mr-1.5" />
                 测试证据
               </button>
             </div>
           </div>
 
-          <div className="p-6">
+          <div className="flex-1 flex flex-col overflow-hidden">
             {activeTab === 'logs' && (
-              <div className="space-y-2">
-                <div className="flex items-center justify-between mb-4">
+              <div className="flex-1 flex flex-col p-4 overflow-hidden">
+                <div className="flex items-center justify-between mb-3 flex-shrink-0">
                   <h3 className="text-lg font-semibold text-gray-900">执行日志</h3>
-                  <button className="text-base text-blue-600 hover:text-blue-700">
+                  <button className="text-sm text-blue-600 hover:text-blue-700">
                     <Download className="inline h-4 w-4 mr-1" />
                     导出日志
                   </button>
                 </div>
-                <div className="bg-gray-900 rounded-lg p-4 max-h-[600px] overflow-y-auto font-mono text-sm">
+                <div className="bg-gray-900 rounded-lg p-4 flex-1 overflow-y-auto font-mono text-sm">
                   {testRun.logs.length === 0 ? (
                     <div className="text-gray-600 text-center py-8">暂无日志</div>
                   ) : (
@@ -419,30 +419,34 @@ export function TestRunDetail() {
             )}
 
             {activeTab === 'live' && (
-              <div>
-                <h3 className="text-lg font-semibold text-gray-900 mb-4">实时画面</h3>
-                {testRun.status === 'running' ? (
-                  <LiveView runId={testRun.id} />
-                ) : (
-                  <div className="bg-gray-50 rounded-lg p-8 text-center">
-                    <AlertCircle className="h-12 w-12 text-gray-600 mx-auto mb-4" />
-                    <p className="text-gray-600">测试未在运行中，无法查看实时画面</p>
-                  </div>
-                )}
+              <div className="flex-1 flex flex-col p-4 overflow-hidden">
+                <h3 className="text-lg font-semibold text-gray-900 mb-3 flex-shrink-0">实时画面</h3>
+                <div className="flex-1 overflow-hidden">
+                  {testRun.status === 'running' ? (
+                    <LiveView runId={testRun.id} />
+                  ) : (
+                    <div className="bg-gray-50 rounded-lg p-8 text-center h-full flex flex-col items-center justify-center">
+                      <AlertCircle className="h-12 w-12 text-gray-600 mb-4" />
+                      <p className="text-gray-600">测试未在运行中，无法查看实时画面</p>
+                    </div>
+                  )}
+                </div>
               </div>
             )}
 
             {activeTab === 'evidence' && (
-              <div>
-                <h3 className="text-lg font-semibold text-gray-900 mb-4">测试证据</h3>
-                {testRun.screenshots && testRun.screenshots.length > 0 ? (
-                  <EvidenceViewer runId={testRun.id} screenshots={testRun.screenshots} />
-                ) : (
-                  <div className="bg-gray-50 rounded-lg p-8 text-center">
-                    <ImageIcon className="h-12 w-12 text-gray-600 mx-auto mb-4" />
-                    <p className="text-gray-600">暂无测试截图</p>
-                  </div>
-                )}
+              <div className="flex-1 flex flex-col p-4 overflow-hidden">
+                <h3 className="text-lg font-semibold text-gray-900 mb-3 flex-shrink-0">测试证据</h3>
+                <div className="flex-1 overflow-auto">
+                  {testRun.screenshots && testRun.screenshots.length > 0 ? (
+                    <EvidenceViewer runId={testRun.id} screenshots={testRun.screenshots} />
+                  ) : (
+                    <div className="bg-gray-50 rounded-lg p-8 text-center h-full flex flex-col items-center justify-center">
+                      <ImageIcon className="h-12 w-12 text-gray-600 mb-4" />
+                      <p className="text-gray-600">暂无测试截图</p>
+                    </div>
+                  )}
+                </div>
               </div>
             )}
           </div>

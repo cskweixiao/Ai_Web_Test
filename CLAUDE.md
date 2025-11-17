@@ -11,7 +11,7 @@ TestFlow 是一个企业级自动化测试平台，具备AI驱动的批量更新
 ### 开发环境
 ```bash
 # 一键启动（推荐）
-node scripts/start.js
+npm start
 
 # 开发模式（前端+后端）
 npm run dev
