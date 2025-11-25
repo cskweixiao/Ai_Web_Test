@@ -176,6 +176,3 @@ export class DatabaseService {
     }
   }
 }
-
-// 默认导出单例实例
-export const databaseService = DatabaseService.getInstance();

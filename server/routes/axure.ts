@@ -1,8 +1,8 @@
 import { Router, Request, Response } from 'express';
 import { axureUpload, axureMultiUpload } from '../middleware/upload.js';
 import { AxureParseService } from '../services/axureParseService.js';
-import { functionalTestCaseAIService } from '../services/functionalTestCaseAIService.js';
-import { aiPreAnalysisService } from '../services/aiPreAnalysisService.js';
+import { FunctionalTestCaseAIService } from '../services/functionalTestCaseAIService.js';
+import { AIPreAnalysisService } from '../services/aiPreAnalysisService.js';
 import { PrismaClient } from '../../src/generated/prisma/index.js';
 import { DatabaseService } from '../services/databaseService.js';
 import fs from 'fs/promises';
@@ -14,7 +14,11 @@ import { v4 as uuidv4 } from 'uuid';
 export function createAxureRoutes(): Router {
   const router = Router();
   const parseService = new AxureParseService();
-  const prisma = DatabaseService.getInstance().getClient();
+  
+  // 延迟获取服务实例（避免模块加载时初始化）
+  const getAIService = () => new FunctionalTestCaseAIService();
+  const getPreAnalysisService = () => new AIPreAnalysisService();
+  const getPrisma = () => DatabaseService.getInstance().getClient();
 
   /**
    * POST /api/v1/axure/parse
@@ -44,7 +48,7 @@ export function createAxureRoutes(): Router {
       const parseResult = await parseService.parseHtmlFile(filePath);
 
       // 创建AI生成会话记录
-      await prisma.ai_generation_sessions.create({
+      await getPrisma().ai_generation_sessions.create({
         data: {
           id: parseResult.sessionId,
           user_id: req.user.id,
@@ -124,7 +128,7 @@ export function createAxureRoutes(): Router {
 
       // 创建AI生成会话记录
       const totalSize = req.files.reduce((sum, f) => sum + f.size, 0);
-      await prisma.ai_generation_sessions.create({
+      await getPrisma().ai_generation_sessions.create({
         data: {
           id: parseResult.sessionId,
           user_id: req.user.id,
@@ -173,13 +177,13 @@ export function createAxureRoutes(): Router {
       console.log(`📝 开始生成需求文档，会话ID: ${sessionId}`);
 
       // 调用AI服务生成需求文档
-      const result = await functionalTestCaseAIService.generateRequirementDoc(
+      const result = await getAIService().generateRequirementDoc(
         axureData,
         projectInfo
       );
 
       // 更新会话信息
-      await prisma.ai_generation_sessions.update({
+      await getPrisma().ai_generation_sessions.update({
         where: { id: sessionId },
         data: {
           project_name: projectInfo.systemName || '',    // 使用系统名称
@@ -220,13 +224,13 @@ export function createAxureRoutes(): Router {
       console.log(`🔍 开始AI预分析，会话ID: ${sessionId}`);
 
       // 调用AI预分析服务
-      const preAnalysisResult = await aiPreAnalysisService.preAnalyze(
+      const preAnalysisResult = await getPreAnalysisService().preAnalyze(
         sessionId,
         axureData
       );
 
       // 保存预分析结果到数据库
-      await prisma.ai_generation_sessions.update({
+      await getPrisma().ai_generation_sessions.update({
         where: { id: sessionId },
         data: {
           pre_analysis_result: JSON.stringify(preAnalysisResult)
@@ -267,14 +271,14 @@ export function createAxureRoutes(): Router {
       }
 
       // 调用AI服务生成需求文档（传入增强数据）
-      const result = await functionalTestCaseAIService.generateRequirementDoc(
+      const result = await getAIService().generateRequirementDoc(
         axureData,
         projectInfo,
         enhancedData  // 🆕 传入用户确认的增强数据
       );
 
       // 更新会话信息
-      await prisma.ai_generation_sessions.update({
+      await getPrisma().ai_generation_sessions.update({
         where: { id: sessionId },
         data: {
           project_name: projectInfo.systemName || '',
@@ -315,10 +319,10 @@ export function createAxureRoutes(): Router {
       console.log(`📋 开始规划分批策略，会话ID: ${sessionId}`);
 
       // 调用AI服务规划分批
-      const batches = await functionalTestCaseAIService.planBatchStrategy(requirementDoc);
+      const batches = await getAIService().planBatchStrategy(requirementDoc);
 
       // 更新会话信息
-      await prisma.ai_generation_sessions.update({
+      await getPrisma().ai_generation_sessions.update({
         where: { id: sessionId },
         data: {
           batches: JSON.stringify(batches)
@@ -356,7 +360,7 @@ export function createAxureRoutes(): Router {
       console.log(`🤖 开始生成批次: ${batchId}, 系统: ${systemName || '未指定'}, 模块: ${moduleName || '未指定'}`);
 
       // 调用AI服务生成测试用例
-      const testCases = await functionalTestCaseAIService.generateBatch(
+      const testCases = await getAIService().generateBatch(
         batchId,
         scenarios,
         requirementDoc,
@@ -366,7 +370,7 @@ export function createAxureRoutes(): Router {
       );
 
       // 更新会话统计
-      await prisma.ai_generation_sessions.update({
+      await getPrisma().ai_generation_sessions.update({
         where: { id: sessionId },
         data: {
           total_generated: {
@@ -483,7 +487,7 @@ export function createAxureRoutes(): Router {
         : [];
 
       // 直接调用AI生成需求文档（传递 pageMode、platformType 和 businessRules）
-      const result = await functionalTestCaseAIService.generateRequirementFromHtmlDirect(
+      const result = await getAIService().generateRequirementFromHtmlDirect(
         htmlContent,
         {
           systemName,
@@ -496,7 +500,7 @@ export function createAxureRoutes(): Router {
 
       // 创建会话记录
       const sessionId = uuidv4();
-      await prisma.ai_generation_sessions.create({
+      await getPrisma().ai_generation_sessions.create({
         data: {
           id: sessionId,
           user_id: req.user.id,

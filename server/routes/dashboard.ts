@@ -28,7 +28,7 @@ export function createDashboardRoutes(prisma: PrismaClient): Router {
       // 获取本周失败数
       const weeklyFailures = await prisma.test_run_results.count({
         where: {
-          status: 'failed',
+          status: 'FAILED',  // 🔥 修复：使用枚举值（大写）
           executed_at: {
             gte: weekAgo
           }
@@ -39,7 +39,7 @@ export function createDashboardRoutes(prisma: PrismaClient): Router {
       const totalResults = await prisma.test_run_results.count();
       const passedResults = await prisma.test_run_results.count({
         where: {
-          status: 'passed'
+          status: 'PASSED'  // 🔥 修复：使用枚举值（大写）
         }
       });
       const successRate = totalResults > 0 ? (passedResults / totalResults) * 100 : 0;
@@ -79,7 +79,7 @@ export function createDashboardRoutes(prisma: PrismaClient): Router {
   router.get('/trend', async (req: Request, res: Response) => {
     try {
       const days = parseInt(req.query.days as string) || 7;
-      const trendData = [];
+      const trendData: Array<{ x: string; y: number }> = [];
 
       for (let i = days - 1; i >= 0; i--) {
         const date = new Date();
@@ -99,7 +99,7 @@ export function createDashboardRoutes(prisma: PrismaClient): Router {
         });
 
         const total = dayResults.length;
-        const passed = dayResults.filter(r => r.status === 'passed').length;
+        const passed = dayResults.filter(r => r.status === 'PASSED').length;  // 🔥 修复：使用枚举值（大写）
         const successRate = total > 0 ? (passed / total) * 100 : 0;
 
         trendData.push({
@@ -144,7 +144,7 @@ export function createDashboardRoutes(prisma: PrismaClient): Router {
         id: run.id,
         description: `执行测试套件: ${run.test_suites.name}`,
         timestamp: run.started_at?.toISOString() || new Date().toISOString(),
-        status: run.status === 'passed' ? 'success' : run.status === 'failed' ? 'error' : 'info',
+        status: run.status === 'PASSED' ? 'success' : run.status === 'FAILED' ? 'error' : 'info',  // 🔥 修复：使用枚举值（大写）
         user: run.users.email || '系统'
       }));
 
@@ -168,13 +168,13 @@ export function createDashboardRoutes(prisma: PrismaClient): Router {
   router.get('/failure-heatmap', async (req: Request, res: Response) => {
     try {
       const days = parseInt(req.query.days as string) || 7;
-      const heatmapData = [];
+      const heatmapData: Array<{ x: string; y: string; value: number }> = [];
 
       // 获取失败次数最多的测试用例
       const topFailedCases = await prisma.test_run_results.groupBy({
         by: ['case_id'],
         where: {
-          status: 'failed'
+          status: 'FAILED'  // 🔥 修复：使用枚举值（大写）
         },
         _count: {
           case_id: true
@@ -214,7 +214,7 @@ export function createDashboardRoutes(prisma: PrismaClient): Router {
           const failureCount = await prisma.test_run_results.count({
             where: {
               case_id: caseId,
-              status: 'failed',
+              status: 'FAILED',  // 🔥 修复：使用枚举值（大写）
               executed_at: {
                 gte: date,
                 lt: nextDate
@@ -318,7 +318,14 @@ export function createDashboardRoutes(prisma: PrismaClient): Router {
         }
       });
 
-      const flakyTests = [];
+      const flakyTests: Array<{
+        id: number;
+        name: string;
+        failureRate: number;
+        totalRuns: number;
+        lastFailure: string;
+        severity: 'high' | 'medium' | 'low';
+      }> = [];
 
       for (const stat of caseStats) {
         const totalRuns = stat._count.case_id;
@@ -326,7 +333,7 @@ export function createDashboardRoutes(prisma: PrismaClient): Router {
         const failures = await prisma.test_run_results.count({
           where: {
             case_id: stat.case_id,
-            status: 'failed'
+            status: 'FAILED'  // 🔥 修复：使用枚举值（大写）
           }
         });
 
@@ -341,7 +348,7 @@ export function createDashboardRoutes(prisma: PrismaClient): Router {
           const lastFailure = await prisma.test_run_results.findFirst({
             where: {
               case_id: stat.case_id,
-              status: 'failed'
+              status: 'FAILED'  // 🔥 修复：使用枚举值（大写）
             },
             orderBy: {
               executed_at: 'desc'

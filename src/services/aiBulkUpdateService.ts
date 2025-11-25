@@ -436,9 +436,11 @@ export class AIBulkUpdateService {
    * 初始化WebSocket连接以监听实时更新
    */
   initializeWebSocket(): Promise<void> {
-    return new Promise((resolve, reject) => {
+    return new Promise(async (resolve, reject) => {
       try {
-        const wsUrl = `ws://${window.location.hostname}:4001/ws?userId=${this.getCurrentUserId()}`;
+        // 🔥 使用统一的 WebSocket 配置
+        const { getWebSocketUrl } = await import('../config/api');
+        const wsUrl = `${getWebSocketUrl('/ws')}?userId=${this.getCurrentUserId()}`;
         this.wsManager = new WebSocket(wsUrl);
 
         this.wsManager.onopen = () => {

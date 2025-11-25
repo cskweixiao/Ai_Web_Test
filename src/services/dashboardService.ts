@@ -1,6 +1,8 @@
-import axios from 'axios';
-
-const API_BASE_URL = import.meta.env.DEV ? '/api' : `http://${window.location.hostname}:4001/api`;
+// 🔥 使用全局配置的 axios 实例（自动添加认证头）
+import apiClient from '../utils/axios';
+// 🔥 使用统一的 API 配置
+import { getApiBaseUrl } from '../config/api';
+const API_BASE_URL = getApiBaseUrl('/api');
 
 // Dashboard统计数据接口
 export interface DashboardStats {
@@ -54,7 +56,7 @@ class DashboardService {
    */
   async getStats(): Promise<DashboardStats> {
     try {
-      const response = await axios.get(`${API_BASE_URL}/dashboard/stats`);
+      const response = await apiClient.get(`${API_BASE_URL}/dashboard/stats`);
       return response.data.data;
     } catch (error) {
       console.error('获取Dashboard统计数据失败:', error);
@@ -73,8 +75,8 @@ class DashboardService {
    */
   async getTrend(days: number = 7): Promise<TrendData[]> {
     try {
-      const response = await axios.get(`${API_BASE_URL}/dashboard/trend`, {
-        params: { days },
+      const response = await apiClient.get(`${API_BASE_URL}/dashboard/trend`, {
+        params: { days }
       });
       return response.data.data;
     } catch (error) {
@@ -88,8 +90,8 @@ class DashboardService {
    */
   async getRecentActivities(limit: number = 10): Promise<RecentActivity[]> {
     try {
-      const response = await axios.get(`${API_BASE_URL}/dashboard/activities`, {
-        params: { limit },
+      const response = await apiClient.get(`${API_BASE_URL}/dashboard/activities`, {
+        params: { limit }
       });
       return response.data.data;
     } catch (error) {
@@ -103,8 +105,8 @@ class DashboardService {
    */
   async getFailureHeatmap(days: number = 7): Promise<FailureHeatmapData[]> {
     try {
-      const response = await axios.get(`${API_BASE_URL}/dashboard/failure-heatmap`, {
-        params: { days },
+      const response = await apiClient.get(`${API_BASE_URL}/dashboard/failure-heatmap`, {
+        params: { days }
       });
       return response.data.data;
     } catch (error) {
@@ -118,7 +120,7 @@ class DashboardService {
    */
   async getDurationDistribution(): Promise<DurationDistributionData[]> {
     try {
-      const response = await axios.get(`${API_BASE_URL}/dashboard/duration-distribution`);
+      const response = await apiClient.get(`${API_BASE_URL}/dashboard/duration-distribution`);
       return response.data.data;
     } catch (error) {
       console.error('获取时长分布数据失败:', error);
@@ -131,8 +133,8 @@ class DashboardService {
    */
   async getFlakyTests(limit: number = 5): Promise<FlakyTest[]> {
     try {
-      const response = await axios.get(`${API_BASE_URL}/dashboard/flaky-tests`, {
-        params: { limit },
+      const response = await apiClient.get(`${API_BASE_URL}/dashboard/flaky-tests`, {
+        params: { limit }
       });
       return response.data.data;
     } catch (error) {

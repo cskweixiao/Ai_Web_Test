@@ -378,4 +378,4 @@ ${this.buildPageSummary(axureData)}
   }
 }
 
-export const aiPreAnalysisService = new AIPreAnalysisService();
+// 延迟初始化：使用 getInstance() 方法获取实例

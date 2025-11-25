@@ -1,9 +1,11 @@
-import { modelRegistry, ModelDefinition } from './modelRegistry';
+import { modelRegistry } from './modelRegistry';
+import { validateLLMSettings as validateLLMSettingsShared } from '../utils/llmSettingsValidation';
 
 // LLM设置接口
 export interface LLMSettings {
   selectedModelId: string;
   apiKey: string;
+  baseUrl?: string;  // API端点URL，根据模型信息自动确定
   customConfig?: {
     temperature?: number;
     maxTokens?: number;
@@ -87,19 +89,29 @@ export class SettingsService {
         throw error;
       }
 
+      // 🔥 如果 baseUrl 未提供，根据模型信息自动填充
+      const settingsWithBaseUrl = { ...llmSettings };
+      if (!settingsWithBaseUrl.baseUrl) {
+        const modelInfo = modelRegistry.getModelById(llmSettings.selectedModelId);
+        if (modelInfo) {
+          settingsWithBaseUrl.baseUrl = modelInfo.customBaseUrl || 'https://openrouter.ai/api/v1';
+          console.log(`📋 自动填充 baseUrl: ${settingsWithBaseUrl.baseUrl}`);
+        }
+      }
+
       // 🔥 前端版本：保存到localStorage + API同步
       if (typeof window !== 'undefined') {
-        // 保存到localStorage
+        // 保存到localStorage（包含 baseUrl）
         const currentSettings = this.loadSettings();
-        currentSettings.llm = llmSettings;
+        currentSettings.llm = settingsWithBaseUrl;
         localStorage.setItem(this.STORAGE_KEY, JSON.stringify(currentSettings));
         
-        // 同步到后端API
+        // 同步到后端API（包含 baseUrl）
         try {
           const response = await fetch('/api/config/llm', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(llmSettings)
+            body: JSON.stringify(settingsWithBaseUrl)
           });
           
           if (!response.ok) {
@@ -110,13 +122,16 @@ export class SettingsService {
           console.warn('API同步失败:', apiError);
         }
       } else {
-        // 🔥 后端版本：直接保存到数据库
+        // 🔥 后端版本：直接保存到数据库（包含 baseUrl）
         const currentSettings = await this.loadSettingsFromDB();
-        currentSettings.llm = llmSettings;
+        currentSettings.llm = settingsWithBaseUrl;
         await this.saveSettingsToDB(currentSettings);
       }
       
-      console.log('✅ LLM settings saved successfully:', llmSettings.selectedModelId);
+      console.log('✅ LLM settings saved successfully:', {
+        modelId: settingsWithBaseUrl.selectedModelId,
+        baseUrl: settingsWithBaseUrl.baseUrl
+      });
     } catch (error: any) {
       console.error('❌ Failed to save LLM settings:', error);
       
@@ -131,81 +146,8 @@ export class SettingsService {
 
   // 验证LLM设置
   public async validateLLMSettings(settings: LLMSettings): Promise<ValidationResult> {
-    const errors: ValidationError[] = [];
-
-    // 验证模型ID
-    if (!settings.selectedModelId) {
-      errors.push({
-        field: 'selectedModelId',
-        message: '请选择一个模型',
-        code: 'REQUIRED'
-      });
-    } else if (!modelRegistry.isValidModelId(settings.selectedModelId)) {
-      errors.push({
-        field: 'selectedModelId',
-        message: '选择的模型无效',
-        code: 'INVALID_MODEL'
-      });
-    }
-
-    // 验证API密钥
-    if (!settings.apiKey || settings.apiKey.trim() === '') {
-      errors.push({
-        field: 'apiKey',
-        message: 'API密钥不能为空',
-        code: 'REQUIRED'
-      });
-    } else {
-      const model = modelRegistry.getModelById(settings.selectedModelId);
-      // 只对标准 OpenRouter 模型进行 sk- 格式验证
-      if (!model?.requiresCustomAuth && !settings.apiKey.startsWith('sk-')) {
-        errors.push({
-          field: 'apiKey',
-          message: 'OpenRouter API密钥必须以 sk- 开头',
-          code: 'INVALID_FORMAT'
-        });
-      }
-    }
-
-    // 验证自定义配置
-    if (settings.customConfig) {
-      const { temperature, maxTokens, topP } = settings.customConfig;
-
-      if (temperature !== undefined) {
-        if (temperature < 0 || temperature > 2) {
-          errors.push({
-            field: 'temperature',
-            message: 'Temperature必须在0-2之间',
-            code: 'OUT_OF_RANGE'
-          });
-        }
-      }
-
-      if (maxTokens !== undefined) {
-        if (maxTokens < 1 || maxTokens > 8000) {
-          errors.push({
-            field: 'maxTokens',
-            message: 'Max Tokens必须在1-8000之间',
-            code: 'OUT_OF_RANGE'
-          });
-        }
-      }
-
-      if (topP !== undefined) {
-        if (topP < 0 || topP > 1) {
-          errors.push({
-            field: 'topP',
-            message: 'Top P必须在0-1之间',
-            code: 'OUT_OF_RANGE'
-          });
-        }
-      }
-    }
-
-    return {
-      isValid: errors.length === 0,
-      errors
-    };
+    // 🔥 使用共享的验证工具，避免代码重复
+    return validateLLMSettingsShared(settings);
   }
 
   // 重置为默认设置
@@ -361,6 +303,7 @@ export class SettingsService {
     return {
       selectedModelId: defaultModel.id,
       apiKey: '', // API密钥应从环境变量或数据库获取
+      baseUrl: defaultModel.customBaseUrl || 'https://openrouter.ai/api/v1', // 🔥 添加 baseUrl
       customConfig: {
         ...defaultModel.defaultConfig
       }

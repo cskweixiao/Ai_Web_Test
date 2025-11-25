@@ -1,21 +1,102 @@
 /* Login page custom styles */
+.background-container {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 0;
+  background: linear-gradient(135deg, #0f0a1e 0%, #581c87 50%, #0f0a1e 100%);
+  overflow: hidden;
+  pointer-events: none; /* 确保背景不阻挡交互 */
+}
+
+/* 3D网络背景模拟 */
+.network-background {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  opacity: 0.6;
+}
+
+.network-line {
+  position: absolute;
+  background: linear-gradient(90deg, transparent, #a855f7, transparent);
+  height: 1px;
+  animation: networkMove 20s infinite linear;
+}
+
+@keyframes networkMove {
+  0% { transform: translateX(-100px) translateY(0); opacity: 0; }
+  10% { opacity: 1; }
+  90% { opacity: 1; }
+  100% { transform: translateX(calc(100vw + 100px)) translateY(100px); opacity: 0; }
+}
+
+.network-dot {
+  position: absolute;
+  width: 4px;
+  height: 4px;
+  background: #a855f7;
+  border-radius: 50%;
+  box-shadow: 0 0 10px #a855f7;
+  animation: dotPulse 2s infinite;
+}
+
+@keyframes dotPulse {
+  0%, 100% { transform: scale(1); opacity: 0.8; }
+  50% { transform: scale(1.5); opacity: 1; }
+}
+
+/* 光晕效果 */
+.glow-effect {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(80px);
+  opacity: 0.3;
+  animation: glowPulse 3s infinite;
+}
+
+.glow-purple {
+  top: 0;
+  left: 25%;
+  width: 400px;
+  height: 400px;
+  background: #a855f7;
+}
+
+.glow-blue {
+  bottom: 0;
+  right: 25%;
+  width: 400px;
+  height: 400px;
+  background: #3b82f6;
+  animation-delay: 1s;
+}
+
+@keyframes glowPulse {
+  0%, 100% { opacity: 0.2; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(1.1); }
+}
 
 /* Override Ant Design Input styles for dark theme */
 .login-input .ant-input,
 .login-input .ant-input-password {
-  background: rgba(255, 255, 255, 0.05) !important;
+  background: transparent !important;
+  /* background: rgba(255, 255, 255, 0.05) !important; */
   border-color: rgba(255, 255, 255, 0.2) !important;
   color: white !important;
 }
 
 .login-input .ant-input::placeholder,
 .login-input .ant-input-password input::placeholder {
+  background: transparent !important;
   color: rgba(192, 132, 252, 0.5) !important;
 }
 
 .login-input .ant-input:hover,
 .login-input .ant-input-password:hover {
-  background: rgba(255, 255, 255, 0.1) !important;
+  /* background: rgba(255, 255, 255, 0.1) !important; */
   border-color: rgba(168, 85, 247, 0.5) !important;
 }
 
@@ -23,7 +104,7 @@
 .login-input .ant-input-password:focus,
 .login-input .ant-input-focused,
 .login-input .ant-input-password-focused {
-  background: rgba(255, 255, 255, 0.1) !important;
+  /* background: rgba(255, 255, 255, 0.1) !important; */
   border-color: rgba(168, 85, 247, 1) !important;
   box-shadow: 0 0 0 2px rgba(168, 85, 247, 0.2) !important;
 }
@@ -37,7 +118,7 @@
 .login-input .ant-input-password input:-webkit-autofill:hover,
 .login-input .ant-input-password input:-webkit-autofill:focus,
 .login-input .ant-input-password input:-webkit-autofill:active {
-  -webkit-box-shadow: 0 0 0 1000px rgba(255, 255, 255, 0.05) inset !important;
+  /* -webkit-box-shadow: 0 0 0 1000px rgba(255, 255, 255, 0.05) inset !important; */
   -webkit-text-fill-color: white !important;
   background-color: rgba(255, 255, 255, 0.05) !important;
   background-clip: content-box !important;

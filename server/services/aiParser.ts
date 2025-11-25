@@ -1,15 +1,10 @@
 import { PlaywrightMcpClient } from './mcpClient.js';
 import { llmConfigManager, LLMConfigManager } from '../../src/services/llmConfigManager.js';
 import { ProxyAgent } from 'undici';
+import type { LLMConfig } from '../../src/types/llm.js';
 
-// AI配置接口
-export interface LLMConfig {
-  apiKey: string;
-  baseUrl: string;
-  model: string;
-  temperature: number;
-  maxTokens: number;
-}
+// 🔥 重新导出类型以便向后兼容
+export type { LLMConfig } from '../../src/types/llm.js';
 
 export interface AIParseResult {
   success: boolean;

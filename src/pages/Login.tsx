@@ -50,6 +50,39 @@ export const Login: React.FC = () => {
     };
   }, []);
 
+  // 生成网络背景元素（CSS 动画备用方案）
+  useEffect(() => {
+    const networkBg = document.getElementById('networkBg');
+    if (!networkBg) return;
+
+    // 清除已存在的元素
+    networkBg.innerHTML = '';
+
+    // 创建连接线
+    const lines = 20;
+    for (let i = 0; i < lines; i++) {
+      const line = document.createElement('div');
+      line.className = 'network-line';
+      line.style.top = Math.random() * 100 + '%';
+      line.style.left = '-100px';
+      line.style.width = Math.random() * 200 + 100 + 'px';
+      line.style.animationDelay = Math.random() * 20 + 's';
+      line.style.animationDuration = (Math.random() * 10 + 15) + 's';
+      networkBg.appendChild(line);
+    }
+
+    // 创建节点
+    const dots = 15;
+    for (let i = 0; i < dots; i++) {
+      const dot = document.createElement('div');
+      dot.className = 'network-dot';
+      dot.style.left = Math.random() * 100 + '%';
+      dot.style.top = Math.random() * 100 + '%';
+      dot.style.animationDelay = Math.random() * 2 + 's';
+      networkBg.appendChild(dot);
+    }
+  }, []);
+
   const handleSubmit = async (values: { username: string; password: string }) => {
     setError(null);
     setLoading(true);
@@ -73,12 +106,15 @@ export const Login: React.FC = () => {
         style={{ zIndex: 0 }}
       />
 
+      {/* CSS 背景层（备用方案） */}
+      <div className="background-container">
+        <div className="network-background" id="networkBg"></div>
+        <div className="glow-effect glow-purple"></div>
+        <div className="glow-effect glow-blue"></div>
+      </div>
+
       {/* 渐变背景（降级方案/VANTA加载前显示） */}
       <div className="absolute inset-0 bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900" style={{ zIndex: -1 }} />
-
-      {/* 背景光晕增强效果 */}
-      <div className="absolute top-0 left-1/4 w-96 h-96 bg-purple-500/10 rounded-full blur-3xl animate-pulse" style={{ zIndex: 1 }} />
-      <div className="absolute bottom-0 right-1/4 w-96 h-96 bg-blue-500/10 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '1s', zIndex: 1 }} />
 
       {/* 内容层 */}
       <div className="relative z-10 min-h-screen flex items-center justify-center px-4 py-12">

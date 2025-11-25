@@ -54,6 +54,7 @@ describe('SettingsService', () => {
         llm: {
           selectedModelId: 'deepseek-chat-v3',
           apiKey: 'sk-test-key',
+          baseUrl: 'https://api.deepseek.com/v1',
           customConfig: {
             temperature: 0.5,
             maxTokens: 1000

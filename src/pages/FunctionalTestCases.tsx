@@ -316,7 +316,7 @@ export function FunctionalTestCases() {
                      shadow-md hover:shadow-lg"
           >
             <Bot className="w-4 h-4 mr-2" />
-            AI生成器
+            AI 测试用例生成器
           </button>
           <button
             onClick={() => navigate('/functional-test-cases/create')}

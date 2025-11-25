@@ -1,11 +1,12 @@
 import { PrismaClient } from '../../src/generated/prisma/index.js';
 import { DatabaseService } from './databaseService.js';
 import { modelRegistry } from '../../src/services/modelRegistry.js';
-import type { LLMSettings, AppSettings, ValidationResult, ValidationError } from '../../src/services/settingsService.js';
+import { validateLLMSettings as validateLLMSettingsShared } from '../../src/utils/llmSettingsValidation.js';
+import type { LLMSettings, AppSettings, ValidationResult } from '../../src/services/settingsService.js';
 
 // 后端设置服务类
 export class BackendSettingsService {
-  private static instance: BackendSettingsService;
+  private static instance: BackendSettingsService | null = null;
   private databaseService: DatabaseService;
   private prisma: PrismaClient; // 保持兼容性，内部使用
 
@@ -53,16 +54,30 @@ export class BackendSettingsService {
         throw error;
       }
 
+      // 🔥 如果 baseUrl 未提供，根据模型信息自动填充
+      const settingsWithBaseUrl = { ...llmSettings };
+      if (!settingsWithBaseUrl.baseUrl) {
+        const modelInfo = modelRegistry.getModelById(llmSettings.selectedModelId);
+        if (modelInfo) {
+          settingsWithBaseUrl.baseUrl = modelInfo.customBaseUrl || 'https://openrouter.ai/api/v1';
+          console.log(`📋 自动填充 baseUrl: ${settingsWithBaseUrl.baseUrl}`);
+        }
+      }
+
       // 加载现有设置
       const currentSettings = await this.loadSettingsFromDB();
       
-      // 更新LLM设置
-      currentSettings.llm = llmSettings;
+      // 更新LLM设置（包含 baseUrl）
+      currentSettings.llm = settingsWithBaseUrl;
       
       // 保存到数据库
       await this.saveSettingsToDB(currentSettings);
       
-      console.log('✅ LLM settings saved successfully to database:', llmSettings.selectedModelId);
+      console.log('✅ LLM settings saved successfully to database:', {
+        modelId: settingsWithBaseUrl.selectedModelId,
+        baseUrl: settingsWithBaseUrl.baseUrl,
+        hasApiKey: !!settingsWithBaseUrl.apiKey
+      });
     } catch (error: any) {
       console.error('❌ Failed to save LLM settings:', error);
       
@@ -77,81 +92,8 @@ export class BackendSettingsService {
 
   // 验证LLM设置
   public async validateLLMSettings(settings: LLMSettings): Promise<ValidationResult> {
-    const errors: ValidationError[] = [];
-
-    // 验证模型ID
-    if (!settings.selectedModelId) {
-      errors.push({
-        field: 'selectedModelId',
-        message: '请选择一个模型',
-        code: 'REQUIRED'
-      });
-    } else if (!modelRegistry.isValidModelId(settings.selectedModelId)) {
-      errors.push({
-        field: 'selectedModelId',
-        message: '选择的模型无效',
-        code: 'INVALID_MODEL'
-      });
-    }
-
-    // 验证API密钥
-    if (!settings.apiKey || settings.apiKey.trim() === '') {
-      errors.push({
-        field: 'apiKey',
-        message: 'API密钥不能为空',
-        code: 'REQUIRED'
-      });
-    } else {
-      const model = modelRegistry.getModelById(settings.selectedModelId);
-      // 只对标准 OpenRouter 模型进行 sk- 格式验证
-      if (!model?.requiresCustomAuth && !settings.apiKey.startsWith('sk-')) {
-        errors.push({
-          field: 'apiKey',
-          message: 'OpenRouter API密钥必须以 sk- 开头',
-          code: 'INVALID_FORMAT'
-        });
-      }
-    }
-
-    // 验证自定义配置
-    if (settings.customConfig) {
-      const { temperature, maxTokens, topP } = settings.customConfig;
-
-      if (temperature !== undefined) {
-        if (temperature < 0 || temperature > 2) {
-          errors.push({
-            field: 'temperature',
-            message: 'Temperature必须在0-2之间',
-            code: 'OUT_OF_RANGE'
-          });
-        }
-      }
-
-      if (maxTokens !== undefined) {
-        if (maxTokens < 1 || maxTokens > 8000) {
-          errors.push({
-            field: 'maxTokens',
-            message: 'Max Tokens必须在1-8000之间',
-            code: 'OUT_OF_RANGE'
-          });
-        }
-      }
-
-      if (topP !== undefined) {
-        if (topP < 0 || topP > 1) {
-          errors.push({
-            field: 'topP',
-            message: 'Top P必须在0-1之间',
-            code: 'OUT_OF_RANGE'
-          });
-        }
-      }
-    }
-
-    return {
-      isValid: errors.length === 0,
-      errors
-    };
+    // 🔥 使用共享的验证工具，避免代码重复
+    return validateLLMSettingsShared(settings);
   }
 
   // 获取完整设置
@@ -276,6 +218,7 @@ export class BackendSettingsService {
     return {
       selectedModelId: 'deepseek-chat-v3',
       apiKey: process.env.OPENROUTER_API_KEY || '',
+      baseUrl: defaultModel.customBaseUrl || 'https://openrouter.ai/api/v1', // 🔥 添加 baseUrl
       customConfig: {
         ...defaultModel.defaultConfig
       }
@@ -315,6 +258,3 @@ export class BackendSettingsService {
     await this.prisma.$disconnect();
   }
 }
-
-// 导出单例实例
-export const backendSettingsService = BackendSettingsService.getInstance();

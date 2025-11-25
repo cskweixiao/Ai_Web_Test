@@ -85,6 +85,7 @@ export function Modal({
     >
       <DialogContent
         // 容器：移动端更接近全屏，桌面居中，最大高度限制在 85vh，内部滚动
+        hideDefaultClose={showCloseButton}
         className={clsx(
           "p-0 overflow-hidden flex flex-col",
           size === "full" ? "" : "w-[96vw] sm:w-auto",          // full尺寸时不使用默认宽度
@@ -120,15 +121,13 @@ export function Modal({
                 )}
               </div>
               {showCloseButton && (
-                <Button
-                  variant="ghost"
-                  size="icon"
+                <button
                   onClick={onClose}
-                  className="h-8 w-8 p-0 rounded-md hover:bg-gray-100"
+                  className="h-8 w-8 flex items-center justify-center rounded-md hover:opacity-70 transition-opacity"
                   aria-label="关闭"
                 >
                   <X className="h-4 w-4" />
-                </Button>
+                </button>
               )}
             </div>
           </div>
@@ -138,17 +137,20 @@ export function Modal({
         <div
           className={clsx(
             "min-h-0 flex-1 overflow-y-auto",
+            footer ? "max-h-[calc(100vh-260px)]" : "max-h-[calc(100vh-180px)]",
             paddingMap[contentPadding]
           )}
         >
-          {children}
+          <div className={clsx(footer ? "pb-12" : "pb-6")}>
+            {children}
+          </div>
         </div>
 
         {/* Footer - sticky，操作按钮始终可触达 */}
         {footer && (
           <div
             className={clsx(
-              "sticky bottom-0 z-10 border-t border-gray-200 bg-white",
+              "sticky bottom-0 z-10 border-t border-gray-200 bg-white shadow-sm pt-4",
               paddingMap[contentPadding],
               "flex justify-end gap-3"
             )}

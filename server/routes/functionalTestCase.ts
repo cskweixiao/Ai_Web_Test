@@ -1,11 +1,14 @@
 import { Router, Request, Response } from 'express';
-import { functionalTestCaseService } from '../services/functionalTestCaseService.js';
+import { FunctionalTestCaseService } from '../services/functionalTestCaseService.js';
 
 /**
  * 功能测试用例CRUD路由
  */
 export function createFunctionalTestCaseRoutes(): Router {
   const router = Router();
+
+  // 延迟获取服务实例（避免模块加载时初始化）
+  const getService = () => new FunctionalTestCaseService();
 
   /**
    * GET /api/v1/functional-test-cases
@@ -31,7 +34,7 @@ export function createFunctionalTestCaseRoutes(): Router {
 
       console.log(`📋 查询功能测试用例列表 - 页码: ${page}, 用户部门: ${userDepartment}`);
 
-      const result = await functionalTestCaseService.getList({
+      const result = await getService().getList({
         page: parseInt(page as string),
         pageSize: parseInt(pageSize as string),
         search: search as string,
@@ -93,7 +96,7 @@ export function createFunctionalTestCaseRoutes(): Router {
 
       console.log(`📋 查询功能测试用例平铺列表 - 页码: ${page}, 用户部门: ${userDepartment}`);
 
-      const result = await functionalTestCaseService.getFlatList({
+      const result = await getService().getFlatList({
         page: parseInt(page as string),
         pageSize: parseInt(pageSize as string),
         search: search as string,
@@ -157,7 +160,7 @@ export function createFunctionalTestCaseRoutes(): Router {
 
       console.log(`💾 批量保存 ${testCases.length} 个功能测试用例`);
 
-      const result = await functionalTestCaseService.batchSave({
+      const result = await getService().batchSave({
         testCases,
         aiSessionId,
         userId: req.user.id
@@ -201,7 +204,7 @@ export function createFunctionalTestCaseRoutes(): Router {
 
       console.log(`🗑️ 批量删除 ${testPointIds.length} 个测试点`);
 
-      const result = await functionalTestCaseService.batchDeleteTestPoints(testPointIds);
+      const result = await getService().batchDeleteTestPoints(testPointIds);
 
       res.json({
         success: true,
@@ -286,7 +289,7 @@ export function createFunctionalTestCaseRoutes(): Router {
 
       console.log(`✨ 手动创建测试用例: ${name}, 包含 ${testPoints.length} 个测试点`);
 
-      const result = await functionalTestCaseService.create({
+      const result = await getService().create({
         name,
         description,
         system,
@@ -331,7 +334,7 @@ export function createFunctionalTestCaseRoutes(): Router {
         });
       }
 
-      const testCase = await functionalTestCaseService.getById(id);
+      const testCase = await getService().getById(id);
 
       if (!testCase) {
         return res.status(404).json({
@@ -368,7 +371,7 @@ export function createFunctionalTestCaseRoutes(): Router {
         });
       }
 
-      const testCase = await functionalTestCaseService.update(id, req.body);
+      const testCase = await getService().update(id, req.body);
 
       res.json({
         success: true,
@@ -399,7 +402,7 @@ export function createFunctionalTestCaseRoutes(): Router {
         });
       }
 
-      await functionalTestCaseService.delete(id);
+      await getService().delete(id);
 
       res.json({
         success: true,
@@ -431,7 +434,7 @@ export function createFunctionalTestCaseRoutes(): Router {
 
       console.log(`📋 查询测试点详情，ID: ${id}`);
 
-      const result = await functionalTestCaseService.getTestPointById(id);
+      const result = await getService().getTestPointById(id);
 
       if (!result) {
         return res.status(404).json({
@@ -500,7 +503,7 @@ export function createFunctionalTestCaseRoutes(): Router {
 
       console.log(`📝 更新测试点，ID: ${id}`);
 
-      const result = await functionalTestCaseService.updateTestPoint(id, {
+      const result = await getService().updateTestPoint(id, {
         testPurpose,
         testPointName,
         steps,
@@ -523,8 +526,44 @@ export function createFunctionalTestCaseRoutes(): Router {
   });
 
   /**
+   * 🆕 POST /api/v1/functional-test-cases/analyze-scenarios
+   * 阶段1：智能测试场景拆分（新接口）
+   */
+  router.post('/analyze-scenarios', async (req: Request, res: Response) => {
+    try {
+      const { requirementDoc, sessionId } = req.body;
+
+      if (!requirementDoc) {
+        return res.status(400).json({
+          success: false,
+          error: '缺少必填参数：requirementDoc'
+        });
+      }
+
+      console.log(`🎯 阶段1：智能测试场景拆分 - sessionId: ${sessionId}`);
+
+      const scenarios = await getService().analyzeTestScenarios(requirementDoc);
+
+      res.json({
+        success: true,
+        data: {
+          scenarios,
+          sessionId
+        }
+      });
+    } catch (error: any) {
+      console.error('❌ 测试场景拆分失败:', error);
+      res.status(500).json({
+        success: false,
+        error: error.message
+      });
+    }
+  });
+
+  /**
    * 🆕 POST /api/v1/functional-test-cases/analyze-modules
-   * 阶段1：智能测试模块拆分
+   * 阶段1：智能测试模块拆分（兼容性接口，已废弃）
+   * @deprecated 使用 /analyze-scenarios 代替
    */
   router.post('/analyze-modules', async (req: Request, res: Response) => {
     try {
@@ -539,12 +578,13 @@ export function createFunctionalTestCaseRoutes(): Router {
 
       console.log(`🎯 阶段1：开始测试模块拆分 - sessionId: ${sessionId}`);
 
-      const modules = await functionalTestCaseService.analyzeTestModules(requirementDoc);
+      const modules = await getService().analyzeTestModules(requirementDoc); // 兼容性调用
 
       res.json({
         success: true,
         data: {
-          modules,
+          modules, // 保持旧字段名
+          scenarios: modules, // 同时返回新字段名
           sessionId
         }
       });
@@ -558,8 +598,58 @@ export function createFunctionalTestCaseRoutes(): Router {
   });
 
   /**
+   * 🆕 POST /api/v1/functional-test-cases/generate-points-for-scenario
+   * 阶段2：为测试场景生成测试点（新接口）
+   */
+  router.post('/generate-points-for-scenario', async (req: Request, res: Response) => {
+    try {
+      const {
+        scenarioId,
+        scenarioName,
+        scenarioDescription,
+        requirementDoc,
+        relatedSections,
+        sessionId
+      } = req.body;
+
+      if (!scenarioId || !scenarioName || !requirementDoc || !relatedSections) {
+        return res.status(400).json({
+          success: false,
+          error: '缺少必填参数'
+        });
+      }
+
+      console.log(`🎯 阶段2：为测试场景 "${scenarioName}" 生成测试点 - sessionId: ${sessionId}`);
+
+      const testPoints = await getService().generateTestPointsForScenario(
+        scenarioId,
+        scenarioName,
+        scenarioDescription,
+        requirementDoc,
+        relatedSections
+      );
+
+      res.json({
+        success: true,
+        data: {
+          testPoints,
+          scenarioId,
+          sessionId
+        }
+      });
+    } catch (error: any) {
+      console.error('❌ 生成测试点失败:', error);
+      res.status(500).json({
+        success: false,
+        error: error.message
+      });
+    }
+  });
+
+  /**
    * 🆕 POST /api/v1/functional-test-cases/generate-purposes
-   * 阶段2：生成测试目的
+   * 阶段2：生成测试目的（兼容性接口，已废弃）
+   * @deprecated 使用 /generate-points-for-scenario 代替
    */
   router.post('/generate-purposes', async (req: Request, res: Response) => {
     try {
@@ -574,7 +664,7 @@ export function createFunctionalTestCaseRoutes(): Router {
 
       console.log(`🎯 阶段2：为模块 "${moduleName}" 生成测试目的 - sessionId: ${sessionId}`);
 
-      const purposes = await functionalTestCaseService.generateTestPurposes(
+      const purposes = await getService().generateTestPurposes( // 兼容性调用
         moduleId,
         moduleName,
         moduleDescription,
@@ -585,7 +675,7 @@ export function createFunctionalTestCaseRoutes(): Router {
       res.json({
         success: true,
         data: {
-          purposes,
+          purposes, // 保持旧字段名
           moduleId,
           sessionId
         }
@@ -600,8 +690,121 @@ export function createFunctionalTestCaseRoutes(): Router {
   });
 
   /**
+   * 🆕 POST /api/v1/functional-test-cases/generate-test-case-for-point
+   * 阶段3：为单个测试点生成测试用例（新接口）
+   */
+  router.post('/generate-test-case-for-point', async (req: Request, res: Response) => {
+    try {
+      const {
+        testPoint,
+        scenarioId,
+        scenarioName,
+        scenarioDescription,
+        requirementDoc,
+        systemName,
+        moduleName,
+        relatedSections,
+        sessionId
+      } = req.body;
+
+      if (!testPoint || !scenarioId || !scenarioName || !systemName || !moduleName || !relatedSections) {
+        return res.status(400).json({
+          success: false,
+          error: '缺少必填参数'
+        });
+      }
+
+      console.log(`🎯 阶段3：为测试点 "${testPoint.testPoint}" 生成测试用例 - sessionId: ${sessionId}`);
+
+      const testCases = await getService().generateTestCaseForTestPoint(
+        testPoint,
+        scenarioId,
+        scenarioName,
+        scenarioDescription,
+        requirementDoc,
+        systemName,
+        moduleName,
+        relatedSections
+      );
+
+      res.json({
+        success: true,
+        data: {
+          testCases,
+          testPointId: testPoint.id || testPoint.testPoint,
+          scenarioId,
+          sessionId
+        }
+      });
+    } catch (error: any) {
+      console.error('❌ 生成测试用例失败:', error);
+      res.status(500).json({
+        success: false,
+        error: error.message
+      });
+    }
+  });
+
+  /**
+   * 🆕 POST /api/v1/functional-test-cases/generate-test-case
+   * 阶段3：生成测试用例（兼容性接口）
+   * @deprecated 使用 /generate-test-case-for-point 代替
+   */
+  router.post('/generate-test-case', async (req: Request, res: Response) => {
+    try {
+      const {
+        scenarioId,
+        scenarioName,
+        scenarioDescription,
+        testPoints,
+        requirementDoc,
+        systemName,
+        moduleName,
+        relatedSections,
+        sessionId
+      } = req.body;
+
+      if (!scenarioId || !scenarioName || !testPoints || !systemName || !moduleName || !relatedSections) {
+        return res.status(400).json({
+          success: false,
+          error: '缺少必填参数'
+        });
+      }
+
+      console.log(`🎯 阶段3：为测试场景 "${scenarioName}" 生成测试用例 - sessionId: ${sessionId}`);
+
+      const testCase = await getService().generateTestCase(
+        scenarioId,
+        scenarioName,
+        scenarioDescription,
+        testPoints,
+        requirementDoc,
+        systemName,
+        moduleName,
+        relatedSections
+      );
+
+      res.json({
+        success: true,
+        data: {
+          testCase,
+          scenarioId,
+          sessionId
+        }
+      });
+    } catch (error: any) {
+      console.error('❌ 生成测试用例失败:', error);
+      res.status(500).json({
+        success: false,
+        error: error.message
+      });
+    }
+  });
+
+  /**
    * 🆕 POST /api/v1/functional-test-cases/generate-points
-   * 阶段3：生成测试点
+   * 阶段3：生成测试点（兼容性接口，已废弃）
+   * @deprecated 使用 /generate-test-case 代替
    */
   router.post('/generate-points', async (req: Request, res: Response) => {
     try {
@@ -625,7 +828,7 @@ export function createFunctionalTestCaseRoutes(): Router {
 
       console.log(`🎯 阶段3：为测试目的 "${purposeName}" 生成测试点 - sessionId: ${sessionId}`);
 
-      const testCase = await functionalTestCaseService.generateTestPoints(
+      const testCase = await getService().generateTestPoints( // 兼容性调用
         purposeId,
         purposeName,
         purposeDescription,

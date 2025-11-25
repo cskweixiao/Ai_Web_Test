@@ -1,4 +1,5 @@
 import { PrismaClient } from '../src/generated/prisma/index.js';
+import { modelRegistry } from '../src/services/modelRegistry.js';
 
 async function initializeConfig() {
   const prisma = new PrismaClient();
@@ -16,11 +17,17 @@ async function initializeConfig() {
       return;
     }
     
+    // 获取默认模型信息以确定 baseUrl
+    const defaultModelId = 'deepseek-chat-v3';
+    const defaultModel = modelRegistry.getModelById(defaultModelId);
+    const defaultBaseUrl = defaultModel?.customBaseUrl || process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1';
+    
     // 创建默认配置(从环境变量读取)
     const defaultSettings = {
       llm: {
-        selectedModelId: 'deepseek-chat-v3', // 使用deepseek作为默认
+        selectedModelId: defaultModelId, // 使用deepseek作为默认
         apiKey: process.env.OPENROUTER_API_KEY || '',
+        baseUrl: defaultBaseUrl, // 🔥 添加 baseUrl
         customConfig: {
           temperature: 0.2,
           maxTokens: 2000
@@ -44,6 +51,7 @@ async function initializeConfig() {
     
     console.log('✅ 默认配置已初始化');
     console.log('   默认模型: DeepSeek Chat V3');
+    console.log('   API端点: ' + defaultBaseUrl);
     console.log('   温度: 0.2');
     console.log('   最大令牌: 2000');
     

@@ -13,7 +13,9 @@ DATABASE_URL="mysql://username:password@localhost:3306/testflow"
 # ========== 应用配置 ==========
 NODE_ENV=development               # 环境: development / production
 PORT=3001                          # 后端端口
-VITE_PORT=5173                     # 前端端口
+VITE_PORT=5173                     # 前端端口（Vite 开发服务器）
+VITE_API_PORT=3001                 # 后端 API 端口（前端可访问，用于生产环境）
+SERVER_HOST=0.0.0.0                # 服务器监听地址: 0.0.0.0(所有接口) / 127.0.0.1(仅本地)
 
 # ========== JWT 认证 ==========
 JWT_SECRET=your_jwt_secret_key_here_change_in_production
@@ -74,6 +76,16 @@ LOG_FULL_PROMPT=false              # 是否记录完整 AI Prompt
 | `NODE_ENV` | 运行环境 | development | development, production |
 | `PORT` | 后端服务端口 | 3001 | 任意可用端口 |
 | `VITE_PORT` | 前端开发端口 | 5173 | 任意可用端口 |
+| `SERVER_HOST` | 服务器监听地址 | 0.0.0.0 | 0.0.0.0, 127.0.0.1 |
+
+**`SERVER_HOST` 说明**：
+- `0.0.0.0`: 监听所有网络接口，允许从局域网和其他设备访问（推荐用于开发和生产环境）
+- `127.0.0.1`: 仅监听本地回环地址，只能从本机访问（用于安全限制场景）
+
+**使用场景**：
+- **开发环境**：使用 `0.0.0.0`，方便从其他设备（如手机、平板）访问测试
+- **生产环境**：根据安全需求选择，如果需要外部访问则使用 `0.0.0.0`，配合防火墙规则
+- **安全限制**：如果只需要本地访问，使用 `127.0.0.1`
 
 ### JWT 认证
 
@@ -207,6 +219,8 @@ EMBEDDING_MODEL=text-embedding-v4
 
 ```bash
 NODE_ENV=development
+PORT=3001
+SERVER_HOST=0.0.0.0        # 允许从局域网访问
 PLAYWRIGHT_HEADLESS=false  # 显示浏览器，方便调试
 LOG_LEVEL=debug
 LOG_FULL_PROMPT=true       # 查看完整 Prompt
@@ -216,6 +230,8 @@ LOG_FULL_PROMPT=true       # 查看完整 Prompt
 
 ```bash
 NODE_ENV=production
+PORT=3001
+SERVER_HOST=0.0.0.0        # 根据安全需求选择，配合防火墙规则
 PLAYWRIGHT_HEADLESS=true
 LOG_LEVEL=info
 LOG_FULL_PROMPT=false

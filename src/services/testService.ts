@@ -9,8 +9,8 @@ export interface WebSocketMessage {
   suiteRun?: any;
 }
 
-const API_BASE_URL = import.meta.env.DEV ? '/api' : `http://${window.location.hostname}:4001/api`;
-const WS_URL = `ws://${window.location.hostname}:4001`;
+// 🔥 使用统一的 API 配置
+import { API_BASE_URL, WS_URL } from '../config/api';
 const TOKEN_KEY = 'authToken';
 
 export class TestService {

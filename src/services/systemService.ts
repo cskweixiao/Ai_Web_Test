@@ -6,7 +6,9 @@ import type {
   UpdateSystemInput
 } from '../types/test';
 
-const API_BASE_URL = import.meta.env.DEV ? '/api/v1/systems' : `http://${window.location.hostname}:4001/api/v1/systems`;
+// 🔥 使用统一的 API 配置
+import { getApiBaseUrl } from '../config/api';
+const API_BASE_URL = getApiBaseUrl('/api/v1/systems');
 const TOKEN_KEY = 'authToken';
 
 /**

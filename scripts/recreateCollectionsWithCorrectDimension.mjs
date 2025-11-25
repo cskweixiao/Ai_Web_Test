@@ -4,7 +4,7 @@
 
 import fetch from 'node-fetch';
 
-const QDRANT_URL = 'http://localhost:6333';
+const QDRANT_URL = process.env.QDRANT_URL || 'http://localhost:6333';
 const EMBEDDING_DIMENSION = 1024; // Aliyun text-embedding-v4 dimension
 
 // 8个系统的集合名称

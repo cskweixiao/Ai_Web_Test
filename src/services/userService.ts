@@ -1,7 +1,8 @@
-import axios from 'axios';
-
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || (import.meta.env.DEV ? '/api' : `http://${window.location.hostname}:4001/api`);
-const TOKEN_KEY = 'authToken';
+// 🔥 使用全局配置的 axios 实例（自动添加认证头）
+import apiClient from '../utils/axios';
+// 🔥 使用统一的 API 配置
+import { getApiBaseUrl } from '../config/api';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || getApiBaseUrl('/api');
 
 export interface User {
   id: number;
@@ -33,27 +34,12 @@ export interface UpdateUserDto {
 class UserService {
   private baseUrl = `${API_BASE_URL}/users`;
 
-  // 获取认证请求头
-  private getAuthHeaders(): Record<string, string> {
-    const token = localStorage.getItem(TOKEN_KEY);
-    if (token) {
-      return {
-        Authorization: `Bearer ${token}`
-      };
-    }
-    return {};
-  }
-
   // 获取所有用户
   async getAllUsers(): Promise<User[]> {
     try {
-      const headers = this.getAuthHeaders();
-      console.log('🔍 获取用户列表 - Headers:', headers);
       console.log('🔍 API URL:', this.baseUrl);
 
-      const response = await axios.get<User[]>(this.baseUrl, {
-        headers
-      });
+      const response = await apiClient.get<User[]>(this.baseUrl);
 
       console.log('✅ 获取用户列表成功:', response.data);
       return response.data;
@@ -69,43 +55,30 @@ class UserService {
 
   // 获取单个用户
   async getUserById(id: number): Promise<User> {
-    const response = await axios.get<User>(`${this.baseUrl}/${id}`, {
-      headers: this.getAuthHeaders()
-    });
+    const response = await apiClient.get<User>(`${this.baseUrl}/${id}`);
     return response.data;
   }
 
   // 创建用户
   async createUser(data: CreateUserDto): Promise<User> {
-    const response = await axios.post<User>(this.baseUrl, data, {
-      headers: this.getAuthHeaders()
-    });
+    const response = await apiClient.post<User>(this.baseUrl, data);
     return response.data;
   }
 
   // 更新用户
   async updateUser(id: number, data: UpdateUserDto): Promise<User> {
-    const response = await axios.put<User>(`${this.baseUrl}/${id}`, data, {
-      headers: this.getAuthHeaders()
-    });
+    const response = await apiClient.put<User>(`${this.baseUrl}/${id}`, data);
     return response.data;
   }
 
   // 删除用户
   async deleteUser(id: number): Promise<void> {
-    await axios.delete(`${this.baseUrl}/${id}`, {
-      headers: this.getAuthHeaders()
-    });
+    await apiClient.delete(`${this.baseUrl}/${id}`);
   }
 
   // 修改密码
   async changePassword(id: number, newPassword: string): Promise<void> {
-    await axios.put(`${this.baseUrl}/${id}/password`,
-      { newPassword },
-      {
-        headers: this.getAuthHeaders()
-      }
-    );
+    await apiClient.put(`${this.baseUrl}/${id}/password`, { newPassword });
   }
 }
 

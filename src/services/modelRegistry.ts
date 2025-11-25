@@ -24,6 +24,201 @@ export class ModelRegistry {
   private constructor() {
     this.models = [
       {
+        id: 'deepseek-v3',
+        name: 'DeepSeek-V3',
+        provider: 'DeepSeek',
+        openRouterModel: 'deepseek-v3',
+        customBaseUrl: 'https://api.deepseek.com/v1',
+        requiresCustomAuth: false,
+        defaultConfig: {
+          temperature: 0.3,
+          maxTokens: 4096
+        },
+        capabilities: ['text-generation', 'multimodal', 'reasoning', 'code-analysis', 'chinese-friendly', 'free-tier', 'long-context'],
+        description: 'DeepSeek-V3官方大模型，最新版本，支持多模态和超长上下文，性能更强',
+        costLevel: 'high'
+      },
+      {
+        id: 'deepseek-r1',
+        name: 'DeepSeek-R1',
+        provider: 'DeepSeek',
+        openRouterModel: 'deepseek-r1',
+        customBaseUrl: 'https://api.deepseek.com/v1',
+        requiresCustomAuth: false,
+        defaultConfig: {
+          temperature: 0.3,
+          maxTokens: 4000
+        },
+        capabilities: ['text-generation', 'reasoning', 'code-analysis', 'chinese-friendly', 'free-tier', 'advanced-reasoning'],
+        description: 'DeepSeek-R1推理模型，强大的推理和问题解决能力，支持复杂逻辑推理',
+        costLevel: 'medium'
+      },
+      {
+        id: 'deepseek-chat-direct',
+        name: 'DeepSeek Chat (直接API)',
+        provider: 'DeepSeek',
+        openRouterModel: 'deepseek-chat',
+        customBaseUrl: 'https://api.deepseek.com/v1',
+        requiresCustomAuth: false,
+        defaultConfig: {
+          temperature: 0.2,
+          maxTokens: 2000
+        },
+        capabilities: ['text-generation', 'reasoning', 'code-analysis', 'chinese-friendly', 'free-tier'],
+        description: 'DeepSeek直接API，免费额度充足，中文友好，国内访问快速',
+        costLevel: 'low'
+      },
+      {
+        id: 'qwen-turbo',
+        name: '通义千问 Turbo',
+        provider: '阿里云',
+        openRouterModel: 'qwen-turbo',
+        customBaseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+        requiresCustomAuth: false,
+        defaultConfig: {
+          temperature: 0.3,
+          maxTokens: 2000
+        },
+        capabilities: ['text-generation', 'chinese-friendly', 'free-tier', 'fast-response'],
+        description: '阿里云通义千问Turbo模型，免费额度充足，国内访问极速',
+        costLevel: 'low'
+      },
+      {
+        id: 'qwen-plus',
+        name: '通义千问 Plus',
+        provider: '阿里云',
+        openRouterModel: 'qwen-plus',
+        customBaseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+        requiresCustomAuth: false,
+        defaultConfig: {
+          temperature: 0.3,
+          maxTokens: 2000
+        },
+        capabilities: ['text-generation', 'reasoning', 'chinese-friendly', 'free-tier'],
+        description: '阿里云通义千问Plus模型，性能更强，免费额度充足',
+        costLevel: 'medium'
+      },
+      {
+        id: 'qwen-max',
+        name: '通义千问 Max',
+        provider: '阿里云',
+        openRouterModel: 'qwen-max',
+        customBaseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+        requiresCustomAuth: false,
+        defaultConfig: {
+          temperature: 0.3,
+          maxTokens: 2000
+        },
+        capabilities: ['text-generation', 'multimodal', 'reasoning', 'code-analysis', 'chinese-friendly'],
+        description: '阿里云通义千问Max模型，最强性能，支持多模态',
+        costLevel: 'high'
+      },
+      {
+        id: 'kimi-chat-8k',
+        name: 'Kimi Chat 8K',
+        provider: '月之暗面',
+        openRouterModel: 'moonshot-v1-8k',
+        customBaseUrl: 'https://api.moonshot.cn/v1',
+        requiresCustomAuth: false,
+        defaultConfig: {
+          temperature: 0.3,
+          maxTokens: 2000
+        },
+        capabilities: ['text-generation', 'long-context', 'chinese-friendly', 'free-tier'],
+        description: '月之暗面Kimi模型，支持超长上下文，中文友好，免费额度充足',
+        costLevel: 'low'
+      },
+      {
+        id: 'kimi-chat-32k',
+        name: 'Kimi Chat 32K',
+        provider: '月之暗面',
+        openRouterModel: 'moonshot-v1-32k',
+        customBaseUrl: 'https://api.moonshot.cn/v1',
+        requiresCustomAuth: false,
+        defaultConfig: {
+          temperature: 0.3,
+          maxTokens: 4000
+        },
+        capabilities: ['text-generation', 'long-context', 'chinese-friendly', 'free-tier'],
+        description: '月之暗面Kimi 32K模型，支持超长上下文（32K tokens）',
+        costLevel: 'medium'
+      },
+      {
+        id: 'kimi-k2',
+        name: 'Kimi K2',
+        provider: '月之暗面',
+        openRouterModel: 'kimi-k2-turbo-preview',
+        customBaseUrl: 'https://api.moonshot.cn/v1',
+        requiresCustomAuth: false,
+        defaultConfig: {
+          temperature: 0.3,
+          maxTokens: 4000
+        },
+        capabilities: ['text-generation', 'long-context', 'multimodal', 'reasoning', 'code-analysis', 'agent-capability', 'chinese-friendly', 'free-tier'],
+        description: '月之暗面Kimi K2大模型，最新一代混合专家模型，支持128K超长上下文，具备强大的代理智能和自主问题解决能力',
+        costLevel: 'high'
+      },
+      {
+        id: 'glm-4',
+        name: '智谱GLM-4',
+        provider: '智谱AI',
+        openRouterModel: 'glm-4',
+        customBaseUrl: 'https://open.bigmodel.cn/api/paas/v4',
+        requiresCustomAuth: false,
+        defaultConfig: {
+          temperature: 0.3,
+          maxTokens: 2000
+        },
+        capabilities: ['text-generation', 'multimodal', 'reasoning', 'code-analysis', 'chinese-friendly', 'free-tier'],
+        description: '智谱AI GLM-4模型，高性能，中文友好，免费额度充足',
+        costLevel: 'medium'
+      },
+      {
+        id: 'glm-4-flash',
+        name: '智谱GLM-4 Flash',
+        provider: '智谱AI',
+        openRouterModel: 'glm-4-flash',
+        customBaseUrl: 'https://open.bigmodel.cn/api/paas/v4',
+        requiresCustomAuth: false,
+        defaultConfig: {
+          temperature: 0.3,
+          maxTokens: 2000
+        },
+        capabilities: ['text-generation', 'fast-response', 'chinese-friendly', 'free-tier'],
+        description: '智谱AI GLM-4 Flash模型，快速响应，免费额度充足',
+        costLevel: 'low'
+      },
+      {
+        id: 'ernie-bot',
+        name: '文心一言 (ERNIE-Bot)',
+        provider: '百度',
+        openRouterModel: 'ernie-bot',
+        customBaseUrl: 'https://aip.baidubce.com/rpc/2.0/ai_custom/v1/wenxinworkshop/chat',
+        requiresCustomAuth: true,
+        defaultConfig: {
+          temperature: 0.3,
+          maxTokens: 2000
+        },
+        capabilities: ['text-generation', 'multimodal', 'reasoning', 'code-analysis', 'chinese-friendly', 'free-tier'],
+        description: '百度文心一言ERNIE-Bot模型，支持多模态，中文友好，免费额度充足',
+        costLevel: 'medium'
+      },
+      {
+        id: 'ernie-bot-turbo',
+        name: '文心一言 Turbo',
+        provider: '百度',
+        openRouterModel: 'ernie-bot-turbo',
+        customBaseUrl: 'https://aip.baidubce.com/rpc/2.0/ai_custom/v1/wenxinworkshop/eb-instant',
+        requiresCustomAuth: true,
+        defaultConfig: {
+          temperature: 0.3,
+          maxTokens: 2000
+        },
+        capabilities: ['text-generation', 'fast-response', 'chinese-friendly', 'free-tier'],
+        description: '百度文心一言Turbo模型，快速响应，免费额度充足',
+        costLevel: 'low'
+      },
+      {
         id: 'gpt-4o',
         name: 'GPT-4o',
         provider: 'OpenAI',
@@ -35,19 +230,6 @@ export class ModelRegistry {
         capabilities: ['text-generation', 'multimodal', 'reasoning', 'code-analysis'],
         description: 'OpenAI GPT-4o模型，支持文本和图像理解',
         costLevel: 'high'
-      },
-      {
-        id: 'deepseek-chat-v3',
-        name: 'DeepSeek Chat V3',
-        provider: 'DeepSeek',
-        openRouterModel: 'deepseek/deepseek-chat-v3-0324',
-        defaultConfig: {
-          temperature: 0.2,
-          maxTokens: 2000
-        },
-        capabilities: ['text-generation', 'reasoning', 'code-analysis', 'chinese-friendly'],
-        description: 'DeepSeek聊天模型，高性价比，中文友好',
-        costLevel: 'low'
       },
       {
         id: 'claude-sonnet-4.5',
@@ -75,6 +257,36 @@ export class ModelRegistry {
         },
         capabilities: ['text-generation', 'multimodal', 'reasoning', 'code-analysis', 'image-understanding', 'audio-understanding'],
         description: '本地部署的 Gemini 2.5 Flash 模型，支持文本、图片、音频多模态输入',
+        costLevel: 'low'
+      },
+      {
+        id: 'gemini-3-pro-preview',
+        name: 'Gemini 3 Pro Preview',
+        provider: 'Google (Zenmux)',
+        openRouterModel: 'google/gemini-3-pro-preview',
+        customBaseUrl: 'https://zenmux.ai/api/v1',
+        requiresCustomAuth: false,
+        defaultConfig: {
+          temperature: 0.3,
+          maxTokens: 4096
+        },
+        capabilities: ['text-generation', 'multimodal', 'reasoning', 'code-analysis', 'image-understanding', 'audio-understanding', 'long-context'],
+        description: 'Google Gemini 3 Pro 预览版，通过 Zenmux 提供，支持多模态和超长上下文',
+        costLevel: 'high'
+      },
+      {
+        id: 'gemini-3-pro-preview-free',
+        name: 'Gemini 3 Pro Preview (Free)',
+        provider: 'Google (Zenmux)',
+        openRouterModel: 'google/gemini-3-pro-preview-free',
+        customBaseUrl: 'https://zenmux.ai/api/v1',
+        requiresCustomAuth: false,
+        defaultConfig: {
+          temperature: 0.3,
+          maxTokens: 4096
+        },
+        capabilities: ['text-generation', 'multimodal', 'reasoning', 'code-analysis', 'image-understanding', 'audio-understanding', 'long-context', 'free-tier'],
+        description: 'Google Gemini 3 Pro 预览版（免费），通过 Zenmux 提供，支持多模态和超长上下文',
         costLevel: 'low'
       }
     ];

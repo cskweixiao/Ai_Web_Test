@@ -11,7 +11,10 @@ import {
   Users,
   Edit3,
   PlusCircle,
-  FileText
+  FileText,
+  ClipboardList,
+  Database,
+  BookOpen
 } from 'lucide-react';
 
 export interface Tab {
@@ -41,11 +44,14 @@ const MAX_TABS = 20;
 // 路由配置映射
 const routeConfig: Record<string, { title: string; icon: React.ReactNode }> = {
   '/': { title: '仪表板', icon: <Home className="h-4 w-4" /> },
-  '/test-cases': { title: '测试用例', icon: <FileCode className="h-4 w-4" /> },
+  '/functional-test-cases': { title: '功能用例', icon: <ClipboardList className="h-4 w-4" /> },
+  '/test-cases': { title: 'UI自动化', icon: <FileCode className="h-4 w-4" /> },
   '/test-runs': { title: '测试执行', icon: <Play className="h-4 w-4" /> },
   '/reports': { title: '测试报告', icon: <BarChart3 className="h-4 w-4" /> },
   '/test-factory': { title: '测试工厂', icon: <Factory className="h-4 w-4" /> },
   '/llm-assistant': { title: 'AI 助手', icon: <Bot className="h-4 w-4" /> },
+  '/systems': { title: '系统字典', icon: <Database className="h-4 w-4" /> },
+  '/knowledge': { title: '知识库', icon: <BookOpen className="h-4 w-4" /> },
   '/user-management': { title: '用户管理', icon: <Users className="h-4 w-4" /> },
   '/settings': { title: '设置', icon: <Settings className="h-4 w-4" /> },
 };
@@ -68,6 +74,19 @@ const getRouteConfig = (pathname: string): { title: string; icon: React.ReactNod
 
   if (pathname.match(/^\/test-runs\/.+\/detail$/)) {
     return { title: '测试执行详情', icon: <FileText className="h-4 w-4" /> };
+  }
+
+  // 功能测试用例相关路由
+  if (pathname === '/functional-test-cases/generator') {
+    return { title: 'AI 测试用例生成器', icon: <ClipboardList className="h-4 w-4" /> };
+  }
+
+  if (pathname === '/functional-test-cases/create') {
+    return { title: '创建功能用例', icon: <PlusCircle className="h-4 w-4" /> };
+  }
+
+  if (pathname.match(/^\/functional-test-cases\/test-points\/.+\/edit$/)) {
+    return { title: '编辑测试点', icon: <Edit3 className="h-4 w-4" /> };
   }
 
   return null;

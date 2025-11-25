@@ -2,7 +2,9 @@
  * 知识库管理前端服务
  */
 
-const API_BASE_URL = import.meta.env.DEV ? '/api/v1/knowledge' : `http://${window.location.hostname}:4001/api/v1/knowledge`;
+// 🔥 使用统一的 API 配置
+import { getApiBaseUrl } from '../config/api';
+const API_BASE_URL = getApiBaseUrl('/api/v1/knowledge');
 const TOKEN_KEY = 'authToken';
 
 /**

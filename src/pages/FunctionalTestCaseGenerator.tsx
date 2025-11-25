@@ -78,18 +78,25 @@ export function FunctionalTestCaseGenerator() {
   const [completionModalOpen, setCompletionModalOpen] = useState(false);
   const [userConfirmations, setUserConfirmations] = useState<UserConfirmation[]>([]);
 
-  // 步骤3状态 - 🆕 三阶段渐进式
-  const [testModules, setTestModules] = useState<any[]>([]); // 测试模块列表
-  const [analyzingModules, setAnalyzingModules] = useState(false); // 是否正在分析模块
-  const [generatingPurposes, setGeneratingPurposes] = useState<Record<string, boolean>>({}); // 哪些模块正在生成测试目的
-  const [generatingPoints, setGeneratingPoints] = useState<Record<string, boolean>>({}); // 哪些测试目的正在生成测试点
-  const [batchGeneratingModule, setBatchGeneratingModule] = useState<string | null>(null); // 正在批量生成的模块ID
-  const [batchGenerateProgress, setBatchGenerateProgress] = useState<{current: number, total: number}>({ current: 0, total: 0 }); // 批量生成进度
-  const [expandedModules, setExpandedModules] = useState<Record<string, boolean>>({}); // 哪些模块是展开的
+  // 步骤3状态 - 🆕 三阶段渐进式（新流程：测试场景 → 测试点 → 测试用例）
+  const [testScenarios, setTestScenarios] = useState<any[]>([]); // 测试场景列表
+  const [analyzingScenarios, setAnalyzingScenarios] = useState(false); // 是否正在分析场景
+  const [generatingPoints, setGeneratingPoints] = useState<Record<string, boolean>>({}); // 哪些场景正在生成测试点
+  const [generatingCases, setGeneratingCases] = useState<Record<string, boolean>>({}); // 哪些场景正在生成测试用例
+  const [expandedScenarios, setExpandedScenarios] = useState<Record<string, boolean>>({}); // 哪些场景是展开的
+  const [expandedTestPoints, setExpandedTestPoints] = useState<Record<string, boolean>>({}); // 哪些测试点是展开的（显示测试用例列表）
   const [draftCases, setDraftCases] = useState<any[]>([]); // 已生成的测试用例草稿
-  const [selectedPurposes, setSelectedPurposes] = useState<Record<string, boolean>>({}); // 已选中的测试目的
-  const [savedPurposes, setSavedPurposes] = useState<Record<string, boolean>>({}); // 🆕 已保存的测试目的
+  const [selectedScenarios, setSelectedScenarios] = useState<Record<string, boolean>>({}); // 已选中的测试场景
+  const [savedScenarios, setSavedScenarios] = useState<Record<string, boolean>>({}); // 🆕 已保存的测试场景
   const [saving, setSaving] = useState(false);
+  const [viewingAllCases, setViewingAllCases] = useState<any[]>([]); // 查看全部用例时的用例列表
+  const [currentCaseIndex, setCurrentCaseIndex] = useState(0); // 当前查看的用例索引
+  
+  // 兼容性：保留旧状态名称（用于向后兼容）
+  const testModules = testScenarios;
+  const setTestModules = setTestScenarios;
+  const analyzingModules = analyzingScenarios;
+  const setAnalyzingModules = setAnalyzingScenarios;
 
   // 详情对话框状态
   const [detailModalOpen, setDetailModalOpen] = useState(false);
@@ -330,265 +337,250 @@ export function FunctionalTestCaseGenerator() {
     }
   };
 
-  // 🆕 阶段1：智能测试模块拆分
-  const handleAnalyzeModules = async () => {
-    setAnalyzingModules(true);
+  // 🆕 阶段1：智能测试场景拆分
+  const handleAnalyzeScenarios = async () => {
+    setAnalyzingScenarios(true);
     setCurrentStep(2); // 进入步骤3
 
     try {
-      console.log('🎯 阶段1：开始智能测试模块拆分...');
-      const result = await functionalTestCaseService.analyzeTestModules(requirementDoc, sessionId);
+      console.log('🎯 阶段1：开始智能测试场景拆分...');
+      const result = await functionalTestCaseService.analyzeTestScenarios(requirementDoc, sessionId);
 
-      console.log('✅ 测试模块拆分完成:', result.data.modules);
-      setTestModules(result.data.modules);
-      showToast.success(`成功拆分 ${result.data.modules.length} 个测试模块`);
+      console.log('✅ 测试场景拆分完成:', result.data.scenarios);
+      setTestScenarios(result.data.scenarios || result.data.modules || []); // 兼容旧接口
+      showToast.success(`成功拆分 ${(result.data.scenarios || result.data.modules || []).length} 个测试场景`);
     } catch (error: any) {
-      console.error('❌ 测试模块拆分失败:', error);
-      showToast.error('测试模块拆分失败：' + error.message);
+      console.error('❌ 测试场景拆分失败:', error);
+      showToast.error('测试场景拆分失败：' + error.message);
       setCurrentStep(1); // 失败回退到步骤2
     } finally {
-      setAnalyzingModules(false);
+      setAnalyzingScenarios(false);
     }
   };
+  
+  // 兼容性方法
+  const handleAnalyzeModules = handleAnalyzeScenarios;
 
-  // 🆕 阶段2：为指定模块生成测试目的
-  const handleGeneratePurposes = async (module: any) => {
-    setGeneratingPurposes(prev => ({ ...prev, [module.id]: true }));
+  // 🆕 阶段2：为指定场景生成测试点（支持重新生成）
+  const handleGeneratePoints = async (scenario: any, isRegenerate: boolean = false) => {
+    setGeneratingPoints(prev => ({ ...prev, [scenario.id]: true }));
 
     try {
-      console.log(`🎯 阶段2：为模块 "${module.name}" 生成测试目的...`);
-      const result = await functionalTestCaseService.generateTestPurposes(
-        module.id,
-        module.name,
-        module.description,
+      console.log(`🎯 阶段2：${isRegenerate ? '重新' : ''}为场景 "${scenario.name}" 生成测试点...`);
+      const result = await functionalTestCaseService.generateTestPointsForScenario(
+        scenario.id,
+        scenario.name,
+        scenario.description,
         requirementDoc,
-        module.relatedSections,
+        scenario.relatedSections,
         sessionId
       );
 
-      console.log('✅ 测试目的生成完成:', result.data.purposes);
+      console.log('✅ 测试点生成完成:', result.data.testPoints);
 
-      // 更新模块，添加测试目的
-      setTestModules(prev => prev.map(m =>
-        m.id === module.id
-          ? { ...m, testPurposes: result.data.purposes }
-          : m
+      // 更新场景，添加测试点（重新生成时替换，否则追加）
+      setTestScenarios(prev => prev.map(s =>
+        s.id === scenario.id
+          ? { 
+              ...s, 
+              testPoints: isRegenerate 
+                ? result.data.testPoints.map((tp: any) => ({ ...tp, testCases: [] })) // 重新生成时清空测试用例
+                : result.data.testPoints 
+          }
+          : s
       ));
 
-      // 自动展开该模块
-      setExpandedModules(prev => ({ ...prev, [module.id]: true }));
+      // 如果是重新生成，需要从草稿箱中移除该场景相关的测试用例
+      if (isRegenerate) {
+        setDraftCases(prev => prev.filter(c => c.scenarioId !== scenario.id));
+      }
 
-      showToast.success(`为模块 "${module.name}" 生成了 ${result.data.purposes.length} 个测试目的`);
-    } catch (error: any) {
-      console.error('❌ 生成测试目的失败:', error);
-      showToast.error('生成测试目的失败：' + error.message);
-    } finally {
-      setGeneratingPurposes(prev => ({ ...prev, [module.id]: false }));
-    }
-  };
+      // 自动展开该场景
+      setExpandedScenarios(prev => ({ ...prev, [scenario.id]: true }));
 
-  // 🆕 阶段3：为指定测试目的生成测试点
-  const handleGeneratePoints = async (purpose: any, module: any) => {
-    const purposeKey = `${module.id}-${purpose.id}`;
-    setGeneratingPoints(prev => ({ ...prev, [purposeKey]: true }));
-
-    try {
-      console.log(`🎯 阶段3：为测试目的 "${purpose.name}" 生成测试点...`);
-      const result = await functionalTestCaseService.generateTestPoints(
-        purpose.id,
-        purpose.name,
-        purpose.description,
-        requirementDoc,
-        projectInfo.systemName,
-        projectInfo.moduleName,
-        module.relatedSections,
-        sessionId
-      );
-
-      console.log('✅ 测试点生成完成:', result.data.testCase);
-
-      const newCase = {
-        ...result.data.testCase,
-        id: `draft-${Date.now()}`,
-        selected: true,
-        moduleId: module.id,
-        moduleName: module.name,
-        purposeId: purpose.id,
-        purposeName: purpose.name
-      };
-
-      // 添加到草稿箱
-      setDraftCases(prev => [...prev, newCase]);
-
-      // 更新测试目的，标记已生成
-      setTestModules(prev => prev.map(m =>
-        m.id === module.id
-          ? {
-              ...m,
-              testPurposes: m.testPurposes?.map((p: any) =>
-                p.id === purpose.id
-                  ? { ...p, testCase: newCase }
-                  : p
-              )
-            }
-          : m
-      ));
-
-      showToast.success(`测试用例 "${newCase.name}" 生成成功！`);
+      showToast.success(`${isRegenerate ? '重新' : ''}为场景 "${scenario.name}" 生成了 ${result.data.testPoints.length} 个测试点`);
     } catch (error: any) {
       console.error('❌ 生成测试点失败:', error);
       showToast.error('生成测试点失败：' + error.message);
     } finally {
-      setGeneratingPoints(prev => ({ ...prev, [purposeKey]: false }));
+      setGeneratingPoints(prev => ({ ...prev, [scenario.id]: false }));
     }
   };
 
-  // 切换模块展开/折叠
-  const toggleModule = (moduleId: string) => {
-    setExpandedModules(prev => ({ ...prev, [moduleId]: !prev[moduleId] }));
-  };
-
-  // 切换测试目的选中状态
-  const togglePurposeSelect = (moduleId: string, purposeId: string) => {
-    const purposeKey = `${moduleId}-${purposeId}`;
-    setSelectedPurposes(prev => ({
-      ...prev,
-      [purposeKey]: !prev[purposeKey]
-    }));
-  };
-
-  // 全选所有已生成测试用例的测试目的
-  const selectAllPurposes = () => {
-    const newSelections: Record<string, boolean> = {};
-    testModules.forEach(module => {
-      if (module.testPurposes) {
-        module.testPurposes.forEach((purpose: any) => {
-          if (purpose.testCase) {
-            newSelections[`${module.id}-${purpose.id}`] = true;
-          }
-        });
-      }
-    });
-    setSelectedPurposes(newSelections);
-  };
-
-  // 取消全选
-  const deselectAllPurposes = () => {
-    setSelectedPurposes({});
-  };
-
-  // 一键生成模块所有测试点（轮询方式）
-  const handleBatchGenerateModulePoints = async (module: any) => {
-    if (!module.testPurposes || module.testPurposes.length === 0) {
-      showToast.warning('该模块暂无测试目的，请先生成测试目的');
-      return;
-    }
-
-    // 筛选出还没生成测试用例的测试目的
-    const pendingPurposes = module.testPurposes.filter((p: any) => !p.testCase);
-
-    if (pendingPurposes.length === 0) {
-      showToast.info('该模块所有测试目的的测试点已全部生成');
-      return;
-    }
-
-    // 设置批量生成状态
-    setBatchGeneratingModule(module.id);
-    setBatchGenerateProgress({ current: 0, total: pendingPurposes.length });
-
-    // 确保模块展开，以便用户看到生成过程
-    setExpandedModules(prev => ({ ...prev, [module.id]: true }));
-
-    console.log(`🚀 开始批量生成模块 [${module.name}] 的测试点，共 ${pendingPurposes.length} 个测试目的`);
-
-    // 轮询生成每个测试目的的测试点
-    for (let i = 0; i < pendingPurposes.length; i++) {
-      const purpose = pendingPurposes[i];
-
-      try {
-        console.log(`📝 [${i + 1}/${pendingPurposes.length}] 正在生成测试目的: ${purpose.name}`);
-
-        // 更新进度
-        setBatchGenerateProgress({ current: i + 1, total: pendingPurposes.length });
-
-        // 调用生成测试点的函数（复用现有逻辑）
-        await handleGeneratePoints(purpose, module);
-
-        console.log(`✅ [${i + 1}/${pendingPurposes.length}] 完成: ${purpose.name}`);
-
-        // 每个测试目的生成完后稍微延迟，避免过快
-        if (i < pendingPurposes.length - 1) {
-          await new Promise(resolve => setTimeout(resolve, 500));
-        }
-      } catch (error: any) {
-        console.error(`❌ [${i + 1}/${pendingPurposes.length}] 生成失败: ${purpose.name}`, error);
-        showToast.error(`生成 "${purpose.name}" 失败: ${error.message}`);
-        // 继续生成下一个，不中断整个流程
-      }
-    }
-
-    // 完成批量生成
-    setBatchGeneratingModule(null);
-    setBatchGenerateProgress({ current: 0, total: 0 });
-
-    showToast.success(`模块 "${module.name}" 的所有测试点已生成完毕！`);
-    console.log(`🎉 批量生成完成！`);
-  };
-
-  // 生成当前批次
-  const generateCurrentBatch = async () => {
-    if (currentBatchIndex >= batches.length) {
-      showToast.info('所有批次已生成完毕');
-      return;
-    }
-
-    const currentBatch = batches[currentBatchIndex];
-    console.log('📦 开始生成批次:', currentBatch);
-    setGeneratingBatch(true);
+  // 🆕 阶段3：为指定测试点生成测试用例（支持重新生成）
+  const handleGenerateTestCaseForPoint = async (testPoint: any, scenario: any, isRegenerate: boolean = false) => {
+    const pointKey = `${scenario.id}-${testPoint.testPoint}`;
+    setGeneratingCases(prev => ({ ...prev, [pointKey]: true }));
 
     try {
-      const result = await functionalTestCaseService.generateBatch(
-        sessionId,
-        currentBatch.id,
-        currentBatch.scenarios,
+      console.log(`🎯 阶段3：${isRegenerate ? '重新' : ''}为测试点 "${testPoint.testPoint}" 生成测试用例...`);
+      const result = await functionalTestCaseService.generateTestCaseForTestPoint(
+        testPoint,
+        scenario.id,
+        scenario.name,
+        scenario.description,
         requirementDoc,
-        draftCases,
-        projectInfo.systemName,  // 传递系统名称
-        projectInfo.moduleName   // 传递模块名称
+        projectInfo.systemName,
+        projectInfo.moduleName,
+        scenario.relatedSections,
+        sessionId
       );
 
-      console.log('✅ 批次生成结果:', result);
-      console.log('📊 测试用例数组:', result.data.testCases);
-      console.log('📏 生成了多少个用例:', result.data.testCases?.length);
+      console.log('✅ 测试用例生成完成:', result.data.testCases);
 
+      // 一个测试点可能生成多个测试用例
       const newCases = result.data.testCases.map((tc: any, index: number) => ({
         ...tc,
         id: `draft-${Date.now()}-${index}`,
-        batchNumber: currentBatchIndex + 1,
-        selected: true
+        selected: true,
+        scenarioId: scenario.id,
+        scenarioName: scenario.name,
+        testPointId: testPoint.testPoint,
+        testPointName: testPoint.testPoint
       }));
 
-      console.log('🎨 处理后的用例数组:', newCases);
+      // 如果是重新生成，先移除旧的测试用例
+      if (isRegenerate) {
+        // 从草稿箱中移除该测试点的旧用例
+        setDraftCases(prev => prev.filter(c => 
+          !(c.scenarioId === scenario.id && c.testPointId === testPoint.testPoint)
+        ));
+      }
 
-      setDraftCases(prev => {
-        const updated = [...prev, ...newCases];
-        console.log('📝 更新后的草稿箱:', updated);
-        return updated;
-      });
-      setCurrentBatchIndex(prev => prev + 1);
-      showToast.success(`第${currentBatchIndex + 1}批生成完成`);
+      // 添加到草稿箱
+      setDraftCases(prev => [...prev, ...newCases]);
+
+      // 更新测试点，标记已生成（重新生成时替换，否则追加）
+      setTestScenarios(prev => prev.map(s =>
+        s.id === scenario.id
+          ? {
+              ...s,
+              testPoints: s.testPoints?.map((tp: any) =>
+                tp.testPoint === testPoint.testPoint
+                  ? { 
+                      ...tp, 
+                      testCases: isRegenerate 
+                        ? newCases 
+                        : [...(tp.testCases || []), ...newCases] 
+                    }
+                  : tp
+              )
+            }
+          : s
+      ));
+
+      showToast.success(`${isRegenerate ? '重新' : ''}为测试点 "${testPoint.testPoint}" 生成了 ${newCases.length} 个测试用例`);
     } catch (error: any) {
-      console.error('❌ 生成批次失败:', error);
-      showToast.error('生成失败：' + error.message);
+      console.error('❌ 生成测试用例失败:', error);
+      showToast.error('生成测试用例失败：' + error.message);
     } finally {
-      setGeneratingBatch(false);
+      setGeneratingCases(prev => ({ ...prev, [pointKey]: false }));
     }
   };
 
-  // 打开详情对话框
-  const handleViewDetail = (testCase: any) => {
-    setCurrentDetailCase(testCase);
+  // 🆕 一键批量生成场景所有测试点的测试用例
+  const handleBatchGenerateTestCases = async (scenario: any) => {
+    if (!scenario.testPoints || scenario.testPoints.length === 0) {
+      showToast.warning('该场景暂无测试点，请先生成测试点');
+      return;
+    }
+
+    // 筛选出还没生成测试用例的测试点
+    const pendingPoints = scenario.testPoints.filter((tp: any) => !tp.testCases || tp.testCases.length === 0);
+
+    if (pendingPoints.length === 0) {
+      showToast.info('该场景所有测试点都已生成测试用例');
+      return;
+    }
+
+    showToast.info(`开始为 ${pendingPoints.length} 个测试点批量生成测试用例...`);
+
+    // 确保场景展开
+    setExpandedScenarios(prev => ({ ...prev, [scenario.id]: true }));
+
+    // 逐个生成
+    for (let i = 0; i < pendingPoints.length; i++) {
+      const testPoint = pendingPoints[i];
+      try {
+        await handleGenerateTestCaseForPoint(testPoint, scenario, false);
+        // 每个测试点生成完后稍微延迟
+        if (i < pendingPoints.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, 500));
+        }
+      } catch (error: any) {
+        console.error(`生成测试点 "${testPoint.testPoint}" 的测试用例失败:`, error);
+        // 继续生成下一个
+      }
+    }
+
+    showToast.success(`批量生成完成！共为 ${pendingPoints.length} 个测试点生成了测试用例`);
+  };
+
+  // 切换场景展开/折叠
+  const toggleScenario = (scenarioId: string) => {
+    setExpandedScenarios(prev => ({ ...prev, [scenarioId]: !prev[scenarioId] }));
+  };
+
+  // 切换测试场景选中状态
+  const toggleScenarioSelect = (scenarioId: string) => {
+    setSelectedScenarios(prev => ({
+      ...prev,
+      [scenarioId]: !prev[scenarioId]
+    }));
+  };
+  
+  // 兼容性方法
+  const toggleModule = toggleScenario;
+  const togglePurposeSelect = (moduleId: string, purposeId: string) => {
+    toggleScenarioSelect(moduleId);
+  };
+
+  // 全选所有已生成测试用例的测试场景
+  const selectAllScenarios = () => {
+    const newSelections: Record<string, boolean> = {};
+    testScenarios.forEach(scenario => {
+      if (scenario.testCase && !savedScenarios[scenario.id]) {
+        newSelections[scenario.id] = true;
+      }
+    });
+    setSelectedScenarios(newSelections);
+  };
+
+  // 取消全选
+  const deselectAllScenarios = () => {
+    setSelectedScenarios({});
+  };
+
+
+  // 打开详情对话框（支持查看单个或全部）
+  const handleViewDetail = (testCase: any, allCases?: any[]) => {
+    if (allCases && allCases.length > 0) {
+      // 查看全部用例模式
+      setViewingAllCases(allCases);
+      setCurrentCaseIndex(0);
+      setCurrentDetailCase(allCases[0]);
+    } else {
+      // 查看单个用例
+      setViewingAllCases([]);
+      setCurrentCaseIndex(0);
+      setCurrentDetailCase(testCase);
+    }
     setDetailModalOpen(true);
+  };
+
+  // 切换查看的用例（在查看全部模式下）
+  const handleSwitchCase = (direction: 'prev' | 'next') => {
+    if (viewingAllCases.length === 0) return;
+    
+    let newIndex = currentCaseIndex;
+    if (direction === 'prev') {
+      newIndex = currentCaseIndex > 0 ? currentCaseIndex - 1 : viewingAllCases.length - 1;
+    } else {
+      newIndex = currentCaseIndex < viewingAllCases.length - 1 ? currentCaseIndex + 1 : 0;
+    }
+    
+    setCurrentCaseIndex(newIndex);
+    setCurrentDetailCase(viewingAllCases[newIndex]);
   };
 
   // 保存详情修改
@@ -600,23 +592,17 @@ export function FunctionalTestCaseGenerator() {
     showToast.success('测试用例已更新');
   };
 
-  // 保存选中用例（不跳转）- 基于测试目的维度
+  // 保存选中用例（不跳转）- 基于测试场景维度
   const saveSelectedCases = async () => {
-    // 1. 收集所有选中测试目的的测试用例和对应的purposeKey
+    // 1. 收集所有选中测试场景的测试用例
     const selectedCases: any[] = [];
-    const selectedPurposeKeys: string[] = [];
+    const selectedScenarioIds: string[] = [];
 
-    testModules.forEach(module => {
-      if (module.testPurposes) {
-        module.testPurposes.forEach((purpose: any) => {
-          const purposeKey = `${module.id}-${purpose.id}`;
-
-          // 检查该测试目的是否被选中且已生成测试用例，且未被保存
-          if (selectedPurposes[purposeKey] && purpose.testCase && !savedPurposes[purposeKey]) {
-            selectedCases.push(purpose.testCase);
-            selectedPurposeKeys.push(purposeKey);
-          }
-        });
+    testScenarios.forEach(scenario => {
+      // 检查该场景是否被选中且已生成测试用例，且未被保存
+      if (selectedScenarios[scenario.id] && scenario.testCase && !savedScenarios[scenario.id]) {
+        selectedCases.push(scenario.testCase);
+        selectedScenarioIds.push(scenario.id);
       }
     });
 
@@ -633,18 +619,18 @@ export function FunctionalTestCaseGenerator() {
       showToast.success(`成功保存 ${selectedCases.length} 个测试用例`);
 
       // 4. 🆕 标记为已保存（不再移除）
-      const newSavedPurposes = { ...savedPurposes };
-      selectedPurposeKeys.forEach(key => {
-        newSavedPurposes[key] = true;
+      const newSavedScenarios = { ...savedScenarios };
+      selectedScenarioIds.forEach(id => {
+        newSavedScenarios[id] = true;
       });
-      setSavedPurposes(newSavedPurposes);
+      setSavedScenarios(newSavedScenarios);
 
-      // 5. 取消选中已保存的测试目的
-      const newSelectedPurposes = { ...selectedPurposes };
-      selectedPurposeKeys.forEach(key => {
-        delete newSelectedPurposes[key];
+      // 5. 取消选中已保存的测试场景
+      const newSelectedScenarios = { ...selectedScenarios };
+      selectedScenarioIds.forEach(id => {
+        delete newSelectedScenarios[id];
       });
-      setSelectedPurposes(newSelectedPurposes);
+      setSelectedScenarios(newSelectedScenarios);
 
       // 6. 🆕 标记草稿箱中的用例为已保存（不移除，只标记）
       setDraftCases(prev =>
@@ -935,10 +921,10 @@ export function FunctionalTestCaseGenerator() {
       stepNumber={2}
       title="AI 生成的需求文档"
       description="您可以编辑修改,以获得更精准的测试用例"
-      onNext={handleAnalyzeModules}
-      nextButtonText={analyzingModules ? '分析测试模块中...' : '立即生成测试用例 →'}
-      nextButtonDisabled={analyzingModules}
-      hideActions={preAnalyzing || generating || analyzingModules}
+      onNext={handleAnalyzeScenarios}
+      nextButtonText={analyzingScenarios ? '分析测试场景中...' : '立即生成测试场景 →'}
+      nextButtonDisabled={analyzingScenarios}
+      hideActions={preAnalyzing || generating || analyzingScenarios}
     >
       {preAnalyzing ? (
         <AIThinking
@@ -973,115 +959,156 @@ export function FunctionalTestCaseGenerator() {
     </StepCard>
   );
 
-  // 渲染步骤3：三阶段渐进式生成
+  // 渲染步骤3：三阶段渐进式生成（新流程：测试场景 → 测试点 → 测试用例）
   const renderStep3 = () => {
-    // 🆕 计算选中且未保存的测试目的数量
-    const selectedCount = Object.keys(selectedPurposes).filter(
-      key => selectedPurposes[key] && !savedPurposes[key]
+    // 🆕 计算选中且未保存的测试场景数量
+    const selectedCount = Object.keys(selectedScenarios).filter(
+      key => selectedScenarios[key] && !savedScenarios[key]
     ).length;
 
     return (
       <div className="space-y-6">
-        {/* 阶段1：分析测试模块中 */}
-        {analyzingModules && (
+        {/* 阶段1：分析测试场景中 */}
+        {analyzingScenarios && (
           <AIThinking
-            title="AI 正在分析测试模块..."
-            subtitle="根据需求文档识别不同的测试模块（查询条件、列表展示、操作按钮等）"
+            title="AI 正在分析测试场景..."
+            subtitle="根据需求文档识别不同的测试场景（查询条件、列表展示、操作按钮等）"
             progressItems={[
               { label: '分析需求文档结构', status: 'processing' },
               { label: '识别页面类型', status: 'pending' },
-              { label: '拆分测试模块', status: 'pending' }
+              { label: '拆分测试场景', status: 'pending' }
             ]}
           />
         )}
 
-        {/* 测试模块列表 */}
-        {testModules.length > 0 && (
+        {/* 测试场景列表 */}
+        {testScenarios.length > 0 && (
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <h3 className="text-lg font-semibold text-gray-900">
-                测试模块（共 {testModules.length} 个）
+                测试场景（共 {testScenarios.length} 个）
               </h3>
               <span className="text-sm text-gray-500">
-                点击"生成测试目的"按钮开始第二阶段
+                点击"生成测试点"按钮开始第二阶段，然后为场景生成测试用例
               </span>
             </div>
 
-            {/* 模块卡片列表 */}
-            {testModules.map((module) => {
-              const isExpanded = expandedModules[module.id];
-              const isGeneratingPurposes = generatingPurposes[module.id];
-              const hasPurposes = module.testPurposes && module.testPurposes.length > 0;
+            {/* 场景卡片列表 */}
+            {testScenarios.map((scenario) => {
+              const isExpanded = expandedScenarios[scenario.id];
+              const isGeneratingPointsForScenario = generatingPoints[scenario.id];
+              const hasTestPoints = scenario.testPoints && scenario.testPoints.length > 0;
+              const hasTestCase = scenario.testCase;
+              const isSelected = selectedScenarios[scenario.id];
+              const isSaved = savedScenarios[scenario.id];
+              const isGeneratingCase = generatingCases[scenario.id];
 
               return (
                 <motion.div
-                  key={module.id}
-                  className="bg-white rounded-xl border-2 border-gray-200 overflow-hidden shadow-sm hover:shadow-md transition-all"
+                  key={scenario.id}
+                  className={clsx(
+                    "bg-white rounded-xl border-2 overflow-hidden shadow-sm hover:shadow-md transition-all",
+                    isSaved
+                      ? "border-green-300 bg-green-50/30"
+                      : isSelected
+                      ? "border-purple-500 shadow-lg ring-4 ring-purple-500/20"
+                      : "border-gray-200"
+                  )}
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
                 >
-                  {/* 模块头部 */}
+                  {/* 场景头部 */}
                   <div className="p-5 bg-gradient-to-r from-gray-50 to-white">
                     <div className="flex items-start justify-between">
+                      {/* 复选框 */}
+                      <div className="pt-1 mr-3">
+                        <input
+                          type="checkbox"
+                          checked={isSelected || false}
+                          disabled={!hasTestCase || isSaved}
+                          onChange={() => toggleScenarioSelect(scenario.id)}
+                          className="w-5 h-5 rounded border-gray-300 text-purple-600 focus:ring-purple-500 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                        />
+                      </div>
                       <div className="flex-1">
                         <div className="flex items-center gap-3 mb-2">
                           <span className={clsx(
                             "px-3 py-1 rounded-full text-xs font-medium",
-                            module.priority === 'high' && "bg-red-100 text-red-700",
-                            module.priority === 'medium' && "bg-yellow-100 text-yellow-700",
-                            module.priority === 'low' && "bg-green-100 text-green-700"
+                            scenario.priority === 'high' && "bg-red-100 text-red-700",
+                            scenario.priority === 'medium' && "bg-yellow-100 text-yellow-700",
+                            scenario.priority === 'low' && "bg-green-100 text-green-700"
                           )}>
-                            {module.priority === 'high' ? '高优先级' : module.priority === 'medium' ? '中优先级' : '低优先级'}
+                            {scenario.priority === 'high' ? '高优先级' : scenario.priority === 'medium' ? '中优先级' : '低优先级'}
                           </span>
                           <span className="text-sm text-gray-700">
-                            关联章节: {module.relatedSections.join(', ')}
+                            关联章节: {scenario.relatedSections.join(', ')}
                           </span>
                         </div>
                         <h4 className="text-lg font-semibold text-gray-900 mb-2">
-                          {module.name}
+                          {scenario.name}
                         </h4>
                         <p className="text-sm text-gray-600">
-                          {module.description}
+                          {scenario.description}
                         </p>
-                        {hasPurposes && (
+                        {hasTestPoints && (
                           <div className="mt-2 flex items-center gap-2 text-sm text-green-600">
                             <CheckCircle className="w-4 h-4" />
-                            <span>已生成 {module.testPurposes.length} 个测试目的</span>
+                            <span>已生成 {scenario.testPoints.length} 个测试点</span>
+                          </div>
+                        )}
+                        {isSaved && (
+                          <div className="mt-2 flex items-center gap-2 text-sm font-medium text-green-700">
+                            <CheckCircle className="w-4 h-4 fill-green-700" />
+                            <span>✅ 已保存到用例库</span>
                           </div>
                         )}
                       </div>
 
                       <div className="flex items-center gap-2">
-                        {/* 一键生成所有测试点按钮 */}
-                        {hasPurposes && (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => handleBatchGenerateModulePoints(module)}
-                            isLoading={batchGeneratingModule === module.id}
-                            disabled={batchGeneratingModule === module.id}
-                          >
-                            {batchGeneratingModule === module.id
-                              ? `生成中 (${batchGenerateProgress.current}/${batchGenerateProgress.total})`
-                              : '一键生成所有测试点'}
-                          </Button>
-                        )}
-
-                        {!hasPurposes && (
+                        {/* 生成测试点按钮 */}
+                        {!hasTestPoints && (
                           <Button
                             variant="default"
                             size="sm"
-                            onClick={() => handleGeneratePurposes(module)}
-                            isLoading={isGeneratingPurposes}
-                            disabled={isGeneratingPurposes}
+                            onClick={() => handleGeneratePoints(scenario, false)}
+                            isLoading={isGeneratingPointsForScenario}
+                            disabled={isGeneratingPointsForScenario}
                           >
-                            {isGeneratingPurposes ? '生成中...' : '生成测试目的'}
+                            {isGeneratingPointsForScenario ? '生成中...' : '生成测试点'}
                           </Button>
                         )}
-                        {hasPurposes && (
+
+                        {/* 重新生成测试点按钮 */}
+                        {hasTestPoints && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleGeneratePoints(scenario, true)}
+                            isLoading={isGeneratingPointsForScenario}
+                            disabled={isGeneratingPointsForScenario}
+                          >
+                            {isGeneratingPointsForScenario ? '重新生成中...' : '重新生成测试点'}
+                          </Button>
+                        )}
+
+                        {/* 一键批量生成测试用例按钮 */}
+                        {hasTestPoints && (
+                          <Button
+                            variant="default"
+                            size="sm"
+                            onClick={() => handleBatchGenerateTestCases(scenario)}
+                            disabled={isGeneratingPointsForScenario}
+                          >
+                            ⚡ 一键生成用例
+                          </Button>
+                        )}
+
+                        {/* 展开/折叠按钮 */}
+                        {hasTestPoints && (
                           <button
-                            onClick={() => toggleModule(module.id)}
+                            onClick={() => setExpandedScenarios(prev => ({ ...prev, [scenario.id]: !prev[scenario.id] }))}
                             className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                            title={isExpanded ? '折叠' : '展开'}
                           >
                             <motion.div
                               animate={{ rotate: isExpanded ? 180 : 0 }}
@@ -1095,9 +1122,9 @@ export function FunctionalTestCaseGenerator() {
                     </div>
                   </div>
 
-                  {/* 测试目的列表（可展开） */}
+                  {/* 测试点列表（可展开） */}
                   <AnimatePresence>
-                    {isExpanded && hasPurposes && (
+                    {isExpanded && hasTestPoints && (
                       <motion.div
                         initial={{ height: 0, opacity: 0 }}
                         animate={{ height: 'auto', opacity: 1 }}
@@ -1107,95 +1134,226 @@ export function FunctionalTestCaseGenerator() {
                       >
                         <div className="p-5 space-y-3">
                           <p className="text-sm font-medium text-gray-700 mb-3">
-                            测试目的列表（共 {module.testPurposes.length} 个）
+                            测试点列表（共 {scenario.testPoints.length} 个）
                           </p>
 
-                          {module.testPurposes.map((purpose: any) => {
-                            const purposeKey = `${module.id}-${purpose.id}`;
-                            const isGeneratingPoints = generatingPoints[purposeKey];
-                            const hasTestCase = purpose.testCase;
-                            const isSelected = selectedPurposes[purposeKey];
-                            const isSaved = savedPurposes[purposeKey]; // 🆕 是否已保存
+                          {scenario.testPoints.map((testPoint: any, index: number) => {
+                            const pointKey = `${scenario.id}-${testPoint.testPoint}`;
+                            const isGeneratingCase = generatingCases[pointKey];
+                            const hasTestCases = testPoint.testCases && testPoint.testCases.length > 0;
+                            const testCasesCount = testPoint.testCases?.length || 0;
+                            // 如果已生成用例，使用实际数量；否则使用预估值
+                            const estimatedCases = hasTestCases ? testCasesCount : (testPoint.estimatedTestCases || 1);
 
                             return (
                               <div
-                                key={purpose.id}
-                                className={clsx(
-                                  "rounded-lg p-4 border transition-all",
-                                  isSaved
-                                    ? "bg-green-50 border-green-300"  // 🆕 已保存样式
-                                    : isSelected
-                                    ? "bg-purple-50 border-purple-500 shadow-md"
-                                    : "bg-white border-gray-200 hover:border-purple-300"
-                                )}
+                                key={index}
+                                className="rounded-lg p-5 border-2 bg-white border-gray-200 hover:border-purple-300 transition-all shadow-sm hover:shadow-md"
                               >
-                                <div className="flex items-start gap-3">
-                                  {/* 复选框 */}
-                                  <div className="pt-1">
-                                    <input
-                                      type="checkbox"
-                                      checked={isSelected || false}
-                                      disabled={!hasTestCase || isSaved}  // 🆕 已保存时禁用
-                                      onChange={() => togglePurposeSelect(module.id, purpose.id)}
-                                      className="w-5 h-5 rounded border-gray-300 text-purple-600 focus:ring-purple-500 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
-                                    />
+                                <div className="flex items-start justify-between gap-4">
+                                  <div className="flex items-start gap-4 flex-1">
+                                    {/* 序号 */}
+                                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-purple-500
+                                                    flex items-center justify-center text-white font-bold text-sm flex-shrink-0 shadow-md">
+                                      {index + 1}
+                                    </div>
+                                    
+                                    {/* 测试点信息 */}
+                                    <div className="flex-1 min-w-0">
+                                      {/* 标题和风险等级 */}
+                                      <div className="flex items-center gap-2 mb-2">
+                                        <h5 className="font-semibold text-gray-900 text-base">
+                                          {testPoint.testPoint}
+                                        </h5>
+                                        <span className={clsx(
+                                          "px-2.5 py-1 rounded-full text-xs font-medium",
+                                          testPoint.riskLevel === 'high' && "bg-red-100 text-red-700 border border-red-200",
+                                          testPoint.riskLevel === 'medium' && "bg-yellow-100 text-yellow-700 border border-yellow-200",
+                                          testPoint.riskLevel === 'low' && "bg-green-100 text-green-700 border border-green-200"
+                                        )}>
+                                          {testPoint.riskLevel === 'high' ? '高风险' : testPoint.riskLevel === 'medium' ? '中风险' : '低风险'}
+                                        </span>
+                                      </div>
+
+                                      {/* 测试点描述 */}
+                                      {testPoint.description && (
+                                        <p className="text-sm text-gray-600 mb-2 line-clamp-2">
+                                          {testPoint.description}
+                                        </p>
+                                      )}
+
+                                      {/* 覆盖范围和预估信息 */}
+                                      <div className="flex flex-wrap items-center gap-3 mt-3 text-xs text-gray-500">
+                                        {testPoint.coverageAreas && (
+                                          <div className="flex items-center gap-1">
+                                            <span className="font-medium">覆盖范围:</span>
+                                            <span className="text-gray-700">{testPoint.coverageAreas}</span>
+                                          </div>
+                                        )}
+                                        <div className="flex items-center gap-1">
+                                          <span className="font-medium">预估用例:</span>
+                                          <span className="text-blue-600 font-semibold">{estimatedCases} 个</span>
+                                        </div>
+                                        {hasTestCases && (
+                                          <div className="flex items-center gap-1 text-green-600">
+                                            <CheckCircle className="w-3.5 h-3.5" />
+                                            <span className="font-medium">已生成 {testCasesCount} 个</span>
+                                          </div>
+                                        )}
+                                      </div>
+                                    </div>
                                   </div>
 
-                                  {/* 内容区域 */}
-                                  <div className="flex-1 min-w-0">
-                                    <div className="flex items-center gap-2 mb-2">
-                                      <h5 className="font-medium text-gray-900">
-                                        {purpose.name}
-                                      </h5>
-                                      <span className={clsx(
-                                        "px-2 py-0.5 rounded text-xs font-medium",
-                                        purpose.priority === 'high' && "bg-red-100 text-red-700",
-                                        purpose.priority === 'medium' && "bg-yellow-100 text-yellow-700",
-                                        purpose.priority === 'low' && "bg-green-100 text-green-700"
-                                      )}>
-                                        {purpose.priority}
-                                      </span>
-                                    </div>
-                                    <p className="text-sm text-gray-600 mb-2">
-                                      {purpose.description}
-                                    </p>
-                                    <div className="flex items-center gap-4 text-sm text-gray-700">
-                                      <span>覆盖范围: {purpose.coverageAreas}</span>
-                                      <span>预估 {purpose.estimatedTestPoints} 个测试点</span>
-                                    </div>
-                                    {hasTestCase && !isSaved && (
-                                      <div className="mt-2 flex items-center gap-2 text-sm text-green-600">
-                                        <CheckCircle className="w-4 h-4" />
-                                        <span>已生成测试用例</span>
-                                      </div>
+                                  {/* 操作按钮组 */}
+                                  <div className="flex items-center gap-2 flex-shrink-0">
+                                    {/* 查看用例按钮 */}
+                                    {hasTestCases && (
+                                      <>
+                                        {testCasesCount === 1 ? (
+                                          <Button
+                                            variant="outline"
+                                            size="sm"
+                                            onClick={() => handleViewDetail(testPoint.testCases[0])}
+                                          >
+                                            查看用例
+                                          </Button>
+                                        ) : (
+                                          <div className="relative group">
+                                            <Button
+                                              variant="outline"
+                                              size="sm"
+                                              onClick={() => handleViewDetail(testPoint.testCases[0], testPoint.testCases)}
+                                            >
+                                              查看用例 ({testCasesCount})
+                                            </Button>
+                                            {/* 下拉菜单显示所有用例 */}
+                                            <div className="absolute right-0 top-full mt-1 w-56 bg-white rounded-lg shadow-lg border border-gray-200 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-10">
+                                              <div className="py-1 max-h-60 overflow-y-auto">
+                                                <button
+                                                  onClick={() => handleViewDetail(testPoint.testCases[0], testPoint.testCases)}
+                                                  className="w-full text-left px-4 py-2 text-sm font-medium text-purple-700 hover:bg-purple-50 transition-colors border-b border-gray-200"
+                                                >
+                                                  📋 查看全部 ({testCasesCount}个)
+                                                </button>
+                                                {testPoint.testCases.map((tc: any, idx: number) => (
+                                                  <button
+                                                    key={idx}
+                                                    onClick={() => handleViewDetail(tc)}
+                                                    className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-purple-50 hover:text-purple-700 transition-colors"
+                                                  >
+                                                    <div className="font-medium truncate">{tc.name || `用例 ${idx + 1}`}</div>
+                                                    {tc.priority && (
+                                                      <div className="text-xs text-gray-500 mt-0.5">
+                                                        {tc.priority === 'high' ? '高优先级' : tc.priority === 'medium' ? '中优先级' : '低优先级'}
+                                                      </div>
+                                                    )}
+                                                  </button>
+                                                ))}
+                                              </div>
+                                            </div>
+                                          </div>
+                                        )}
+                                      </>
                                     )}
-                                    {isSaved && (
-                                      <div className="mt-2 flex items-center gap-2 text-sm font-medium text-green-700">
-                                        <CheckCircle className="w-4 h-4 fill-green-700" />
-                                        <span>✅ 已保存到用例库</span>
-                                      </div>
-                                    )}
-                                  </div>
 
-                                  {/* 操作按钮 */}
-                                  <div className="flex-shrink-0">
+                                    {/* 生成/重新生成按钮 */}
                                     <Button
-                                      variant={hasTestCase ? "outline" : "default"}
+                                      variant={hasTestCases ? "outline" : "default"}
                                       size="sm"
-                                      onClick={() => {
-                                        if (hasTestCase) {
-                                          handleViewDetail(hasTestCase);
-                                        } else {
-                                          handleGeneratePoints(purpose, module);
-                                        }
-                                      }}
-                                      isLoading={isGeneratingPoints}
-                                      disabled={isGeneratingPoints}
+                                      onClick={() => handleGenerateTestCaseForPoint(testPoint, scenario, hasTestCases)}
+                                      isLoading={isGeneratingCase}
+                                      disabled={isGeneratingCase}
                                     >
-                                      {isGeneratingPoints ? '生成中...' : hasTestCase ? '查看用例' : '生成测试点'}
+                                      {isGeneratingCase 
+                                        ? '生成中...' 
+                                        : hasTestCases 
+                                        ? '重新生成' 
+                                        : '生成用例'}
                                     </Button>
+
+                                    {/* 展开/折叠测试用例列表按钮 */}
+                                    {hasTestCases && (
+                                      <button
+                                        onClick={() => {
+                                          const expandKey = `${scenario.id}-${testPoint.testPoint}`;
+                                          setExpandedTestPoints(prev => ({ ...prev, [expandKey]: !prev[expandKey] }));
+                                        }}
+                                        className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                                        title={expandedTestPoints[`${scenario.id}-${testPoint.testPoint}`] ? '折叠用例列表' : '展开用例列表'}
+                                      >
+                                        <motion.div
+                                          animate={{ rotate: expandedTestPoints[`${scenario.id}-${testPoint.testPoint}`] ? 180 : 0 }}
+                                          transition={{ duration: 0.2 }}
+                                        >
+                                          <ArrowRight className="w-4 h-4 text-gray-600" />
+                                        </motion.div>
+                                      </button>
+                                    )}
                                   </div>
                                 </div>
+
+                                {/* 测试用例列表（可展开） */}
+                                <AnimatePresence>
+                                  {expandedTestPoints[`${scenario.id}-${testPoint.testPoint}`] && hasTestCases && (
+                                    <motion.div
+                                      initial={{ height: 0, opacity: 0 }}
+                                      animate={{ height: 'auto', opacity: 1 }}
+                                      exit={{ height: 0, opacity: 0 }}
+                                      transition={{ duration: 0.3 }}
+                                      className="mt-4 pt-4 border-t border-gray-200"
+                                    >
+                                      <div className="space-y-3">
+                                        <p className="text-xs font-medium text-gray-600 mb-2">
+                                          测试用例列表（共 {testCasesCount} 个）
+                                        </p>
+                                        {testPoint.testCases.map((tc: any, tcIndex: number) => (
+                                          <div
+                                            key={tcIndex}
+                                            className="rounded-lg p-3 border bg-gray-50 border-gray-200 hover:border-purple-300 transition-all"
+                                          >
+                                            <div className="flex items-start justify-between gap-3">
+                                              <div className="flex items-start gap-3 flex-1">
+                                                <div className="w-6 h-6 rounded-full bg-gradient-to-br from-purple-400 to-blue-400
+                                                                flex items-center justify-center text-white font-bold text-xs flex-shrink-0">
+                                                  {tcIndex + 1}
+                                                </div>
+                                                <div className="flex-1 min-w-0">
+                                                  <div className="flex items-center gap-2 mb-1">
+                                                    <h6 className="font-medium text-sm text-gray-900 truncate">
+                                                      {tc.name || `用例 ${tcIndex + 1}`}
+                                                    </h6>
+                                                    <span className={clsx(
+                                                      "px-1.5 py-0.5 rounded text-xs font-medium flex-shrink-0",
+                                                      tc.priority === 'high' && "bg-red-100 text-red-700",
+                                                      tc.priority === 'medium' && "bg-yellow-100 text-yellow-700",
+                                                      tc.priority === 'low' && "bg-green-100 text-green-700"
+                                                    )}>
+                                                      {tc.priority === 'high' ? '高' : tc.priority === 'medium' ? '中' : '低'}
+                                                    </span>
+                                                  </div>
+                                                  {tc.description && (
+                                                    <p className="text-xs text-gray-600 line-clamp-1">
+                                                      {tc.description}
+                                                    </p>
+                                                  )}
+                                                </div>
+                                              </div>
+                                              <div className="flex items-center gap-1 flex-shrink-0">
+                                                <Button
+                                                  variant="outline"
+                                                  size="sm"
+                                                  onClick={() => handleViewDetail(tc)}
+                                                >
+                                                  查看
+                                                </Button>
+                                              </div>
+                                            </div>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    </motion.div>
+                                  )}
+                                </AnimatePresence>
                               </div>
                             );
                           })}
@@ -1221,7 +1379,7 @@ export function FunctionalTestCaseGenerator() {
                 <div>
                   <h3 className="text-xl font-semibold text-gray-900">测试用例草稿箱</h3>
                   <p className="text-sm text-gray-500">
-                    已生成 {draftCases.length} 个用例，选中 {selectedCount} 个测试目的
+                    已生成 {draftCases.length} 个用例，选中 {selectedCount} 个测试场景
                   </p>
                 </div>
               </div>
@@ -1261,11 +1419,11 @@ export function FunctionalTestCaseGenerator() {
         )}
 
         {/* 空状态提示 */}
-        {!analyzingModules && testModules.length === 0 && draftCases.length === 0 && (
+        {!analyzingScenarios && testScenarios.length === 0 && draftCases.length === 0 && (
           <div className="bg-white rounded-2xl p-16 text-center">
             <FileX className="w-16 h-16 mx-auto text-gray-300 mb-4" />
             <h3 className="text-lg font-semibold text-gray-900 mb-2">
-              暂无测试模块
+              暂无测试场景
             </h3>
             <p className="text-sm text-gray-600">
               点击上方"立即生成测试用例"按钮开始分析
@@ -1484,8 +1642,15 @@ export function FunctionalTestCaseGenerator() {
       {/* 测试用例详情对话框 */}
       <TestCaseDetailModal
         isOpen={detailModalOpen}
-        onClose={() => setDetailModalOpen(false)}
+        onClose={() => {
+          setDetailModalOpen(false);
+          setViewingAllCases([]);
+          setCurrentCaseIndex(0);
+        }}
         testCase={currentDetailCase}
+        allCases={viewingAllCases}
+        currentIndex={currentCaseIndex}
+        onSwitchCase={handleSwitchCase}
         onSave={handleSaveDetail}
       />
 

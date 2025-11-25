@@ -1,7 +1,9 @@
 import axios from 'axios';
-
-// 在开发环境使用Vite代理(相对路径),生产环境使用环境变量或当前域名
-const API_BASE_URL = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? '' : `http://${window.location.hostname}:4001`);
+// 🔥 使用全局配置的 axios 实例（自动添加认证头）
+import apiClient from '../utils/axios';
+// 🔥 使用统一的 API 配置
+import { getApiBaseUrl } from '../config/api';
+const API_BASE_URL = import.meta.env.VITE_API_URL || getApiBaseUrl('');
 const TOKEN_KEY = 'authToken';
 
 export interface AuthUser {
@@ -51,16 +53,11 @@ class AuthService {
 
   /**
    * 用户登出
+   * 注意：使用 apiClient 会自动添加认证头
    */
   async logout(): Promise<void> {
     try {
-      await axios.post(
-        `${API_BASE_URL}/api/auth/logout`,
-        {},
-        {
-          headers: this.getAuthHeaders()
-        }
-      );
+      await apiClient.post(`${API_BASE_URL}/api/auth/logout`, {});
     } catch (error) {
       console.error('登出请求失败:', error);
     }
@@ -68,14 +65,12 @@ class AuthService {
 
   /**
    * 获取当前用户信息
+   * 注意：使用 apiClient 会自动添加认证头
    */
   async getCurrentUser(): Promise<AuthUser> {
     try {
-      const response = await axios.get<{ success: boolean; data: AuthUser; error?: string }>(
-        `${API_BASE_URL}/api/auth/me`,
-        {
-          headers: this.getAuthHeaders()
-        }
+      const response = await apiClient.get<{ success: boolean; data: AuthUser; error?: string }>(
+        `${API_BASE_URL}/api/auth/me`
       );
 
       if (response.data.success && response.data.data) {
@@ -93,15 +88,13 @@ class AuthService {
 
   /**
    * 修改密码
+   * 注意：使用 apiClient 会自动添加认证头
    */
   async changePassword(oldPassword: string, newPassword: string): Promise<void> {
     try {
-      const response = await axios.post<{ success: boolean; message?: string; error?: string }>(
+      const response = await apiClient.post<{ success: boolean; message?: string; error?: string }>(
         `${API_BASE_URL}/api/auth/change-password`,
-        { oldPassword, newPassword },
-        {
-          headers: this.getAuthHeaders()
-        }
+        { oldPassword, newPassword }
       );
 
       if (!response.data.success) {
@@ -140,6 +133,8 @@ class AuthService {
 
   /**
    * 获取认证请求头
+   * 注意：现在使用全局 apiClient，此方法已废弃，保留用于向后兼容
+   * @deprecated 使用 apiClient 会自动添加认证头，无需手动调用此方法
    */
   getAuthHeaders(): Record<string, string> {
     const token = this.getToken();

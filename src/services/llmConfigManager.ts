@@ -1,6 +1,6 @@
 import { modelRegistry, ModelDefinition } from './modelRegistry';
 import { settingsService, LLMSettings } from './settingsService';
-import { LLMConfig } from '../../server/services/aiParser';
+import { LLMConfig } from '../types/llm';
 
 // 配置变更事件类型
 export type ConfigChangeEvent = {
@@ -54,9 +54,9 @@ export class LLMConfigManager {
         // 前端环境：使用前端设置服务
         settings = await settingsService.getLLMSettings();
       } else {
-        // 后端环境：使用后端设置服务
-        const { backendSettingsService } = await import('../../server/services/settingsService.ts');
-        settings = await backendSettingsService.getLLMSettings();
+        // 后端环境：使用动态导入避免打包服务器端代码
+        const { BackendSettingsService } = await import('../../server/services/settingsService.ts');
+        settings = await BackendSettingsService.getInstance().getLLMSettings();
       }
       
       await this.updateConfig(settings);
@@ -148,73 +148,43 @@ export class LLMConfigManager {
     const timestamp = new Date();
 
     try {
-      console.log(`🧪 测试连接: ${this.currentModelInfo.name}`);
+      console.log(`🧪 [前端] 测试连接: ${this.currentModelInfo.name}`);
 
-      // 构建测试请求
-      const testPrompt = "Hello, this is a connection test. Please respond with 'OK'.";
-      const requestBody = {
-        model: this.currentConfig.model,
-        messages: [
-          {
-            role: 'user',
-            content: testPrompt
-          }
-        ],
-        temperature: 0.1,
-        max_tokens: 10
+      // 🔥 通过后端 API 代理测试连接，避免 CORS 问题
+      const llmSettings = {
+        selectedModelId: this.currentModelInfo.id,
+        apiKey: this.currentConfig.apiKey,
+        baseUrl: this.currentConfig.baseUrl,
+        customConfig: {
+          temperature: this.currentConfig.temperature,
+          maxTokens: this.currentConfig.maxTokens
+        }
       };
 
-      // 构建请求头，本地/自定义 API 使用简化头
-      const headers: Record<string, string> = {
-        'Authorization': `Bearer ${this.currentConfig.apiKey}`,
-        'Content-Type': 'application/json'
-      };
-
-      // 只对 OpenRouter API 添加额外的识别头
-      if (!this.currentModelInfo.customBaseUrl) {
-        headers['HTTP-Referer'] = 'https://testflow-ai.com';
-        headers['X-Title'] = 'TestFlow AI Testing Platform';
-      }
-
-      // 发送测试请求
-      const response = await fetch(this.currentConfig.baseUrl + '/chat/completions', {
+      const response = await fetch('/api/config/test-connection', {
         method: 'POST',
-        headers,
-        body: JSON.stringify(requestBody)
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(llmSettings)
       });
 
       const responseTime = Date.now() - startTime;
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        let errorMessage = `API调用失败 (${response.status})`;
-        
-        // 增强错误信息
-        if (response.status === 401) {
-          errorMessage = 'API密钥无效或已过期';
-        } else if (response.status === 429) {
-          errorMessage = 'API调用频率超限，请稍后重试';
-        } else if (response.status === 500) {
-          errorMessage = '服务器内部错误，请稍后重试';
-        } else if (response.status === 403) {
-          errorMessage = '访问被拒绝，请检查API密钥权限';
-        } else {
-          errorMessage += `: ${errorText}`;
-        }
-        
-        const error = new Error(errorMessage);
-        (error as any).status = response.status;
-        (error as any).type = 'API_ERROR';
-        throw error;
-      }
-
       const data = await response.json();
-      
-      if (!data.choices || !data.choices[0] || !data.choices[0].message) {
-        const error = new Error('API返回格式异常，请检查模型配置');
-        (error as any).type = 'API_ERROR';
-        (error as any).details = data;
-        throw error;
+
+      if (!response.ok || !data.success) {
+        const errorMessage = data.error || `API调用失败 (${response.status})`;
+        
+        const result: ConnectionTestResult = {
+          success: false,
+          responseTime: data.responseTime || responseTime,
+          error: errorMessage,
+          modelInfo: this.currentModelInfo,
+          timestamp
+        };
+
+        console.error(`❌ [前端] 连接测试失败: ${this.currentModelInfo.name} - ${errorMessage}`);
+        return result;
       }
 
       // 触发连接测试事件
@@ -227,12 +197,12 @@ export class LLMConfigManager {
 
       const result: ConnectionTestResult = {
         success: true,
-        responseTime,
+        responseTime: data.responseTime || responseTime,
         modelInfo: this.currentModelInfo,
         timestamp
       };
 
-      console.log(`✅ 连接测试成功: ${this.currentModelInfo.name} (${responseTime}ms)`);
+      console.log(`✅ [前端] 连接测试成功: ${this.currentModelInfo.name} (${result.responseTime}ms)`);
       return result;
 
     } catch (error: any) {
@@ -253,7 +223,7 @@ export class LLMConfigManager {
         timestamp
       };
 
-      console.error(`❌ 连接测试失败: ${this.currentModelInfo.name} - ${enhancedError}`);
+      console.error(`❌ [前端] 连接测试失败: ${this.currentModelInfo.name} - ${enhancedError}`);
       return result;
     }
   }
@@ -269,9 +239,9 @@ export class LLMConfigManager {
         // 前端环境：使用前端设置服务
         settings = await settingsService.getLLMSettings();
       } else {
-        // 后端环境：使用后端设置服务
-        const { backendSettingsService } = await import('../../server/services/settingsService.ts');
-        settings = await backendSettingsService.getLLMSettings();
+        // 后端环境：使用动态导入避免打包服务器端代码
+        const { BackendSettingsService } = await import('../../server/services/settingsService.ts');
+        settings = await BackendSettingsService.getInstance().getLLMSettings();
       }
       
       await this.updateConfig(settings);
@@ -292,6 +262,7 @@ export class LLMConfigManager {
       const settings: LLMSettings = {
         selectedModelId: this.currentModelInfo.id,
         apiKey: this.currentConfig.apiKey,
+        baseUrl: this.currentConfig.baseUrl, // 🔥 添加 baseUrl
         customConfig: {
           temperature: this.currentConfig.temperature,
           maxTokens: this.currentConfig.maxTokens

@@ -1,6 +1,7 @@
 import type { AxureParseResult, PageMode, PlatformType } from '../types/axure.js';
 import type { EnhancedAxureData } from '../types/aiPreAnalysis.js';
 import { llmConfigManager } from '../../src/services/llmConfigManager.js';
+import { modelRegistry } from '../../src/services/modelRegistry.js';
 import type { LLMConfig } from './aiParser.js';
 import { ProxyAgent } from 'undici';
 import { TestCaseKnowledgeBase } from './testCaseKnowledgeBase.js';
@@ -30,39 +31,47 @@ export interface Batch {
 }
 
 /**
- * 🆕 测试模块（阶段1输出）
+ * 🆕 测试场景（阶段1输出）
  */
-export interface TestModule {
+export interface TestScenario {
   id: string;
   name: string;
   description: string;
   priority: 'high' | 'medium' | 'low';
   relatedSections: string[]; // 关联的章节ID，如 ["1.1", "1.2"]
-  testPurposes?: TestPurpose[]; // 可选，阶段2生成后才有
+  testPoints?: TestPoint[]; // 可选，阶段2生成后才有
+  testCase?: TestCase; // 可选，阶段3生成后才有
 }
 
 /**
- * 🆕 测试目的（阶段2输出）
+ * 兼容性：保留旧接口名称（已废弃，使用TestScenario）
+ * @deprecated 使用 TestScenario 代替
+ */
+export type TestModule = TestScenario;
+
+/**
+ * 兼容性：保留旧接口（已废弃）
+ * @deprecated 使用 TestPoint 代替
  */
 export interface TestPurpose {
   id: string;
   name: string;
   description: string;
-  coverageAreas: string; // 逗号分隔的覆盖范围
+  coverageAreas: string;
   estimatedTestPoints: number;
   priority: 'high' | 'medium' | 'low';
-  testCase?: TestCase; // 可选，阶段3生成后才有
+  testCase?: TestCase;
 }
 
 /**
- * 测试点
+ * 测试点（阶段2输出）
  */
 export interface TestPoint {
-  testPurpose?: string; // 🆕 测试目的（每个测试点都应该有）
-  testPoint: string;
-  steps: string;
-  expectedResult: string;
-  riskLevel?: string;
+  testScenario?: string; // 🆕 测试场景（每个测试点都应该有）
+  testPoint: string; // 测试点名称
+  steps: string; // 测试步骤
+  expectedResult: string; // 预期结果
+  riskLevel?: string; // 风险等级
 }
 
 /**
@@ -81,11 +90,14 @@ export interface TestCase {
   preconditions?: string;
   testData?: string;
   // 新增字段
-  testPurpose?: string; // 测试目的
+  testScenario?: string; // 测试场景
+  testScenarioId?: string; // 测试场景ID
   testPoints?: TestPoint[]; // 测试点数组
   sectionId?: string; // 章节ID (1.1, 1.2)
   sectionName?: string; // 章节名称
   coverageAreas?: string; // 覆盖范围
+  // 兼容性字段
+  testPurpose?: string; // 兼容旧字段（已废弃，使用testScenario）
 }
 
 /**
@@ -173,15 +185,118 @@ export class FunctionalTestCaseAIService {
   }
 
   /**
+   * 格式化时间为易读格式 (YYYY-MM-DD HH:mm:ss.SSS)
+   */
+  private formatTime(timestamp?: number | Date): string {
+    const date = timestamp ? (typeof timestamp === 'number' ? new Date(timestamp) : timestamp) : new Date();
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    const hours = String(date.getHours()).padStart(2, '0');
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+    const seconds = String(date.getSeconds()).padStart(2, '0');
+    const milliseconds = String(date.getMilliseconds()).padStart(3, '0');
+    return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}.${milliseconds}`;
+  }
+
+  /**
+   * 根据 baseUrl 获取提供商名称
+   */
+  private getProviderName(baseUrl: string, modelId?: string): string {
+    if (baseUrl.includes('dashscope.aliyuncs.com')) {
+      return '阿里云通义千问';
+    } else if (baseUrl.includes('api.deepseek.com')) {
+      return 'DeepSeek';
+    } else if (baseUrl.includes('open.bigmodel.cn')) {
+      return '智谱AI';
+    } else if (baseUrl.includes('aip.baidubce.com')) {
+      return '百度文心一言';
+    } else if (baseUrl.includes('api.moonshot.cn')) {
+      return '月之暗面Kimi';
+    } else if (baseUrl.includes('zenmux.ai')) {
+      return 'Zenmux (Gemini)';
+    } else if (baseUrl.includes('openrouter.ai')) {
+      return 'OpenRouter';
+    } else {
+      // 尝试从 modelRegistry 获取
+      if (modelId) {
+        try {
+          const model = modelRegistry.getModelById(modelId);
+          if (model) {
+            return model.provider;
+          }
+        } catch {
+          // 忽略错误
+        }
+      }
+      return '未知提供商';
+    }
+  }
+
+  /**
+   * 获取模型的最大 tokens 限制
+   */
+  private getMaxTokensLimit(modelId: string, baseUrl: string): number {
+    // 根据模型提供商和 baseUrl 判断限制
+    if (baseUrl.includes('dashscope.aliyuncs.com')) {
+      // 阿里云通义千问：限制为 8192
+      return 8192;
+    } else if (baseUrl.includes('api.deepseek.com')) {
+      // DeepSeek：支持更大，但为安全起见限制为 4096
+      return 8192;
+    } else if (baseUrl.includes('open.bigmodel.cn')) {
+      // 智谱GLM：限制为 4096
+      return 4096;
+    } else if (baseUrl.includes('aip.baidubce.com')) {
+      // 百度文心一言：限制为 8192
+      return 2048;
+    } else if (baseUrl.includes('api.moonshot.cn')) {
+      // 月之暗面Kimi：限制为 8192
+      return 8192;
+    } else if (baseUrl.includes('zenmux.ai')) {
+      // Zenmux（Gemini 3 Pro）：限制为 4096
+      return 4096;
+    } else {
+      // 默认限制（OpenRouter 等）：8192
+      return 8192;
+    }
+  }
+
+  /**
    * 调用AI模型
    */
   private async callAI(systemPrompt: string, userPrompt: string, maxTokens?: number): Promise<string> {
     const config = await this.getCurrentConfig();
+    const startTime = Date.now();
 
-    console.log(`🚀 调用AI模型: ${config.model}`);
-    console.log(`📍 API端点: ${config.baseUrl}/chat/completions`);
-    console.log(`🔑 API Key状态: ${config.apiKey ? '已设置 (长度: ' + config.apiKey.length + ')' : '❌ 未设置'}`);
-    console.log(`🌡️ Temperature: ${config.temperature}, Max Tokens: ${maxTokens || config.maxTokens}`);
+    // 🔥 获取该模型的最大 tokens 限制
+    const maxTokensLimit = this.getMaxTokensLimit(config.model, config.baseUrl);
+    
+    // 🔥 验证并限制 maxTokens
+    let finalMaxTokens = maxTokens || config.maxTokens;
+    if (finalMaxTokens > maxTokensLimit) {
+      console.warn(`⚠️ Max Tokens ${finalMaxTokens} 超过模型限制 ${maxTokensLimit}，已调整为 ${maxTokensLimit}`);
+      finalMaxTokens = maxTokensLimit;
+    }
+
+    // 🔥 获取提供商名称（动态，不写死）
+    const providerName = this.getProviderName(config.baseUrl, config.model);
+    const apiEndpoint = `${config.baseUrl}/chat/completions`;
+
+    console.log(`\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+    console.log(`🚀 [AI调用] 开始调用AI模型`);
+    console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+    console.log(`   模型标识: ${config.model}`);
+    console.log(`   提供商: ${providerName}`);
+    console.log(`   API端点: ${apiEndpoint}`);
+    console.log(`   API Key状态: ${config.apiKey ? '已设置 (长度: ' + config.apiKey.length + ')' : '❌ 未设置'}`);
+    console.log(`   参数配置:`);
+    console.log(`     - Temperature: ${config.temperature}`);
+    console.log(`     - Max Tokens: ${finalMaxTokens} (限制: ${maxTokensLimit})`);
+    console.log(`   提示词统计:`);
+    console.log(`     - System Prompt: ${systemPrompt.length} 字符`);
+    console.log(`     - User Prompt: ${userPrompt.length} 字符`);
+    console.log(`     - 总计: ${systemPrompt.length + userPrompt.length} 字符`);
 
     try {
       const requestBody = {
@@ -191,13 +306,29 @@ export class FunctionalTestCaseAIService {
           { role: 'user', content: userPrompt }
         ],
         temperature: config.temperature,
-        max_tokens: maxTokens || config.maxTokens
+        max_tokens: finalMaxTokens
       };
 
-      console.log(`📤 发送请求到 OpenRouter...`);
+      // 🔥 打印请求详情（隐藏敏感信息）
+      console.log(`\n📤 [请求] 准备发送请求到 ${providerName}...`);
 
-      // 配置代理（如果环境变量中有配置）
-      const proxyUrl = process.env.HTTPS_PROXY || process.env.HTTP_PROXY;
+      // 🔥 打印请求头信息（隐藏敏感信息）
+      const headersForLog: Record<string, string> = {
+        'Authorization': `Bearer ${config.apiKey.substring(0, 10)}...`,
+        'HTTP-Referer': 'https://testflow-ai.com',
+        'X-Title': 'TestFlow AI Testing Platform',
+        'Content-Type': 'application/json'
+      };
+      console.log(`   请求头:`, headersForLog);
+
+      const requestBodyForLog = {
+        ...requestBody,
+        messages: requestBody.messages.map((msg: any) => ({
+          role: msg.role,
+          content: msg.content.substring(0, 100) + (msg.content.length > 100 ? '...' : '')
+        }))
+      };
+      console.log(`   请求体预览:`, JSON.stringify(requestBodyForLog, null, 2));
 
       const fetchOptions: any = {
         method: 'POST',
@@ -210,39 +341,87 @@ export class FunctionalTestCaseAIService {
         body: JSON.stringify(requestBody)
       };
 
+      // 配置代理（如果环境变量中有配置）
+      const proxyUrl = process.env.HTTPS_PROXY || process.env.HTTP_PROXY;
+      console.log(`   代理: ${proxyUrl}`);
+
       // 如果配置了代理，使用 undici 的 ProxyAgent
       if (proxyUrl) {
-        console.log(`🌐 使用代理: ${proxyUrl}`);
+        console.log(`   🌐 使用代理: ${proxyUrl}`);
         fetchOptions.dispatcher = new ProxyAgent(proxyUrl);
       } else {
-        console.log(`📡 直连模式（未配置代理）`);
+        console.log(`   📡 直连模式（未配置代理）`);
       }
 
-      const response = await fetch(config.baseUrl + '/chat/completions', fetchOptions);
+      const requestStartTime = Date.now();
+      console.log(`   ⏱️  请求发送时间: ${this.formatTime()}`);
+
+      const response = await fetch(apiEndpoint, fetchOptions);
+      const requestDuration = Date.now() - requestStartTime;
+
+      console.log(`\n📥 [响应] 收到 ${providerName} 响应`);
+      console.log(`   HTTP状态码: ${response.status} ${response.statusText}`);
+      console.log(`   请求耗时: ${requestDuration}ms`);
+      console.log(`   响应头:`, {
+        'content-type': response.headers.get('content-type'),
+        'x-ratelimit-limit': response.headers.get('x-ratelimit-limit'),
+        'x-ratelimit-remaining': response.headers.get('x-ratelimit-remaining'),
+        'x-ratelimit-reset': response.headers.get('x-ratelimit-reset')
+      });
 
       if (!response.ok) {
         const errorText = await response.text();
-        console.error(`❌ AI API错误详情: ${errorText}`);
-        console.error(`❌ 请求模型: ${config.model}`);
-        console.error(`❌ 请求URL: ${config.baseUrl}/chat/completions`);
+        console.error(`\n❌ [错误] ${providerName} API调用失败`);
+        console.error(`   错误详情: ${errorText}`);
+        console.error(`   请求模型: ${config.model}`);
+        console.error(`   请求URL: ${apiEndpoint}`);
+        console.error(`   请求耗时: ${requestDuration}ms`);
 
         // 区分不同的错误类型
+        let errorMessage = '';
         if (response.status === 401) {
-          throw new Error(`❌ 认证失败 (401): API Key无效或已过期。请检查 .env 文件中的 OPENROUTER_API_KEY`);
+          errorMessage = `❌ 认证失败 (401): API Key无效或已过期。请检查API密钥配置`;
         } else if (response.status === 429) {
-          throw new Error(`❌ 请求限流 (429): API调用频率过高，请稍后重试`);
+          errorMessage = `❌ 请求限流 (429): API调用频率过高，请稍后重试`;
         } else if (response.status === 402) {
-          throw new Error(`❌ 配额不足 (402): OpenRouter账户余额不足，请充值`);
+          errorMessage = `❌ 配额不足 (402): ${providerName}账户余额不足，请充值`;
         } else if (response.status === 404) {
-          throw new Error(`❌ 模型不存在 (404): 模型 "${config.model}" 在OpenRouter上不可用`);
+          errorMessage = `❌ 模型不存在 (404): 模型 "${config.model}" 在${providerName}上不可用`;
         } else if (response.status >= 500) {
-          throw new Error(`❌ 服务器错误 (${response.status}): OpenRouter服务异常，请稍后重试`);
+          errorMessage = `❌ 服务器错误 (${response.status}): ${providerName}服务异常，请稍后重试`;
         } else {
-          throw new Error(`AI API调用失败 (${response.status}): ${errorText}`);
+          errorMessage = `AI API调用失败 (${response.status}): ${errorText}`;
         }
+        throw new Error(errorMessage);
       }
 
       const data = await response.json();
+      console.log(`   响应体:`, JSON.stringify(data, null, 2));
+      const totalDuration = Date.now() - startTime;
+
+      // 🔥 打印响应结果详情
+      console.log(`\n✅ [成功] ${providerName} 响应解析完成`);
+      console.log(`   响应ID: ${data.id || 'N/A'}`);
+      console.log(`   模型: ${data.model || config.model}`);
+      console.log(`   创建时间: ${data.created ? this.formatTime(data.created * 1000) : 'N/A'}`);
+      if (data.usage) {
+        console.log(`   使用统计:`);
+        console.log(`     - Prompt Tokens: ${data.usage.prompt_tokens || 0}`);
+        console.log(`     - Completion Tokens: ${data.usage.completion_tokens || 0}`);
+        console.log(`     - Total Tokens: ${data.usage.total_tokens || 0}`);
+      }
+      if (data.choices && data.choices[0]) {
+        const choice = data.choices[0];
+        console.log(`   响应内容:`);
+        console.log(`     - Finish Reason: ${choice.finish_reason || 'N/A'}`);
+        console.log(`     - 内容长度: ${choice.message?.content?.length || 0} 字符`);
+        if (choice.message?.content) {
+          const preview = choice.message.content.substring(0, 200);
+          console.log(`     - 内容预览: ${preview}${choice.message.content.length > 200 ? '...' : ''}`);
+        }
+      }
+      console.log(`   总耗时: ${totalDuration}ms (请求: ${requestDuration}ms, 解析: ${totalDuration - requestDuration}ms)`);
+      console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`);
 
       if (!data.choices || !data.choices[0] || !data.choices[0].message) {
         console.error(`❌ API返回数据格式异常:`, JSON.stringify(data, null, 2));
@@ -250,21 +429,28 @@ export class FunctionalTestCaseAIService {
       }
 
       const content = data.choices[0].message.content;
-      console.log(`✅ AI响应成功 (${content.length}字符)`);
-
       return content;
     } catch (error: any) {
+      const totalDuration = Date.now() - startTime;
+      
       // 增强错误日志
       if (error.name === 'TypeError' && error.message === 'fetch failed') {
-        console.error(`❌ 网络请求失败: 无法连接到 ${config.baseUrl}`);
-        console.error(`💡 可能原因:`);
-        console.error(`   1. 网络连接问题（请检查网络设置）`);
-        console.error(`   2. API端点不可达（请检查防火墙/代理设置）`);
-        console.error(`   3. DNS解析失败（请检查DNS配置）`);
-        throw new Error(`❌ 网络连接失败: 无法访问 OpenRouter API。请检查网络连接。`);
+        console.error(`\n❌ [网络错误] 无法连接到 ${providerName}`);
+        console.error(`   API端点: ${apiEndpoint}`);
+        console.error(`   总耗时: ${totalDuration}ms`);
+        console.error(`   💡 可能原因:`);
+        console.error(`      1. 网络连接问题（请检查网络设置）`);
+        console.error(`      2. API端点不可达（请检查防火墙/代理设置）`);
+        console.error(`      3. DNS解析失败（请检查DNS配置）`);
+        console.error(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`);
+        throw new Error(`❌ 网络连接失败: 无法访问 ${providerName} API。请检查网络连接。`);
       }
 
-      console.error(`❌ AI调用失败: ${error.message}`);
+      console.error(`\n❌ [失败] ${providerName} AI调用失败`);
+      console.error(`   错误类型: ${error.name || 'Unknown'}`);
+      console.error(`   错误消息: ${error.message}`);
+      console.error(`   总耗时: ${totalDuration}ms`);
+      console.error(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`);
       throw error;
     }
   }
@@ -946,14 +1132,14 @@ ${getCommonSystemInstructions()}`;
     const userPrompt = getUserPrompt(htmlContent);
 
     try {
-      console.log('\n🤖 正在调用GPT-4o生成需求文档...');
+      console.log('\n🤖 正在调用AI大模型生成需求文档...');
       console.log(`   - 系统提示词长度: ${systemPrompt.length} 字符`);
       console.log(`   - 用户提示词长度: ${userPrompt.length} 字符`);
 
       const aiStartTime = Date.now();
 
-      // 调用AI（使用更大的token限制,因为HTML可能很长）
-      let requirementDoc = await this.callAI(systemPrompt, userPrompt, 16000);
+      // 调用AI（注意：maxTokens 会根据模型限制自动调整）
+      let requirementDoc = await this.callAI(systemPrompt, userPrompt, 8000);
 
       const aiDuration = Date.now() - aiStartTime;
       console.log(`✅ AI生成完成 (耗时: ${aiDuration}ms)`);
@@ -1323,23 +1509,7 @@ ${existingCaseNames || '无'}
 
       // 解析AI响应
       console.log(`🔍 [解析] 开始解析AI响应为JSON...`);
-      let jsonText = aiResponse.trim();
-      const jsonMatch = jsonText.match(/```(?:json)?\n?([\s\S]*?)\n?```/) || jsonText.match(/\{[\s\S]*\}/);
-
-      if (jsonMatch) {
-        jsonText = jsonMatch[1] || jsonMatch[0];
-        console.log(`   ✅ 成功提取JSON代码块`);
-      } else {
-        console.log(`   ⚠️  未找到JSON代码块标记，尝试直接解析`);
-      }
-
-      console.log(`\n┌─────────────────────────────────────────────────────────┐`);
-      console.log(`│ 📦 [提取的JSON] Extracted JSON                          │`);
-      console.log(`└─────────────────────────────────────────────────────────┘`);
-      console.log(jsonText);
-      console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`);
-
-      const parsed = JSON.parse(jsonText);
+      const parsed = this.parseAIJsonResponse(aiResponse, '批次生成JSON解析');
       const testCases: TestCase[] = parsed.testCases || [];
 
       console.log(`✅ [解析成功] 解析出 ${testCases.length} 个测试用例`);
@@ -1409,12 +1579,12 @@ ${existingCaseNames || '无'}
   }
 
   /**
-   * 🆕 阶段1：智能测试模块拆分
-   * 根据需求文档，识别不同的测试模块（查询条件、列表展示、操作按钮、页面布局等）
+   * 🆕 阶段1：智能测试场景拆分
+   * 根据需求文档，识别不同的测试场景（查询条件、列表展示、操作按钮、页面布局等）
    */
-  async analyzeTestModules(requirementDoc: string): Promise<TestModule[]> {
+  async analyzeTestScenarios(requirementDoc: string): Promise<TestScenario[]> {
     console.log('\n╔═══════════════════════════════════════════════════════════════╗');
-    console.log('║       🎯 阶段1：智能测试模块拆分                            ║');
+    console.log('║       🎯 阶段1：智能测试场景拆分                            ║');
     console.log('╚═══════════════════════════════════════════════════════════════╝\n');
 
     // 🆕 检测是否为修改页面模式（包含变更摘要）
@@ -1423,45 +1593,50 @@ ${existingCaseNames || '无'}
 
     console.log(`   页面模式: ${isModifyMode ? '修改页面' : '新增页面'}`);
 
-    const systemPrompt = `你是一个测试策略规划专家。你的任务是分析需求文档，将测试工作拆分为不同的测试模块。
+    const systemPrompt = `你是一个测试策略规划专家。你的任务是分析需求文档，将测试工作拆分为不同的测试场景。
 
-## 测试模块拆分原则
+## 测试场景拆分原则
 
-**根据页面类型识别测试模块：**
+**测试场景是什么？**
+- 测试场景是一个具体的业务场景或功能场景
+- 每个场景包含多个相关的测试点
+- 场景应该聚焦于一个明确的测试目标
 
-### 列表页常见测试模块：
-1. **查询条件测试** - 验证查询功能、边界值、组合查询
-2. **列表展示与数据校验** - 验证列表字段、数据格式、排序分页
-3. **操作按钮与权限** - 验证新增、编辑、删除等操作功能和权限
-4. **页面布局与文案校验** - 验证页面标题、字段标签、按钮文案、提示信息
+**根据页面类型识别测试场景：**
 
-### 表单页常见测试模块：
-1. **表单字段验证** - 验证必填项、数据类型、长度限制
-2. **字段联动与依赖** - 验证字段之间的联动关系
-3. **提交与保存** - 验证提交、保存、取消等操作
-4. **数据回显与编辑** - 验证编辑时数据回显
-5. **页面布局与文案校验** - 验证页面标题、字段标签、按钮文案
+### 列表页常见测试场景：
+1. **查询条件测试场景** - 验证查询功能、边界值、组合查询
+2. **列表展示与数据校验场景** - 验证列表字段、数据格式、排序分页
+3. **操作按钮与权限场景** - 验证新增、编辑、删除等操作功能和权限
+4. **页面布局与文案校验场景** - 验证页面标题、字段标签、按钮文案、提示信息
 
-### 详情页常见测试模块：
-1. **详情展示** - 验证所有字段正确显示
-2. **操作按钮** - 验证编辑、返回等操作按钮
-3. **页面布局与文案校验** - 验证页面标题、字段标签
+### 表单页常见测试场景：
+1. **表单字段验证场景** - 验证必填项、数据类型、长度限制
+2. **字段联动与依赖场景** - 验证字段之间的联动关系
+3. **提交与保存场景** - 验证提交、保存、取消等操作
+4. **数据回显与编辑场景** - 验证编辑时数据回显
+5. **页面布局与文案校验场景** - 验证页面标题、字段标签、按钮文案
 
-### 弹窗常见测试模块：
-1. **弹窗表单验证** - 验证表单字段和验证规则
-2. **弹窗交互** - 验证打开、关闭、取消等操作
-3. **页面布局与文案校验** - 验证标题、提示文案
+### 详情页常见测试场景：
+1. **详情展示场景** - 验证所有字段正确显示
+2. **操作按钮场景** - 验证编辑、返回等操作按钮
+3. **页面布局与文案校验场景** - 验证页面标题、字段标签
+
+### 弹窗常见测试场景：
+1. **弹窗表单验证场景** - 验证表单字段和验证规则
+2. **弹窗交互场景** - 验证打开、关闭、取消等操作
+3. **页面布局与文案校验场景** - 验证标题、提示文案
 
 ## 输出格式
 
 请输出JSON格式：
 \`\`\`json
 {
-  "modules": [
+  "scenarios": [
     {
-      "id": "module-1",
-      "name": "测试模块名称",
-      "description": "该模块的测试目标和范围",
+      "id": "scenario-1",
+      "name": "测试场景名称",
+      "description": "该场景的测试目标和范围",
       "priority": "high|medium|low",
       "relatedSections": ["1.1", "1.2"]
     }
@@ -1470,9 +1645,10 @@ ${existingCaseNames || '无'}
 \`\`\`
 
 ## 重要提示
-- 模块数量控制在3-6个，太多会导致规划过于分散
+- 场景数量控制在3-6个，太多会导致规划过于分散
 - 优先级判断：功能性 > 权限 > 布局文案
-- 每个模块要有清晰的测试边界，避免重叠
+- 每个场景要有清晰的测试边界，避免重叠
+- 场景名称应该具体明确，如"用户登录场景"、"订单查询场景"等
 
 ${isModifyMode ? `
 ## ⚠️ 修改页面模式特别说明
@@ -1515,7 +1691,7 @@ ${isModifyMode ? `
    - ❌ 供应商筛选测试（未变更）
 ` : ''}`;
 
-    const userPrompt = `请分析以下需求文档，拆分出合适的测试模块：
+    const userPrompt = `请分析以下需求文档，拆分出合适的测试场景：
 
 ## 需求文档
 ${requirementDoc}
@@ -1523,39 +1699,33 @@ ${requirementDoc}
 ${isModifyMode ? `
 ⚠️ **这是修改页面模式，请严格遵守以下规则：**
 1. 从需求文档中找到【变更摘要】章节
-2. 只针对 🆕 新增功能 和 ✏️ 修改功能 生成测试模块
+2. 只针对 🆕 新增功能 和 ✏️ 修改功能 生成测试场景
 3. 完全忽略 ➖ 原有功能（未变更）部分
-4. 测试模块命名要明确标注是"新增"还是"修改"
+4. 测试场景命名要明确标注是"新增"还是"修改"
 ` : ''}
-请识别页面类型，并根据上述原则拆分测试模块。直接输出JSON格式，不要其他说明文字。`;
+请识别页面类型，并根据上述原则拆分测试场景。直接输出JSON格式，不要其他说明文字。`;
 
     try {
-      console.log('🤖 正在调用AI进行测试模块拆分...');
+      console.log('🤖 正在调用AI进行测试场景拆分...');
       const aiResponse = await this.callAI(systemPrompt, userPrompt, 4000);
 
       // 解析JSON
-      let jsonText = aiResponse.trim();
-      const jsonMatch = jsonText.match(/```(?:json)?\n?([\s\S]*?)\n?```/) || jsonText.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        jsonText = jsonMatch[1] || jsonMatch[0];
-      }
+      const parsed = this.parseAIJsonResponse(aiResponse, '测试场景拆分');
+      const scenarios: TestScenario[] = parsed.scenarios || [];
 
-      const parsed = JSON.parse(jsonText);
-      const modules: TestModule[] = parsed.modules || [];
-
-      console.log(`✅ 成功拆分 ${modules.length} 个测试模块:`);
-      modules.forEach((m, i) => {
-        console.log(`   ${i + 1}. ${m.name} (${m.priority}) - 关联章节: ${m.relatedSections.join(', ')}`);
+      console.log(`✅ 成功拆分 ${scenarios.length} 个测试场景:`);
+      scenarios.forEach((s, i) => {
+        console.log(`   ${i + 1}. ${s.name} (${s.priority}) - 关联章节: ${s.relatedSections.join(', ')}`);
       });
 
-      return modules;
+      return scenarios;
     } catch (error: any) {
-      console.error('❌ 测试模块拆分失败:', error.message);
-      // 回退方案：返回基础模块
+      console.error('❌ 测试场景拆分失败:', error.message);
+      // 回退方案：返回基础场景
       return [
         {
-          id: 'module-1',
-          name: '完整功能测试',
+          id: 'scenario-1',
+          name: '完整功能测试场景',
           description: '验证所有功能点',
           priority: 'high',
           relatedSections: ['1.1']
@@ -1565,157 +1735,26 @@ ${isModifyMode ? `
   }
 
   /**
-   * 🆕 阶段2：生成测试目的
-   * 为指定测试模块生成多个测试目的
+   * 兼容性方法：保留旧接口名称
+   * @deprecated 使用 analyzeTestScenarios 代替
    */
-  async generateTestPurposes(
-    moduleId: string,
-    moduleName: string,
-    moduleDescription: string,
-    requirementDoc: string,
-    relatedSections: string[]
-  ): Promise<TestPurpose[]> {
-    console.log('\n╔═══════════════════════════════════════════════════════════════╗');
-    console.log(`║       🎯 阶段2：生成测试目的 - ${moduleName}             ║`);
-    console.log('╚═══════════════════════════════════════════════════════════════╝\n');
-
-    // 🆕 检测是否为修改页面模式
-    const hasChangeSummary = /##\s*变更摘要/.test(requirementDoc);
-    const isModifyMode = hasChangeSummary;
-
-    console.log(`   页面模式: ${isModifyMode ? '修改页面' : '新增页面'}`);
-
-    // 提取相关章节内容
-    const sectionContents = relatedSections.map(sectionId => {
-      const regex = new RegExp(`###\\s+${sectionId.replace('.', '\\.')}\\s+([\\s\\S]*?)(?=###\\s+[\\d.]+\\s+|$)`);
-      const match = requirementDoc.match(regex);
-      return match ? match[0] : '';
-    }).join('\n\n');
-
-    const systemPrompt = `你是一个测试策略规划专家。你的任务是为指定的测试模块生成多个测试目的（Test Purpose）。
-
-## 测试目的生成原则
-
-**测试目的是什么？**
-- 测试目的是一组相关测试点的集合，代表一个具体的测试意图
-- 例如："单条件查询验证"是一个测试目的，包含多个测试点（完整匹配、模糊查询、不存在的值等）
-
-**如何拆分测试目的？**
-1. 按功能点拆分（如：单条件查询、多条件组合查询）
-2. 按场景拆分（如：正常流程、异常流程、边界条件）
-3. 按优先级拆分（如：核心功能、辅助功能）
-4. 确保每个测试目的职责单一、边界清晰
-
-**数量建议：**
-- 简单模块：2-4个测试目的
-- 复杂模块：5-8个测试目的
-- 避免过度拆分
-
-## 输出格式
-
-请输出JSON格式：
-\`\`\`json
-{
-  "testPurposes": [
-    {
-      "id": "purpose-1-1",
-      "name": "测试目的名称",
-      "description": "测试目的详细描述，说明要验证什么",
-      "coverageAreas": "功能点1,功能点2,功能点3",
-      "estimatedTestPoints": 5,
-      "priority": "high|medium|low"
-    }
-  ]
-}
-\`\`\`
-
-${isModifyMode ? `
-## ⚠️ 修改页面模式特别说明
-
-当前需求文档包含【变更摘要】，说明这是一个修改页面。
-
-**你的任务：**
-1. **聚焦变更内容**
-   - 当前测试模块应该是针对变更功能的（🆕 新增 或 ✏️ 修改）
-   - 生成的测试目的应该聚焦于这些变更点
-   - 如果是新增功能，要完整测试
-   - 如果是修改功能，要重点测试变更的逻辑和影响
-
-2. **不要测试未变更功能**
-   - 不要为标记为 ➖ 原有功能（未变更）的部分生成测试目的
-   - 除非是必要的回归测试（验证修改没有破坏原有功能）
-` : ''}`;
-
-    const userPrompt = `请为以下测试模块生成测试目的：
-
-## 测试模块信息
-- 模块ID: ${moduleId}
-- 模块名称: ${moduleName}
-- 模块描述: ${moduleDescription}
-- 关联章节: ${relatedSections.join(', ')}
-
-## 相关需求内容
-${sectionContents}
-
-${isModifyMode ? `
-⚠️ **这是修改页面模式：**
-- 当前模块应该是针对变更功能的
-- 只为变更的功能点生成测试目的
-- 避免为未变更的原有功能生成测试目的
-` : ''}
-请根据需求内容，为该模块生成合适的测试目的。直接输出JSON格式，不要其他说明文字。`;
-
-    try {
-      console.log(`🤖 正在为模块"${moduleName}"生成测试目的...`);
-      const aiResponse = await this.callAI(systemPrompt, userPrompt, 4000);
-
-      // 解析JSON
-      let jsonText = aiResponse.trim();
-      const jsonMatch = jsonText.match(/```(?:json)?\n?([\s\S]*?)\n?```/) || jsonText.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        jsonText = jsonMatch[1] || jsonMatch[0];
-      }
-
-      const parsed = JSON.parse(jsonText);
-      const purposes: TestPurpose[] = parsed.testPurposes || [];
-
-      console.log(`✅ 成功生成 ${purposes.length} 个测试目的:`);
-      purposes.forEach((p, i) => {
-        console.log(`   ${i + 1}. ${p.name} (${p.priority}) - 预估${p.estimatedTestPoints}个测试点`);
-      });
-
-      return purposes;
-    } catch (error: any) {
-      console.error('❌ 测试目的生成失败:', error.message);
-      // 回退方案
-      return [
-        {
-          id: `purpose-${moduleId}-1`,
-          name: `${moduleName}基本功能验证`,
-          description: `验证${moduleName}的基本功能`,
-          coverageAreas: moduleName,
-          estimatedTestPoints: 3,
-          priority: 'high'
-        }
-      ];
-    }
+  async analyzeTestModules(requirementDoc: string): Promise<TestModule[]> {
+    return this.analyzeTestScenarios(requirementDoc);
   }
 
   /**
-   * 🆕 阶段3：生成测试点
-   * 为指定测试目的生成详细的测试点
+   * 🆕 阶段2：生成测试点
+   * 为指定测试场景生成多个测试点
    */
-  async generateTestPoints(
-    purposeId: string,
-    purposeName: string,
-    purposeDescription: string,
+  async generateTestPointsForScenario(
+    scenarioId: string,
+    scenarioName: string,
+    scenarioDescription: string,
     requirementDoc: string,
-    systemName: string,
-    moduleName: string,
     relatedSections: string[]
-  ): Promise<TestCase> {
+  ): Promise<TestPoint[]> {
     console.log('\n╔═══════════════════════════════════════════════════════════════╗');
-    console.log(`║       🎯 阶段3：生成测试点 - ${purposeName}             ║`);
+    console.log(`║       🎯 阶段2：生成测试点 - ${scenarioName}             ║`);
     console.log('╚═══════════════════════════════════════════════════════════════╝\n');
 
     // 🆕 检测是否为修改页面模式
@@ -1731,106 +1770,7 @@ ${isModifyMode ? `
       return match ? match[0] : '';
     }).join('\n\n');
 
-    // 🔍 查询知识库（RAG增强）- 🔥 使用系统特定的知识库
-    console.log(`\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
-    console.log(`📚 [知识库RAG] 开始检索相关知识...`);
-    console.log(`   🎯 目标系统: ${systemName || '默认'}`);
-    console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
-
-    let knowledgeContext = '';
-    try {
-      // 🔥 获取系统特定的知识库实例
-      const knowledgeBase = this.getKnowledgeBase(systemName);
-      console.log(`✅ 知识库实例已创建（系统：${systemName || '默认'}），开始RAG检索...`);
-      try {
-        console.log(`🔍 [RAG-Step1] 准备查询参数:`);
-        console.log(`   📌 测试目的: "${purposeName}"`);
-        console.log(`   📌 描述: "${purposeDescription}"`);
-        console.log(`   📌 内容长度: ${sectionContents.length}字符 (取前500字作为查询上下文)`);
-        console.log(`   📌 检索参数: topK=3, scoreThreshold=0.5`);
-
-        const queryText = `${purposeName}\n${purposeDescription}\n${sectionContents.substring(0, 500)}`;
-        console.log(`   📌 实际查询文本预览: ${queryText.substring(0, 150)}...`);
-
-        console.log(`\n🔍 [RAG-Step2] 调用Qdrant向量数据库进行语义检索...`);
-        const queryStartTime = Date.now();
-
-        const knowledgeResults = await knowledgeBase.searchByCategory({
-          query: queryText,
-          topK: 3,
-          scoreThreshold: 0.5
-        });
-
-        const queryDuration = Date.now() - queryStartTime;
-        console.log(`✅ [RAG-Step2] 向量检索完成 (耗时: ${queryDuration}ms)`);
-
-        const totalKnowledge =
-          knowledgeResults.businessRules.length +
-          knowledgeResults.testPatterns.length +
-          knowledgeResults.pitfalls.length +
-          knowledgeResults.riskScenarios.length;
-
-        if (totalKnowledge > 0) {
-          console.log(`\n📊 [RAG-Step3] 知识检索结果汇总:`);
-          console.log(`   ✅ 业务规则: ${knowledgeResults.businessRules.length}条`);
-          if (knowledgeResults.businessRules.length > 0) {
-            knowledgeResults.businessRules.forEach((r: any, i: number) => {
-              console.log(`      ${i+1}. "${r.knowledge.title}" (相似度: ${(r.score * 100).toFixed(1)}%)`);
-            });
-          }
-
-          console.log(`   ✅ 测试模式: ${knowledgeResults.testPatterns.length}条`);
-          if (knowledgeResults.testPatterns.length > 0) {
-            knowledgeResults.testPatterns.forEach((r: any, i: number) => {
-              console.log(`      ${i+1}. "${r.knowledge.title}" (相似度: ${(r.score * 100).toFixed(1)}%)`);
-            });
-          }
-
-          console.log(`   ✅ 历史踩坑点: ${knowledgeResults.pitfalls.length}条`);
-          if (knowledgeResults.pitfalls.length > 0) {
-            knowledgeResults.pitfalls.forEach((r: any, i: number) => {
-              console.log(`      ${i+1}. "${r.knowledge.title}" (相似度: ${(r.score * 100).toFixed(1)}%)`);
-            });
-          }
-
-          console.log(`   ✅ 资损风险场景: ${knowledgeResults.riskScenarios.length}条`);
-          if (knowledgeResults.riskScenarios.length > 0) {
-            knowledgeResults.riskScenarios.forEach((r: any, i: number) => {
-              console.log(`      ${i+1}. "${r.knowledge.title}" (相似度: ${(r.score * 100).toFixed(1)}%)`);
-            });
-          }
-
-          console.log(`   📈 总计检索到: ${totalKnowledge}条相关知识`);
-
-          console.log(`\n🔧 [RAG-Step4] 格式化知识上下文，准备注入AI提示词...`);
-          knowledgeContext = this.buildKnowledgeContext(knowledgeResults);
-          console.log(`✅ [RAG-Step4] 知识上下文构建完成 (长度: ${knowledgeContext.length}字符)`);
-
-          console.log(`\n🎯 [RAG模式] 将使用知识库增强模式生成测试用例`);
-        } else {
-          console.log(`\n⚠️  [RAG-Step3] 未检索到相关知识 (所有知识相似度 < 0.5)`);
-          console.log(`   💡 这可能是因为:`);
-          console.log(`      - 知识库中没有与"${purposeName}"相关的内容`);
-          console.log(`      - 相似度阈值0.5设置过高`);
-          console.log(`      - 需要添加更多业务知识到知识库`);
-          console.log(`\n🔄 [降级处理] 切换到普通模式生成（不使用知识库增强）`);
-        }
-      } catch (error: any) {
-        console.error(`\n❌ [RAG-Error] 知识库查询异常:`);
-        console.error(`   错误类型: ${error.name}`);
-        console.error(`   错误信息: ${error.message}`);
-        console.error(`   错误堆栈: ${error.stack}`);
-        console.warn(`\n🔄 [降级处理] 自动切换到普通模式生成`);
-      }
-    } catch (outerError: any) {
-      console.error(`❌ [RAG-Error] 知识库初始化失败:`);
-      console.error(`   错误信息: ${outerError.message}`);
-      console.warn(`\n🔄 [降级处理] 自动切换到普通模式生成`);
-    }
-
-    console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`);
-
-    const systemPrompt = `你是一个测试用例设计专家。你的任务是为指定的测试目的生成详细的测试点。
+    const systemPrompt = `你是一个测试用例设计专家。你的任务是为指定的测试场景生成多个测试点（Test Point）。
 
 ## 测试点生成原则
 
@@ -1850,163 +1790,396 @@ ${isModifyMode ? `
 - medium：常用功能、数据校验
 - low：UI展示、文案校验
 
-## 测试点命名规范 ⚠️ 重要！
-
-**测试点名称必须与测试目的保持一致，不要偏离主题！**
-
-### 命名示例对比
-
-**1. 如果测试目的是"多条件组合查询验证"**
-- ✅ 正确示例：
-  - "客户名称+订单编号组合查询"
-  - "时间范围+渠道类型组合查询"
-  - "三个及以上条件组合查询"
-- ❌ 错误示例：
-  - "客户名称模糊匹配查询" （这是单条件，不是组合）
-  - "订单编号精确查询" （这是单条件，不是组合）
-
-**2. 如果测试目的是"边界值和异常输入处理"**
-- ✅ 正确示例：
-  - "客户名称长度边界值测试（0字符、1字符、最大长度）"
-  - "订单编号特殊字符输入测试"
-  - "时间范围空值输入测试"
-- ❌ 错误示例：
-  - "客户名称输入测试" （没有体现边界值）
-  - "订单编号查询" （没有体现异常输入）
-
-**3. 如果测试目的是"单条件查询验证"**
-- ✅ 正确示例：
-  - "客户名称模糊匹配查询"
-  - "订单编号精确匹配查询"
-  - "时间范围筛选查询"
-- ❌ 错误示例：
-  - "客户名称+订单编号查询" （这是组合查询，不是单条件）
-
-### 核心原则
-- 测试点名称要具体、明确，直接反映测试目的的核心关注点
-- 如果测试目的强调"组合"，测试点必须测试多个条件的组合
-- 如果测试目的强调"边界值"，测试点必须测试最小值、最大值、临界值
-- 如果测试目的强调"异常"，测试点必须测试空值、特殊字符、超长输入
+**数量建议：**
+- 简单场景：3-5个测试点
+- 复杂场景：6-10个测试点
+- 根据场景复杂度决定，不要人为限制
 
 ## 输出格式
 
 请输出JSON格式：
 \`\`\`json
 {
-  "testCase": {
-    "name": "测试用例名称",
-    "testPurpose": "测试目的",
-    "system": "系统名",
-    "module": "模块名",
-    "sectionId": "1.1",
-    "sectionName": "章节名称",
-    "priority": "high|medium|low",
-    "tags": ["标签1", "标签2"],
-    "coverageAreas": "功能点1,功能点2",
-    "testPoints": [
-      {
-        "testPurpose": "测试目的",
-        "testPoint": "测试点名称",
-        "steps": "1. 步骤1\\n2. 步骤2\\n3. 步骤3",
-        "expectedResult": "预期结果描述",
-        "riskLevel": "high|medium|low"
-      }
-    ],
-    "steps": "汇总步骤",
-    "assertions": "汇总预期结果",
-    "preconditions": "前置条件",
-    "testData": "测试数据"
-  }
+  "testPoints": [
+    {
+      "testPoint": "测试点名称",
+      "description": "测试点描述（简要说明该测试点的目的和范围）",
+      "coverageAreas": "覆盖范围（如：查询功能、数据校验、权限控制等）",
+      "estimatedTestCases": 1,
+      "steps": "1. 步骤1\\n2. 步骤2\\n3. 步骤3",
+      "expectedResult": "预期结果描述",
+      "riskLevel": "high|medium|low"
+    }
+  ]
 }
 \`\`\`
 
-## 重要提示
-- 测试点数量根据测试目的的复杂度决定，通常3-10个
-- 每个测试点必须包含 testPurpose 字段
-- 步骤要清晰具体，避免模糊描述
+## 字段说明
+- **testPoint**: 测试点名称，简洁明确
+- **description**: 测试点描述，说明该测试点的测试目的和测试范围
+- **coverageAreas**: 覆盖范围，说明该测试点覆盖的功能点（如：查询条件、数据展示、操作按钮等）
+- **estimatedTestCases**: 预估该测试点会生成多少个测试用例（根据以下原则预估：简单测试点1个，中等测试点2-3个，复杂测试点3-5个）
+- **steps**: 测试步骤，详细的操作步骤
+- **expectedResult**: 预期结果，期望的测试结果
+- **riskLevel**: 风险等级
 
 ${isModifyMode ? `
 ## ⚠️ 修改页面模式特别说明
 
-当前需求文档包含【变更摘要】，这是一个修改页面。
+当前需求文档包含【变更摘要】，说明这是一个修改页面。
 
 **你的任务：**
-1. **聚焦变更功能**
-   - 当前测试目的应该是针对变更功能的（🆕 新增 或 ✏️ 修改）
-   - 生成的测试点应该重点测试这些变更
-   - 如果是新增字段/按钮：测试其显示、交互、验证规则
-   - 如果是修改逻辑：测试新逻辑的正确性、边界条件、与原有功能的兼容性
+1. **聚焦变更内容**
+   - 当前测试模块应该是针对变更功能的（🆕 新增 或 ✏️ 修改）
+   - 生成的测试目的应该聚焦于这些变更点
+   - 如果是新增功能，要完整测试
+   - 如果是修改功能，要重点测试变更的逻辑和影响
 
-2. **回归测试**
-   - 如果变更可能影响相关功能，需要设计回归测试点
-   - 验证修改没有破坏原有功能
-
-3. **不要为未变更功能生成测试点**
-   - 不要为标记为 ➖ 原有功能（未变更）的部分生成测试点
+2. **不要测试未变更功能**
+   - 不要为标记为 ➖ 原有功能（未变更）的部分生成测试目的
+   - 除非是必要的回归测试（验证修改没有破坏原有功能）
 ` : ''}`;
 
-    const userPrompt = `请为以下测试目的生成详细的测试点：
+    const userPrompt = `请为以下测试场景生成测试点：
 
-## 测试目的信息
-- 目的ID: ${purposeId}
-- 目的名称: ${purposeName}
-- 目的描述: ${purposeDescription}
-- 系统名称: ${systemName}
-- 模块名称: ${moduleName}
+## 测试场景信息
+- 场景ID: ${scenarioId}
+- 场景名称: ${scenarioName}
+- 场景描述: ${scenarioDescription}
 - 关联章节: ${relatedSections.join(', ')}
-
-## ⚠️ 特别提醒
-
-当前测试目的是："${purposeName}"
-
-**请确保每个测试点的名称都紧密围绕"${purposeName}"设计，不要偏离主题！**
-
-例如：
-- 如果测试目的强调"组合查询"，测试点必须测试多个条件的组合（如"客户名称+订单编号组合查询"）
-- 如果测试目的强调"边界值"，测试点必须测试最小值、最大值、临界值（如"客户名称长度边界值测试"）
-- 如果测试目的强调"异常输入"，测试点必须测试空值、特殊字符、超长输入（如"订单编号特殊字符输入测试"）
-- 如果测试目的强调"单条件查询"，测试点只能测试单个条件（如"客户名称模糊匹配查询"）
 
 ## 相关需求内容
 ${sectionContents}
 
-${knowledgeContext ? `\n## 🔍 参考知识库（测试经验）\n${knowledgeContext}\n` : ''}
-
 ${isModifyMode ? `
 ⚠️ **这是修改页面模式：**
-- 当前测试目的应该是针对变更功能的
-- 重点测试 🆕 新增 和 ✏️ 修改 的功能点
-- 避免为 ➖ 原有功能（未变更）生成测试点
-- 如需回归测试，明确标注是验证变更的影响
+- 当前场景应该是针对变更功能的
+- 只为变更的功能点生成测试点
+- 避免为未变更的原有功能生成测试点
 ` : ''}
-请生成详细的测试点。直接输出JSON格式，不要其他说明文字。`;
+请根据需求内容，为该场景生成详细的测试点。直接输出JSON格式，不要其他说明文字。`;
 
     try {
-      console.log(`🤖 正在为测试目的"${purposeName}"生成测试点...`);
-      const aiResponse = await this.callAI(systemPrompt, userPrompt, 6000);
+      console.log(`🤖 正在为场景"${scenarioName}"生成测试点...`);
+      const aiResponse = await this.callAI(systemPrompt, userPrompt, 4000);
 
       // 解析JSON
-      let jsonText = aiResponse.trim();
-      const jsonMatch = jsonText.match(/```(?:json)?\n?([\s\S]*?)\n?```/) || jsonText.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        jsonText = jsonMatch[1] || jsonMatch[0];
-      }
+      const parsed = this.parseAIJsonResponse(aiResponse, '测试点生成');
+      const testPoints: TestPoint[] = parsed.testPoints || [];
 
-      const parsed = JSON.parse(jsonText);
-      const testCase: TestCase = parsed.testCase;
+      // 为每个测试点添加场景信息
+      testPoints.forEach(tp => {
+        tp.testScenario = scenarioName;
+      });
 
-      // 补充信息
-      testCase.system = systemName;
-      testCase.module = moduleName;
+      console.log(`✅ 成功生成 ${testPoints.length} 个测试点:`);
+      testPoints.forEach((tp, i) => {
+        console.log(`   ${i + 1}. ${tp.testPoint} (${tp.riskLevel || 'medium'})`);
+      });
 
-      console.log(`✅ 成功生成测试用例: ${testCase.name}`);
-      console.log(`   测试点数量: ${testCase.testPoints?.length || 0}`);
-
-      return testCase;
+      return testPoints;
     } catch (error: any) {
       console.error('❌ 测试点生成失败:', error.message);
-      throw error;
+      // 回退方案
+      return [
+        {
+          testScenario: scenarioName,
+          testPoint: `${scenarioName}基本功能验证`,
+          description: `${scenarioName}的基本功能验证测试点`,
+          coverageAreas: scenarioName,
+          estimatedTestCases: 1,
+          steps: '1. 准备测试环境和数据\n2. 执行相关操作\n3. 验证结果',
+          expectedResult: '功能正常运行',
+          riskLevel: 'medium'
+        }
+      ];
     }
+  }
+
+  /**
+   * 兼容性方法：保留旧接口名称
+   * @deprecated 使用 generateTestPointsForScenario 代替
+   */
+  async generateTestPurposes(
+    moduleId: string,
+    moduleName: string,
+    moduleDescription: string,
+    requirementDoc: string,
+    relatedSections: string[]
+  ): Promise<TestPurpose[]> {
+    // 转换为旧格式（兼容性）
+    const testPoints = await this.generateTestPointsForScenario(moduleId, moduleName, moduleDescription, requirementDoc, relatedSections);
+    return testPoints.map((tp, index) => ({
+      id: `purpose-${moduleId}-${index + 1}`,
+      name: tp.testPoint,
+      description: tp.expectedResult,
+      coverageAreas: tp.testScenario || '',
+      estimatedTestPoints: 1,
+      priority: (tp.riskLevel === 'high' ? 'high' : tp.riskLevel === 'low' ? 'low' : 'medium') as 'high' | 'medium' | 'low'
+    }));
+  }
+
+  /**
+   * 🆕 阶段3：为单个测试点生成测试用例
+   * 一个测试点可能对应多个测试用例（不同场景、不同数据等）
+   */
+  async generateTestCaseForTestPoint(
+    testPoint: TestPoint,
+    scenarioId: string,
+    scenarioName: string,
+    scenarioDescription: string,
+    requirementDoc: string,
+    systemName: string,
+    moduleName: string,
+    relatedSections: string[]
+  ): Promise<TestCase[]> {
+    console.log('\n╔═══════════════════════════════════════════════════════════════╗');
+    console.log(`║       🎯 阶段3：为测试点生成测试用例 - ${testPoint.testPoint}             ║`);
+    console.log('╚═══════════════════════════════════════════════════════════════╝\n');
+
+    console.log(`   测试点: ${testPoint.testPoint}`);
+    console.log(`   场景: ${scenarioName}`);
+    console.log(`   系统: ${systemName || '未指定'}`);
+    console.log(`   模块: ${moduleName || '未指定'}`);
+
+    // 提取章节信息
+    const sectionId = relatedSections[0] || '1.1';
+    const sectionName = scenarioName;
+
+    // 🔍 查询知识库（RAG增强）
+    let knowledgeContext = '';
+    try {
+      const knowledgeBase = this.getKnowledgeBase(systemName);
+      const queryText = `${testPoint.testPoint}\n${testPoint.steps}\n${scenarioName}`;
+      const knowledgeResults = await knowledgeBase.searchByCategory({
+        query: queryText,
+        topK: 3,
+        scoreThreshold: 0.5
+      });
+      knowledgeContext = this.buildKnowledgeContext(knowledgeResults);
+    } catch (error) {
+      console.warn('知识库查询失败，使用普通模式');
+    }
+
+    // 🆕 检测是否为修改页面模式
+    const hasChangeSummary = /##\s*变更摘要/.test(requirementDoc);
+    const isModifyMode = hasChangeSummary;
+
+    const systemPrompt = `你是一个测试用例设计专家。你的任务是为指定的测试点生成一个或多个测试用例。
+
+## 核心概念
+
+**测试用例（TestCase）是什么？**
+- 测试用例是基于测试点的具体执行方案
+- 一个测试点可能对应多个测试用例（不同测试数据、不同场景、不同前置条件等）
+- 每个测试用例包含：用例名称、测试步骤、预期结果、前置条件、测试数据等
+
+**何时生成多个测试用例？**
+- 测试点涉及多种测试数据（如：正常值、边界值、异常值）→ 通常生成2-3个用例
+- 测试点涉及多种场景（如：不同用户角色、不同权限）→ 通常生成2-3个用例
+- 测试点需要不同的前置条件 → 通常生成2个用例
+- 简单测试点（单一场景、单一数据）→ 通常生成1个用例
+- 复杂测试点（多种组合）→ 通常生成3-5个用例
+
+**预估测试用例数量的原则：**
+- 分析测试点的复杂度：步骤数量、涉及的数据类型、场景数量
+- 简单测试点（3步以内，单一场景）：预估1个用例
+- 中等测试点（4-6步，2-3种情况）：预估2-3个用例
+- 复杂测试点（7步以上，多种组合）：预估3-5个用例
+
+## 输出格式
+
+请输出JSON格式：
+\`\`\`json
+{
+  "testCases": [
+    {
+      "name": "测试用例名称",
+      "description": "测试用例描述",
+      "testScenario": "测试场景名称",
+      "testPoint": "测试点名称",
+      "system": "系统名",
+      "module": "模块名",
+      "sectionId": "1.1",
+      "sectionName": "章节名称",
+      "priority": "high|medium|low",
+      "tags": ["标签1", "标签2"],
+      "preconditions": "前置条件",
+      "testData": "测试数据",
+      "steps": "详细的测试步骤（基于测试点的steps扩展）",
+      "assertions": "详细的预期结果（基于测试点的expectedResult扩展）"
+    }
+  ]
+}
+\`\`\`
+
+## 重要提示
+- 测试用例的步骤应该基于测试点的steps，但可以更详细
+- 测试用例的预期结果应该基于测试点的expectedResult，但可以更具体
+- 如果测试点比较简单，通常生成1个测试用例
+- 如果测试点涉及多种情况，可以生成2-3个测试用例
+
+${knowledgeContext}
+
+${isModifyMode ? `
+## ⚠️ 修改页面模式特别说明
+当前需求文档包含【变更摘要】，这是一个修改页面。
+生成的测试用例应该聚焦于变更的功能点。
+` : ''}`;
+
+    const userPrompt = `请为以下测试点生成测试用例：
+
+## 测试点信息
+- 测试点名称: ${testPoint.testPoint}
+- 测试步骤: ${testPoint.steps}
+- 预期结果: ${testPoint.expectedResult}
+- 风险等级: ${testPoint.riskLevel || 'medium'}
+
+## 测试场景信息
+- 场景ID: ${scenarioId}
+- 场景名称: ${scenarioName}
+- 场景描述: ${scenarioDescription}
+- 系统名称: ${systemName}
+- 模块名称: ${moduleName}
+- 关联章节: ${relatedSections.join(', ')}
+
+## 相关需求内容
+${requirementDoc.substring(0, 2000)}
+
+请基于测试点的步骤和预期结果，生成详细的测试用例。如果测试点涉及多种情况，可以生成多个测试用例。直接输出JSON格式，不要其他说明文字。`;
+
+    try {
+      console.log(`🤖 正在为测试点"${testPoint.testPoint}"生成测试用例...`);
+      const aiResponse = await this.callAI(systemPrompt, userPrompt, 4000);
+
+      // 解析JSON
+      const parsed = this.parseAIJsonResponse(aiResponse, '测试用例生成');
+      const testCases: TestCase[] = parsed.testCases || [];
+
+      // 补充信息
+      testCases.forEach(tc => {
+        tc.system = systemName;
+        tc.module = moduleName;
+        tc.testScenario = scenarioName;
+        tc.testScenarioId = scenarioId;
+        tc.sectionId = sectionId;
+        tc.sectionName = sectionName;
+        
+        // 确保每个测试用例都包含关联的测试点信息
+        if (!tc.testPoints) {
+          tc.testPoints = [{
+            ...testPoint,
+            testScenario: scenarioName
+          }];
+        }
+      });
+
+      console.log(`✅ 成功生成 ${testCases.length} 个测试用例`);
+      testCases.forEach((tc, i) => {
+        console.log(`   ${i + 1}. ${tc.name}`);
+      });
+
+      return testCases;
+    } catch (error: any) {
+      console.error('❌ 生成测试用例失败:', error.message);
+      // 回退方案：生成一个基础测试用例
+      const sectionId = relatedSections[0] || '1.1';
+      return [{
+        name: `${sectionId}-${testPoint.testPoint}`,
+        description: `基于测试点"${testPoint.testPoint}"的测试用例`,
+        testScenario: scenarioName,
+        testScenarioId: scenarioId,
+        testPoint: testPoint.testPoint,
+        system: systemName,
+        module: moduleName,
+        sectionId,
+        sectionName: scenarioName,
+        priority: testPoint.riskLevel === 'high' ? 'high' : testPoint.riskLevel === 'low' ? 'low' : 'medium',
+        tags: [scenarioName, 'AI生成'],
+        preconditions: '准备测试环境和数据',
+        testData: '使用系统提供的测试数据',
+        steps: testPoint.steps,
+        assertions: testPoint.expectedResult,
+        testPoints: [{
+          ...testPoint,
+          testScenario: scenarioName
+        }]
+      }];
+    }
+  }
+
+  /**
+   * 🆕 阶段3：为场景的所有测试点批量生成测试用例
+   * 兼容性方法：保留旧接口
+   */
+  async generateTestCase(
+    scenarioId: string,
+    scenarioName: string,
+    scenarioDescription: string,
+    testPoints: TestPoint[],
+    requirementDoc: string,
+    systemName: string,
+    moduleName: string,
+    relatedSections: string[]
+  ): Promise<TestCase> {
+    // 如果只有一个测试点，直接生成
+    if (testPoints.length === 1) {
+      const testCases = await this.generateTestCaseForTestPoint(
+        testPoints[0],
+        scenarioId,
+        scenarioName,
+        scenarioDescription,
+        requirementDoc,
+        systemName,
+        moduleName,
+        relatedSections
+      );
+      return testCases[0]; // 返回第一个测试用例
+    }
+
+    // 多个测试点：为第一个测试点生成测试用例（兼容旧逻辑）
+    const testCases = await this.generateTestCaseForTestPoint(
+      testPoints[0],
+      scenarioId,
+      scenarioName,
+      scenarioDescription,
+      requirementDoc,
+      systemName,
+      moduleName,
+      relatedSections
+    );
+    return testCases[0];
+  }
+
+  /**
+   * 根据测试点列表确定优先级
+   */
+  private determinePriority(testPoints: TestPoint[]): string {
+    const highRiskCount = testPoints.filter(tp => tp.riskLevel === 'high').length;
+    const mediumRiskCount = testPoints.filter(tp => tp.riskLevel === 'medium').length;
+    
+    if (highRiskCount > 0) return 'high';
+    if (mediumRiskCount > testPoints.length / 2) return 'medium';
+    return 'low';
+  }
+
+  /**
+   * 兼容性方法：保留旧接口名称
+   * @deprecated 使用 generateTestCase 代替
+   */
+  async generateTestPoints(
+    purposeId: string,
+    purposeName: string,
+    purposeDescription: string,
+    requirementDoc: string,
+    systemName: string,
+    moduleName: string,
+    relatedSections: string[]
+  ): Promise<TestCase> {
+    // 先生成测试点
+    const testPoints = await this.generateTestPointsForScenario(purposeId, purposeName, purposeDescription, requirementDoc, relatedSections);
+    // 再生成测试用例
+    return this.generateTestCase(purposeId, purposeName, purposeDescription, testPoints, requirementDoc, systemName, moduleName, relatedSections);
   }
 
   /**
@@ -2227,6 +2400,75 @@ ${requirementDoc.substring(0, 1500)}...
       return '5. 所有验证点均通过';
     }
     return '5. 补充验证项符合要求';
+  }
+
+  /**
+   * 🔧 解析AI返回的JSON响应（增强错误处理和修复）
+   */
+  private parseAIJsonResponse(aiResponse: string, context: string = 'JSON解析'): any {
+    let jsonText = aiResponse.trim();
+    
+    // 1. 提取JSON代码块
+    const jsonMatch = jsonText.match(/```(?:json)?\n?([\s\S]*?)\n?```/) || jsonText.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      jsonText = jsonMatch[1] || jsonMatch[0];
+    }
+
+    // 2. 清理JSON文本
+    jsonText = jsonText.trim();
+    jsonText = jsonText.replace(/^```json\s*/i, '').replace(/^```\s*/, '').replace(/\s*```\s*$/, '');
+    
+    // 3. 修复常见的JSON问题
+    // 修复未转义的换行符（在字符串值中）
+    jsonText = jsonText.replace(/("(?:[^"\\]|\\.)*")\s*\n\s*("(?:[^"\\]|\\.)*")/g, '$1,\n$2');
+    // 修复对象之间的逗号
+    jsonText = jsonText.replace(/(\})\s*\n\s*(\{)/g, '$1,\n$2');
+    // 移除注释
+    jsonText = jsonText.replace(/\/\*[\s\S]*?\*\//g, '');
+    jsonText = jsonText.replace(/\/\/.*$/gm, '');
+    
+    // 4. 记录解析信息
+    console.log(`📋 [${context}] 提取的JSON文本长度: ${jsonText.length} 字符`);
+    
+    // 5. 尝试解析
+    try {
+      return JSON.parse(jsonText);
+    } catch (parseError: any) {
+      console.error(`❌ [${context}] JSON解析失败: ${parseError.message}`);
+      
+      // 显示错误位置
+      const errorPos = parseInt(parseError.message.match(/position (\d+)/)?.[1] || '0');
+      if (errorPos > 0 && errorPos < jsonText.length) {
+        const start = Math.max(0, errorPos - 100);
+        const end = Math.min(jsonText.length, errorPos + 100);
+        console.error(`📋 错误位置附近的文本:`);
+        console.error(`   ${jsonText.substring(start, end)}`);
+        console.error(`   ${' '.repeat(Math.min(100, errorPos - start))}^`);
+      }
+      
+      // 尝试更激进的修复（针对testPoints数组）
+      if (jsonText.includes('testPoints')) {
+        console.log(`🔧 [${context}] 尝试修复testPoints数组格式...`);
+        const testPointsMatch = jsonText.match(/"testPoints"\s*:\s*\[([\s\S]*?)\]/);
+        if (testPointsMatch) {
+          let testPointsContent = testPointsMatch[1];
+          // 确保数组元素之间有逗号
+          testPointsContent = testPointsContent.replace(/(\})\s*(\{)/g, '$1,\n$2');
+          // 确保最后一个元素后没有逗号
+          testPointsContent = testPointsContent.replace(/,\s*(\]\s*[,}])/g, '$1');
+          jsonText = jsonText.replace(/"testPoints"\s*:\s*\[[\s\S]*?\]/, `"testPoints": [${testPointsContent}]`);
+          
+          // 再次尝试解析
+          try {
+            return JSON.parse(jsonText);
+          } catch (retryError: any) {
+            console.error(`❌ [${context}] JSON修复后仍然失败: ${retryError.message}`);
+          }
+        }
+      }
+      
+      throw new Error(`${context}失败: ${parseError.message}。原始响应长度: ${aiResponse.length}字符`);
+    }
   }
 
   /**
@@ -2509,4 +2751,4 @@ ${projectInfo.constraints.map((constraint, i) => `${i + 1}. ${constraint}`).join
   }
 }
 
-export const functionalTestCaseAIService = new FunctionalTestCaseAIService();
+// 延迟初始化：使用 new FunctionalTestCaseAIService() 创建实例

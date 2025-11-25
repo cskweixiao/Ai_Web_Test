@@ -1,3 +1,32 @@
+// 🔥 首先加载环境变量（必须在其他导入之前）
+import dotenv from 'dotenv';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
+
+// ES模块中获取__dirname
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+// 加载 .env 文件（从项目根目录）
+const envPath = join(__dirname, '../.env');
+const envResult = dotenv.config({ path: envPath });
+
+if (envResult.error) {
+  console.warn('⚠️ 加载 .env 文件失败:', envResult.error.message);
+  console.warn('   尝试加载路径:', envPath);
+} else {
+  console.log('✅ 环境变量已从 .env 文件加载');
+  // 验证关键环境变量
+  if (!process.env.DATABASE_URL) {
+    console.warn('⚠️ DATABASE_URL 未在 .env 文件中找到');
+  } else {
+    // 隐藏敏感信息，只显示连接字符串的前部分
+    const dbUrl = process.env.DATABASE_URL;
+    const maskedUrl = dbUrl.replace(/:([^:@]+)@/, ':****@');
+    console.log('   DATABASE_URL:', maskedUrl);
+  }
+}
+
 import express from 'express';
 import cors from 'cors';
 import path from 'path';
@@ -37,13 +66,14 @@ import { PlaywrightMcpClient } from './services/mcpClient.js';
 import { ScreenshotService } from './services/screenshotService.js';
 import { PrismaClient } from '../src/generated/prisma/index.js';
 import { DatabaseService } from './services/databaseService.js';
+import { modelRegistry } from '../src/services/modelRegistry.js';
 import { QueueService } from './services/queueService.js';
 import { StreamService } from './services/streamService.js';
 import { EvidenceService } from './services/evidenceService.js';
 import streamRoutes, { initializeStreamService } from './routes/stream.js';
 import evidenceRoutes, { initializeEvidenceService } from './routes/evidence.js';
 import queueRoutes, { initializeQueueService } from './routes/queue.js';
-import crypto from 'crypto';
+// crypto 已移除，不再需要（密码加密改用 bcrypt）
 import { testRunStore } from '../lib/TestRunStore.js';
 import fetch from 'node-fetch';
 import axios from 'axios';
@@ -51,36 +81,46 @@ import os from 'os';
 import fs from 'fs';
 
 const app = express();
-const PORT = process.env.PORT || 4001;
+const PORT = process.env.PORT || 3001;
 
-// 🔥 使用数据库服务替代直接创建PrismaClient
-const databaseService = DatabaseService.getInstance({
-  enableLogging: process.env.NODE_ENV === 'development',
-  logLevel: 'error',
-  maxConnections: 10
-});
-const prisma = databaseService.getClient();
+// 🔥 延迟初始化数据库服务（在 startServer 中初始化）
+let databaseService: DatabaseService;
+let prisma: PrismaClient;
 
 // 🔥 新增：日志收集器
-const logFile = path.join(process.cwd(), 'debug-execution.log');
+const logFile = path.join(process.cwd(), '/logs/debug-execution.log');
+
+// 🔥 格式化时间为本地时间（YYYY-MM-DD HH:mm:ss.SSS）
+function formatLocalTime(date: Date = new Date()): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  const hours = String(date.getHours()).padStart(2, '0');
+  const minutes = String(date.getMinutes()).padStart(2, '0');
+  const seconds = String(date.getSeconds()).padStart(2, '0');
+  const milliseconds = String(date.getMilliseconds()).padStart(3, '0');
+  
+  return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}.${milliseconds}`;
+}
+
 function setupLogCollection() {
   const originalLog = console.log;
   const originalError = console.error;
   const originalWarn = console.warn;
   
   // 清空之前的日志
-  fs.writeFileSync(logFile, `=== 测试执行日志 ${new Date().toISOString()} ===\n`);
+  fs.writeFileSync(logFile, `=== 测试执行日志 ${formatLocalTime()} ===\n`);
   
   // 拦截console输出
   const appendLog = (level: string, args: unknown[]) => {
-    const timestamp = new Date().toISOString();
+    const timestamp = formatLocalTime();
     const message = args.map(arg =>
       typeof arg === 'object' ? JSON.stringify(arg, null, 2) : String(arg)
     ).join(' ');
 
     fs.promises.appendFile(logFile, `[${timestamp}] ${level}: ${message}
 `).catch(logError => {
-      originalError('?? ??????:', logError);
+      originalError('❌ 日志写入失败:', logError);
     });
   };
 
@@ -133,6 +173,11 @@ testRunStore.onChange((runId, testRun) => {
 // 自动初始化AI配置
 async function ensureAIConfiguration() {
   try {
+    // 确保 prisma 已初始化
+    if (!prisma) {
+      throw new Error('Prisma 客户端未初始化');
+    }
+    
     // 检查数据库中是否存在 app_settings 配置
     const existingSettings = await prisma.settings.findUnique({
       where: { key: 'app_settings' }
@@ -141,16 +186,30 @@ async function ensureAIConfiguration() {
     if (!existingSettings) {
       console.log('⚙️ 数据库中未找到AI配置，正在创建默认配置...');
 
-      // 从环境变量构建默认配置
+      // 从环境变量构建默认配置（使用正确的 llm 嵌套格式）
+      // 获取默认模型的 baseUrl
+      const defaultModelId = 'gpt-4o';
+      const defaultModel = modelRegistry.getModelById(defaultModelId);
+      const defaultBaseUrl = defaultModel?.customBaseUrl || process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1';
+      
       const defaultSettings = {
-        selectedModelId: 'gpt-4o', // 前端使用的模型ID
-        apiKey: process.env.OPENROUTER_API_KEY || '',
-        temperature: parseFloat(process.env.DEFAULT_TEMPERATURE || '0.3'),
-        maxTokens: parseInt(process.env.DEFAULT_MAX_TOKENS || '4000'),
-        baseUrl: process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1'
+        llm: {
+          selectedModelId: defaultModelId, // 前端使用的模型ID
+          apiKey: process.env.OPENROUTER_API_KEY || '',
+          baseUrl: defaultBaseUrl, // 🔥 添加 baseUrl
+          customConfig: {
+            temperature: parseFloat(process.env.DEFAULT_TEMPERATURE || '0.3'),
+            maxTokens: parseInt(process.env.DEFAULT_MAX_TOKENS || '2000')
+          }
+        },
+        system: {
+          timeout: 300,
+          maxConcurrency: 10,
+          logRetentionDays: 90
+        }
       };
 
-      if (!defaultSettings.apiKey) {
+      if (!defaultSettings.llm.apiKey) {
         console.warn('⚠️ 环境变量 OPENROUTER_API_KEY 未设置，AI功能可能无法正常使用');
       }
 
@@ -164,10 +223,10 @@ async function ensureAIConfiguration() {
       });
 
       console.log('✅ AI配置已自动初始化:', {
-        model: defaultSettings.selectedModelId,
-        hasApiKey: !!defaultSettings.apiKey,
-        temperature: defaultSettings.temperature,
-        maxTokens: defaultSettings.maxTokens
+        model: defaultSettings.llm.selectedModelId,
+        hasApiKey: !!defaultSettings.llm.apiKey,
+        temperature: defaultSettings.llm.customConfig.temperature,
+        maxTokens: defaultSettings.llm.customConfig.maxTokens
       });
     } else {
       console.log('✅ AI配置已存在于数据库中');
@@ -175,10 +234,17 @@ async function ensureAIConfiguration() {
       // 验证配置完整性
       try {
         const settings = JSON.parse(existingSettings.value || '{}');
-        if (!settings.apiKey) {
-          console.warn('⚠️ 数据库中的API Key为空，请通过前端设置页面配置');
+        console.log('🔍 当前模型配置:', settings);
+        
+        // 检查配置格式是否正确（是否有 llm 字段）
+        if (!settings.llm) {
+          console.warn('⚠️ 配置格式不正确，缺少 llm 字段，可能需要迁移');
         } else {
-          console.log(`✅ 当前使用模型: ${settings.selectedModelId || 'default'}`);
+          if (!settings.llm.apiKey) {
+            console.warn('⚠️ 数据库中的API Key为空，请通过前端设置页面配置');
+          } else {
+            console.log(`✅ 当前使用模型: ${settings.llm.selectedModelId || 'default'}`);
+          }
         }
       } catch (error) {
         console.error('❌ 解析AI配置失败:', error);
@@ -193,23 +259,35 @@ async function ensureAIConfiguration() {
 // 创建默认系统用户（如果不存在）
 async function ensureDefaultUser() {
   try {
-    const userCount = await prisma.users.count();
+    // 确保 prisma 已初始化
+    if (!prisma) {
+      throw new Error('Prisma 客户端未初始化');
+    }
+    
+    // 🔥 改进：根据用户名判断，而不是用户总数
+    const adminUser = await prisma.users.findUnique({
+      where: { username: 'admin' }
+    });
 
-    if (userCount === 0) {
+    if (!adminUser) {
       console.log('🔑 创建默认系统用户...');
 
-      // 创建简单的哈希密码（实际环境应使用bcrypt等）
-      const passwordHash = crypto.createHash('sha256').update('system123').digest('hex');
+      // 🔥 修复：使用 bcrypt 加密密码（与登录验证保持一致）
+      const bcrypt = await import('bcrypt');
+      const passwordHash = await bcrypt.default.hash('admin', 10);
 
       const defaultUser = await prisma.users.create({
         data: {
-          email: 'system@test.local',
+          email: 'admin@test.local',
+          username: 'admin',
           password_hash: passwordHash,
           created_at: new Date()
         }
       });
 
       console.log(`✅ 默认系统用户已创建: ID=${defaultUser.id}, Email=${defaultUser.email}`);
+      console.log(`   用户名: admin`);
+      console.log(`   密码: admin`);
       
       // 🔥 使用权限服务分配管理员角色
       try {
@@ -219,22 +297,59 @@ async function ensureDefaultUser() {
         console.warn('⚠️ 分配管理员角色失败，将在后续初始化中处理:', roleError);
       }
     } else {
-      console.log('✅ 系统中已有用户，无需创建默认用户');
+      console.log('✅ 默认管理员用户已存在，无需创建');
+      
+      // 🔥 检查并修复现有用户的密码哈希（如果使用的是旧版 SHA256）
+      await fixExistingUserPasswords();
     }
   } catch (error) {
     console.error('❌ 创建默认系统用户失败:', error);
   }
 }
 
+// 🔥 新增：修复现有用户的密码哈希（从 SHA256 迁移到 bcrypt）
+async function fixExistingUserPasswords() {
+  try {
+    const bcrypt = await import('bcrypt');
+    
+    // 查找所有用户
+    const users = await prisma.users.findMany({
+      select: { id: true, username: true, password_hash: true }
+    });
+    
+    for (const user of users) {
+      // 检查密码哈希格式：bcrypt 哈希以 $2a$, $2b$, $2y$ 开头，长度为 60
+      const isBcryptHash = user.password_hash.startsWith('$2') && user.password_hash.length === 60;
+      
+      if (!isBcryptHash) {
+        console.log(`🔄 检测到用户 "${user.username}" 使用旧版密码哈希，正在更新为 bcrypt...`);
+        
+        // 如果是默认用户（admin 或 system），直接更新密码
+        // 否则需要用户重新设置密码（这里我们只处理默认用户）
+        if (user.username === 'admin' || user.username === 'system') {
+          const newPasswordHash = await bcrypt.default.hash('admin', 10);
+          await prisma.users.update({
+            where: { id: user.id },
+            data: { password_hash: newPasswordHash }
+          });
+          console.log(`✅ 用户 "${user.username}" 的密码已更新为 bcrypt 哈希`);
+        } else {
+          console.warn(`⚠️ 用户 "${user.username}" 使用旧版密码哈希，请手动重置密码`);
+        }
+      }
+    }
+  } catch (error) {
+    console.warn('⚠️ 修复用户密码哈希失败:', error);
+  }
+}
+
 // Middleware
+// 🔥 从环境变量读取前端端口，支持多个端口
+const frontendPort = process.env.VITE_PORT || '5173';
+const frontendPorts = [frontendPort, '5174', '5175', '5176', '5177', '5178'];
 const allowedOrigins = [
   'http://localhost:3000',
-  'http://localhost:5173', 
-  'http://localhost:5174',
-  'http://localhost:5175',
-  'http://localhost:5176',
-  'http://localhost:5177',
-  'http://localhost:5178',
+  ...frontendPorts.map(port => `http://localhost:${port}`),
   'http://192.168.10.146:5173',
   'http://192.168.10.146:5174',
   'http://192.168.10.146:5175',
@@ -422,10 +537,30 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
 // Start Server
 async function startServer() {
   try {
+    // 🔥 检查 DATABASE_URL 环境变量
+    if (!process.env.DATABASE_URL) {
+      console.error('❌ 错误：DATABASE_URL 环境变量未设置');
+      console.error('\n📋 解决方案：');
+      console.error('   1. 创建 .env 文件在项目根目录');
+      console.error('   2. 添加 DATABASE_URL 配置，例如：');
+      console.error('      DATABASE_URL="mysql://username:password@localhost:3306/testflow"');
+      console.error('\n💡 提示：可以参考 docs/CONFIGURATION.md 查看完整配置说明');
+      throw new Error('DATABASE_URL 环境变量未设置');
+    }
+
+    // 🔥 初始化数据库服务（延迟到环境变量检查后）
+    console.log('🗄️ 正在初始化数据库服务...');
+    databaseService = DatabaseService.getInstance({
+      enableLogging: process.env.NODE_ENV === 'development',
+      logLevel: 'error',
+      maxConnections: 10
+    });
+    prisma = databaseService.getClient();
+    console.log('✅ 数据库服务初始化完成');
+
     // 🔥 连接数据库
     console.log('🗄️ 开始连接数据库...');
     await databaseService.connect();
-    console.log('✅ 数据库连接成功');
 
     // 确保数据库和用户已设置
     await ensureDefaultUser();
@@ -492,10 +627,12 @@ async function startServer() {
     console.log('✅ 实时流服务初始化完成');
 
     console.log('🔧 开始初始化证据服务...');
+    // 🔥 从环境变量构建 BASE_URL
+    const baseUrl = process.env.BASE_URL || `http://localhost:${PORT}`;
     evidenceService = new EvidenceService(
       prisma,
       path.join(process.cwd(), 'artifacts'),
-      process.env.BASE_URL || 'http://localhost:4001'
+      baseUrl
     );
     console.log('✅ 证据服务初始化完成');
 
@@ -608,9 +745,18 @@ async function startServer() {
     console.log('✅ 定时清理任务设置完成');
 
     console.log('🔧 准备启动HTTP服务器...');
-    // 修复 Windows 权限问题：明确监听 IPv4 地址 127.0.0.1
-    server.listen(PORT, '127.0.0.1', () => {
+    // 🔥 改进：监听所有网络接口 (0.0.0.0)，允许从局域网和链路本地地址访问
+    // 如果只需要本地访问，可以通过环境变量 SERVER_HOST=127.0.0.1 限制
+    const host = process.env.SERVER_HOST || '0.0.0.0';
+    const portNumber = typeof PORT === 'string' ? parseInt(PORT, 10) : PORT;
+    
+    server.listen(portNumber, host, () => {
       console.log('✅ HTTP服务器监听回调被调用');
+      if (host === '0.0.0.0') {
+        console.log('   📡 服务器监听所有网络接口，可从局域网访问');
+      } else {
+        console.log(`   📡 服务器仅监听 ${host}，仅本地访问`);
+      }
       logServerInfo();
     });
     console.log('🔧 server.listen() 调用完成');
@@ -631,44 +777,123 @@ async function startServer() {
 async function logServerInfo() {
   console.log('✅ 服务器已启动');
 
-  // 获取内外网IP地址
+  // 🔥 改进：获取所有可用的网络地址（与 Vite 行为一致）
   const networkInterfaces = os.networkInterfaces();
-  let localIp = '';
+  const networkIps: string[] = [];
+  
   for (const name of Object.keys(networkInterfaces)) {
     const netInterface = networkInterfaces[name];
     if (netInterface) {
       for (const net of netInterface) {
-        // 跳过非IPv4和内部地址
+        // 跳过非IPv4和内部地址（127.0.0.1）
+        // 但保留链路本地地址（169.254.x.x）和局域网地址
         if (net.family === 'IPv4' && !net.internal) {
-          localIp = net.address;
-          break;
+          const ip = net.address;
+          // 排除回环地址
+          if (ip !== '127.0.0.1' && ip !== '::1') {
+            networkIps.push(ip);
+          }
         }
       }
     }
-    if (localIp) break;
+  }
+  
+  // 去重并排序：优先显示局域网地址（192.168.x.x, 10.x.x.x, 172.16-31.x.x）
+  const uniqueIps = Array.from(new Set(networkIps));
+  const sortedIps = uniqueIps.sort((a, b) => {
+    // 优先显示局域网地址
+    const isLanA = /^(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[01])\.)/.test(a);
+    const isLanB = /^(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[01])\.)/.test(b);
+    if (isLanA && !isLanB) return -1;
+    if (!isLanA && isLanB) return 1;
+    return 0;
+  });
+
+  // 🔥 改进：尝试多个公网IP获取服务，提高成功率
+  const publicIpServices = [
+    { url: 'https://api.ipify.org?format=json', timeout: 5000 },
+    { url: 'https://api64.ipify.org?format=json', timeout: 5000 },
+    { url: 'https://ifconfig.me/ip', timeout: 5000, isPlainText: true },
+    { url: 'https://icanhazip.com', timeout: 5000, isPlainText: true },
+    { url: 'https://checkip.amazonaws.com', timeout: 5000, isPlainText: true }
+  ];
+
+  let publicIp: string | null = null;
+  let lastError: Error | null = null;
+
+  // 依次尝试各个服务
+  for (const service of publicIpServices) {
+    try {
+      if (service.isPlainText) {
+        // 纯文本响应
+        const response = await axios.get(service.url, { 
+          timeout: service.timeout,
+          responseType: 'text',
+          validateStatus: (status) => status === 200
+        });
+        publicIp = response.data.trim();
+      } else {
+        // JSON响应
+        const response = await axios.get(service.url, { 
+          timeout: service.timeout,
+          validateStatus: (status) => status === 200
+        });
+        publicIp = response.data.ip || response.data.query || response.data;
+      }
+      
+      if (publicIp && /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(publicIp)) {
+        // 验证IP格式正确
+        break;
+      } else {
+        publicIp = null;
+      }
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+      // 继续尝试下一个服务
+      continue;
+    }
   }
 
-  try {
-    const response = await axios.get('https://api.ipify.org?format=json', { timeout: 3000 });
-    const publicIp = response.data.ip;
-    console.log('-------------------------------------------------');
-    console.log(`🚀 服务正在运行:`);
-    console.log(`   - 本地访问: http://localhost:${PORT}`);
-    if (localIp) {
-      console.log(`   - 内网访问: http://${localIp}:${PORT}`);
+  // 输出服务器信息
+  console.log('-------------------------------------------------');
+  console.log(`🚀 服务正在运行:`);
+  console.log(`   - 本地访问: http://localhost:${PORT}`);
+  
+  // 显示所有可用的网络地址（与 Vite 行为一致）
+  if (sortedIps.length > 0) {
+    // 分离局域网地址和链路本地地址
+    const lanIps = sortedIps.filter(ip => /^(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[01])\.)/.test(ip));
+    const linkLocalIps = sortedIps.filter(ip => /^169\.254\./.test(ip));
+    
+    if (lanIps.length > 0) {
+      if (lanIps.length === 1) {
+        console.log(`   - 内网访问: http://${lanIps[0]}:${PORT} (推荐)`);
+      } else {
+        console.log(`   - 内网访问 (推荐):`);
+        lanIps.forEach(ip => {
+          console.log(`     • http://${ip}:${PORT}`);
+        });
+      }
     }
-    console.log(`   - 公网访问: http://${publicIp}:${PORT}`);
-    console.log('-------------------------------------------------');
-  } catch (error) {
-    console.log('-------------------------------------------------');
-    console.log(`🚀 服务正在运行:`);
-    console.log(`   - 本地访问: http://localhost:${PORT}`);
-    if (localIp) {
-      console.log(`   - 内网访问: http://${localIp}:${PORT}`);
+    
+    if (linkLocalIps.length > 0) {
+      console.log(`   - 链路本地地址 (仅同链路可用):`);
+      linkLocalIps.forEach(ip => {
+        console.log(`     • http://${ip}:${PORT}`);
+      });
     }
-    console.log('   - 公网IP: 获取失败 (网络连接问题)');
-    console.log('-------------------------------------------------');
   }
+  
+  if (publicIp) {
+    console.log(`   - 公网访问: http://${publicIp}:${PORT}`);
+  } else {
+    console.log('   - 公网IP: 无法获取');
+    if (lastError) {
+      console.log(`   - 原因: ${lastError.message || '网络连接问题'}`);
+    }
+    console.log('   - 提示: 如果服务器在NAT/防火墙后，可能需要配置端口转发');
+  }
+  console.log('-------------------------------------------------');
 }
 
 console.log('🚀 准备调用startServer()函数...');

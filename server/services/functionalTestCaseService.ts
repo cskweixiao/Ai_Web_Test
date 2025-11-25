@@ -358,7 +358,7 @@ export class FunctionalTestCaseService {
         const completeTestCase = await tx.functional_test_cases.findUnique({
           where: { id: testCase.id },
           include: {
-            functional_test_points: {
+            test_points: {  // 🔥 修复：使用正确的关系字段名（schema 中定义的是 test_points）
               orderBy: { test_point_index: 'asc' }
             },
             users: {
@@ -643,7 +643,17 @@ export class FunctionalTestCaseService {
     }
   }
   /**
-   * 🆕 阶段1：智能测试模块拆分
+   * 🆕 阶段1：智能测试场景拆分（新接口）
+   */
+  async analyzeTestScenarios(requirementDoc: string) {
+    const { FunctionalTestCaseAIService } = await import('./functionalTestCaseAIService.js');
+    const aiService = new FunctionalTestCaseAIService();
+    return await aiService.analyzeTestScenarios(requirementDoc);
+  }
+
+  /**
+   * 🆕 阶段1：智能测试模块拆分（兼容性接口）
+   * @deprecated 使用 analyzeTestScenarios 代替
    */
   async analyzeTestModules(requirementDoc: string) {
     const { FunctionalTestCaseAIService } = await import('./functionalTestCaseAIService.js');
@@ -652,7 +662,29 @@ export class FunctionalTestCaseService {
   }
 
   /**
-   * 🆕 阶段2：生成测试目的
+   * 🆕 阶段2：为测试场景生成测试点（新接口）
+   */
+  async generateTestPointsForScenario(
+    scenarioId: string,
+    scenarioName: string,
+    scenarioDescription: string,
+    requirementDoc: string,
+    relatedSections: string[]
+  ) {
+    const { FunctionalTestCaseAIService } = await import('./functionalTestCaseAIService.js');
+    const aiService = new FunctionalTestCaseAIService();
+    return await aiService.generateTestPointsForScenario(
+      scenarioId,
+      scenarioName,
+      scenarioDescription,
+      requirementDoc,
+      relatedSections
+    );
+  }
+
+  /**
+   * 🆕 阶段2：生成测试目的（兼容性接口）
+   * @deprecated 使用 generateTestPointsForScenario 代替
    */
   async generateTestPurposes(
     moduleId: string,
@@ -673,7 +705,63 @@ export class FunctionalTestCaseService {
   }
 
   /**
-   * 🆕 阶段3：生成测试点
+   * 🆕 阶段3：为单个测试点生成测试用例（新接口）
+   */
+  async generateTestCaseForTestPoint(
+    testPoint: any,
+    scenarioId: string,
+    scenarioName: string,
+    scenarioDescription: string,
+    requirementDoc: string,
+    systemName: string,
+    moduleName: string,
+    relatedSections: string[]
+  ) {
+    const { FunctionalTestCaseAIService } = await import('./functionalTestCaseAIService.js');
+    const aiService = new FunctionalTestCaseAIService();
+    return await aiService.generateTestCaseForTestPoint(
+      testPoint,
+      scenarioId,
+      scenarioName,
+      scenarioDescription,
+      requirementDoc,
+      systemName,
+      moduleName,
+      relatedSections
+    );
+  }
+
+  /**
+   * 🆕 阶段3：生成测试用例（兼容性接口）
+   * @deprecated 使用 generateTestCaseForTestPoint 代替
+   */
+  async generateTestCase(
+    scenarioId: string,
+    scenarioName: string,
+    scenarioDescription: string,
+    testPoints: any[],
+    requirementDoc: string,
+    systemName: string,
+    moduleName: string,
+    relatedSections: string[]
+  ) {
+    const { FunctionalTestCaseAIService } = await import('./functionalTestCaseAIService.js');
+    const aiService = new FunctionalTestCaseAIService();
+    return await aiService.generateTestCase(
+      scenarioId,
+      scenarioName,
+      scenarioDescription,
+      testPoints,
+      requirementDoc,
+      systemName,
+      moduleName,
+      relatedSections
+    );
+  }
+
+  /**
+   * 🆕 阶段3：生成测试点（兼容性接口）
+   * @deprecated 使用 generateTestCase 代替
    */
   async generateTestPoints(
     purposeId: string,
@@ -698,5 +786,3 @@ export class FunctionalTestCaseService {
   }
 }
 
-// 导出单例
-export const functionalTestCaseService = new FunctionalTestCaseService();

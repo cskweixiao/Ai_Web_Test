@@ -8,7 +8,7 @@ import { TestCaseDetail } from './pages/TestCaseDetail';
 import { TestRuns } from './pages/TestRuns';
 import { TestRunDetail } from './pages/TestRunDetail';
 import { TestReports } from './pages/TestReports';
-import { Settings } from './pages/Settings';
+import Settings from './pages/Settings';
 import { LLMAssistant } from './pages/LLMAssistant';
 import { TestFactory } from './pages/TestFactory.tsx';
 import { Login } from './pages/Login';

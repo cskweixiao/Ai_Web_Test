@@ -48,6 +48,7 @@ import {
 
 export function Settings() {
   // 状态管理
+  const [showApiKey, setShowApiKey] = useState(false);
   const [availableModels, setAvailableModels] = useState<ModelDefinition[]>([]);
   const [currentSettings, setCurrentSettings] = useState<LLMSettings | null>(null);
   const [formData, setFormData] = useState<LLMSettings>({
@@ -85,11 +86,23 @@ export function Settings() {
       setAvailableModels(models);
       
       // 获取当前设置
-      const settings = await settingsService.getLLMSettings();
+      let settings = await settingsService.getLLMSettings();
+      
+      // 🔥 确保 baseUrl 根据模型配置正确设置
+      if (settings.selectedModelId) {
+        const model = modelRegistry.getModelById(settings.selectedModelId);
+        if (model && (!settings.baseUrl || settings.baseUrl === 'https://openrouter.ai/api/v1')) {
+          settings = {
+            ...settings,
+            baseUrl: model.customBaseUrl || 'https://openrouter.ai/api/v1'
+          };
+        }
+      }
+      
       setCurrentSettings(settings);
       setFormData(settings);
       
-      console.log('✅ 设置页面初始化完成');
+      console.log('✅ 设置页面初始化完成', { modelId: settings.selectedModelId, baseUrl: settings.baseUrl });
     } catch (error) {
       console.error('❌ 设置页面初始化失败:', error);
       setSaveMessage({ type: 'error', text: '加载设置失败' });
@@ -110,6 +123,7 @@ export function Settings() {
       setFormData(prev => ({
         ...prev,
         selectedModelId: modelId,
+        baseUrl: model.customBaseUrl || 'https://openrouter.ai/api/v1',
         customConfig: {
           ...prev.customConfig,
           temperature: model.defaultConfig.temperature,
@@ -171,22 +185,29 @@ export function Settings() {
         return;
       }
       
+      // 🔥 确保 baseUrl 根据模型配置正确设置
+      const selectedModel = modelRegistry.getModelById(formData.selectedModelId);
+      const settingsToSave: LLMSettings = {
+        ...formData,
+        baseUrl: selectedModel?.customBaseUrl || 'https://openrouter.ai/api/v1'
+      };
+      
       // 保存设置到localStorage
-      await settingsService.saveLLMSettings(formData);
+      await settingsService.saveLLMSettings(settingsToSave);
       
       // 更新前端配置管理器
-      await llmConfigManager.updateConfig(formData);
+      await llmConfigManager.updateConfig(settingsToSave);
       
       // 🔥 新增：同步配置到服务器端
       try {
         console.log('🔄 同步配置到服务器端...');
-        console.log('📋 发送的配置数据:', formData);
+        console.log('📋 发送的配置数据:', settingsToSave);
         const response = await fetch('/api/config/llm', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify(formData)
+          body: JSON.stringify(settingsToSave)
         });
         
         if (!response.ok) {
@@ -195,17 +216,20 @@ export function Settings() {
         }
         
         const result = await response.json();
-        console.log('✅ 服务器端配置已更新:', result.data?.summary?.modelName);
         
-        setCurrentSettings(formData);
+        // 从后端响应或本地模型信息获取模型名称
+        const modelName = result.data?.summary?.modelName || selectedModel?.name || '新模型';
+        console.log('✅ 服务器端配置已更新:', modelName);
+        
+        setCurrentSettings(settingsToSave);
         setSaveMessage({ 
           type: 'success', 
-          text: `设置保存成功，已切换到 ${result.data?.summary?.modelName || '新模型'}` 
+          text: `设置保存成功，已切换到 ${modelName}` 
         });
         
       } catch (serverError: any) {
         console.warn('⚠️ 服务器端配置更新失败，但前端配置已保存:', serverError.message);
-        setCurrentSettings(formData);
+        setCurrentSettings(settingsToSave);
         setSaveMessage({ 
           type: 'success', 
           text: '前端设置保存成功，但服务器端同步失败。请重启服务器以应用新配置。' 
@@ -295,6 +319,7 @@ export function Settings() {
     try {
       setIsTesting(true);
       setConnectionResult(null);
+      setSaveMessage(null);
       
       // 先验证表单
       const isValid = await validateForm();
@@ -303,28 +328,37 @@ export function Settings() {
         return;
       }
       
+      // 🔥 确保 baseUrl 根据模型配置正确设置
+      const selectedModel = modelRegistry.getModelById(formData.selectedModelId);
+      const testSettings: LLMSettings = {
+        ...formData,
+        baseUrl: selectedModel?.customBaseUrl || 'https://openrouter.ai/api/v1'
+      };
+      
       // 临时更新配置管理器进行测试
-      await llmConfigManager.updateConfig(formData);
+      await llmConfigManager.updateConfig(testSettings);
       
       // 测试连接
       const result = await llmConfigManager.testConnection();
       setConnectionResult(result);
       
-      if (result.success) {
-        setSaveMessage({ type: 'success', text: `连接测试成功 (${result.responseTime}ms)` });
-      } else {
-        // 使用增强的错误处理
-        const mockError = { message: result.error, type: 'API_ERROR' };
-        const enhancedError = handleApiError(mockError);
-        setSaveMessage({ type: 'error', text: enhancedError.userMessage });
-      }
+      // 清除之前的保存消息（连接测试结果会在 connectionResult 区域显示，不需要 saveMessage）
+      setSaveMessage(null);
       
     } catch (error: any) {
       console.error('❌ 连接测试失败:', error);
       
-      // 使用增强的错误处理
+      // 异常情况下，设置连接结果为失败状态
       const enhancedError = handleApiError(error);
-      setSaveMessage({ type: 'error', text: enhancedError.userMessage });
+      setConnectionResult({
+        success: false,
+        error: enhancedError.userMessage,
+        modelInfo: modelRegistry.getModelById(formData.selectedModelId) || modelRegistry.getDefaultModel(),
+        timestamp: new Date()
+      });
+      
+      // 清除保存消息（错误信息已在 connectionResult 中显示）
+      setSaveMessage(null);
     } finally {
       setIsTesting(false);
     }
@@ -347,7 +381,7 @@ export function Settings() {
     try {
       setIsExporting(true);
       
-      const configData = settingsService.exportSettings();
+      const configData = await settingsService.exportSettings();
       const timestamp = new Date().toISOString().slice(0, 19).replace(/:/g, '-');
       const filename = `testflow-config-${timestamp}.json`;
       
@@ -532,23 +566,85 @@ export function Settings() {
           {/* API密钥 */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              OpenRouter API 密钥
+              API 密钥
             </label>
-            <input
-              type="password"
-              value={formData.apiKey}
-              onChange={(e) => handleFieldChange('apiKey', e.target.value)}
-              placeholder="sk-or-v1-..."
-              className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
-                getFieldError('apiKey') ? 'border-red-300' : 'border-gray-300'
-              }`}
-            />
+            <div className="relative">
+              <input
+                type={showApiKey ? 'text' : 'password'}
+                value={formData.apiKey}
+                onChange={(e) => handleFieldChange('apiKey', e.target.value)}
+                placeholder="sk-or-v1-..."
+                className={`w-full px-3 py-2 pr-10 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+                  getFieldError('apiKey') ? 'border-red-300' : 'border-gray-300'
+                }`}
+              />
+              <button
+                type="button"
+                onClick={() => setShowApiKey(!showApiKey)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700 focus:outline-none focus:text-gray-700 transition-colors"
+                aria-label={showApiKey ? '隐藏密钥' : '显示密钥'}
+              >
+                {showApiKey ? (
+                  <EyeOff size={18} />
+                ) : (
+                  <Eye size={18} />
+                )}
+              </button>
+            </div>
             {getFieldError('apiKey') && (
               <p className="mt-1 text-sm text-red-600">{getFieldError('apiKey')}</p>
             )}
             <p className="mt-1 text-sm text-gray-500">
               {selectedModel?.requiresCustomAuth
-                ? `从 ${selectedModel.provider} 获取认证密钥（参考项目文档配置）`
+                ? (() => {
+                    // 需要自定义认证的模型
+                    if (selectedModel.provider === '百度') {
+                      return (
+                        <>
+                          从 <a href="https://console.bce.baidu.com/qianfan/ais/console/applicationConsole/application" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">百度智能云千帆</a> 获取API密钥（免费额度充足，需要Access Token）
+                        </>
+                      );
+                    } else {
+                      return `从 ${selectedModel.provider} 获取认证密钥（参考项目文档配置）`;
+                    }
+                  })()
+                : selectedModel?.customBaseUrl
+                ? (() => {
+                    // 根据提供商显示不同的链接
+                    if (selectedModel.provider === '阿里云') {
+                      return (
+                        <>
+                          从 <a href="https://dashscope.console.aliyun.com/apiKey" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">阿里云通义千问</a> 获取API密钥（免费额度充足）
+                        </>
+                      );
+                    } else if (selectedModel.provider === 'DeepSeek') {
+                      return (
+                        <>
+                          从 <a href="https://platform.deepseek.com/api_keys" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">DeepSeek平台</a> 获取API密钥（免费额度充足）
+                        </>
+                      );
+                    } else if (selectedModel.provider === '月之暗面') {
+                      return (
+                        <>
+                          从 <a href="https://platform.moonshot.cn/console/api-keys" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">月之暗面Kimi平台</a> 获取API密钥（免费额度充足）
+                        </>
+                      );
+                    } else if (selectedModel.provider === '智谱AI') {
+                      return (
+                        <>
+                          从 <a href="https://bigmodel.cn/usercenter/apikeys" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">智谱AI平台</a> 获取API密钥（免费额度充足）
+                        </>
+                      );
+                    } else if (selectedModel.provider === 'Google (Zenmux)') {
+                      return (
+                        <>
+                          从 <a href="https://zenmux.ai" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">Zenmux平台</a> 获取API密钥（免费额度充足）
+                        </>
+                      );
+                    } else {
+                      return `从 ${selectedModel.provider} 获取API密钥`;
+                    }
+                  })()
                 : (
                   <>
                     从 <a href="https://openrouter.ai" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">OpenRouter</a> 获取API密钥
@@ -699,3 +795,6 @@ export function Settings() {
     </div>
   );
 }
+
+// 默认导出以确保兼容性
+export default Settings;

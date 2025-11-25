@@ -1,4 +1,6 @@
-const API_BASE_URL = import.meta.env.DEV ? '/api/v1' : `http://${window.location.hostname}:4001/api/v1`;
+// 🔥 使用统一的 API 配置
+import { getApiBaseUrl } from '../config/api';
+const API_BASE_URL = getApiBaseUrl('/api/v1');
 const TOKEN_KEY = 'authToken';
 
 /**
@@ -472,7 +474,21 @@ class FunctionalTestCaseService {
   }
 
   /**
-   * 🆕 阶段1：智能测试模块拆分
+   * 🆕 阶段1：智能测试场景拆分（新接口）
+   */
+  async analyzeTestScenarios(requirementDoc: string, sessionId: string) {
+    const response = await fetch(`${API_BASE_URL}/functional-test-cases/analyze-scenarios`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ requirementDoc, sessionId })
+    });
+
+    return handleResponse(response);
+  }
+
+  /**
+   * 🆕 阶段1：智能测试模块拆分（兼容性接口）
+   * @deprecated 使用 analyzeTestScenarios 代替
    */
   async analyzeTestModules(requirementDoc: string, sessionId: string) {
     const response = await fetch(`${API_BASE_URL}/functional-test-cases/analyze-modules`, {
@@ -485,7 +501,35 @@ class FunctionalTestCaseService {
   }
 
   /**
-   * 🆕 阶段2：生成测试目的
+   * 🆕 阶段2：为测试场景生成测试点（新接口）
+   */
+  async generateTestPointsForScenario(
+    scenarioId: string,
+    scenarioName: string,
+    scenarioDescription: string,
+    requirementDoc: string,
+    relatedSections: string[],
+    sessionId: string
+  ) {
+    const response = await fetch(`${API_BASE_URL}/functional-test-cases/generate-points-for-scenario`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({
+        scenarioId,
+        scenarioName,
+        scenarioDescription,
+        requirementDoc,
+        relatedSections,
+        sessionId
+      })
+    });
+
+    return handleResponse(response);
+  }
+
+  /**
+   * 🆕 阶段2：生成测试目的（兼容性接口）
+   * @deprecated 使用 generateTestPointsForScenario 代替
    */
   async generateTestPurposes(
     moduleId: string,
@@ -512,7 +556,75 @@ class FunctionalTestCaseService {
   }
 
   /**
-   * 🆕 阶段3：生成测试点
+   * 🆕 阶段3：为单个测试点生成测试用例（新接口）
+   */
+  async generateTestCaseForTestPoint(
+    testPoint: any,
+    scenarioId: string,
+    scenarioName: string,
+    scenarioDescription: string,
+    requirementDoc: string,
+    systemName: string,
+    moduleName: string,
+    relatedSections: string[],
+    sessionId: string
+  ) {
+    const response = await fetch(`${API_BASE_URL}/functional-test-cases/generate-test-case-for-point`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({
+        testPoint,
+        scenarioId,
+        scenarioName,
+        scenarioDescription,
+        requirementDoc,
+        systemName,
+        moduleName,
+        relatedSections,
+        sessionId
+      })
+    });
+
+    return handleResponse(response);
+  }
+
+  /**
+   * 🆕 阶段3：生成测试用例（兼容性接口）
+   * @deprecated 使用 generateTestCaseForTestPoint 代替
+   */
+  async generateTestCase(
+    scenarioId: string,
+    scenarioName: string,
+    scenarioDescription: string,
+    testPoints: any[],
+    requirementDoc: string,
+    systemName: string,
+    moduleName: string,
+    relatedSections: string[],
+    sessionId: string
+  ) {
+    const response = await fetch(`${API_BASE_URL}/functional-test-cases/generate-test-case`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({
+        scenarioId,
+        scenarioName,
+        scenarioDescription,
+        testPoints,
+        requirementDoc,
+        systemName,
+        moduleName,
+        relatedSections,
+        sessionId
+      })
+    });
+
+    return handleResponse(response);
+  }
+
+  /**
+   * 🆕 阶段3：生成测试点（兼容性接口）
+   * @deprecated 使用 generateTestCase 代替
    */
   async generateTestPoints(
     purposeId: string,

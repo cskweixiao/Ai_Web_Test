@@ -1,6 +1,8 @@
-import axios from 'axios';
-
-const API_BASE_URL = import.meta.env.DEV ? '/api/reports' : `http://${window.location.hostname}:4001/api/reports`;
+// 🔥 使用全局配置的 axios 实例（自动添加认证头）
+import apiClient from '../utils/axios';
+// 🔥 使用统一的 API 配置
+import { getApiBaseUrl } from '../config/api';
+const API_BASE_URL = getApiBaseUrl('/api/reports');
 
 // 类型定义
 export interface BugStats {
@@ -73,11 +75,8 @@ class ReportService {
     suiteId?: number | string;
   }): Promise<BugStats> {
     try {
-      const response = await axios.get(`${API_BASE_URL}/bug-stats`, {
-        params,
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('authToken')}`
-        }
+      const response = await apiClient.get(`${API_BASE_URL}/bug-stats`, {
+        params
       });
       return response.data.data;
     } catch (error) {
@@ -97,11 +96,8 @@ class ReportService {
     granularity?: 'day' | 'week';
   }): Promise<TrendDataPoint[]> {
     try {
-      const response = await axios.get(`${API_BASE_URL}/bug-trend`, {
-        params,
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('authToken')}`
-        }
+      const response = await apiClient.get(`${API_BASE_URL}/bug-trend`, {
+        params
       });
       return response.data.data;
     } catch (error) {
@@ -120,11 +116,8 @@ class ReportService {
     suiteId?: number | string;
   }): Promise<FailureReason[]> {
     try {
-      const response = await axios.get(`${API_BASE_URL}/failure-reasons`, {
-        params,
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('authToken')}`
-        }
+      const response = await apiClient.get(`${API_BASE_URL}/failure-reasons`, {
+        params
       });
       return response.data.data;
     } catch (error) {
@@ -144,11 +137,8 @@ class ReportService {
     limit?: number;
   }): Promise<FlakyTest[]> {
     try {
-      const response = await axios.get(`${API_BASE_URL}/flaky-tests`, {
-        params,
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('authToken')}`
-        }
+      const response = await apiClient.get(`${API_BASE_URL}/flaky-tests`, {
+        params
       });
       return response.data.data;
     } catch (error) {
@@ -175,11 +165,8 @@ class ReportService {
     totalPages: number;
   }> {
     try {
-      const response = await axios.get(`${API_BASE_URL}/failed-cases`, {
-        params,
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('authToken')}`
-        }
+      const response = await apiClient.get(`${API_BASE_URL}/failed-cases`, {
+        params
       });
       return response.data.data;
     } catch (error) {
@@ -197,11 +184,8 @@ class ReportService {
     department?: string;
   }): Promise<SuiteSummary[]> {
     try {
-      const response = await axios.get(`${API_BASE_URL}/suite-summary`, {
-        params,
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('authToken')}`
-        }
+      const response = await apiClient.get(`${API_BASE_URL}/suite-summary`, {
+        params
       });
       return response.data.data;
     } catch (error) {

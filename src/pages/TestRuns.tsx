@@ -150,7 +150,9 @@ export function TestRuns() {
         headers['Authorization'] = `Bearer ${token}`;
       }
 
-      const response = await fetch(import.meta.env.DEV ? '/api/tests/runs' : `http://${window.location.hostname}:4001/api/tests/runs`, {
+      // 🔥 使用统一的 API 配置
+      const { getApiBaseUrl } = await import('../config/api');
+      const response = await fetch(`${getApiBaseUrl('/api/tests/runs')}`, {
         headers
       });
       
@@ -264,7 +266,7 @@ export function TestRuns() {
         
         // 尝试加载套件运行数据
         try {
-          const suiteResponse = await fetch(import.meta.env.DEV ? '/api/suites/runs' : `http://${window.location.hostname}:4001/api/suites/runs`);
+          const suiteResponse = await fetch(`${getApiBaseUrl('/api/suites/runs')}`);
           const suiteData = await suiteResponse.json();
           
           console.log('📊 套件数据:', { success: suiteData.success, count: suiteData.data?.length || 0 });
