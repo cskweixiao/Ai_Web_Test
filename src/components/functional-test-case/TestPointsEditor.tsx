@@ -6,13 +6,18 @@ import { StepsEditor } from './StepsEditor';
 
 /**
  * 测试点数据接口
+ * 注意：测试步骤和预期结果在测试用例层，不在测试点层
  */
 export interface TestPoint {
   testPurpose?: string;        // 测试目的 (可选)
-  testPointName: string;        // 测试点名称 (必填)
-  steps: string;                // 测试步骤 (必填)
-  expectedResult: string;       // 预期结果 (必填)
+  testPoint: string;            // 测试点名称 (必填) - 统一使用 testPoint 字段
+  testPointName?: string;       // 兼容旧字段，已废弃，使用 testPoint
+  steps?: string;               // 测试步骤 (可选，已移至测试用例层)
+  expectedResult?: string;      // 预期结果 (可选，已移至测试用例层)
   riskLevel: 'low' | 'medium' | 'high';  // 风险等级 (必填)
+  testScenario?: string;        // 测试场景 (可选)
+  description?: string;         // 测试点描述 (可选)
+  coverageAreas?: string;       // 覆盖范围 (可选)
 }
 
 /**
@@ -60,7 +65,7 @@ export function TestPointsEditor({
       alert('至少需要保留一个测试点');
       return;
     }
-    if (confirm(`确定要删除测试点 "${testPoints[index].testPointName || '(未命名)'}" 吗？`)) {
+      if (confirm(`确定要删除测试点 "${testPoints[index].testPoint || testPoints[index].testPointName || '(未命名)'}" 吗？`)) {
       const newTestPoints = testPoints.filter((_, i) => i !== index);
       onChange(newTestPoints);
     }
@@ -72,9 +77,7 @@ export function TestPointsEditor({
   const addTestPoint = () => {
     const newTestPoint: TestPoint = {
       testPurpose: '',
-      testPointName: '',
-      steps: '',
-      expectedResult: '',
+      testPoint: '',
       riskLevel: 'medium'
     };
     onChange([...testPoints, newTestPoint]);
@@ -129,40 +132,31 @@ export function TestPointsEditor({
                 </button>
               )}
 
-              {/* 测试点头部 */}
+              {/* 测试点头部 - 简化版 */}
               <div className="flex items-start justify-between mb-4 pr-8">
                 <div className="flex items-start gap-3 flex-1">
                   <div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-500 to-blue-500
                                   flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
                     {index + 1}
                   </div>
-                  <div className="flex-1 space-y-3">
-                    {/* 测试目的 */}
-                    <div>
-                      <label className="text-sm font-medium text-gray-700 mb-2 block">
-                        测试目的 <span className="text-gray-600 text-xs">(可选)</span>
-                      </label>
-                      <input
-                        type="text"
-                        value={point.testPurpose || ''}
-                        onChange={(e) => updateTestPoint(index, 'testPurpose', e.target.value)}
-                        disabled={readOnly}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm
-                                 focus:ring-2 focus:ring-purple-500 focus:border-transparent
-                                 transition-all disabled:bg-gray-50 disabled:text-gray-500"
-                        placeholder="输入测试目的"
-                      />
-                    </div>
-
-                    {/* 测试点名称 */}
-                    <div>
-                      <label className="text-sm font-medium text-gray-700 mb-2 block">
+                  <div className="flex-1">
+                    {/* 测试点名称 - 必填 */}
+                    <div className="mb-3">
+                      <label className="text-sm font-medium text-gray-700 mb-1.5 block">
                         测试点名称 <span className="text-red-500">*</span>
                       </label>
                       <input
                         type="text"
-                        value={point.testPointName}
-                        onChange={(e) => updateTestPoint(index, 'testPointName', e.target.value)}
+                        value={point.testPoint || point.testPointName || ''}
+                        onChange={(e) => {
+                          const newTestPoints = [...testPoints];
+                          newTestPoints[index] = { 
+                            ...newTestPoints[index], 
+                            testPoint: e.target.value,
+                            testPointName: e.target.value // 兼容旧字段
+                          };
+                          onChange(newTestPoints);
+                        }}
                         disabled={readOnly}
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-medium
                                  focus:ring-2 focus:ring-purple-500 focus:border-transparent
@@ -170,56 +164,34 @@ export function TestPointsEditor({
                         placeholder="输入测试点名称"
                       />
                     </div>
+
+                    {/* 风险等级 - 简化显示 */}
+                    <div className="flex items-center gap-3">
+                      <label className="text-sm text-gray-700 whitespace-nowrap">风险等级：</label>
+                      <select
+                        value={point.riskLevel}
+                        onChange={(e) => updateTestPoint(index, 'riskLevel', e.target.value as TestPoint['riskLevel'])}
+                        disabled={readOnly}
+                        className={clsx(
+                          "px-3 py-1.5 text-sm font-medium rounded-lg border-2 cursor-pointer transition-colors",
+                          "disabled:cursor-not-allowed disabled:opacity-60",
+                          riskLevelMap[point.riskLevel]?.color || riskLevelMap.medium.color
+                        )}
+                      >
+                        <option value="low">🟢 低风险</option>
+                        <option value="medium">🟡 中风险</option>
+                        <option value="high">🔴 高风险</option>
+                      </select>
+                    </div>
                   </div>
                 </div>
-
-                {/* 风险等级选择 */}
-                <div className="ml-3">
-                  <label className="text-sm text-gray-700 mb-1 block">风险等级</label>
-                  <select
-                    value={point.riskLevel}
-                    onChange={(e) => updateTestPoint(index, 'riskLevel', e.target.value as TestPoint['riskLevel'])}
-                    disabled={readOnly}
-                    className={clsx(
-                      "px-3 py-1.5 text-sm font-medium rounded-lg border-2 cursor-pointer transition-colors",
-                      "disabled:cursor-not-allowed disabled:opacity-60",
-                      riskLevelMap[point.riskLevel]?.color || riskLevelMap.medium.color
-                    )}
-                  >
-                    <option value="low">🟢 低风险</option>
-                    <option value="medium">🟡 中风险</option>
-                    <option value="high">🔴 高风险</option>
-                  </select>
-                </div>
               </div>
 
-              {/* 测试步骤 */}
-              <div className="mb-4">
-                <label className="text-sm font-medium text-gray-700 mb-2 block">
-                  测试步骤 <span className="text-red-500">*</span>
-                </label>
-                <StepsEditor
-                  stepsText={point.steps}
-                  onChange={(text) => updateTestPoint(index, 'steps', text)}
-                  readOnly={readOnly}
-                />
-              </div>
-
-              {/* 预期结果 */}
-              <div>
-                <label className="text-sm font-medium text-gray-700 mb-2 block">
-                  预期结果 <span className="text-red-500">*</span>
-                </label>
-                <textarea
-                  value={point.expectedResult}
-                  onChange={(e) => updateTestPoint(index, 'expectedResult', e.target.value)}
-                  disabled={readOnly}
-                  rows={3}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm
-                           focus:ring-2 focus:ring-purple-500 focus:border-transparent
-                           transition-all resize-none disabled:bg-gray-50 disabled:text-gray-500"
-                  placeholder="输入预期结果"
-                />
+              {/* 提示信息：测试步骤和预期结果在测试用例中填写 */}
+              <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                <p className="text-xs text-blue-700">
+                  💡 提示：测试步骤和预期结果需要在测试用例中填写。请先创建测试用例。
+                </p>
               </div>
             </motion.div>
           ))}

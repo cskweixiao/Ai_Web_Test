@@ -13,7 +13,7 @@ import { LLMAssistant } from './pages/LLMAssistant';
 import { TestFactory } from './pages/TestFactory.tsx';
 import { Login } from './pages/Login';
 import { UserManagement } from './pages/UserManagement';
-import { FunctionalTestCases } from './pages/FunctionalTestCases';
+import { FunctionalTestCases } from './pages/FunctionalTestCases/index';
 import { FunctionalTestCaseGenerator } from './pages/FunctionalTestCaseGenerator';
 import { FunctionalTestCaseCreate } from './pages/FunctionalTestCaseCreate';
 import { FunctionalTestPointEdit } from './pages/FunctionalTestPointEdit';

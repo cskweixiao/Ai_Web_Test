@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -12,7 +12,11 @@ import {
   Filter,
   X,
   List as ListIcon,
-  Target
+  Target,
+  ChevronDown,
+  ChevronRight,
+  Edit2,
+  Eye
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { functionalTestCaseService } from '../services/functionalTestCaseService';
@@ -21,6 +25,47 @@ import type { SystemOption } from '../types/test';
 import { showToast } from '../utils/toast';
 import { useAuth } from '../contexts/AuthContext';
 import { TestCaseDetailModal } from '../components/ai-generator/TestCaseDetailModal';
+import { parseStepsText } from '../utils/stepConverter';
+
+/**
+ * 测试场景接口（用于列表展示）
+ */
+interface TestScenarioGroup {
+  name: string; // 测试场景名称（来自tags字段）
+  testCases: TestCaseGroup[];
+}
+
+/**
+ * 测试用例组（包含所有测试点）
+ */
+interface TestCaseGroup {
+  id: number;
+  name: string;
+  description?: string;
+  system: string;
+  module: string;
+  priority: string;
+  status: string;
+  sectionName?: string;
+  created_at: string;
+  users?: {
+    username: string;
+  };
+  testPoints: TestPointItem[];
+}
+
+/**
+ * 测试点项
+ */
+interface TestPointItem {
+  id: number; // test_point_id
+  test_point_index: number;
+  test_point_name: string;
+  test_purpose?: string;
+  steps: string;
+  expected_result: string;
+  risk_level: string;
+}
 
 /**
  * 功能测试用例列表页面
@@ -64,6 +109,11 @@ export function FunctionalTestCases() {
   const [detailModalOpen, setDetailModalOpen] = useState(false);
   const [currentDetailCase, setCurrentDetailCase] = useState<any>(null);
 
+  // 折叠展开状态
+  const [expandedScenarios, setExpandedScenarios] = useState<Record<string, boolean>>({});
+  const [expandedTestCases, setExpandedTestCases] = useState<Record<string, boolean>>({});
+  const [expandedTestPoints, setExpandedTestPoints] = useState<Record<string, boolean>>({});
+
   // 加载数据（使用平铺列表API）
   const loadData = async () => {
     setLoading(true);
@@ -103,6 +153,87 @@ export function FunctionalTestCases() {
   useEffect(() => {
     loadData();
   }, [pagination.page, pagination.pageSize, filters]);
+
+  /**
+   * 将平铺数据组织成三层结构：测试场景 -> 测试用例 -> 测试点
+   */
+  const organizedData = useMemo(() => {
+    if (!testCases || testCases.length === 0) return [];
+
+    // 1. 按测试场景（tags）分组
+    const scenarioMap = new Map<string, Map<number, TestCaseGroup>>();
+
+    testCases.forEach((row) => {
+      const scenarioName = row.tags || '未分类场景';
+      
+      if (!scenarioMap.has(scenarioName)) {
+        scenarioMap.set(scenarioName, new Map());
+      }
+
+      const testCaseMap = scenarioMap.get(scenarioName)!;
+      
+      // 2. 在每个场景下，按测试用例ID分组
+      if (!testCaseMap.has(row.id)) {
+        testCaseMap.set(row.id, {
+          id: row.id,
+          name: row.name || '未命名用例',
+          description: row.description,
+          system: row.system || '',
+          module: row.module || '',
+          priority: row.priority || 'medium',
+          status: row.status || 'DRAFT',
+          sectionName: row.section_name,
+          created_at: row.created_at,
+          users: row.users,
+          testPoints: []
+        });
+      }
+
+      // 3. 添加测试点到对应测试用例
+      const testCase = testCaseMap.get(row.id)!;
+      testCase.testPoints.push({
+        id: row.test_point_id,
+        test_point_index: row.test_point_index,
+        test_point_name: row.test_point_name || '未命名测试点',
+        test_purpose: row.test_purpose,
+        steps: row.test_point_steps || '',
+        expected_result: row.test_point_expected_result || '',
+        risk_level: row.test_point_risk_level || 'medium'
+      });
+    });
+
+    // 4. 转换为数组格式
+    const scenarios: TestScenarioGroup[] = [];
+    scenarioMap.forEach((testCaseMap, scenarioName) => {
+      scenarios.push({
+        name: scenarioName,
+        testCases: Array.from(testCaseMap.values())
+      });
+    });
+
+    return scenarios;
+  }, [testCases]);
+
+  /**
+   * 切换场景展开/折叠
+   */
+  const toggleScenario = (scenarioName: string) => {
+    setExpandedScenarios(prev => ({ ...prev, [scenarioName]: !prev[scenarioName] }));
+  };
+
+  /**
+   * 切换测试用例展开/折叠
+   */
+  const toggleTestCase = (testCaseId: number) => {
+    setExpandedTestCases(prev => ({ ...prev, [testCaseId]: !prev[testCaseId] }));
+  };
+
+  /**
+   * 切换测试点展开/折叠
+   */
+  const toggleTestPoint = (testPointId: number) => {
+    setExpandedTestPoints(prev => ({ ...prev, [testPointId]: !prev[testPointId] }));
+  };
 
   // 复选框处理函数
   const handleSelectAll = () => {
@@ -146,7 +277,7 @@ export function FunctionalTestCases() {
       showToast.success(`已成功删除 ${testPointIds.length} 个测试点`);
 
       // 刷新数据
-      await fetchTestCases();
+      await loadData();
 
       // 清空选择
       setSelectedRows(new Set());
@@ -336,7 +467,7 @@ export function FunctionalTestCases() {
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-600" />
             <input
               type="text"
-              placeholder="搜索用例名称或描述..."
+              placeholder="搜索用例名称、描述、测试目的或测试点名称..."
               value={filters.search}
               onChange={e => setFilters(prev => ({ ...prev, search: e.target.value }))}
               onKeyDown={e => e.key === 'Enter' && setPagination(prev => ({ ...prev, page: 1 }))}

@@ -3,7 +3,7 @@ import { Modal } from '../ui/modal';
 import { Button } from '../ui/button';
 import { clsx } from 'clsx';
 import { ChevronLeft, ChevronRight, FileText, Target, CheckCircle2, AlertCircle, Edit2, Save, X } from 'lucide-react';
-import { Input, Select } from 'antd';
+import { Input } from 'antd';
 
 const { TextArea } = Input;
 
@@ -23,11 +23,15 @@ interface TestCase {
   steps?: string;
   assertions?: string;
   testPoints?: Array<{
-    testPoint: string;
+    testPoint?: string;          // 统一字段名称
+    testPointName?: string;      // 兼容旧字段
     steps?: string;
     expectedResult?: string;
     riskLevel?: 'high' | 'medium' | 'low';
     description?: string;
+    testPurpose?: string;        // 测试目的
+    testScenario?: string;       // 测试场景
+    coverageAreas?: string;       // 覆盖范围
   }>;
   [key: string]: unknown;
 }
@@ -108,7 +112,16 @@ export function TestCaseDetailModal({
 
   const updateField = (field: string, value: string | number | undefined) => {
     setEditedCase((prev: TestCase | null) => {
-      if (!prev) return null;
+      if (!prev) {
+        // 如果 prev 为 null，从 testCase 初始化
+        if (testCase) {
+          return {
+            ...testCase,
+            [field]: value
+          };
+        }
+        return null;
+      }
       return {
         ...prev,
         [field]: value
@@ -203,7 +216,12 @@ export function TestCaseDetailModal({
               <>
                 <Button 
                   variant="outline" 
-                  onClick={() => setIsEditing(true)}
+                  onClick={() => {
+                    if (testCase) {
+                      setEditedCase({ ...testCase });
+                      setIsEditing(true);
+                    }
+                  }}
                   size="default"
                   className="h-9 px-4 border-gray-300 text-gray-700 bg-white hover:bg-gray-50 hover:border-gray-400 active:bg-gray-100 transition-all"
                   icon={<Edit2 className="w-4 h-4 mr-1.5" />}
@@ -243,16 +261,20 @@ export function TestCaseDetailModal({
               )}
               <div className="flex flex-wrap items-center gap-3 text-sm">
                 {isEditing ? (
-                  <Select
-                    value={currentCase.priority || 'medium'}
-                    onChange={(value) => updateField('priority', value)}
-                    className="w-32"
-                    options={[
-                      { label: '高优先级', value: 'high' },
-                      { label: '中优先级', value: 'medium' },
-                      { label: '低优先级', value: 'low' }
-                    ]}
-                  />
+                  <select
+                    value={editedCase?.priority || testCase?.priority || 'medium'}
+                    onChange={(e) => {
+                      const value = e.target.value as 'high' | 'medium' | 'low';
+                      updateField('priority', value);
+                    }}
+                    className="w-32 px-3 py-1.5 border border-gray-300 rounded-lg text-sm font-medium focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-purple-500 bg-white"
+                    title="选择优先级"
+                    aria-label="选择优先级"
+                  >
+                    <option value="high">高优先级</option>
+                    <option value="medium">中优先级</option>
+                    <option value="low">低优先级</option>
+                  </select>
                 ) : (
                   currentCase.priority && (
                     <span className={clsx(
@@ -309,11 +331,21 @@ export function TestCaseDetailModal({
             </div>
             {currentCase.testPoints && currentCase.testPoints.length > 0 && (
               <div>
-                <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">关联测试点</div>
-                <div className="text-sm font-medium text-gray-900">
-                  <span className="px-2.5 py-1 bg-blue-100 text-blue-700 text-xs font-medium rounded-full">
-                    {currentCase.testPoints.length} 个
-                  </span>
+                <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">关联测试点</div>
+                <div className="flex flex-wrap gap-2 min-w-0">
+                  {currentCase.testPoints.map((tp, index) => {
+                    // 统一字段名称：优先使用 testPoint，兼容 testPointName
+                    const testPointName = tp.testPoint || tp.testPointName || '未命名测试点';
+                    return (
+                      <span
+                        key={index}
+                        className="inline-flex items-center px-3 py-1.5 bg-blue-100 text-blue-700 text-sm font-medium rounded-lg border border-blue-200 whitespace-nowrap"
+                        title={tp.description || testPointName}
+                      >
+                        {testPointName}
+                      </span>
+                    );
+                  })}
                 </div>
               </div>
             )}

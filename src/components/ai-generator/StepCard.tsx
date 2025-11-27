@@ -16,6 +16,7 @@ interface StepCardProps {
   onCancel?: () => void;
   onNext?: () => void;
   nextButtonText?: string;
+  nextButtonDisabled?: boolean;
   hideActions?: boolean;
 }
 
@@ -31,6 +32,7 @@ export function StepCard({
   onCancel,
   onNext,
   nextButtonText = '下一步',
+  nextButtonDisabled = false,
   hideActions = false
 }: StepCardProps) {
   // 已完成状态 - 折叠显示
@@ -118,7 +120,7 @@ export function StepCard({
             </Button>
           )}
           {onNext && (
-            <Button variant="default" onClick={onNext}>
+            <Button variant="default" onClick={onNext} disabled={nextButtonDisabled}>
               {nextButtonText}
             </Button>
           )}

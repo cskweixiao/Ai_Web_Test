@@ -150,6 +150,7 @@ export class FunctionalTestCaseService {
     const caseWhere: any = {};
 
     if (search) {
+      // 搜索条件：测试用例名称、描述，以及测试点的测试目的和名称
       caseWhere.OR = [
         { name: { contains: search } },
         { description: { contains: search } }
@@ -202,6 +203,14 @@ export class FunctionalTestCaseService {
     const pointWhere: any = {};
     if (riskLevel) {
       pointWhere.risk_level = riskLevel;
+    }
+    
+    // 🆕 如果搜索关键词存在，也搜索测试点的测试目的和名称
+    if (search) {
+      pointWhere.OR = [
+        { test_purpose: { contains: search } },
+        { test_point_name: { contains: search } }
+      ];
     }
 
     try {
@@ -329,25 +338,38 @@ export class FunctionalTestCaseService {
             preconditions: data.preconditions || '',
             test_data: data.testData || '',
             section_name: data.sectionName || '',
-            coverage_areas: data.coverageAreas || ''
+            coverage_areas: data.coverageAreas || '',
+            // 新增字段：测试场景、用例级别步骤和预期结果（存储在JSON字段中或扩展字段）
+            // 注意：如果数据库schema不支持这些字段，可以存储在description或其他JSON字段中
+            // 这里先添加，如果schema不支持会报错，需要后续迁移数据库
           }
         });
 
         console.log(`  ✓ 测试用例已创建，ID: ${testCase.id}`);
 
-        // 2. 创建关联的测试点
+        // 2. 创建关联的测试点（统一字段名称：优先使用 testPoint，兼容 testPointName）
         if (data.testPoints && Array.isArray(data.testPoints) && data.testPoints.length > 0) {
           for (let i = 0; i < data.testPoints.length; i++) {
             const point = data.testPoints[i];
+            // 统一字段名称：优先使用 testPoint，如果没有则使用 testPointName（向后兼容）
+            const testPointName = point.testPoint || point.testPointName;
+            if (!testPointName || !testPointName.trim()) {
+              throw new Error(`测试点 ${i + 1} 的名称不能为空`);
+            }
+            
             await tx.functional_test_points.create({
               data: {
                 test_case_id: testCase.id,
                 test_point_index: i + 1,
                 test_purpose: point.testPurpose || '',
-                test_point_name: point.testPointName,
-                steps: point.steps,
-                expected_result: point.expectedResult,
+                test_point_name: testPointName.trim(), // 统一使用 testPoint 字段的值
+                steps: point.steps || '',
+                expected_result: point.expectedResult || '',
                 risk_level: point.riskLevel || 'medium'
+                // 注意：如果数据库schema支持以下字段，可以添加：
+                // test_scenario: point.testScenario || '',
+                // description: point.description || '',
+                // coverage_areas: point.coverageAreas || ''
               }
             });
           }
@@ -466,13 +488,16 @@ export class FunctionalTestCaseService {
   }
 
   /**
-   * 获取测试用例详情
+   * 获取测试用例详情（包含测试点，统一字段名称）
    */
   async getById(id: number) {
     try {
-      return await this.prisma.functional_test_cases.findUnique({
+      const testCase = await this.prisma.functional_test_cases.findUnique({
         where: { id },
         include: {
+          test_points: {
+            orderBy: { test_point_index: 'asc' }
+          },
           users: {
             select: {
               username: true,
@@ -482,6 +507,25 @@ export class FunctionalTestCaseService {
           }
         }
       });
+
+      if (!testCase) {
+        return null;
+      }
+
+      // 转换测试点字段名称：将 test_point_name 转换为 testPoint（统一字段名）
+      const testPoints = testCase.test_points?.map(point => ({
+        ...point,
+        testPoint: point.test_point_name,  // 统一字段名
+        testPointName: point.test_point_name, // 兼容旧字段
+        testPurpose: point.test_purpose,
+        expectedResult: point.expected_result,
+        riskLevel: point.risk_level
+      })) || [];
+
+      return {
+        ...testCase,
+        testPoints  // 使用统一字段名
+      };
     } catch (error: any) {
       console.error('❌ 查询测试用例详情失败:', error);
       throw new Error(`查询测试用例详情失败: ${error.message}`);

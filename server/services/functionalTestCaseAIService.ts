@@ -72,6 +72,10 @@ export interface TestPoint {
   steps: string; // 测试步骤
   expectedResult: string; // 预期结果
   riskLevel?: string; // 风险等级
+  testPurpose?: string; // 🆕 测试目的（与测试用例的 testPurpose 相同）
+  description?: string; // 测试点描述
+  coverageAreas?: string; // 覆盖范围
+  estimatedTestCases?: number; // 预估测试用例数量
 }
 
 /**
@@ -2069,8 +2073,16 @@ ${requirementDoc.substring(0, 2000)}
         if (!tc.testPoints) {
           tc.testPoints = [{
             ...testPoint,
-            testScenario: scenarioName
+            testScenario: scenarioName,
+            testPurpose: tc.testPurpose || tc.description || ''
           }];
+        } else {
+          // 确保每个测试点都有 testPurpose
+          tc.testPoints = tc.testPoints.map(tp => ({
+            ...tp,
+            testPurpose: tp.testPurpose || tc.testPurpose || tc.description || '',
+            testScenario: tp.testScenario || scenarioName
+          }));
         }
       });
 

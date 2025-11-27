@@ -239,6 +239,9 @@ export function createFunctionalTestCaseRoutes(): Router {
         testData,
         sectionName,
         coverageAreas,
+        testScenario,        // 新增：测试场景
+        steps,                // 新增：用例级别测试步骤
+        assertions,           // 新增：用例级别预期结果
         testPoints
       } = req.body;
 
@@ -257,10 +260,12 @@ export function createFunctionalTestCaseRoutes(): Router {
         });
       }
 
-      // 验证每个测试点
+      // 验证每个测试点（支持 testPoint 和 testPointName，统一使用 testPoint）
       for (let i = 0; i < testPoints.length; i++) {
         const point = testPoints[i];
-        if (!point.testPointName || !point.testPointName.trim()) {
+        // 统一字段名称：优先使用 testPoint，如果没有则使用 testPointName（向后兼容）
+        const testPointName = point.testPoint || point.testPointName;
+        if (!testPointName || !testPointName.trim()) {
           return res.status(400).json({
             success: false,
             error: `测试点 ${i + 1} 的名称不能为空`
@@ -289,6 +294,13 @@ export function createFunctionalTestCaseRoutes(): Router {
 
       console.log(`✨ 手动创建测试用例: ${name}, 包含 ${testPoints.length} 个测试点`);
 
+      // 统一测试点字段名称，确保使用 testPoint
+      const normalizedTestPoints = testPoints.map((point: any) => ({
+        ...point,
+        testPoint: point.testPoint || point.testPointName, // 统一使用 testPoint
+        testPointName: point.testPoint || point.testPointName // 保留兼容字段
+      }));
+
       const result = await getService().create({
         name,
         description,
@@ -302,7 +314,10 @@ export function createFunctionalTestCaseRoutes(): Router {
         testData,
         sectionName,
         coverageAreas,
-        testPoints
+        testScenario: testScenario || '',      // 新增字段
+        steps: steps || '',                    // 新增字段
+        assertions: assertions || '',          // 新增字段
+        testPoints: normalizedTestPoints
       }, req.user.id);
 
       res.json({
