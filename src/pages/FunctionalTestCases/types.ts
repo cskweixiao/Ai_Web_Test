@@ -1,14 +1,14 @@
-export interface TestPointItem {
-    id: number;
-    test_point_index: number;
-    test_point_name: string;
-    test_purpose?: string;
-    steps: string;
-    expected_result: string;
-    risk_level: string;
+export type ExecutionStatus = 'pending' | 'passed' | 'failed' | 'blocked';
+
+export interface ExecutionLog {
+    id: string;
+    status: ExecutionStatus;
+    executor: string;
+    time: string;
+    comment?: string;
 }
 
-export interface TestCaseGroup {
+export interface TestCaseItem {
     id: number;
     name: string;
     description?: string;
@@ -16,17 +16,33 @@ export interface TestCaseGroup {
     module: string;
     priority: string;
     status: string;
-    sectionName?: string;
+    executionStatus: ExecutionStatus;
+    lastRun?: string;
+    logs: ExecutionLog[];
     created_at: string;
     users?: {
         username: string;
     };
-    testPoints: TestPointItem[];
+}
+
+export interface TestPointGroup {
+    id: number;
+    test_point_index: number;
+    test_point_name: string;
+    test_purpose?: string;
+    steps: string;
+    expected_result: string;
+    risk_level: string;
+    testCases: TestCaseItem[];
+    progress: number; // 0-100
 }
 
 export interface TestScenarioGroup {
+    id: string;
     name: string;
-    testCases: TestCaseGroup[];
+    description?: string;
+    testPoints: TestPointGroup[];
+    progress: number; // 0-100
 }
 
 export interface FilterState {
@@ -56,6 +72,8 @@ export interface ViewProps {
     onToggleSelectPoint: (pointId: number) => void;
     onEditCase: (id: number) => void;
     onDeleteCase: (id: number, name: string) => void;
-    onEditPoint: (point: TestPointItem) => void;
+    onEditPoint: (point: TestPointGroup) => void;
     onDeletePoint: (pointId: number, pointName: string) => void;
+    onUpdateExecutionStatus: (caseId: number, status: ExecutionStatus) => void;
+    onViewLogs: (caseId: number) => void;
 }

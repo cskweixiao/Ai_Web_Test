@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
 import { Edit3, Trash2, Box, Layers, Calendar, User, Target } from 'lucide-react';
 import { clsx } from 'clsx';
-import { ViewProps, TestCaseGroup } from '../types';
+import { ViewProps, TestCaseItem } from '../types';
 
 export const KanbanView: React.FC<ViewProps> = ({
     organizedData,
@@ -11,12 +11,15 @@ export const KanbanView: React.FC<ViewProps> = ({
 }) => {
     // 按状态分组
     const groupedByStatus = useMemo(() => {
-        const allCases = organizedData.flatMap(scenario => scenario.testCases);
+        // 收集所有测试用例，遍历场景 -> 测试点 -> 用例
+        const allCases: TestCaseItem[] = organizedData.flatMap(scenario =>
+            (scenario.testPoints || []).flatMap(point => point.testCases || [])
+        );
 
         return {
-            DRAFT: allCases.filter(tc => tc.status === 'DRAFT'),
-            PUBLISHED: allCases.filter(tc => tc.status === 'PUBLISHED'),
-            ARCHIVED: allCases.filter(tc => tc.status === 'ARCHIVED'),
+            DRAFT: allCases.filter(tc => tc.executionStatus === 'pending'),
+            PUBLISHED: allCases.filter(tc => tc.executionStatus === 'passed'),
+            ARCHIVED: allCases.filter(tc => tc.executionStatus === 'failed' || tc.executionStatus === 'blocked'),
         };
     }, [organizedData]);
 
@@ -64,7 +67,7 @@ export const KanbanView: React.FC<ViewProps> = ({
         }
     };
 
-    const KanbanCard: React.FC<{ testCase: TestCaseGroup }> = ({ testCase }) => (
+    const KanbanCard: React.FC<{ testCase: TestCaseItem }> = ({ testCase }) => (
         <div className="bg-white rounded-lg border border-gray-200 p-4 shadow-sm hover:shadow-md transition-all cursor-pointer group">
             <div className="flex items-start justify-between mb-3">
                 <h3 className="font-semibold text-gray-900 text-sm line-clamp-2 flex-1" title={testCase.name}>
@@ -104,7 +107,7 @@ export const KanbanView: React.FC<ViewProps> = ({
                 </span>
                 <div className="flex items-center gap-1 text-xs text-gray-500">
                     <Target className="w-3.5 h-3.5" />
-                    <span>{testCase.testPoints.length} 个测试点</span>
+                    <span>{/* 测试点数量可在详情中查看 */}</span>
                 </div>
             </div>
 

@@ -70,29 +70,38 @@ export function TestCaseDetailModal({
 
   const hasMultipleCases = allCases && allCases.length > 1;
   const currentCase = isEditing ? editedCase : testCase;
-  
+
   if (!currentCase) return null;
-  
+
   // 判断是否显示测试用例的步骤（如果测试用例有独立的步骤，优先显示；否则显示测试点的步骤）
   const hasTestCaseSteps = currentCase.steps && typeof currentCase.steps === 'string' && currentCase.steps.trim().length > 0;
   const hasTestCaseAssertions = currentCase.assertions && typeof currentCase.assertions === 'string' && currentCase.assertions.trim().length > 0;
-  
+
   // 如果测试用例没有步骤，则从测试点获取
   const displaySteps = hasTestCaseSteps ? (currentCase.steps as string) : (currentCase.testPoints?.[0]?.steps || '');
   const displayAssertions = hasTestCaseAssertions ? (currentCase.assertions as string) : (currentCase.testPoints?.[0]?.expectedResult || '');
 
   // 处理测试步骤中的测试数据填充
-  const renderStepsWithTestData = (steps: string, testData?: string) => {
+  const renderStepsWithTestData = (steps: any, testData?: string) => {
     if (!steps) return '';
-    if (!testData) return steps;
-    
+
+    // 确保 steps 是字符串
+    let stepsStr = steps;
+    if (Array.isArray(steps)) {
+      stepsStr = steps.join('\n');
+    } else if (typeof steps !== 'string') {
+      stepsStr = String(steps);
+    }
+
+    if (!testData) return stepsStr;
+
     // 简单的占位符替换：将 {testData} 或类似的占位符替换为实际测试数据
-    let result = steps;
+    let result = stepsStr;
     // 替换常见的占位符格式
     result = result.replace(/\{testData\}/g, testData);
     result = result.replace(/\{测试数据\}/g, testData);
     result = result.replace(/\$\{testData\}/g, testData);
-    
+
     return result;
   };
 
@@ -193,8 +202,8 @@ export function TestCaseDetailModal({
           <div className="flex items-center gap-2 ml-auto">
             {isEditing ? (
               <>
-                <Button 
-                  variant="outline" 
+                <Button
+                  variant="outline"
                   onClick={handleCancel}
                   size="default"
                   className="h-9 px-4 border-gray-300 text-gray-700 bg-white hover:bg-gray-50 hover:border-gray-400 active:bg-gray-100 transition-all"
@@ -202,8 +211,8 @@ export function TestCaseDetailModal({
                 >
                   取消
                 </Button>
-                <Button 
-                  variant="default" 
+                <Button
+                  variant="default"
                   onClick={handleSave}
                   size="default"
                   className="h-9 px-4 bg-purple-600 hover:bg-purple-700 active:bg-purple-800 text-white border-0 shadow-sm hover:shadow-md active:shadow transition-all"
@@ -214,8 +223,8 @@ export function TestCaseDetailModal({
               </>
             ) : (
               <>
-                <Button 
-                  variant="outline" 
+                <Button
+                  variant="outline"
                   onClick={() => {
                     if (testCase) {
                       setEditedCase({ ...testCase });
@@ -228,8 +237,8 @@ export function TestCaseDetailModal({
                 >
                   编辑
                 </Button>
-                <Button 
-                  variant="default" 
+                <Button
+                  variant="default"
                   onClick={onClose}
                   size="default"
                   className="h-9 px-4 bg-purple-600 hover:bg-purple-700 active:bg-purple-800 text-white border-0 shadow-sm hover:shadow-md active:shadow transition-all"
@@ -302,7 +311,7 @@ export function TestCaseDetailModal({
               </div>
             </div>
           </div>
-          
+
           {/* 系统信息和关联测试点 */}
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4 pt-4 border-t border-purple-200">
             <div>
@@ -415,7 +424,7 @@ export function TestCaseDetailModal({
               <div className="w-1 h-6 bg-gradient-to-b from-purple-500 to-blue-500 rounded"></div>
               <h3 className="text-lg font-semibold text-gray-900">测试执行</h3>
             </div>
-            
+
             <div className="space-y-5">
               {filledSteps && (
                 <div>
@@ -441,7 +450,7 @@ export function TestCaseDetailModal({
                   )}
                 </div>
               )}
-              
+
               {displayAssertions && (
                 <div>
                   <div className="flex items-center gap-2 mb-3">

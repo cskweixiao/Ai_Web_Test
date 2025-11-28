@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
 import { Edit3, Trash2, Box, Layers, User, Target, Clock } from 'lucide-react';
 import { clsx } from 'clsx';
-import { ViewProps, TestCaseGroup } from '../types';
+import { ViewProps, TestCaseItem } from '../types';
 
 export const TimelineView: React.FC<ViewProps> = ({
     organizedData,
@@ -11,17 +11,17 @@ export const TimelineView: React.FC<ViewProps> = ({
 }) => {
     // 按时间分组
     const groupedByTime = useMemo(() => {
-        const allCases = organizedData.flatMap(scenario => scenario.testCases);
+        const allCases = organizedData.flatMap(scenario => (scenario.testPoints || []).flatMap(point => point.testCases || []));
         const now = new Date();
         const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
         const weekAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
         const monthAgo = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000);
 
         const groups = {
-            today: [] as TestCaseGroup[],
-            thisWeek: [] as TestCaseGroup[],
-            thisMonth: [] as TestCaseGroup[],
-            earlier: [] as TestCaseGroup[],
+            today: [] as TestCaseItem[],
+            thisWeek: [] as TestCaseItem[],
+            thisMonth: [] as TestCaseItem[],
+            earlier: [] as TestCaseItem[],
         };
 
         allCases.forEach(tc => {
@@ -101,7 +101,7 @@ export const TimelineView: React.FC<ViewProps> = ({
         return date.toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' });
     };
 
-    const TimelineCard: React.FC<{ testCase: TestCaseGroup; isLast: boolean }> = ({ testCase, isLast }) => (
+    const TimelineCard: React.FC<{ testCase: TestCaseItem; isLast: boolean }> = ({ testCase, isLast }) => (
         <div className="flex gap-4 group">
             {/* 时间轴 */}
             <div className="flex flex-col items-center">
@@ -156,10 +156,7 @@ export const TimelineView: React.FC<ViewProps> = ({
                         <span className={clsx('px-2.5 py-0.5 rounded-full text-xs font-medium border', getStatusColor(testCase.status))}>
                             {getStatusText(testCase.status)}
                         </span>
-                        <div className="flex items-center gap-1 text-xs text-gray-500 px-2 py-0.5 bg-gray-50 rounded-full">
-                            <Target className="w-3.5 h-3.5" />
-                            <span>{testCase.testPoints.length} 个测试点</span>
-                        </div>
+                        {/* 这里可以展示其他标签，如优先级、状态等 */}
                     </div>
 
                     {/* 详细信息 */}

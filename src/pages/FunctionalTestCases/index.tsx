@@ -11,8 +11,9 @@ import { CardView } from './views/CardView';
 import { TableView } from './views/TableView';
 import { KanbanView } from './views/KanbanView';
 import { TimelineView } from './views/TimelineView';
-import { FilterState, TestScenarioGroup, TestCaseGroup, TestPointItem, ViewMode } from './types';
+import { FilterState, TestScenarioGroup, TestPointGroup, TestCaseItem, ViewMode, ExecutionStatus } from './types';
 import { SystemOption } from '../../types/test';
+import { ExecutionLogModal } from './components/ExecutionLogModal';
 
 // LocalStorage key for view preference
 const VIEW_PREFERENCE_KEY = 'functional-test-cases-view-mode';
@@ -57,6 +58,8 @@ export function FunctionalTestCases() {
     // Modal State
     const [detailModalOpen, setDetailModalOpen] = useState(false);
     const [currentDetailCase, setCurrentDetailCase] = useState<any>(null);
+    const [logModalOpen, setLogModalOpen] = useState(false);
+    const [currentLogCaseId, setCurrentLogCaseId] = useState<number | null>(null);
 
     // 保存视图偏好到 localStorage
     const handleViewChange = (view: ViewMode) => {
@@ -112,23 +115,54 @@ export function FunctionalTestCases() {
         setSelectedPoints(new Set());
     }, [testCases]);
 
-    // Organize Data
+    // Organize Data: Scenario -> Point -> Case
     const organizedData = useMemo(() => {
         if (!testCases || testCases.length === 0) return [];
 
-        const scenarioMap = new Map<string, Map<number, TestCaseGroup>>();
+        const scenarioMap = new Map<string, TestScenarioGroup>();
 
         testCases.forEach((row) => {
+            // 1. Identify Scenario
+            // Assuming 'tags' or 'section_name' identifies the scenario. 
+            // If tags is an array string "['Scenario A']", we might need to parse it.
+            // For now, using tags as string or '未分类'.
             const scenarioName = row.tags || '未分类';
+            const scenarioId = scenarioName; // Use name as ID for now if no specific ID
 
-            if (!scenarioMap.has(scenarioName)) {
-                scenarioMap.set(scenarioName, new Map());
+            if (!scenarioMap.has(scenarioId)) {
+                scenarioMap.set(scenarioId, {
+                    id: scenarioId,
+                    name: scenarioName,
+                    description: '', // Scenario description might not be in flat list row
+                    testPoints: [],
+                    progress: 0
+                });
+            }
+            const scenario = scenarioMap.get(scenarioId)!;
+
+            // 2. Identify Test Point
+            const pointId = row.test_point_id;
+            let point = scenario.testPoints.find(p => p.id === pointId);
+
+            if (!point) {
+                point = {
+                    id: pointId,
+                    test_point_index: row.test_point_index,
+                    test_point_name: row.test_point_name || '未命名测试点',
+                    test_purpose: row.test_purpose,
+                    steps: row.test_point_steps || '',
+                    expected_result: row.test_point_expected_result || '',
+                    risk_level: row.test_point_risk_level || 'medium',
+                    testCases: [],
+                    progress: 0
+                };
+                scenario.testPoints.push(point);
             }
 
-            const testCaseMap = scenarioMap.get(scenarioName)!;
-
-            if (!testCaseMap.has(row.id)) {
-                testCaseMap.set(row.id, {
+            // 3. Add Test Case
+            // Check if case already exists (unlikely in flat list unless duplicate rows)
+            if (!point.testCases.some(tc => tc.id === row.id)) {
+                point.testCases.push({
                     id: row.id,
                     name: row.name || '未命名用例',
                     description: row.description,
@@ -136,31 +170,34 @@ export function FunctionalTestCases() {
                     module: row.module || '',
                     priority: row.priority || 'medium',
                     status: row.status || 'DRAFT',
-                    sectionName: row.section_name,
+                    executionStatus: row.execution_status || 'pending', // Assuming backend returns execution_status
+                    lastRun: row.last_run,
+                    logs: row.execution_logs || [], // Assuming backend returns logs
                     created_at: row.created_at,
-                    users: row.users,
-                    testPoints: []
+                    users: row.users
                 });
             }
-
-            const testCase = testCaseMap.get(row.id)!;
-            testCase.testPoints.push({
-                id: row.test_point_id,
-                test_point_index: row.test_point_index,
-                test_point_name: row.test_point_name || '未命名测试点',
-                test_purpose: row.test_purpose,
-                steps: row.test_point_steps || '',
-                expected_result: row.test_point_expected_result || '',
-                risk_level: row.test_point_risk_level || 'medium'
-            });
         });
 
-        const scenarios: TestScenarioGroup[] = [];
-        scenarioMap.forEach((testCaseMap, scenarioName) => {
-            scenarios.push({
-                name: scenarioName,
-                testCases: Array.from(testCaseMap.values())
+        // Calculate Progress
+        const scenarios = Array.from(scenarioMap.values());
+        scenarios.forEach(scenario => {
+            let scenarioTotalCases = 0;
+            let scenarioCompletedCases = 0;
+
+            scenario.testPoints.forEach(point => {
+                const total = point.testCases.length;
+                // Usually 'passed' is 100%, 'failed' is also executed. 
+                // Let's count 'passed', 'failed', 'blocked' as executed.
+                const executed = point.testCases.filter(tc => ['passed', 'failed', 'blocked'].includes(tc.executionStatus)).length;
+
+                point.progress = total > 0 ? Math.round((executed / total) * 100) : 0;
+
+                scenarioTotalCases += total;
+                scenarioCompletedCases += executed;
             });
+
+            scenario.progress = scenarioTotalCases > 0 ? Math.round((scenarioCompletedCases / scenarioTotalCases) * 100) : 0;
         });
 
         return scenarios;
@@ -216,12 +253,13 @@ export function FunctionalTestCases() {
         }
     };
 
-    const handleEditPoint = (point: TestPointItem) => {
-        // For now, we edit the parent case as points are part of the case
-        // Find the case ID for this point
-        const testCase = testCases.find(tc => tc.test_point_id === point.id);
-        if (testCase) {
-            handleEditCase(testCase.id);
+    const handleEditPoint = (point: TestPointGroup) => {
+        // For now, we edit the first case of the point or just open a modal?
+        // Since points are tied to cases, maybe we just pick one case to edit context?
+        // Or maybe we need a specific Point Edit Modal.
+        // Reusing handleEditCase for the first case for now as fallback.
+        if (point.testCases.length > 0) {
+            handleEditCase(point.testCases[0].id);
         }
     };
 
@@ -257,6 +295,26 @@ export function FunctionalTestCases() {
         }
     };
 
+    const handleUpdateExecutionStatus = async (caseId: number, status: ExecutionStatus) => {
+        try {
+            // Optimistic update
+            setTestCases(prev => prev.map(tc => tc.id === caseId ? { ...tc, execution_status: status } : tc));
+
+            await functionalTestCaseService.update(caseId, { executionStatus: status });
+            showToast.success('执行状态已更新');
+            // No need to reload data if optimistic update is enough, but for consistency:
+            // loadData(); 
+        } catch (error: any) {
+            showToast.error('更新状态失败: ' + error.message);
+            loadData(); // Revert on error
+        }
+    };
+
+    const handleViewLogs = (caseId: number) => {
+        setCurrentLogCaseId(caseId);
+        setLogModalOpen(true);
+    };
+
     // 视图组件的通用属性
     const viewProps = {
         testCases,
@@ -268,6 +326,8 @@ export function FunctionalTestCases() {
         onDeleteCase: handleDeleteCase,
         onEditPoint: handleEditPoint,
         onDeletePoint: handleDeletePoint,
+        onUpdateExecutionStatus: handleUpdateExecutionStatus,
+        onViewLogs: handleViewLogs
     };
 
     // 渲染当前视图
@@ -389,6 +449,15 @@ export function FunctionalTestCases() {
                     onClose={() => setDetailModalOpen(false)}
                     testCase={currentDetailCase}
                     onSave={handleSaveDetail}
+                />
+            )}
+
+            {/* Execution Log Modal */}
+            {logModalOpen && currentLogCaseId && (
+                <ExecutionLogModal
+                    isOpen={logModalOpen}
+                    onClose={() => setLogModalOpen(false)}
+                    caseId={currentLogCaseId}
                 />
             )}
         </div>

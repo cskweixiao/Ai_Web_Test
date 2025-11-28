@@ -1,26 +1,19 @@
 import React from 'react';
-import { Table, Tag, Button, Space, Tooltip } from 'antd';
-import { Edit3, Trash2, ChevronRight, ChevronDown } from 'lucide-react';
+import { Table, Tag, Button, Space, Tooltip, Progress, Select } from 'antd';
+import { Edit3, Trash2, ChevronRight, ChevronDown, FileText, PlayCircle, CheckCircle, XCircle, AlertCircle, Clock } from 'lucide-react';
 import type { ColumnsType } from 'antd/es/table';
-import { ViewProps, TestCaseGroup, TestPointItem } from '../types';
+import { ViewProps, TestScenarioGroup, TestPointGroup, TestCaseItem, ExecutionStatus } from '../types';
 
 export const TableView: React.FC<ViewProps> = ({
     organizedData,
     loading,
-    selectedPoints,
-    onToggleSelectPoint,
     onEditCase,
     onDeleteCase,
     onEditPoint,
     onDeletePoint,
+    onUpdateExecutionStatus,
+    onViewLogs
 }) => {
-    // 将组织化数据扁平化为表格数据
-    const tableData = organizedData.flatMap(scenario =>
-        scenario.testCases.map(testCase => ({
-            ...testCase,
-            scenarioName: scenario.name,
-        }))
-    );
 
     const getPriorityColor = (priority: string) => {
         switch (priority) {
@@ -42,24 +35,6 @@ export const TableView: React.FC<ViewProps> = ({
         }
     };
 
-    const getStatusColor = (status: string) => {
-        switch (status) {
-            case 'PUBLISHED': return 'green';
-            case 'DRAFT': return 'gold';
-            case 'ARCHIVED': return 'default';
-            default: return 'default';
-        }
-    };
-
-    const getStatusText = (status: string) => {
-        switch (status) {
-            case 'PUBLISHED': return '已发布';
-            case 'DRAFT': return '草稿';
-            case 'ARCHIVED': return '已归档';
-            default: return status;
-        }
-    };
-
     const getRiskLevelText = (level: string) => {
         switch (level) {
             case 'high': return '高';
@@ -69,191 +44,90 @@ export const TableView: React.FC<ViewProps> = ({
         }
     };
 
-    const columns: ColumnsType<TestCaseGroup & { scenarioName: string }> = [
-        {
-            title: '测试用例名称',
-            dataIndex: 'name',
-            key: 'name',
-            width: 300,
-            fixed: 'left',
-            sorter: (a, b) => a.name.localeCompare(b.name),
-            render: (text, record) => (
-                <div>
-                    <div className="font-medium text-gray-900">{text}</div>
-                    {record.description && (
-                        <div className="text-xs text-gray-500 mt-1 line-clamp-1">{record.description}</div>
-                    )}
-                </div>
-            ),
-        },
-        {
-            title: '场景',
-            dataIndex: 'scenarioName',
-            key: 'scenarioName',
-            width: 150,
-            filters: Array.from(new Set(tableData.map(item => item.scenarioName))).map(name => ({
-                text: name,
-                value: name,
-            })),
-            onFilter: (value, record) => record.scenarioName === value,
-        },
-        {
-            title: '系统',
-            dataIndex: 'system',
-            key: 'system',
-            width: 120,
-            filters: Array.from(new Set(tableData.map(item => item.system))).map(sys => ({
-                text: sys,
-                value: sys,
-            })),
-            onFilter: (value, record) => record.system === value,
-        },
-        {
-            title: '模块',
-            dataIndex: 'module',
-            key: 'module',
-            width: 120,
-        },
-        {
-            title: '优先级',
-            dataIndex: 'priority',
-            key: 'priority',
-            width: 100,
-            sorter: (a, b) => {
-                const order = { critical: 4, high: 3, medium: 2, low: 1 };
-                return (order[a.priority as keyof typeof order] || 0) - (order[b.priority as keyof typeof order] || 0);
-            },
-            render: (priority: string) => (
-                <Tag color={getPriorityColor(priority)}>{getPriorityText(priority)}</Tag>
-            ),
-        },
-        {
-            title: '状态',
-            dataIndex: 'status',
-            key: 'status',
-            width: 100,
-            filters: [
-                { text: '已发布', value: 'PUBLISHED' },
-                { text: '草稿', value: 'DRAFT' },
-                { text: '已归档', value: 'ARCHIVED' },
-            ],
-            onFilter: (value, record) => record.status === value,
-            render: (status: string) => (
-                <Tag color={getStatusColor(status)}>{getStatusText(status)}</Tag>
-            ),
-        },
-        {
-            title: '测试点',
-            dataIndex: 'testPoints',
-            key: 'testPointsCount',
-            width: 100,
-            align: 'center',
-            sorter: (a, b) => a.testPoints.length - b.testPoints.length,
-            render: (testPoints: TestPointItem[]) => (
-                <span className="text-blue-600 font-medium">{testPoints.length}</span>
-            ),
-        },
-        {
-            title: '创建人',
-            dataIndex: ['users', 'username'],
-            key: 'creator',
-            width: 120,
-        },
-        {
-            title: '创建时间',
-            dataIndex: 'created_at',
-            key: 'created_at',
-            width: 150,
-            sorter: (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
-            render: (date: string) => new Date(date).toLocaleDateString('zh-CN'),
-        },
-        {
-            title: '操作',
-            key: 'actions',
-            width: 120,
-            fixed: 'right',
-            render: (_, record) => (
-                <Space size="small">
-                    <Tooltip title="编辑">
-                        <Button
-                            type="text"
-                            size="small"
-                            icon={<Edit3 className="w-4 h-4" />}
-                            onClick={() => onEditCase(record.id)}
-                        />
-                    </Tooltip>
-                    <Tooltip title="删除">
-                        <Button
-                            type="text"
-                            size="small"
-                            danger
-                            icon={<Trash2 className="w-4 h-4" />}
-                            onClick={() => onDeleteCase(record.id, record.name)}
-                        />
-                    </Tooltip>
-                </Space>
-            ),
-        },
-    ];
+    const getStatusTag = (status: ExecutionStatus) => {
+        switch (status) {
+            case 'passed': return <Tag color="success" icon={<CheckCircle className="w-3 h-3 mr-1" />}>通过</Tag>;
+            case 'failed': return <Tag color="error" icon={<XCircle className="w-3 h-3 mr-1" />}>失败</Tag>;
+            case 'blocked': return <Tag color="warning" icon={<AlertCircle className="w-3 h-3 mr-1" />}>受阻</Tag>;
+            default: return <Tag color="default" icon={<Clock className="w-3 h-3 mr-1" />}>未执行</Tag>;
+        }
+    };
 
-    // 展开行渲染测试点
-    const expandedRowRender = (record: TestCaseGroup) => {
-        const testPointColumns: ColumnsType<TestPointItem> = [
+    // Level 3: Test Cases
+    const expandedPointRender = (point: TestPointGroup) => {
+        const caseColumns: ColumnsType<TestCaseItem> = [
             {
-                title: '序号',
-                dataIndex: 'test_point_index',
-                key: 'test_point_index',
-                width: 80,
-                align: 'center',
-            },
-            {
-                title: '测试点名称',
-                dataIndex: 'test_point_name',
-                key: 'test_point_name',
-                width: 250,
-            },
-            {
-                title: '测试目的',
-                dataIndex: 'test_purpose',
-                key: 'test_purpose',
-                width: 200,
-                ellipsis: true,
-            },
-            {
-                title: '测试步骤',
-                dataIndex: 'steps',
-                key: 'steps',
-                width: 250,
-                ellipsis: true,
-            },
-            {
-                title: '预期结果',
-                dataIndex: 'expected_result',
-                key: 'expected_result',
-                width: 200,
-                ellipsis: true,
-            },
-            {
-                title: '风险等级',
-                dataIndex: 'risk_level',
-                key: 'risk_level',
-                width: 100,
-                render: (level: string) => (
-                    <Tag color={getPriorityColor(level)}>{getRiskLevelText(level)}</Tag>
+                title: '测试用例名称',
+                dataIndex: 'name',
+                key: 'name',
+                width: 300,
+                render: (text, record) => (
+                    <div>
+                        <div className="font-medium text-gray-900">{text}</div>
+                        {record.description && (
+                            <div className="text-xs text-gray-500 mt-1 line-clamp-1">{record.description}</div>
+                        )}
+                    </div>
                 ),
+            },
+            {
+                title: '优先级',
+                dataIndex: 'priority',
+                key: 'priority',
+                width: 100,
+                render: (priority: string) => (
+                    <Tag color={getPriorityColor(priority)}>{getPriorityText(priority)}</Tag>
+                ),
+            },
+            {
+                title: '执行状态',
+                dataIndex: 'executionStatus',
+                key: 'executionStatus',
+                width: 150,
+                render: (status: ExecutionStatus, record) => (
+                    <Select
+                        value={status || 'pending'}
+                        onChange={(val) => onUpdateExecutionStatus(record.id, val)}
+                        style={{ width: 120 }}
+                        options={[
+                            { label: <span className="text-gray-500">未执行</span>, value: 'pending' },
+                            { label: <span className="text-green-600">通过</span>, value: 'passed' },
+                            { label: <span className="text-red-600">失败</span>, value: 'failed' },
+                            { label: <span className="text-orange-600">受阻</span>, value: 'blocked' },
+                        ]}
+                        size="small"
+                        variant="borderless"
+                        className="font-medium"
+                    />
+                ),
+            },
+            {
+                title: '最后执行',
+                dataIndex: 'lastRun',
+                key: 'lastRun',
+                width: 150,
+                render: (date: string) => date ? new Date(date).toLocaleString('zh-CN') : '-',
             },
             {
                 title: '操作',
                 key: 'actions',
-                width: 120,
-                render: (_, point) => (
+                width: 150,
+                render: (_, record) => (
                     <Space size="small">
+                        <Tooltip title="执行日志">
+                            <Button
+                                type="text"
+                                size="small"
+                                icon={<FileText className="w-4 h-4 text-gray-500" />}
+                                onClick={() => onViewLogs(record.id)}
+                            />
+                        </Tooltip>
                         <Tooltip title="编辑">
                             <Button
                                 type="text"
                                 size="small"
-                                icon={<Edit3 className="w-3.5 h-3.5" />}
-                                onClick={() => onEditPoint(point)}
+                                icon={<Edit3 className="w-4 h-4 text-blue-500" />}
+                                onClick={() => onEditCase(record.id)}
                             />
                         </Tooltip>
                         <Tooltip title="删除">
@@ -261,8 +135,8 @@ export const TableView: React.FC<ViewProps> = ({
                                 type="text"
                                 size="small"
                                 danger
-                                icon={<Trash2 className="w-3.5 h-3.5" />}
-                                onClick={() => onDeletePoint(point.id, point.test_point_name)}
+                                icon={<Trash2 className="w-4 h-4" />}
+                                onClick={() => onDeleteCase(record.id, record.name)}
                             />
                         </Tooltip>
                     </Space>
@@ -271,30 +145,160 @@ export const TableView: React.FC<ViewProps> = ({
         ];
 
         return (
-            <div className="bg-gray-50 p-4 rounded-lg">
-                <h4 className="text-sm font-semibold text-gray-700 mb-3">测试点列表</h4>
+            <div className="pl-12 pr-4 py-2 bg-white">
                 <Table
-                    columns={testPointColumns}
-                    dataSource={record.testPoints}
+                    columns={caseColumns}
+                    dataSource={point.testCases}
                     rowKey="id"
                     pagination={false}
                     size="small"
-                    rowSelection={{
-                        selectedRowKeys: Array.from(selectedPoints),
-                        onChange: (selectedRowKeys) => {
-                            // 处理选中状态变化
-                            const currentPointIds = new Set(record.testPoints.map(p => p.id));
-                            selectedRowKeys.forEach(key => {
-                                if (currentPointIds.has(key as number)) {
-                                    onToggleSelectPoint(key as number);
-                                }
-                            });
-                        },
+                    bordered={false}
+                    showHeader={true}
+                />
+            </div>
+        );
+    };
+
+    // Level 2: Test Points
+    const expandedScenarioRender = (scenario: TestScenarioGroup) => {
+        const pointColumns: ColumnsType<TestPointGroup> = [
+            {
+                title: '测试点',
+                dataIndex: 'test_point_name',
+                key: 'name',
+                width: 250,
+                render: (text, record) => (
+                    <div className="flex items-center gap-2">
+                        <span className="w-6 h-6 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center text-xs font-bold">
+                            {record.test_point_index}
+                        </span>
+                        <span className="font-medium">{text}</span>
+                    </div>
+                ),
+            },
+            {
+                title: '测试目的',
+                dataIndex: 'test_purpose',
+                key: 'purpose',
+                width: 200,
+                ellipsis: true,
+            },
+            {
+                title: '进度',
+                key: 'progress',
+                width: 200,
+                render: (_, record) => (
+                    <div className="w-full pr-4">
+                        <Progress percent={record.progress} size="small" steps={5} strokeColor="#52c41a" />
+                    </div>
+                ),
+            },
+            {
+                title: '风险等级',
+                dataIndex: 'risk_level',
+                key: 'risk',
+                width: 100,
+                render: (level: string) => (
+                    <Tag color={getPriorityColor(level)}>{getRiskLevelText(level)}</Tag>
+                ),
+            },
+            {
+                title: '操作',
+                key: 'actions',
+                width: 100,
+                render: (_, record) => (
+                    <Space size="small">
+                        <Tooltip title="编辑测试点">
+                            <Button
+                                type="text"
+                                size="small"
+                                icon={<Edit3 className="w-3.5 h-3.5" />}
+                                onClick={() => onEditPoint(record)}
+                            />
+                        </Tooltip>
+                        <Tooltip title="删除测试点">
+                            <Button
+                                type="text"
+                                size="small"
+                                danger
+                                icon={<Trash2 className="w-3.5 h-3.5" />}
+                                onClick={() => onDeletePoint(record.id, record.test_point_name)}
+                            />
+                        </Tooltip>
+                    </Space>
+                ),
+            },
+        ];
+
+        return (
+            <div className="pl-8 pr-4 py-3 bg-gray-50/50 rounded-lg mx-4 mb-2 border border-gray-100">
+                <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2 pl-2">测试点列表</h4>
+                <Table
+                    columns={pointColumns}
+                    dataSource={scenario.testPoints}
+                    rowKey="id"
+                    pagination={false}
+                    size="small"
+                    expandable={{
+                        expandedRowRender: expandedPointRender,
+                        expandIcon: ({ expanded, onExpand, record }) => (
+                            <button
+                                onClick={(e) => onExpand(record, e)}
+                                className="p-1 hover:bg-blue-100 rounded transition-colors mr-2"
+                            >
+                                {expanded ? (
+                                    <ChevronDown className="w-4 h-4 text-blue-600" />
+                                ) : (
+                                    <ChevronRight className="w-4 h-4 text-gray-400" />
+                                )}
+                            </button>
+                        ),
                     }}
                 />
             </div>
         );
     };
+
+    // Level 1: Scenarios
+    const scenarioColumns: ColumnsType<TestScenarioGroup> = [
+        {
+            title: '测试场景',
+            dataIndex: 'name',
+            key: 'name',
+            width: 300,
+            render: (text) => (
+                <div className="font-bold text-gray-800 text-base">{text}</div>
+            ),
+        },
+        {
+            title: '描述',
+            dataIndex: 'description',
+            key: 'description',
+            width: 300,
+            ellipsis: true,
+            render: (text) => text || <span className="text-gray-400 italic">无描述</span>,
+        },
+        {
+            title: '总体进度',
+            key: 'progress',
+            width: 250,
+            render: (_, record) => (
+                <div className="flex items-center gap-3">
+                    <Progress percent={record.progress} strokeColor={{ from: '#108ee9', to: '#87d068' }} />
+                    {record.progress === 100 && <CheckCircle className="w-5 h-5 text-green-500" />}
+                </div>
+            ),
+        },
+        {
+            title: '包含测试点',
+            key: 'pointsCount',
+            width: 120,
+            align: 'center',
+            render: (_, record) => (
+                <Tag color="blue">{record.testPoints.length} 个测试点</Tag>
+            ),
+        },
+    ];
 
     if (loading) {
         return (
@@ -305,7 +309,7 @@ export const TableView: React.FC<ViewProps> = ({
         );
     }
 
-    if (tableData.length === 0) {
+    if (organizedData.length === 0) {
         return (
             <div className="text-center py-20 bg-white rounded-xl border border-gray-200 border-dashed">
                 <p className="text-gray-500">未找到符合条件的测试用例</p>
@@ -316,39 +320,27 @@ export const TableView: React.FC<ViewProps> = ({
     return (
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
             <Table
-                columns={columns}
-                dataSource={tableData}
+                columns={scenarioColumns}
+                dataSource={organizedData}
                 rowKey="id"
                 loading={loading}
-                pagination={{
-                    pageSize: 20,
-                    showSizeChanger: true,
-                    showTotal: (total) => `共 ${total} 条`,
-                    pageSizeOptions: ['10', '20', '50', '100'],
-                }}
+                pagination={false} // Pagination is handled externally
                 expandable={{
-                    expandedRowRender,
+                    expandedRowRender: expandedScenarioRender,
                     expandIcon: ({ expanded, onExpand, record }) => (
                         <button
                             onClick={(e) => onExpand(record, e)}
                             className="p-1 hover:bg-gray-100 rounded transition-colors"
                         >
                             {expanded ? (
-                                <ChevronDown className="w-4 h-4 text-gray-600" />
+                                <ChevronDown className="w-5 h-5 text-gray-600" />
                             ) : (
-                                <ChevronRight className="w-4 h-4 text-gray-600" />
+                                <ChevronRight className="w-5 h-5 text-gray-600" />
                             )}
                         </button>
                     ),
                 }}
-                scroll={{ x: 1500 }}
-                locale={{
-                    emptyText: '暂无数据',
-                    filterConfirm: '确定',
-                    filterReset: '重置',
-                    selectAll: '全选',
-                    selectInvert: '反选',
-                }}
+                scroll={{ x: 1200 }}
             />
         </div>
     );

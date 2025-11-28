@@ -31,31 +31,37 @@ export const CardView: React.FC<ViewProps> = ({
 
     return (
         <div className="space-y-8">
-            {organizedData.map((scenario) => (
-                <div key={scenario.name} className="space-y-4">
-                    <h2 className="text-lg font-semibold text-gray-700 flex items-center gap-2 pl-1">
-                        <span className="w-1 h-5 bg-blue-500 rounded-full"></span>
-                        {scenario.name}
-                        <span className="text-sm font-normal text-gray-400 ml-2">
-                            ({scenario.testCases.length} 个用例)
-                        </span>
-                    </h2>
-                    <div className="grid gap-4">
-                        {scenario.testCases.map(testCase => (
-                            <TestCaseCard
-                                key={testCase.id}
-                                testCase={testCase}
-                                onEditCase={onEditCase}
-                                onDeleteCase={onDeleteCase}
-                                onEditPoint={onEditPoint}
-                                onDeletePoint={onDeletePoint}
-                                selectedPoints={selectedPoints}
-                                onToggleSelectPoint={onToggleSelectPoint}
-                            />
-                        ))}
+            {organizedData.map((scenario) => {
+                const allCaseItems = (scenario.testPoints || []).flatMap((point) =>
+                    (point.testCases || []).map(testCase => ({ testCase, point }))
+                );
+                return (
+                    <div key={scenario.name} className="space-y-4">
+                        <h2 className="text-lg font-semibold text-gray-700 flex items-center gap-2 pl-1">
+                            <span className="w-1 h-5 bg-blue-500 rounded-full"></span>
+                            {scenario.name}
+                            <span className="text-sm font-normal text-gray-400 ml-2">
+                                ({allCaseItems.length} 个用例)
+                            </span>
+                        </h2>
+                        <div className="grid gap-4">
+                            {allCaseItems.map(({ testCase, point }) => (
+                                <TestCaseCard
+                                    key={testCase.id}
+                                    testCase={testCase}
+                                    testPoint={point}
+                                    onEditCase={onEditCase}
+                                    onDeleteCase={onDeleteCase}
+                                    onEditPoint={onEditPoint}
+                                    onDeletePoint={onDeletePoint}
+                                    selectedPoints={selectedPoints}
+                                    onToggleSelectPoint={onToggleSelectPoint}
+                                />
+                            ))}
+                        </div>
                     </div>
-                </div>
-            ))}
+                );
+            })}
         </div>
     );
 };

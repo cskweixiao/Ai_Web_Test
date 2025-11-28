@@ -40,7 +40,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
                     <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
                     <input
                         type="text"
-                        placeholder="Search cases, descriptions, purposes..."
+                        placeholder="搜索用例、描述、测试目的..."
                         value={filters.search}
                         onChange={e => handleChange('search', e.target.value)}
                         onKeyDown={handleKeyDown}
@@ -57,7 +57,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
                     className="px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-lg text-sm
                    focus:bg-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
                 >
-                    <option value="">All Systems</option>
+                    <option value="">所有系统</option>
                     {systemOptions.map(sys => (
                         <option key={sys.id} value={sys.name}>{sys.name}</option>
                     ))}
@@ -69,10 +69,10 @@ export const FilterBar: React.FC<FilterBarProps> = ({
                     className="px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-lg text-sm
                    focus:bg-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
                 >
-                    <option value="">All Status</option>
-                    <option value="PUBLISHED">Published</option>
-                    <option value="DRAFT">Draft</option>
-                    <option value="ARCHIVED">Archived</option>
+                    <option value="">所有状态</option>
+                    <option value="PUBLISHED">已发布</option>
+                    <option value="DRAFT">草稿</option>
+                    <option value="ARCHIVED">已归档</option>
                 </select>
 
                 {/* Actions */}
@@ -86,7 +86,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
                     )}
                 >
                     <Filter className="w-4 h-4 mr-2" />
-                    Filters
+                    筛选
                 </button>
 
                 <button
@@ -95,7 +95,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
                    border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors text-sm font-medium"
                 >
                     <X className="w-4 h-4 mr-2" />
-                    Reset
+                    重置
                 </button>
             </div>
 
@@ -110,10 +110,10 @@ export const FilterBar: React.FC<FilterBarProps> = ({
                     >
                         <div className="pt-4 mt-4 border-t border-gray-100 grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4">
                             <div className="space-y-1">
-                                <label className="text-xs font-medium text-gray-500">Module</label>
+                                <label className="text-xs font-medium text-gray-500">模块</label>
                                 <input
                                     type="text"
-                                    placeholder="Module name..."
+                                    placeholder="模块名称..."
                                     value={filters.module}
                                     onChange={e => handleChange('module', e.target.value)}
                                     className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm
@@ -122,41 +122,41 @@ export const FilterBar: React.FC<FilterBarProps> = ({
                             </div>
 
                             <div className="space-y-1">
-                                <label className="text-xs font-medium text-gray-500">Priority</label>
+                                <label className="text-xs font-medium text-gray-500">优先级</label>
                                 <select
                                     value={filters.priority}
                                     onChange={e => handleChange('priority', e.target.value)}
                                     className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm
                            focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
                                 >
-                                    <option value="">All Priorities</option>
-                                    <option value="critical">Critical</option>
-                                    <option value="high">High</option>
-                                    <option value="medium">Medium</option>
-                                    <option value="low">Low</option>
+                                    <option value="">所有优先级</option>
+                                    <option value="critical">紧急</option>
+                                    <option value="high">高</option>
+                                    <option value="medium">中</option>
+                                    <option value="low">低</option>
                                 </select>
                             </div>
 
                             <div className="space-y-1">
-                                <label className="text-xs font-medium text-gray-500">Risk Level</label>
+                                <label className="text-xs font-medium text-gray-500">风险等级</label>
                                 <select
                                     value={filters.riskLevel}
                                     onChange={e => handleChange('riskLevel', e.target.value)}
                                     className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm
                            focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
                                 >
-                                    <option value="">All Risks</option>
-                                    <option value="high">High</option>
-                                    <option value="medium">Medium</option>
-                                    <option value="low">Low</option>
+                                    <option value="">所有风险</option>
+                                    <option value="high">高</option>
+                                    <option value="medium">中</option>
+                                    <option value="low">低</option>
                                 </select>
                             </div>
 
                             <div className="space-y-1">
-                                <label className="text-xs font-medium text-gray-500">Created By</label>
+                                <label className="text-xs font-medium text-gray-500">创建人</label>
                                 <input
                                     type="text"
-                                    placeholder="Username..."
+                                    placeholder="用户名..."
                                     value={filters.createdBy}
                                     onChange={e => handleChange('createdBy', e.target.value)}
                                     className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm
@@ -165,16 +165,16 @@ export const FilterBar: React.FC<FilterBarProps> = ({
                             </div>
 
                             <div className="space-y-1">
-                                <label className="text-xs font-medium text-gray-500">Source</label>
+                                <label className="text-xs font-medium text-gray-500">来源</label>
                                 <select
                                     value={filters.source}
                                     onChange={e => handleChange('source', e.target.value)}
                                     className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm
                            focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
                                 >
-                                    <option value="">All Sources</option>
-                                    <option value="AI_GENERATED">AI Generated</option>
-                                    <option value="MANUAL">Manual</option>
+                                    <option value="">所有来源</option>
+                                    <option value="AI_GENERATED">AI 生成</option>
+                                    <option value="MANUAL">手动创建</option>
                                 </select>
                             </div>
                         </div>

@@ -91,7 +91,7 @@ export function FunctionalTestCaseGenerator() {
   const [saving, setSaving] = useState(false);
   const [viewingAllCases, setViewingAllCases] = useState<any[]>([]); // 查看全部用例时的用例列表
   const [currentCaseIndex, setCurrentCaseIndex] = useState(0); // 当前查看的用例索引
-  
+
   // 兼容性：保留旧状态名称（用于向后兼容）
   const testModules = testScenarios;
   const setTestModules = setTestScenarios;
@@ -344,7 +344,7 @@ export function FunctionalTestCaseGenerator() {
 
     try {
       console.log('🎯 阶段1：开始智能测试场景拆分...');
-      const result = await functionalTestCaseService.analyzeTestScenarios(requirementDoc, sessionId);      console.log('🚀 测试场景拆分结果:', result);
+      const result = await functionalTestCaseService.analyzeTestScenarios(requirementDoc, sessionId); console.log('🚀 测试场景拆分结果:', result);
       console.log('✅ 测试场景拆分完成:', result.data.scenarios);
       setTestScenarios(result.data.scenarios || result.data.modules || []); // 兼容旧接口
       showToast.success(`成功拆分 ${(result.data.scenarios || result.data.modules || []).length} 个测试场景`);
@@ -356,7 +356,7 @@ export function FunctionalTestCaseGenerator() {
       setAnalyzingScenarios(false);
     }
   };
-  
+
   // 兼容性方法
   const handleAnalyzeModules = handleAnalyzeScenarios;
 
@@ -386,11 +386,11 @@ export function FunctionalTestCaseGenerator() {
       // 更新场景，添加测试点（重新生成时替换，否则追加）
       setTestScenarios(prev => prev.map(s =>
         s.id === scenario.id
-          ? { 
-              ...s, 
-              testPoints: isRegenerate 
-                ? result.data.testPoints.map((tp: any) => ({ ...tp, testCases: [] })) // 重新生成时清空测试用例
-                : result.data.testPoints 
+          ? {
+            ...s,
+            testPoints: isRegenerate
+              ? result.data.testPoints.map((tp: any) => ({ ...tp, testCases: [] })) // 重新生成时清空测试用例
+              : result.data.testPoints
           }
           : s
       ));
@@ -443,14 +443,14 @@ export function FunctionalTestCaseGenerator() {
       const newCases = result.data.testCases.map((tc: any, index: number) => {
         // 确保测试用例有 testPurpose
         const testPurpose = tc.testPurpose || tc.description || '';
-        
+
         // 确保每个测试点都有 testPurpose
         const processedTestPoints = (tc.testPoints || []).map((tp: any) => ({
           ...tp,
           testPurpose: tp.testPurpose || testPurpose,
           testScenario: tp.testScenario || scenario.name
         }));
-        
+
         return {
           ...tc,
           testPurpose: testPurpose,
@@ -474,7 +474,7 @@ export function FunctionalTestCaseGenerator() {
       // 如果是重新生成，先移除旧的测试用例
       if (isRegenerate) {
         // 从草稿箱中移除该测试点的旧用例
-        setDraftCases(prev => prev.filter(c => 
+        setDraftCases(prev => prev.filter(c =>
           !(c.scenarioId === scenario.id && c.testPointId === testPoint.testPoint)
         ));
       }
@@ -486,18 +486,18 @@ export function FunctionalTestCaseGenerator() {
       setTestScenarios(prev => prev.map(s =>
         s.id === scenario.id
           ? {
-              ...s,
-              testPoints: s.testPoints?.map((tp: any) =>
-                tp.testPoint === testPoint.testPoint
-                  ? { 
-                      ...tp, 
-                      testCases: isRegenerate 
-                        ? newCases 
-                        : [...(tp.testCases || []), ...newCases] 
-                    }
-                  : tp
-              )
-            }
+            ...s,
+            testPoints: s.testPoints?.map((tp: any) =>
+              tp.testPoint === testPoint.testPoint
+                ? {
+                  ...tp,
+                  testCases: isRegenerate
+                    ? newCases
+                    : [...(tp.testCases || []), ...newCases]
+                }
+                : tp
+            )
+          }
           : s
       ));
 
@@ -600,14 +600,14 @@ export function FunctionalTestCaseGenerator() {
   // 切换查看的用例（在查看全部模式下）
   const handleSwitchCase = (direction: 'prev' | 'next') => {
     if (viewingAllCases.length === 0) return;
-    
+
     let newIndex = currentCaseIndex;
     if (direction === 'prev') {
       newIndex = currentCaseIndex > 0 ? currentCaseIndex - 1 : viewingAllCases.length - 1;
     } else {
       newIndex = currentCaseIndex < viewingAllCases.length - 1 ? currentCaseIndex + 1 : 0;
     }
-    
+
     setCurrentCaseIndex(newIndex);
     setCurrentDetailCase(viewingAllCases[newIndex]);
   };
@@ -618,17 +618,17 @@ export function FunctionalTestCaseGenerator() {
     setDraftCases(prev =>
       prev.map(c => c.id === updatedTestCase.id ? updatedTestCase : c)
     );
-    
+
     // 更新当前查看的用例
     setCurrentDetailCase(updatedTestCase);
-    
+
     // 如果是在查看全部用例模式下，也要更新 viewingAllCases
     if (viewingAllCases.length > 0) {
       setViewingAllCases(prev =>
         prev.map(c => c.id === updatedTestCase.id ? updatedTestCase : c)
       );
     }
-    
+
     // 更新测试场景中的测试用例（如果存在）
     setTestScenarios(prev =>
       prev.map(scenario => {
@@ -649,7 +649,7 @@ export function FunctionalTestCaseGenerator() {
         return scenario;
       })
     );
-    
+
     showToast.success('测试用例已更新');
   };
 
@@ -663,10 +663,10 @@ export function FunctionalTestCaseGenerator() {
     testScenarios.forEach(scenario => {
       if (selectedScenarios[scenario.id] && !savedScenarios[scenario.id]) {
         // 从草稿箱中找到属于该场景的所有用例
-        const scenarioCases = draftCases.filter(c => 
+        const scenarioCases = draftCases.filter(c =>
           c.scenarioId === scenario.id && !c.saved
         );
-        
+
         if (scenarioCases.length > 0) {
           // 确保每个测试用例的测试点都包含 testPurpose
           const processedCases = scenarioCases.map(tc => {
@@ -695,7 +695,7 @@ export function FunctionalTestCaseGenerator() {
             }
             return tc;
           });
-          
+
           selectedCases.push(...processedCases);
           selectedScenarioIds.push(scenario.id);
         }
@@ -1152,8 +1152,8 @@ export function FunctionalTestCaseGenerator() {
                     isSaved
                       ? "border-green-300 bg-green-50/30"
                       : isSelected
-                      ? "border-purple-500 shadow-lg ring-4 ring-purple-500/20"
-                      : "border-gray-200"
+                        ? "border-purple-500 shadow-lg ring-4 ring-purple-500/20"
+                        : "border-gray-200"
                   )}
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
@@ -1283,7 +1283,7 @@ export function FunctionalTestCaseGenerator() {
                                                       flex items-center justify-center text-white font-bold text-base flex-shrink-0 shadow-lg shadow-purple-500/30">
                                         {index + 1}
                                       </div>
-                                      
+
                                       {/* 测试点信息 */}
                                       <div className="flex-1 min-w-0">
                                         {/* 标题和风险等级 */}
@@ -1405,7 +1405,7 @@ export function FunctionalTestCaseGenerator() {
                                                                 flex items-center justify-center text-white font-bold text-sm flex-shrink-0 shadow-lg shadow-purple-400/30">
                                                   {tcIndex + 1}
                                                 </div>
-                                                
+
                                                 {/* 测试用例信息 */}
                                                 <div className="flex-1 min-w-0">
                                                   <div className="flex items-center gap-3 mb-2">
@@ -1434,7 +1434,7 @@ export function FunctionalTestCaseGenerator() {
                                                   )}
                                                 </div>
                                               </div>
-                                              
+
                                               {/* 操作按钮 */}
                                               <div className="flex items-center gap-2 flex-shrink-0">
                                                 <Button
@@ -1506,7 +1506,7 @@ export function FunctionalTestCaseGenerator() {
                   priority={(testCase.priority || 'medium') as 'critical' | 'high' | 'medium' | 'low'}
                   qualityScore={testCase.qualityScore || 85}
                   batchNumber={testCase.batchNumber || 0}
-                  stepsCount={testCase.steps?.split('\n').filter((s: string) => s.trim()).length || 0}
+                  stepsCount={Array.isArray(testCase.steps) ? testCase.steps.length : (typeof testCase.steps === 'string' ? testCase.steps.split('\n').filter((s: string) => s.trim()).length : 0)}
                   selected={testCase.selected || false}
                   onToggleSelect={(id) => {
                     setDraftCases(prev =>
