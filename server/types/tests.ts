@@ -3,6 +3,7 @@ export interface TestSuite {
   name: string;
   description?: string;
   owner?: string;
+  project?: string;
   tags?: string[];
   testCaseIds: number[];
   createdAt: string;

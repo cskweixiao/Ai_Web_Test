@@ -16,9 +16,15 @@ import { UserManagement } from './pages/UserManagement';
 import { FunctionalTestCases } from './pages/FunctionalTestCases/index';
 import { FunctionalTestCaseGenerator } from './pages/FunctionalTestCaseGenerator';
 import { FunctionalTestCaseCreate } from './pages/FunctionalTestCaseCreate';
+import { FunctionalTestCaseCreateSimple } from './pages/FunctionalTestCaseCreateSimple';
+import { FunctionalTestCaseEdit } from './pages/FunctionalTestCaseEdit';
+import { FunctionalTestCaseDetail } from './pages/FunctionalTestCaseDetail';
+import { FunctionalTestCaseExecute } from './pages/FunctionalTestCaseExecute';
+import { FunctionalTestCaseExecuteAlt } from './pages/FunctionalTestCaseExecuteAlt';
 import { FunctionalTestPointEdit } from './pages/FunctionalTestPointEdit';
 import SystemManagement from './pages/SystemManagement';
 import KnowledgeManagement from './pages/KnowledgeManagement';
+import RequirementDocs from './pages/RequirementDocs';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { ToastProvider } from './components/ui/toast';
 import { NotFoundPage, ServerErrorPage, ForbiddenPage } from './pages/ErrorPage';
@@ -107,7 +113,7 @@ const antdThemeConfig = {
     },
     Select: {
       borderRadius: 8,
-      controlHeight: 40,
+      controlHeight: 32,
     },
     Table: {
       borderRadiusLG: 12,
@@ -178,8 +184,9 @@ const ProtectedRoute: React.FC<{ children: React.ReactElement }> = ({ children }
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <Spin size="large" tip="加载中..." />
+      <div className="min-h-screen flex flex-col items-center justify-center">
+        <Spin size="large" />
+        <div className="mt-4 text-gray-500">加载中...</div>
       </div>
     );
   }
@@ -197,8 +204,9 @@ const AdminRoute: React.FC<{ children: React.ReactElement }> = ({ children }) =>
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <Spin size="large" tip="加载中..." />
+      <div className="min-h-screen flex flex-col items-center justify-center">
+        <Spin size="large" />
+        <div className="mt-4 text-gray-500">加载中...</div>
       </div>
     );
   }
@@ -270,7 +278,12 @@ function AppContent() {
                       {/* 功能测试用例路由 */}
                       <Route path="/functional-test-cases" element={<FunctionalTestCases />} />
                       <Route path="/functional-test-cases/generator" element={<FunctionalTestCaseGenerator />} />
-                      <Route path="/functional-test-cases/create" element={<FunctionalTestCaseCreate />} />
+                      <Route path="/functional-test-cases/create" element={<FunctionalTestCaseCreateSimple />} />
+                      <Route path="/functional-test-cases/create-simple" element={<FunctionalTestCaseCreate />} />
+                      <Route path="/functional-test-cases/:id/edit" element={<FunctionalTestCaseEdit />} />
+                      <Route path="/functional-test-cases/:id/detail" element={<FunctionalTestCaseDetail />} />
+                      <Route path="/functional-test-cases/:id/execute" element={<FunctionalTestCaseExecute />} />
+                      <Route path="/functional-test-cases/:id/execute-alt" element={<FunctionalTestCaseExecuteAlt />} />
                       <Route path="/functional-test-cases/test-points/:testPointId/edit" element={<FunctionalTestPointEdit />} />
 
                       {/* 测试执行路由 */}
@@ -290,6 +303,9 @@ function AppContent() {
 
                       {/* 知识库管理 */}
                       <Route path="/knowledge" element={<KnowledgeManagement />} />
+
+                      {/* 需求文档管理 */}
+                      <Route path="/requirement-docs" element={<RequirementDocs />} />
 
                       {/* 用户管理 - 仅超级管理员可访问 */}
                       <Route path="/user-management" element={

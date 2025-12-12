@@ -4,6 +4,7 @@ import { EmbeddingService, TestCaseFilters } from './embeddingService.js';
 import { VersionService } from './versionService.js';
 import { WebSocketManager } from './websocket.js';
 import crypto from 'crypto';
+import { getNow } from '../utils/timezone.js';
 
 // 接口定义
 export interface BulkEditParams {
@@ -145,7 +146,7 @@ export class AIBulkUpdateService {
           change_brief: params.changeBrief,
           status: 'dry_run',
           created_by: params.userId,
-          created_at: new Date()
+          created_at: getNow()
         }
       });
 
@@ -331,7 +332,7 @@ export class AIBulkUpdateService {
         where: { id: sessionId },
         data: {
           status: 'applied',
-          applied_at: new Date()
+          applied_at: getNow()
         }
       });
 
@@ -703,7 +704,7 @@ export class AIBulkUpdateService {
           where: { id: proposal.id },
           data: {
             apply_status: 'applied',
-            applied_at: new Date()
+            applied_at: getNow()
           }
         });
         proposalUpdateSuccess = true;
@@ -1160,7 +1161,7 @@ export class AIBulkUpdateService {
         old_hash: p.old_hash,
         new_hash: p.new_hash,
         apply_status: p.apply_status,
-        created_at: new Date()
+        created_at: getNow()
       }));
 
       // 🔥 修复：使用 createMany 保存后，立即查询带ID的完整数据

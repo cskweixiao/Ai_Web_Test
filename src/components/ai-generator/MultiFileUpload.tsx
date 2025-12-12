@@ -7,7 +7,7 @@ import { clsx } from 'clsx';
 
 interface UploadedFile {
   file: File;
-  type: 'html' | 'js' | 'unknown';
+  type: 'html' | 'js' | 'pdf' | 'docx' | 'md' | 'txt' | 'unknown';
   status: 'pending' | 'valid' | 'invalid';
   error?: string;
 }
@@ -39,7 +39,7 @@ export function MultiFileUpload({
   // 验证文件类型和大小
   const validateFile = (file: File): UploadedFile => {
     const fileName = file.name.toLowerCase();
-    let type: 'html' | 'js' | 'unknown' = 'unknown';
+    let type: UploadedFile['type'] = 'unknown';
     let status: 'pending' | 'valid' | 'invalid' = 'pending';
     let error: string | undefined;
 
@@ -50,9 +50,21 @@ export function MultiFileUpload({
     } else if (fileName.endsWith('.js')) {
       type = 'js';
       status = 'valid';
+    } else if (fileName.endsWith('.pdf')) {
+      type = 'pdf';
+      status = 'valid';
+    } else if (fileName.endsWith('.docx')) {
+      type = 'docx';
+      status = 'valid';
+    } else if (fileName.endsWith('.md') || fileName.endsWith('.markdown')) {
+      type = 'md';
+      status = 'valid';
+    } else if (fileName.endsWith('.txt')) {
+      type = 'txt';
+      status = 'valid';
     } else {
       status = 'invalid';
-      error = '仅支持 .html 和 .js 文件';
+      error = '仅支持 HTML / JS / PDF / DOCX / Markdown / TXT';
     }
 
     // 检测文件大小
@@ -84,7 +96,11 @@ export function MultiFileUpload({
     accept: {
       'text/html': ['.html', '.htm'],
       'application/javascript': ['.js'],
-      'text/javascript': ['.js']
+      'text/javascript': ['.js'],
+      'application/pdf': ['.pdf'],
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['.docx'],
+      'text/markdown': ['.md', '.markdown'],
+      'text/plain': ['.txt']
     },
     maxFiles,
     maxSize
@@ -110,6 +126,9 @@ export function MultiFileUpload({
   const validFileCount = uploadedFiles.filter(f => f.status === 'valid').length;
   const htmlCount = uploadedFiles.filter(f => f.type === 'html' && f.status === 'valid').length;
   const jsCount = uploadedFiles.filter(f => f.type === 'js' && f.status === 'valid').length;
+  const mainCount = uploadedFiles.filter(
+    f => f.status === 'valid' && (f.type === 'html' || f.type === 'pdf' || f.type === 'docx' || f.type === 'md' || f.type === 'txt')
+  ).length;
 
   // 页面名称变化处理
   const handlePageNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -129,7 +148,7 @@ export function MultiFileUpload({
           type="text"
           value={pageName}
           onChange={handlePageNameChange}
-          placeholder="请输入页面名称，例如：集配管理（新增）"
+          placeholder="请输入页面名称，例如：登录页面（新增）"
           className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
         />
         <p className="mt-2 text-sm text-gray-700">
@@ -185,14 +204,14 @@ export function MultiFileUpload({
           <p className="text-sm text-gray-500 mb-6">
             {isDragActive
               ? '支持批量拖拽上传'
-              : '支持 HTML (.html, .htm) 和 JS (.js) 文件 | 最多 ' + maxFiles + ' 个文件'}
+              : '支持 HTML / JS / PDF / DOCX / Markdown / TXT | 最多 ' + maxFiles + ' 个文件'}
           </p>
 
           {/* 特性标签 */}
           <div className="flex items-center justify-center gap-8 text-sm">
             <div className="flex items-center gap-2 text-gray-500">
               <FileText className="w-5 h-5 text-orange-500" />
-              <span>HTML 文件</span>
+              <span>HTML / DOCX / PDF / TXT / MD</span>
             </div>
             <div className="flex items-center gap-2 text-gray-500">
               <FileCode className="w-5 h-5 text-blue-500" />
@@ -254,6 +273,12 @@ export function MultiFileUpload({
                       <FileText className="w-5 h-5 text-orange-500 flex-shrink-0" />
                     ) : item.type === 'js' ? (
                       <FileCode className="w-5 h-5 text-blue-500 flex-shrink-0" />
+                    ) : item.type === 'pdf' ? (
+                      <FileText className="w-5 h-5 text-rose-500 flex-shrink-0" />
+                    ) : item.type === 'docx' ? (
+                      <FileText className="w-5 h-5 text-blue-600 flex-shrink-0" />
+                    ) : item.type === 'md' || item.type === 'txt' ? (
+                      <FileText className="w-5 h-5 text-green-600 flex-shrink-0" />
                     ) : (
                       <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0" />
                     )}
@@ -299,17 +324,17 @@ export function MultiFileUpload({
       {uploadedFiles.length === 0 && (
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
           <p className="text-sm text-blue-700 leading-relaxed">
-            💡 <strong>提示：</strong>您可以直接拖拽整个 Axure 导出文件夹，系统会自动识别并上传所有 HTML 和 JS 文件。
-            也可以手动选择多个文件上传。
+            💡 <strong>提示：</strong>您可以直接拖拽整个 Axure 导出文件夹（自动识别 HTML/JS），也可以上传 PDF / DOCX / Markdown / TXT 等需求文档。
+            支持手动选择或批量拖拽上传。
           </p>
         </div>
       )}
 
       {/* 验证提示 */}
-      {htmlCount === 0 && uploadedFiles.length > 0 && (
+      {uploadedFiles.length > 0 && mainCount === 0 && (
         <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
           <p className="text-sm text-yellow-700 leading-relaxed">
-            ⚠️ <strong>警告：</strong>至少需要上传一个 HTML 文件作为主文件。
+            ⚠️ <strong>提示：</strong>建议至少包含一个主文件（HTML / PDF / DOCX / Markdown / TXT），JS 文件仅作为辅助。
           </p>
         </div>
       )}

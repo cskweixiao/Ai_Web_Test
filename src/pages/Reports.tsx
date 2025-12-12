@@ -26,7 +26,7 @@ export function Reports() {
   // 状态管理
   const [loading, setLoading] = useState(false);
   const [dateRange, setDateRange] = useState<[Date, Date]>([subDays(new Date(), 30), new Date()]);
-  const [department, setDepartment] = useState<string>('all');
+  const [project, setProject] = useState<string>('all'); // 🔥 修复：使用 project 字段
   const [suiteId, setSuiteId] = useState<string | number>('all');
 
   // 数据状态
@@ -54,7 +54,7 @@ export function Reports() {
       const params = {
         startDate: format(dateRange[0], 'yyyy-MM-dd'),
         endDate: format(dateRange[1], 'yyyy-MM-dd'),
-        department: department !== 'all' ? department : undefined,
+        project: project !== 'all' ? project : undefined, // 🔥 修复：使用 project 字段
         suiteId: suiteId !== 'all' ? suiteId : undefined,
       };
 
@@ -95,7 +95,7 @@ export function Reports() {
   // 初始加载和参数变化时重新加载
   useEffect(() => {
     fetchReportData();
-  }, [dateRange, department, suiteId, currentPage, pageSize]);
+  }, [dateRange, project, suiteId, currentPage, pageSize]); // 🔥 修复：使用 project 字段
 
   // 失败用例表格列定义
   const failedCaseColumns: ColumnsType<FailedCase> = [
@@ -228,8 +228,8 @@ export function Reports() {
             className="w-64"
           />
           <Select
-            value={department}
-            onChange={setDepartment}
+            value={project} // 🔥 修复：使用 project 字段
+            onChange={setProject}
             className="w-32"
           >
             <Option value="all">所有部门</Option>

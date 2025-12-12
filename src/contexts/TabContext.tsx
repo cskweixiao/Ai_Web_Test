@@ -13,7 +13,7 @@ import {
   PlusCircle,
   FileText,
   ClipboardList,
-  Database,
+  FolderKanban,
   BookOpen
 } from 'lucide-react';
 
@@ -50,7 +50,8 @@ const routeConfig: Record<string, { title: string; icon: React.ReactNode }> = {
   '/reports': { title: '测试报告', icon: <BarChart3 className="h-4 w-4" /> },
   '/test-factory': { title: '测试工厂', icon: <Factory className="h-4 w-4" /> },
   '/llm-assistant': { title: 'AI 助手', icon: <Bot className="h-4 w-4" /> },
-  '/systems': { title: '系统字典', icon: <Database className="h-4 w-4" /> },
+  '/systems': { title: '项目管理', icon: <FolderKanban className="h-4 w-4" /> },
+  '/requirement-docs': { title: '需求文档', icon: <FileText className="h-4 w-4" /> },
   '/knowledge': { title: '知识库', icon: <BookOpen className="h-4 w-4" /> },
   '/user-management': { title: '用户管理', icon: <Users className="h-4 w-4" /> },
   '/settings': { title: '设置', icon: <Settings className="h-4 w-4" /> },
@@ -78,7 +79,7 @@ const getRouteConfig = (pathname: string): { title: string; icon: React.ReactNod
 
   // 功能测试用例相关路由
   if (pathname === '/functional-test-cases/generator') {
-    return { title: 'AI 测试用例生成器', icon: <ClipboardList className="h-4 w-4" /> };
+    return { title: 'AI 智能生成器', icon: <ClipboardList className="h-4 w-4" /> };
   }
 
   if (pathname === '/functional-test-cases/create') {
@@ -115,6 +116,7 @@ export const TabProvider: React.FC<TabProviderProps> = ({ children }) => {
   const location = useLocation();
   const [tabs, setTabs] = useState<Tab[]>([homeTab]);
   const [activeTabId, setActiveTabId] = useState<string>(homeTab.id);
+  const [isInitialized, setIsInitialized] = useState(false); // 添加初始化标志
 
   // 从localStorage加载Tab
   useEffect(() => {
@@ -124,7 +126,7 @@ export const TabProvider: React.FC<TabProviderProps> = ({ children }) => {
         const parsed = JSON.parse(savedTabs);
         if (Array.isArray(parsed) && parsed.length > 0) {
           // 恢复Tab，重新添加icon
-          const restoredTabs = parsed.map((tab: any) => {
+          const restoredTabs = parsed.map((tab: Omit<Tab, 'icon'>) => {
             const config = getRouteConfig(tab.path);
             return {
               ...tab,
@@ -147,11 +149,15 @@ export const TabProvider: React.FC<TabProviderProps> = ({ children }) => {
         console.error('加载Tab状态失败:', error);
       }
     }
-  }, []);
+    // 标记初始化完成
+    setIsInitialized(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // 只在组件挂载时执行一次
 
   // 保存Tab到localStorage（移除React元素）
   useEffect(() => {
     if (tabs.length > 0) {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const tabsToSave = tabs.map(({ icon, ...rest }) => rest);
       localStorage.setItem(STORAGE_KEY, JSON.stringify(tabsToSave));
     }
@@ -159,6 +165,11 @@ export const TabProvider: React.FC<TabProviderProps> = ({ children }) => {
 
   // 监听路由变化，自动创建或激活Tab
   useEffect(() => {
+    // 等待初始化完成后再处理路由变化
+    if (!isInitialized) {
+      return;
+    }
+
     const currentPath = location.pathname;
     const existingTab = tabs.find(tab => tab.path === currentPath);
 
@@ -194,7 +205,7 @@ export const TabProvider: React.FC<TabProviderProps> = ({ children }) => {
     setTabs(prev => [...prev, newTab]);
     setActiveTabId(newTab.id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [location.pathname]);
+  }, [location.pathname, isInitialized]);
 
   // 添加Tab
   const addTab = useCallback((tab: Omit<Tab, 'id' | 'closable'>) => {

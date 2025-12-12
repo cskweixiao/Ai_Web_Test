@@ -25,6 +25,11 @@ JWT_EXPIRES_IN=7d                  # Token 过期时间
 PLAYWRIGHT_HEADLESS=true           # 无头模式: true / false
 PLAYWRIGHT_BROWSER=chromium        # 浏览器: chromium / firefox / webkit
 
+# ========== MCP 浏览器配置 ==========
+MCP_BROWSER_FULLSCREEN=true        # MCP模式浏览器全屏: true / false (默认: true)
+MCP_BROWSER_MAXIMIZED=true         # MCP模式浏览器最大化: true / false (默认: true)
+MCP_BROWSER_WINDOW_SIZE=1920,1080  # MCP模式浏览器窗口大小 (默认: 1920,1080)
+
 # ========== 测试执行配置 ==========
 TEST_TIMEOUT=600000                # 测试超时: 10 分钟
 MAX_CONCURRENT_TESTS=6             # 最大并发数
@@ -106,6 +111,20 @@ LOG_FULL_PROMPT=false              # 是否记录完整 AI Prompt
 **说明**：
 - `true`: 后台运行，不显示浏览器窗口
 - `false`: 显示浏览器窗口（调试时使用）
+
+### MCP 浏览器配置
+
+| 配置项 | 说明 | 默认值 | 示例 |
+|-------|------|--------|------|
+| `MCP_BROWSER_FULLSCREEN` | MCP模式浏览器全屏模式 | true | true, false |
+| `MCP_BROWSER_MAXIMIZED` | MCP模式浏览器最大化窗口 | true | true, false |
+| `MCP_BROWSER_WINDOW_SIZE` | MCP模式浏览器窗口大小 | 1920,1080 | 1920,1080, 1366,768 |
+
+**说明**：
+- `MCP_BROWSER_FULLSCREEN=true`: 启用全屏模式（kiosk模式，无标题栏和工具栏）
+- `MCP_BROWSER_FULLSCREEN=false`: 使用普通窗口模式
+- `MCP_BROWSER_MAXIMIZED=true`: 窗口最大化启动
+- `MCP_BROWSER_WINDOW_SIZE`: 设置窗口大小，格式为 `宽度,高度`
 
 ### 测试执行配置
 

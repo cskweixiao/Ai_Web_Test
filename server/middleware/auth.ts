@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { PrismaClient } from '../../src/generated/prisma/index.js';
+import { getNow } from '../utils/timezone.js';
 
 // 扩展Request接口，添加user属性
 declare global {
@@ -158,10 +159,10 @@ export class PermissionService {
           target_id: BigInt(targetId),
           meta: JSON.stringify({
             ...meta,
-            timestamp: new Date().toISOString(),
+            timestamp: getNow().toISOString(),
             feature: 'ai_bulk_update'
           }),
-          created_at: new Date()
+          created_at: getNow()
         }
       });
 

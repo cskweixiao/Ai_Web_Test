@@ -1053,7 +1053,7 @@ export function TestRuns() {
             {run.status === 'running' && (
               <div className="mb-2">
                 <div className="flex items-center justify-between text-xs text-gray-600 mb-1">
-                  <span>进度 ({run.completedSteps}/{run.totalSteps})</span>
+                  <span>进度1 ({run.completedSteps}/{run.totalSteps})</span>
                   <span>{run.progress}%</span>
                 </div>
                 <div className="w-full bg-gray-200 rounded-full h-2">
@@ -1075,7 +1075,7 @@ export function TestRuns() {
 
         <div className="flex items-center space-x-2 ml-4">
           <div className="text-right text-sm text-gray-600 mr-4">
-            <div>{safeFormat(run.startTime, 'MM-dd HH:mm')}</div>
+            <div>{safeFormat(run.startTime, 'yyyy-MM-dd HH:mm:ss')}</div>
           </div>
           
           {(run.status === 'running' || run.status === 'queued') && (

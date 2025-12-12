@@ -11,7 +11,7 @@ export interface AuthUser {
   email: string;
   username: string;
   accountName: string | null;
-  department: string | null;
+  project: string | null; // 🔥 修复：使用 project 字段
   isSuperAdmin: boolean;
 }
 

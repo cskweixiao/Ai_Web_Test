@@ -124,7 +124,7 @@ export class PlaywrightMcpClient {
         console.log('⚠️ 未找到Playwright浏览器，使用默认路径');
       }
 
-      // 🔥 最小化浏览器启动参数，完全避免安全警告，添加真正的全屏支持
+      // 浏览器启动参数
       const enhancedArgs = [
         `--user-data-dir=${tmpDir}`,
         '--no-first-run',
@@ -132,14 +132,17 @@ export class PlaywrightMcpClient {
         '--disable-plugins',
         '--disable-popup-blocking',
         '--disable-sync',
-        '--start-maximized',  // 最大化窗口
-        '--window-size=1920,1080',  // 设置窗口大小
-        '--kiosk',  // 🔥 新增：真正的全屏模式（无标题栏、无工具栏）
-        '--app=data:text/html,<title>AI Test Browser</title>'  // 🔥 新增：应用模式，进一步隐藏浏览器界面
-        // 完全移除 --no-sandbox, --disable-web-security 等所有可能触发警告的参数
       ];
 
-      process.env.MCP_LAUNCH_PERSISTENT_ARGS = JSON.stringify(enhancedArgs);
+      // 从环境变量读取全屏配置并应用
+      // 注意：MCP服务器可能不支持通过环境变量传递启动参数
+      // 我们会在浏览器启动后通过工具设置全屏
+      const browserFullscreen = process.env.MCP_BROWSER_FULLSCREEN !== 'false';
+      if (browserFullscreen) {
+        enhancedArgs.push('--kiosk');
+      } else if (process.env.MCP_BROWSER_MAXIMIZED !== 'false') {
+        enhancedArgs.push('--start-maximized');
+      }
 
       // 🔥 设置网络访问环境变量（无调试模式）
       process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0'; // 忽略SSL证书验证
@@ -151,40 +154,23 @@ export class PlaywrightMcpClient {
       process.env.PLAYWRIGHT_NAVIGATION_TIMEOUT = '120000';  // 🔥 导航超时
       process.env.PLAYWRIGHT_IGNORE_HTTPS_ERRORS = 'true';
 
-      // 🔥 方案C：配置MCP输出目录
+      // 配置MCP输出目录
       const screenshotDir = screenshotConfig.getScreenshotsDirectory();
-
-      console.log('🔥 MCP环境配置:');
-      console.log('  - MCP_LAUNCH_PERSISTENT_ARGS:', process.env.MCP_LAUNCH_PERSISTENT_ARGS);
-      console.log('  - 使用Playwright自带蓝色Chromium');
-      console.log('  - 🖥️ 浏览器模式：真正全屏模式 (--kiosk + --app)');
-      console.log('  - 🎯 混合方案: 环境变量+后处理确保截图保存正确:');
-      console.log(`    - PLAYWRIGHT_MCP_OUTPUT_DIR: ${screenshotDir}`);
-      console.log(`    - MCP_OUTPUT_DIR: ${screenshotDir}`);
-      console.log(`    - PLAYWRIGHT_SCREENSHOTS_DIR: ${screenshotDir}`);
-      console.log(`    - MCP_SCREENSHOT_DIR: ${screenshotDir}`);
-
-      console.log('🔧 正在连接MCP服务器...');
-      screenshotConfig.ensureScreenshotsDirectory(); // 确保目录存在
-      console.log('🎯 配置MCP截图输出目录:', screenshotDir);
+      screenshotConfig.ensureScreenshotsDirectory();
 
       // 🔥 创建到MCP的连接（浏览器已在服务器启动时安装）
+      // 🔥 修复：通过环境变量传递浏览器启动参数（使用之前已设置的 enhancedArgs）
       this.transport = new StdioClientTransport({
         command: 'npx',
-        args: [
-          '@playwright/mcp',
-          '--browser', 'chromium'
-        ],
+        args: ['@playwright/mcp'],
         env: {
           ...process.env,
-          PLAYWRIGHT_BROWSERS_PATH: browserPath,
+          PLAYWRIGHT_BROWSERS_PATH: browserPath || path.join(os.homedir(), 'AppData', 'Local', 'ms-playwright'),
           PLAYWRIGHT_HEADLESS: 'false',
           HEADLESS: 'false',
-          // 🔥 超时配置
           PLAYWRIGHT_TIMEOUT: '120000',
           PLAYWRIGHT_LAUNCH_TIMEOUT: '120000',
           PLAYWRIGHT_NAVIGATION_TIMEOUT: '120000',
-          // 🔥 混合方案：环境变量尝试控制+后处理确保正确位置
           PLAYWRIGHT_MCP_OUTPUT_DIR: screenshotDir,
           MCP_OUTPUT_DIR: screenshotDir,
           PLAYWRIGHT_SCREENSHOTS_DIR: screenshotDir,
@@ -202,7 +188,7 @@ export class PlaywrightMcpClient {
       
       console.log('🔧 正在连接MCP客户端...');
       await this.client.connect(this.transport);
-      
+
       console.log('✅ MCP连接建立成功');
 
       this.isInitialized = true;
@@ -212,6 +198,87 @@ export class PlaywrightMcpClient {
 
       // 先列出所有可用工具
       const availableTools = await this.listAvailableTools();
+
+      console.log('🔧 MCP可用工具列表:', availableTools);
+
+      // 初始化浏览器页面并设置全屏
+      try {
+        await this.client.callTool({
+          name: 'browser_navigate',
+          arguments: { url: 'about:blank' }
+        });
+        
+        // 检查全屏配置（默认启用，除非明确设置为 'false'）
+        const browserFullscreen = process.env.MCP_BROWSER_FULLSCREEN !== 'false';
+        console.log(`🖥️ 全屏配置检查: MCP_BROWSER_FULLSCREEN=${process.env.MCP_BROWSER_FULLSCREEN || 'undefined (默认启用)'}, 启用=${browserFullscreen}`);
+        
+        // 如果启用全屏，尝试通过 browser_resize 工具设置全屏
+        if (browserFullscreen && availableTools.includes('browser_resize')) {
+          console.log('🖥️ 开始设置浏览器全屏...');
+          await new Promise(resolve => setTimeout(resolve, 1500));
+          
+          console.log('🖥️ 使用 browser_resize 工具设置全屏...');
+          try {
+            // 方法1：获取屏幕尺寸并设置窗口大小
+            const screenSize = await this.client.callTool({
+              name: 'browser_evaluate',
+              arguments: {
+                function: '() => ({ width: screen.width, height: screen.height })'
+              }
+            });
+            
+            console.log('🖥️ 屏幕尺寸获取结果:', JSON.stringify(screenSize));
+            
+            const sizeText = screenSize?.content?.[0]?.text || screenSize?.content?.text;
+            if (sizeText) {
+              try {
+                const size = JSON.parse(sizeText);
+                console.log(`🖥️ 设置窗口大小: ${size.width}x${size.height}`);
+                await this.client.callTool({
+                  name: 'browser_resize',
+                  arguments: { width: size.width, height: size.height }
+                });
+                console.log('✅ 窗口大小设置成功');
+                return; // 成功则返回
+              } catch (parseError: any) {
+                console.warn('⚠️ 解析屏幕尺寸失败:', parseError.message);
+              }
+            } else {
+              console.warn('⚠️ 无法从结果中提取屏幕尺寸');
+            }
+          } catch (resizeError: any) {
+            console.warn('⚠️ browser_resize 失败:', resizeError.message);
+          }
+          
+          // 方法2：如果 resize 失败，尝试直接设置大尺寸（1920x1080）
+          try {
+            console.log('🖥️ 尝试设置固定大尺寸窗口 (1920x1080)...');
+            await this.client.callTool({
+              name: 'browser_resize',
+              arguments: { width: 1920, height: 1080 }
+            });
+            console.log('✅ 固定尺寸窗口设置成功');
+          } catch (fixedResizeError: any) {
+            console.warn('⚠️ 固定尺寸设置失败:', fixedResizeError.message);
+            
+            // 方法3：如果 resize 都失败，尝试 F11
+            try {
+              console.log('🖥️ 尝试使用 F11 快捷键...');
+              await this.client.callTool({
+                name: 'browser_press_key',
+                arguments: { key: 'F11' }
+              });
+              console.log('✅ F11 快捷键已发送');
+            } catch (f11Error: any) {
+              console.warn('⚠️ F11 快捷键失败:', f11Error.message);
+            }
+          }
+        } else {
+          console.log('ℹ️ 全屏未启用，跳过全屏设置');
+        }
+      } catch (initError: any) {
+        console.warn('⚠️ 浏览器初始化失败:', initError.message);
+      }
 
       if (availableTools.length === 0) {
         throw new Error('MCP服务器没有提供任何工具！');
@@ -1120,6 +1187,13 @@ export class PlaywrightMcpClient {
     if (directBuffer) {
       const duration = Date.now() - startedAt;
       console.log(`✅ [MCP] 直接返回Buffer成功: ${directBuffer.length} bytes, ${duration}ms, source: mcp-direct`);
+      
+      // 🔥 优化：实时流截图不保存到磁盘，立即清理可能存在的临时文件
+      if (filename.startsWith('stream-')) {
+        const tempPath = path.join(screenshotDir, filename);
+        fs.promises.unlink(tempPath).catch(() => undefined); // 静默删除，文件可能不存在
+      }
+      
       return { buffer: directBuffer, source: 'mcp-direct', durationMs: duration };
     }
 
@@ -1143,10 +1217,16 @@ export class PlaywrightMcpClient {
       const buffer = await this.readScreenshotWithRetries(resolvedPath);
       console.log(`✅ [MCP] 成功读取文件Buffer: ${buffer.length} bytes`);
 
-      if (filename.startsWith('stream-')) {
-        console.log(`🗑️ [MCP] 删除临时流截图文件: ${resolvedPath}`);
-        await fs.promises.unlink(resolvedPath).catch(() => undefined);
+      // 🔥 优化：实时流截图立即删除，不占用磁盘空间
+      // 无论是 stream- 开头的文件还是其他临时文件，都立即删除
+      if (filename.startsWith('stream-') || options.runId) {
+        console.log(`🗑️ [MCP] 立即删除实时流临时截图文件: ${resolvedPath}`);
+        // 异步删除，不阻塞返回
+        fs.promises.unlink(resolvedPath).catch((deleteError) => {
+          console.warn(`⚠️ [MCP] 删除临时文件失败（可忽略）: ${resolvedPath}`, this.normaliseError(deleteError).message);
+        });
       }
+      
       const duration = Date.now() - startedAt;
       console.log(`✅ [MCP] 文件系统回退成功: ${buffer.length} bytes, ${duration}ms, source: filesystem, path: ${resolvedPath}`);
       return { buffer, source: 'filesystem', durationMs: duration };
@@ -1546,6 +1626,7 @@ export class PlaywrightMcpClient {
       console.error(`❌ 设置上下文状态失败:`, error);
     }
   }
+
 
   private async verifyCurrentPageState(runId: string): Promise<void> {
     console.log(`🔍 [${runId}] ===== 验证当前页面状态 =====`);

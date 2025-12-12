@@ -6,12 +6,15 @@ import { WebSocketManager } from './websocket.js';
 import { PrismaClient } from '../../src/generated/prisma/index.js';
 import { DatabaseService } from './databaseService.js';
 import { PlaywrightMcpClient } from './mcpClient.js';
+import { getNow } from '../utils/timezone.js';
 
 // 重构后的测试套件服务：完全基于MCP的新流程
 export class SuiteExecutionService {
   private wsManager: WebSocketManager;
   private testExecutionService: TestExecutionService;
   private runningSuites: Map<string, TestSuiteRun> = new Map();
+  // 🔥 新增：保存 suiteRunId 和 test_runs.id 的映射关系
+  private suiteRunIdToTestRunId: Map<string, number> = new Map();
   private databaseService: DatabaseService;
   private prisma: PrismaClient; // 保持兼容性，内部使用
   private mcpClient: PlaywrightMcpClient;
@@ -115,13 +118,17 @@ export class SuiteExecutionService {
         const testCaseName = testCase ? testCase.name : `ID ${testCaseId}`;
 
         try {
+          // 🔥 修复：传递正确的套件ID（数字）和 test_runs.id
+          const testRunRecordId = this.suiteRunIdToTestRunId.get(suiteRunId);
           const testRunId = await this.testExecutionService.runTest(
             testCaseId, 
             environment, 
             executionMode,
             {
               reuseBrowser: true,
-              suiteId: suiteRunId,
+              suiteId: suite.id, // 🔥 使用套件的数字ID
+              suiteRunId: suiteRunId, // 🔥 保留 suiteRunId 用于日志
+              testRunRecordId: testRunRecordId, // 🔥 传递 test_runs.id
               contextState: null
             }
           );
@@ -150,6 +157,23 @@ export class SuiteExecutionService {
       if ((suiteRun.status as TestSuiteRunStatus) !== 'cancelled') {
         suiteRun.status = suiteRun.failedCases === 0 ? 'completed' : 'failed';
       }
+      
+      // 🔥 新增：更新 test_runs 记录的最终状态
+      const testRunRecordId = this.suiteRunIdToTestRunId.get(suiteRunId);
+      if (testRunRecordId) {
+        const finalStatus = suiteRun.status === 'completed' ? 'PASSED' : 
+                           suiteRun.status === 'failed' ? 'FAILED' : 
+                           'CANCELLED';
+        await this.prisma.test_runs.update({
+          where: { id: testRunRecordId },
+          data: {
+            status: finalStatus,
+            finished_at: getNow()
+          }
+        });
+        console.log(`✅ [${suiteRunId}] 更新 test_runs 记录状态 (id: ${testRunRecordId}, status: ${finalStatus})`);
+      }
+      
       this.updateSuiteStatus(suiteRunId, suiteRun.status);
       console.log(`✅ [${suiteRunId}] 套件完成 [${suite.name}]`);
 
@@ -246,14 +270,20 @@ export class SuiteExecutionService {
       const defaultUser = await this.prisma.users.findFirst({ select: { id: true } });
       if (!defaultUser) throw new Error('系统中没有可用的用户账号');
 
-      return await this.prisma.test_runs.create({
+      const testRunRecord = await this.prisma.test_runs.create({
         data: {
           suite_id: suiteId,
           trigger_user_id: defaultUser.id,
           status: 'PENDING',
-          started_at: new Date()
+          started_at: getNow()
         }
       });
+
+      // 🔥 新增：保存 suiteRunId 和 test_runs.id 的映射关系
+      this.suiteRunIdToTestRunId.set(runId, testRunRecord.id);
+      console.log(`✅ [${runId}] 创建 test_runs 记录成功 (id: ${testRunRecord.id}, suite_id: ${suiteId})`);
+
+      return testRunRecord;
     } catch (error) {
       console.error('创建测试运行记录失败:', error);
       throw error;
@@ -382,12 +412,12 @@ export class SuiteExecutionService {
   // 🔥 新增：测试套件CRUD方法
   
   // 获取所有测试套件
-  public async getAllTestSuites(userDepartment?: string, isSuperAdmin?: boolean): Promise<TestSuite[]> {
+  public async getAllTestSuites(userProject?: string, isSuperAdmin?: boolean): Promise<TestSuite[]> {
     try {
-      // 🔥 构建查询条件：非超级管理员只能看自己部门的数据
+      // 🔥 构建查询条件：非超级管理员只能看自己项目的数据
       const where: any = {};
-      if (!isSuperAdmin && userDepartment) {
-        where.department = userDepartment;
+      if (!isSuperAdmin && userProject) {
+        where.project = userProject;
       }
 
       const dbSuites = await this.prisma.test_suites.findMany({
@@ -406,7 +436,7 @@ export class SuiteExecutionService {
           name: dbSuite.name,
           description: metadata.description as string || '',
           owner: dbSuite.users.email,
-          department: dbSuite.department || undefined,
+          project: dbSuite.project || undefined,
           tags: metadata.tags as string[] || [],
           testCaseIds: dbSuite.suite_case_map.map(map => map.case_id),
           createdAt: dbSuite.created_at?.toISOString() || new Date().toISOString(),
@@ -450,7 +480,7 @@ export class SuiteExecutionService {
         environment: suiteData.environment || 'production',
         priority: suiteData.priority || 'medium',
         status: suiteData.status || 'active',
-        updated_at: new Date().toISOString()
+        updated_at: getNow().toISOString()
       };
 
       // 创建测试套件
@@ -458,7 +488,7 @@ export class SuiteExecutionService {
         data: {
           name: suiteData.name || 'Untitled Suite',
           owner_id: defaultUser.id,
-          department: suiteData.department || null,
+          project: suiteData.project || null,
           metadata: metadata
         },
         include: {
@@ -481,7 +511,7 @@ export class SuiteExecutionService {
         name: newSuite.name,
         description: metadata.description,
         owner: newSuite.users.email,
-        department: newSuite.department || undefined,
+        project: newSuite.project || undefined,
         tags: metadata.tags,
         testCaseIds: suiteData.testCaseIds || [],
         createdAt: newSuite.created_at?.toISOString() || new Date().toISOString(),
@@ -533,7 +563,7 @@ export class SuiteExecutionService {
         environment: suiteData.environment !== undefined ? suiteData.environment : existingMetadata.environment,
         priority: suiteData.priority !== undefined ? suiteData.priority : existingMetadata.priority,
         status: suiteData.status !== undefined ? suiteData.status : existingMetadata.status,
-        updated_at: new Date().toISOString()
+        updated_at: getNow().toISOString()
       };
 
       // 更新测试套件
@@ -541,7 +571,7 @@ export class SuiteExecutionService {
         where: { id },
         data: {
           name: suiteData.name !== undefined ? suiteData.name : existingSuite.name,
-          department: suiteData.department !== undefined ? suiteData.department : existingSuite.department,
+          project: suiteData.project !== undefined ? suiteData.project : existingSuite.project,
           metadata: updatedMetadata
         },
         include: {
@@ -572,7 +602,7 @@ export class SuiteExecutionService {
         name: updatedSuite.name,
         description: updatedMetadata.description,
         owner: updatedSuite.users.email,
-        department: updatedSuite.department || undefined,
+        project: updatedSuite.project || undefined,
         tags: updatedMetadata.tags,
         testCaseIds: suiteData.testCaseIds !== undefined ? suiteData.testCaseIds : existingSuite.suite_case_map.map(map => map.case_id),
         createdAt: updatedSuite.created_at?.toISOString() || new Date().toISOString(),

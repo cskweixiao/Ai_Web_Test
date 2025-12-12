@@ -124,7 +124,7 @@ export function createAuthRoutes(prisma: PrismaClient) {
         username,
         password,
         accountName,
-        department,
+        project: department, // 🔥 修复：将前端传入的 department 映射到数据库的 project 字段
         isSuperAdmin: false // 普通注册用户不能是超级管理员
       });
 

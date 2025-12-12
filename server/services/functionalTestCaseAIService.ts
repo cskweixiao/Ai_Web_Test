@@ -7,6 +7,7 @@ import { ProxyAgent } from 'undici';
 import { TestCaseKnowledgeBase } from './testCaseKnowledgeBase.js';
 import { getWebRequirementPrompt } from '../prompts/web-requirement.prompt.js';
 import { getMobileRequirementPrompt } from '../prompts/mobile-requirement.prompt.js';
+import { getTextRequirementPrompt, type ContentSourceType } from '../prompts/text-requirement.prompt.js';
 import { getUserPrompt, getBusinessRulesSystemPrompt, getCommonSystemInstructions } from '../prompts/common-instructions.js';
 
 /**
@@ -39,8 +40,10 @@ export interface TestScenario {
   description: string;
   priority: 'high' | 'medium' | 'low';
   relatedSections: string[]; // 关联的章节ID，如 ["1.1", "1.2"]
+  estimatedTestPoints?: number; // 🆕 预估测试点数量
   testPoints?: TestPoint[]; // 可选，阶段2生成后才有
   testCase?: TestCase; // 可选，阶段3生成后才有
+  isExpanded?: boolean; // 🆕 是否展开测试点列表（前端UI状态）
 }
 
 /**
@@ -100,8 +103,23 @@ export interface TestCase {
   sectionId?: string; // 章节ID (1.1, 1.2)
   sectionName?: string; // 章节名称
   coverageAreas?: string; // 覆盖范围
+  caseType?: string; // 用例类型: SMOKE(冒烟) | FULL(全量) | ABNORMAL(异常) | BOUNDARY(边界) | PERFORMANCE(性能) | SECURITY(安全) | USABILITY(可用性) | COMPATIBILITY(兼容性)
   // 兼容性字段
   testPurpose?: string; // 兼容旧字段（已废弃，使用testScenario）
+  // 🆕 数据一致性验证标记
+  isFiltered?: boolean; // 是否被过滤（数据一致性验证失败）
+  filterReason?: string; // 过滤原因
+}
+
+/**
+ * 🆕 测试用例生成结果（包含过滤信息）
+ */
+export interface TestCaseGenerationResult {
+  validCases: TestCase[]; // 有效的测试用例
+  filteredCases: TestCase[]; // 被过滤的测试用例（数据一致性问题）
+  totalGenerated: number; // AI生成的总数量
+  validCount: number; // 有效数量
+  filteredCount: number; // 被过滤数量
 }
 
 /**
@@ -1072,11 +1090,13 @@ ${axureData.pageCount > 10 ? `\n(还有${axureData.pageCount - 10}个页面未�
    * @returns 生成的需求文档和章节列表
    */
   async generateRequirementFromHtmlDirect(
-    htmlContent: string,
-    projectInfo: { systemName?: string; moduleName?: string; pageMode?: PageMode; platformType?: PlatformType; businessRules?: string[] }
+    content: string,
+    projectInfo: { systemName?: string; moduleName?: string; pageMode?: PageMode; platformType?: PlatformType; businessRules?: string[]; contentSourceType?: ContentSourceType | 'html' }
   ): Promise<{ requirementDoc: string; sections: string[] }> {
     const pageMode = projectInfo.pageMode || 'new';
     const platformType = projectInfo.platformType || 'web';
+    const contentSourceType: ContentSourceType | 'html' = projectInfo.contentSourceType || 'html';
+    const isHtmlSource = contentSourceType === 'html';
 
     console.log('\n╔═══════════════════════════════════════════════════════════════╗');
     console.log(`║       🚀 直接从HTML生成需求文档 - ${pageMode === 'new' ? '新增页面' : '修改页面'}模式 - ${platformType === 'web' ? 'Web端' : '移动端'}          ║`);
@@ -1087,15 +1107,16 @@ ${axureData.pageCount > 10 ? `\n(还有${axureData.pageCount - 10}个页面未�
     console.log(`   - 页面模式: ${pageMode === 'new' ? '新增页面' : '修改页面'}`);
     console.log(`   - 系统名称: ${projectInfo.systemName || '未指定'}`);
     console.log(`   - 模块名称: ${projectInfo.moduleName || '未指定'}`);
-    console.log(`   - HTML内容长度: ${htmlContent.length} 字符`);
+    console.log(`   - 来源类型: ${contentSourceType}`);
+    console.log(`   - 文档长度: ${content.length} 字符`);
 
     // 🆕 如果是修改模式，提取红色字段和业务描述
     let redFields: string[] = [];
     let businessDescription = '';
 
-    if (pageMode === 'modify') {
-      redFields = this.extractRedFields(htmlContent);
-      businessDescription = this.extractBusinessDescription(htmlContent);
+    if (isHtmlSource && pageMode === 'modify') {
+      redFields = this.extractRedFields(content);
+      businessDescription = this.extractBusinessDescription(content);
     }
 
     // 📊 业务规则日志
@@ -1108,7 +1129,7 @@ ${axureData.pageCount > 10 ? `\n(还有${axureData.pageCount - 10}个页面未�
     }
 
     // 🆕 根据平台类型选择对应的提示词
-    console.log(`\n🎯 【步骤 2/5】加载${platformType === 'web' ? 'Web端' : '移动端'}提示词策略...`);
+    console.log(`\n🎯 【步骤 2/5】加载提示词策略...`);
 
     const platformPromptOptions = {
       systemName: projectInfo.systemName,
@@ -1118,14 +1139,23 @@ ${axureData.pageCount > 10 ? `\n(还有${axureData.pageCount - 10}个页面未�
       redFields
     };
 
-    const platformPrompt = platformType === 'web'
-      ? getWebRequirementPrompt(platformPromptOptions)
-      : getMobileRequirementPrompt(platformPromptOptions);
+    const platformPrompt = isHtmlSource
+      ? (platformType === 'web'
+        ? getWebRequirementPrompt(platformPromptOptions)
+        : getMobileRequirementPrompt(platformPromptOptions))
+      : (() => {
+        const normalizedSource: ContentSourceType = contentSourceType === 'html' ? 'markdown' : contentSourceType;
+        return getTextRequirementPrompt({
+          systemName: projectInfo.systemName,
+          moduleName: projectInfo.moduleName,
+          sourceType: normalizedSource
+        });
+      })();
 
-    console.log(`   ✅ ${platformType === 'web' ? 'Web端' : '移动端'}提示词策略已加载`);
+    console.log(`   ✅ 提示词策略已加载 (${isHtmlSource ? 'HTML/原型' : '文本'})`);
 
     // 构建系统提示词
-    const systemPrompt = `你是一个专业的需求分析专家。你的任务是分析Axure原型导出的HTML文件,并生成结构化的需求文档。
+    const systemPrompt = `你是一个专业的需求分析专家。你的任务是分析${isHtmlSource ? 'Axure原型导出的HTML文件' : '用户提供的业务文档'}并生成结构化的需求文档。
 
 ${projectInfo.businessRules && projectInfo.businessRules.length > 0 ? getBusinessRulesSystemPrompt(projectInfo.businessRules) : ''}
 ${platformPrompt}
@@ -1133,7 +1163,7 @@ ${getCommonSystemInstructions()}`;
 
 
     // 构建用户提示词
-    const userPrompt = getUserPrompt(htmlContent);
+    const userPrompt = getUserPrompt(content, isHtmlSource ? 'html' : 'text');
 
     try {
       console.log('\n🤖 正在调用AI大模型生成需求文档...');
@@ -1240,20 +1270,39 @@ ${getCommonSystemInstructions()}`;
    */
   async generateBatch(
     batchId: string,
-    scenarios: string[], // scenarios[0] 是章节ID (如 "1.1")
+    scenarios: string[], // scenarios[0] 可能是 "1.1" 或 "1.1 用户登录功能"
     requirementDoc: string,
     existingCases: TestCase[],
     systemName?: string,  // 系统名称
     moduleName?: string   // 模块名称
   ): Promise<TestCase[]> {
-    const sectionId = scenarios[0]; // "1.1", "1.2" 等
-    console.log(`🤖 开始生成批次 ${batchId}（章节 ${sectionId}），系统: ${systemName || '未指定'}, 模块: ${moduleName || '未指定'}`);
+    // 🆕 从 scenarios[0] 中提取章节编号和标题
+    // 支持格式：
+    // - "1.1" (只有编号)
+    // - "1.1 用户登录功能" (编号 + 标题)
+    const relatedSection = scenarios[0];
+    let sectionId: string;
+    let sectionNameFromAI: string | null = null;
+    
+    // 尝试匹配 "编号 标题" 格式
+    const sectionMatch = relatedSection.match(/^([\d.]+)\s+(.+)$/);
+    if (sectionMatch) {
+      // 如果匹配成功，说明是 "1.1 用户登录功能" 格式
+      sectionId = sectionMatch[1]; // 提取编号部分
+      sectionNameFromAI = sectionMatch[2].trim(); // 提取标题部分
+    } else {
+      // 否则，整个字符串就是编号
+      sectionId = relatedSection;
+    }
+    
+    console.log(`🤖 开始生成批次 ${batchId}（章节 ${relatedSection}），系统: ${systemName || '未指定'}, 模块: ${moduleName || '未指定'}`);
 
     // 提取该章节的完整内容
-    const sectionRegex = new RegExp(`###\\s+${sectionId.replace('.', '\\.')}\\s+(.+?)[\\s\\S]*?(?=###\\s+[\\d.]+\\s+|$)`);
-    const sectionMatch = requirementDoc.match(sectionRegex);
-    const sectionContent = sectionMatch ? sectionMatch[0] : requirementDoc.substring(0, 3000);
-    const sectionName = sectionMatch ? sectionMatch[1].trim() : '功能模块';
+    const sectionRegex = new RegExp(`###\\s+${sectionId.replace(/\./g, '\\.')}\\s+(.+?)[\\s\\S]*?(?=###\\s+[\\d.]+\\s+|$)`);
+    const contentMatch = requirementDoc.match(sectionRegex);
+    const sectionContent = contentMatch ? contentMatch[0] : requirementDoc.substring(0, 3000);
+    // 优先使用从需求文档中提取的标题，如果没有则使用AI返回的标题
+    const sectionName = contentMatch ? contentMatch[1].trim() : (sectionNameFromAI || '功能模块');
 
     console.log(`📄 提取章节内容 - ${sectionId} ${sectionName} (${sectionContent.length}字符)`);
 
@@ -1398,11 +1447,11 @@ ${getCommonSystemInstructions()}`;
 - testPoints: 测试点数组，每个测试点包含：
   * testPurpose: 测试目的（**必填**，与测试用例的 testPurpose 相同）
   * testPoint: 测试点名称
-  * steps: 操作步骤（\\n分隔）
-  * expectedResult: 预期结果
+  * steps: 操作步骤（**必须使用【操作】【预期】格式**，如："1. 【操作】打开页面\\n   【预期】页面正常显示"）
+  * expectedResult: 预期结果（汇总所有步骤的【预期】内容）
   * riskLevel: 风险等级（low/medium/high）
-- steps: 汇总的操作步骤（兼容旧格式）
-- assertions: 汇总的预期结果（兼容旧格式）
+- steps: 汇总的操作步骤（兼容旧格式，**必须包含每步的【操作】【预期】**）
+- assertions: 汇总的预期结果（兼容旧格式，汇总所有【预期】内容）
 - preconditions: 前置条件（可选）
 - testData: 测试数据（可选）
 ${knowledgeContext}`;
@@ -1428,6 +1477,24 @@ ${existingCaseNames || '无'}
 4. 标注每个测试点的风险等级
 5. 测试用例名称格式：[章节ID]-[测试目的]
 6. 🎨 **如果章节是"页面布局与文案校验"**，请生成验证页面标题、布局、文案、按钮、提示信息、数据格式等方面的测试点
+7. 🔥 **每个步骤必须包含【操作】和【预期】两部分**，格式如："1. 【操作】具体操作\\n   【预期】该步骤的预期结果"
+8. ⚠️ **数据一致性检查（生成前必须逐项检查）**：
+   - 用例名称描述的场景与测试数据必须完全一致
+   - 测试数据与操作步骤中使用的数据必须完全一致
+   - 操作步骤必须真实执行用例名称描述的场景
+   - 例如：用例名为"密码为空"，则：
+     * testData 必须写："用户名：admin\\n密码：（空）"
+     * steps 中不能有"输入密码"或具体密码值
+   - 例如：用例名为"用户名不为空"，则：
+     * testData 必须写："用户名：admin\\n密码：123456"
+     * steps 中必须有"输入用户名'admin'"
+   - 步骤中使用的所有具体值必须在 testData 中完整列出
+   
+9. 🔥 **测试数据格式（必须遵守）**：
+   - testData 字段必须换行显示，每个字段占一行
+   - 格式："字段1：值1\\n字段2：值2\\n字段3：值3"
+   - 示例："用户名：testuser001\\n密码：Test@123456\\n邮箱：testuser@example.com\\n手机号：13800138000"
+   - ⚠️ 如果字段为空，明确标记："字段名：（空）"
 
 请输出JSON格式：
 \`\`\`json
@@ -1447,22 +1514,22 @@ ${existingCaseNames || '无'}
         {
           "testPurpose": "测试目的详细描述",
           "testPoint": "测试点1：具体测试项",
-          "steps": "1. 操作步骤1\\n2. 操作步骤2",
-          "expectedResult": "预期结果描述",
+          "steps": "1. 【操作】打开登录页面\\n   【预期】页面正常加载，显示登录表单\\n2. 【操作】输入用户名和密码\\n   【预期】输入框正常接收输入",
+          "expectedResult": "1. 页面正常加载，显示登录表单\\n2. 输入框正常接收输入",
           "riskLevel": "high"
         },
         {
           "testPurpose": "测试目的详细描述",
           "testPoint": "测试点2：具体测试项",
-          "steps": "1. 操作步骤1\\n2. 操作步骤2",
-          "expectedResult": "预期结果描述",
+          "steps": "1. 【操作】点击查询按钮\\n   【预期】系统开始查询，显示加载动画\\n2. 【操作】等待查询完成\\n   【预期】列表显示查询结果",
+          "expectedResult": "1. 系统开始查询，显示加载动画\\n2. 列表显示查询结果",
           "riskLevel": "medium"
         }
       ],
-      "steps": "汇总的操作步骤（用于兼容旧格式）",
-      "assertions": "汇总的预期结果（用于兼容旧格式）",
+      "steps": "1. 【操作】汇总的操作步骤1\\n   【预期】该步骤的预期结果\\n2. 【操作】汇总的操作步骤2\\n   【预期】该步骤的预期结果",
+      "assertions": "1. 步骤1的预期结果\\n2. 步骤2的预期结果",
       "preconditions": "前置条件",
-      "testData": "测试数据"
+      "testData": "用户名：testuser001\\n密码：Test@123456\\n邮箱：testuser@example.com"
     }
   ]
 }
@@ -1546,27 +1613,126 @@ ${existingCaseNames || '无'}
 
       const totalTestPoints = testCases.reduce((sum, tc) => sum + (tc.testPoints?.length || 0), 0);
 
+      // 🔥 强制要求：确保至少有一条 SMOKE 冒烟用例，且优先级为 high
+      const hasSmokeCase = testCases.some(tc => tc.caseType === 'SMOKE');
+      if (!hasSmokeCase && testCases.length > 0) {
+        console.warn('⚠️  警告：批次生成的测试用例中没有冒烟用例，自动将第一个高优先级用例转换为 SMOKE 类型');
+        
+        // 查找第一个高优先级用例，如果没有则使用第一个用例
+        const targetCase = testCases.find(tc => tc.priority === 'high') || testCases[0];
+        targetCase.caseType = 'SMOKE';
+        targetCase.priority = 'high'; // 🔥 冒烟用例优先级必须为 high
+        
+        console.log(`   ✅ 已将用例 "${targetCase.name}" 设置为 SMOKE（冒烟用例），优先级：high`);
+      }
+      
+      // 🔥 确保所有 SMOKE 用例的优先级都是 high
+      testCases.forEach(tc => {
+        if (tc.caseType === 'SMOKE' && tc.priority !== 'high') {
+          console.log(`   ⚠️  修正冒烟用例 "${tc.name}" 的优先级：${tc.priority} -> high`);
+          tc.priority = 'high';
+        }
+      });
+
+      // 🔥 验证测试用例的数据一致性
+      console.log(`\n🔍 [数据一致性验证] 检查批次 ${batchId} 的测试用例...`);
+      let hasConsistencyIssues = false;
+      let hasCriticalErrors = false;
+      const validTestCases: TestCase[] = [];
+      const invalidTestCases: { case: TestCase; validation: any }[] = [];
+      
+      testCases.forEach((tc, index) => {
+        const validation = this.validateTestCaseConsistency(tc);
+        if (!validation.isValid) {
+          hasConsistencyIssues = true;
+          console.error(`\n${validation.severity === 'error' ? '❌' : '⚠️'} [一致性问题] 批次${batchId}-用例${index + 1}: "${tc.name}" [${validation.severity.toUpperCase()}]`);
+          validation.warnings.forEach(warning => {
+            console.error(`   ${warning}`);
+          });
+          console.error(`   📋 用例信息:`);
+          console.error(`      - 测试数据: ${tc.testData || '无'}`);
+          console.error(`      - 操作步骤预览: ${(tc.steps || '').substring(0, 150)}...`);
+          
+          if (validation.severity === 'error') {
+            hasCriticalErrors = true;
+            invalidTestCases.push({ case: tc, validation });
+            console.error(`   🚫 此用例存在严重错误，将被过滤掉\n`);
+          } else {
+            validTestCases.push(tc);
+            console.warn(`   ⚠️ 此用例存在警告，但仍会保留\n`);
+          }
+        } else {
+          validTestCases.push(tc);
+          console.log(`   ✅ 批次${batchId}-用例${index + 1}: "${tc.name}" - 数据一致性检查通过`);
+        }
+      });
+
+      if (hasCriticalErrors) {
+        console.error(`\n🚫 [严重错误] 批次 ${batchId} 检测到 ${invalidTestCases.length} 个用例存在严重的数据一致性问题，已被过滤`);
+        console.error(`   保留了 ${validTestCases.length} 个有效用例`);
+        console.error(`   建议：请检查AI生成质量，或考虑重新生成\n`);
+      } else if (hasConsistencyIssues) {
+        console.warn(`\n⚠️ [警告] 批次 ${batchId} 部分用例存在轻微的一致性问题，但仍会保留\n`);
+      } else {
+        console.log(`   ✅ 批次 ${batchId} 所有测试用例数据一致性检查通过\n`);
+      }
+
+      // 如果所有用例都被过滤了，返回原始用例但添加警告标签
+      const finalTestCases = validTestCases.length > 0 ? validTestCases : testCases.map(tc => ({
+        ...tc,
+        tags: [...(tc.tags || []), '⚠️数据可能不一致']
+      }));
+
+      // 🆕 对测试用例进行排序：SMOKE（冒烟用例）优先，然后按优先级排序
+      finalTestCases.sort((a, b) => {
+        // 1. 首先按用例类型排序（SMOKE 最高优先级）
+        const typeOrder: Record<string, number> = {
+          SMOKE: 1,
+          FULL: 2,
+          BOUNDARY: 3,
+          ABNORMAL: 4,
+          PERFORMANCE: 5,
+          SECURITY: 6,
+          USABILITY: 7,
+          COMPATIBILITY: 8
+        };
+        const typeA = typeOrder[a.caseType || 'FULL'] || 9;
+        const typeB = typeOrder[b.caseType || 'FULL'] || 9;
+        if (typeA !== typeB) {
+          return typeA - typeB;
+        }
+
+        // 2. 用例类型相同时，按优先级排序（high → medium → low）
+        const priorityOrder: Record<string, number> = { high: 1, medium: 2, low: 3 };
+        const priorityA = priorityOrder[a.priority] || 2;
+        const priorityB = priorityOrder[b.priority] || 2;
+        return priorityA - priorityB;
+      });
+
+      const finalTotalTestPoints = finalTestCases.reduce((sum, tc) => sum + (tc.testPoints?.length || 0), 0);
+
       console.log(`\n┌─────────────────────────────────────────────────────────┐`);
-      console.log(`│ ✅ [生成完成] 批次 ${batchId} 生成结果汇总                │`);
+      console.log(`│ ✅ [生成完成] 批次 ${batchId} 生成结果汇总（已按优先级排序）│`);
       console.log(`└─────────────────────────────────────────────────────────┘`);
-      console.log(`   📊 测试用例数: ${testCases.length}`);
-      console.log(`   📊 测试点总数: ${totalTestPoints}`);
-      console.log(`   📊 平均每个用例: ${(totalTestPoints / testCases.length).toFixed(1)} 个测试点`);
+      console.log(`   📊 有效用例数: ${finalTestCases.length}${validTestCases.length < testCases.length ? ` (过滤掉 ${testCases.length - validTestCases.length} 个)` : ''}`);
+      console.log(`   📊 测试点总数: ${finalTotalTestPoints}`);
+      console.log(`   📊 平均每个用例: ${(finalTotalTestPoints / finalTestCases.length).toFixed(1)} 个测试点`);
       console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`);
 
-      return testCases;
+      return finalTestCases;
 
     } catch (error: any) {
       console.error(`❌ 批次${batchId}生成失败，使用回退方案:`, error.message);
-      // 回退到简单生成
+      // 回退到简单生成（默认生成一个 SMOKE 冒烟用例）
       return [{
         name: `${sectionId}-${sectionName}`,
         testPurpose: `验证${sectionName}的基本功能`,
         description: `针对${sectionName}的功能测试(AI生成失败，回退到基础模板)`,
         steps: `1. 准备测试环境和数据\n2. 执行${sectionName}相关操作\n3. 观察系统响应\n4. 验证结果`,
         assertions: `1. ${sectionName}执行成功\n2. 系统响应正确\n3. 数据状态符合预期`,
-        priority: 'medium',
-        tags: [sectionName, '自动生成', 'AI回退'],
+        priority: 'high',
+        caseType: 'SMOKE', // 🔥 回退方案默认生成冒烟用例
+        tags: [sectionName, '自动生成', 'AI回退', '冒烟用例'],
         system: '待补充',
         module: '待补充',
         sectionId,
@@ -1575,7 +1741,7 @@ ${existingCaseNames || '无'}
           testPoint: '基本功能测试',
           steps: `1. 准备测试环境和数据\n2. 执行${sectionName}相关操作`,
           expectedResult: '功能正常运行',
-          riskLevel: 'medium'
+          riskLevel: 'high'
         }],
         testType: '功能测试'
       }];
@@ -1642,17 +1808,58 @@ ${existingCaseNames || '无'}
       "name": "测试场景名称",
       "description": "该场景的测试目标和范围",
       "priority": "high|medium|low",
-      "relatedSections": ["1.1", "1.2"]
+      "relatedSections": ["1.1 需求章节标题", "1.2 另一章节标题"],
+      "estimatedTestPoints": 5
     }
   ]
 }
 \`\`\`
+
+**重要：relatedSections 格式说明**
+- ⚠️ **必须严格从需求文档中提取完整的章节编号和标题**
+- ⚠️ **每个测试场景必须至少关联1个需求章节，不能为空数组！**
+- ⚠️ **不要漏掉章节！同一页面的多个子章节都需要关联！**
+- 格式要求："章节编号 章节标题"（章节编号和标题之间有一个空格）
+- 章节编号必须与需求文档中的 ### 或 #### 标题完全一致
+
+**正确示例：**
+- 如果需求文档中是 ### 1.1 用户登录功能，则返回 "1.1 用户登录功能"
+- 如果需求文档中是 #### 1.1.1 页面布局验证，则返回 "1.1.1 页面布局验证"
+- 如果需求文档中是 ### 2.3 订单查询界面，则返回 "2.3 订单查询界面"
+- **如果场景涉及多个章节，必须全部列出**：
+  {
+    "relatedSections": [
+      "1.1 登录页面",
+      "1.1.1 页面布局与文案校验",
+      "1.1.2 表单字段",
+      "1.1.3 操作按钮"
+    ]
+  }
+
+**错误示例（不要这样）：**
+- ❌ "1. 用户登录功能"（缺少小数点后的编号）
+- ❌ "登录功能"（缺少章节编号）
+- ❌ "1.1"（缺少章节标题）
+- ❌ []（空数组，必须至少有1个章节）
+- ❌ ["1.1 登录页面"]（明明还有 1.1.1, 1.1.2, 1.1.3 等子章节，却只关联了父章节）
+
+⚠️ **关键要求（极其重要！）**：
+1. **每个场景必须有 relatedSections，至少包含1个需求章节！**
+2. **仔细阅读需求文档中的章节标题（### 或 #### 开头的行），完整复制章节编号和标题！**
+3. **如果场景涉及多个章节，必须全部列出，不要遗漏任何一个！**
+4. **特别注意：同一页面下的所有子章节（如 1.1.1, 1.1.2, 1.1.3）都要关联到该页面的场景中！**
+5. **宁可多关联，也不要少关联！关联不足会导致需求覆盖不完整！**
+
+**estimatedTestPoints 说明：**
+- 预估该场景需要多少个测试点
+- 根据场景复杂度判断：简单场景 3-5个，中等场景 5-8个，复杂场景 8-12个
 
 ## 重要提示
 - 场景数量控制在3-6个，太多会导致规划过于分散
 - 优先级判断：功能性 > 权限 > 布局文案
 - 每个场景要有清晰的测试边界，避免重叠
 - 场景名称应该具体明确，如"用户登录场景"、"订单查询场景"等
+- **estimatedTestPoints 必须填写，帮助测试人员了解工作量**
 
 ${isModifyMode ? `
 ## ⚠️ 修改页面模式特别说明
@@ -1695,10 +1902,114 @@ ${isModifyMode ? `
    - ❌ 供应商筛选测试（未变更）
 ` : ''}`;
 
-    const userPrompt = `请分析以下需求文档，拆分出合适的测试场景：
+    const userPrompt = `请分析以下需求文档，拆分出合适的测试场景。
 
-## 需求文档
+## 📋 需求文档内容
 ${requirementDoc}
+
+---
+
+## 🔥 **【最高优先级】relatedSections 章节编号提取规则**
+
+⚠️ **重要提醒：不同的子章节必须使用不同的编号！**
+- 如果需求文档有 "1.1.1 页面布局"、"1.1.2 表单字段"、"1.1.3 操作按钮"
+- 那么在 relatedSections 中也必须是 "1.1.1"、"1.1.2"、"1.1.3"
+- **千万不要把所有子章节的编号都改成 "1.1"！**
+
+⚠️ **【最高优先级】relatedSections 章节提取规则 - 必须严格遵守！**
+
+🔥 **核心要求：必须完整提取需求文档中的所有章节编号！**
+
+**步骤1：扫描并提取需求文档中的所有章节（极其重要！）**
+1. **逐行扫描需求文档**，找出所有以 ### 或 #### 开头的行
+2. **提取完整的章节编号和标题**：
+   - 从 "### 1.1 用户登录功能" 提取 → "1.1 用户登录功能"
+   - 从 "#### 1.1.1 页面布局" 提取 → "1.1.1 页面布局"
+   - 从 "#### 1.1.2 表单字段" 提取 → "1.1.2 表单字段"
+3. **保持原始编号**：不要改变章节编号，完全按照需求文档中的编号来（1.1、1.1.1、1.1.2、1.2、1.2.1 等）
+4. **建立章节清单**：在生成场景前，先列出需求文档中的所有章节
+
+**步骤2：为测试场景关联完整的章节列表**
+- **原则**：一个测试场景通常对应一个页面或模块的所有相关章节
+- **示例1 - 登录页面场景**（需求文档有 1.1、1.1.1、1.1.2、1.1.3、1.1.4）：
+  relatedSections: ["1.1 用户登录页面", "1.1.1 页面布局与文案校验", "1.1.2 表单字段", "1.1.3 操作按钮", "1.1.4 业务规则"]
+  说明：包含主章节 1.1 和所有子章节 1.1.1 到 1.1.4
+
+- **示例2 - 订单列表页面场景**（需求文档有 1.2、1.2.1、1.2.2、1.2.3）：
+  relatedSections: ["1.2 订单列表页面", "1.2.1 查询条件", "1.2.2 列表展示字段", "1.2.3 操作按钮"]
+  说明：包含主章节 1.2 和所有子章节 1.2.1 到 1.2.3
+
+**步骤3：格式严格检查**
+- ✅ **正确格式**："章节编号 章节标题"（章节编号和标题之间有一个空格）
+  - "1.1 用户登录功能" ✅
+  - "1.1.1 页面布局与文案校验" ✅
+  - "1.2.3 操作按钮" ✅
+- ❌ **错误格式**（绝对禁止）：
+  - "1. 用户登录" ❌ （缺少小数点后的编号）
+  - "登录功能" ❌ （缺少章节编号）
+  - "1.1" ❌ （缺少章节标题）
+  - "1.1  用户登录" ❌ （两个空格）
+
+**步骤4：完整性和准确性验证（生成前强制检查！）**
+- [ ] 是否扫描了需求文档中的所有 ### 和 #### 章节？
+- [ ] 每个场景的 relatedSections 至少有 1 个章节？
+- [ ] 如果页面有子章节（如 1.1.1, 1.1.2），是否都包含了？
+- [ ] 章节编号是否与需求文档**完全一致**（1.1、1.1.1、1.1.2，而不是全部都是 1.1）？
+- [ ] 格式是否正确（"编号 标题"，中间一个空格）？
+
+⚠️ **常见错误示例（绝对禁止！）**
+
+❌ 错误1：所有章节编号都是 1.1（必须使用不同的编号：1.1、1.1.1、1.1.2）
+  relatedSections: ["1.1 登录页面", "1.1 页面布局", "1.1 表单字段", "1.1 操作按钮"]
+  问题：页面布局应该是 1.1.1，表单字段应该是 1.1.2，操作按钮应该是 1.1.3，不能全部都是 1.1
+
+❌ 错误2：只关联父章节（遗漏了所有子章节）
+  relatedSections: ["1.1 用户登录功能"]
+  问题：应该包含 1.1、1.1.1、1.1.2、1.1.3 等所有相关子章节
+
+❌ 错误3：空数组
+  relatedSections: []
+  问题：必须至少包含一个章节
+
+✅ **正确示例**
+relatedSections: ["1.1 用户登录页面", "1.1.1 页面布局与文案校验", "1.1.2 表单字段", "1.1.3 操作按钮", "1.1.4 业务规则"]
+说明：主章节编号是 1.1，子章节编号是 1.1.1、1.1.2、1.1.3、1.1.4（注意每个子章节的编号都不同）
+
+🎯 **提取策略（推荐）**
+1. 先扫描需求文档，列出所有章节：
+   - 1.1 用户登录页面
+   - 1.1.1 页面布局
+   - 1.1.2 表单字段
+   - 1.1.3 操作按钮
+   - 1.2 订单列表页面
+   - 1.2.1 查询条件
+   - 1.2.2 列表字段
+2. 然后根据场景，组合相关章节：
+   - 登录场景 → 关联 1.1、1.1.1、1.1.2、1.1.3
+   - 订单列表场景 → 关联 1.2、1.2.1、1.2.2
+
+## 🔥 排序要求（最高优先级！）
+⚠️ **输出的测试场景数组必须严格按照优先级排序！**
+
+**强制排序规则：**
+1. **第一个场景必须是主流程场景，优先级必须为 "high"**
+   - 核心业务功能、主要操作流程
+   - 例如：登录场景、订单创建场景、数据查询场景
+
+2. **所有场景必须按优先级排序：high → medium → low**
+   - 所有 high 优先级场景排在最前面
+   - 然后是 medium 优先级场景
+   - 最后是 low 优先级场景
+
+3. **输出前检查清单：**
+   - [ ] 第一个场景是 high 优先级？
+   - [ ] 所有 high 在 medium 之前？
+   - [ ] 所有 medium 在 low 之前？
+
+**正确示例：**
+[{priority:"high"}, {priority:"high"}, {priority:"medium"}, {priority:"low"}] ✅
+**错误示例：**
+[{priority:"low"}, {priority:"high"}] ❌
 
 ${isModifyMode ? `
 ⚠️ **这是修改页面模式，请严格遵守以下规则：**
@@ -1707,7 +2018,7 @@ ${isModifyMode ? `
 3. 完全忽略 ➖ 原有功能（未变更）部分
 4. 测试场景命名要明确标注是"新增"还是"修改"
 ` : ''}
-请识别页面类型，并根据上述原则拆分测试场景。直接输出JSON格式，不要其他说明文字。`;
+请识别页面类型，并根据上述原则拆分测试场景。**确保主流程场景排在第一位！** 直接输出JSON格式，不要其他说明文字。`;
 
     try {
       console.log('🤖 正在调用AI进行测试场景拆分...');
@@ -1717,24 +2028,41 @@ ${isModifyMode ? `
       const parsed = this.parseAIJsonResponse(aiResponse, '测试场景拆分');
       const scenarios: TestScenario[] = parsed.scenarios || [];
 
-      console.log(`✅ 成功拆分 ${scenarios.length} 个测试场景:`);
+      // 🆕 确保测试场景按优先级排序（high → medium → low）
+      scenarios.sort((a, b) => {
+        const priorityOrder = { high: 1, medium: 2, low: 3 };
+        const priorityA = priorityOrder[a.priority] || 2;
+        const priorityB = priorityOrder[b.priority] || 2;
+        return priorityA - priorityB;
+      });
+
+      // 🆕 设置默认展开状态：第一个场景默认展开，其他的收起
       scenarios.forEach((s, i) => {
-        console.log(`   ${i + 1}. ${s.name} (${s.priority}) - 关联章节: ${s.relatedSections.join(', ')}`);
+        s.isExpanded = i === 0; // 第一个场景（索引0）默认展开
+      });
+
+      console.log(`✅ 成功拆分 ${scenarios.length} 个测试场景（已按优先级排序）:`);
+      scenarios.forEach((s, i) => {
+        const estimatedInfo = s.estimatedTestPoints ? `, 预估${s.estimatedTestPoints}个测试点` : '';
+        console.log(`   ${i + 1}. ${s.name} (${s.priority}${estimatedInfo}) - 关联章节: ${s.relatedSections.join(', ')}`);
       });
 
       return scenarios;
-    } catch (error: any) {
-      console.error('❌ 测试场景拆分失败:', error.message);
+    } catch (error) {
+      console.error('❌ 测试场景拆分失败1:', error.message);
+      // 将错误抛出，让路由层处理并返回给前端
+      throw new Error(`${error.message || error}`);
       // 回退方案：返回基础场景
-      return [
-        {
-          id: 'scenario-1',
-          name: '完整功能测试场景',
-          description: '验证所有功能点',
-          priority: 'high',
-          relatedSections: ['1.1']
-        }
-      ];
+      // return [
+      //   {
+      //     id: 'scenario-1',
+      //     name: '完整功能测试场景',
+      //     description: '验证所有功能点',
+      //     priority: 'high',
+      //     relatedSections: ['1.1'],
+      //     isExpanded: true // 🆕 回退方案默认展开
+      //   }
+      // ];
     }
   }
 
@@ -1774,7 +2102,7 @@ ${isModifyMode ? `
       return match ? match[0] : '';
     }).join('\n\n');
 
-    const systemPrompt = `你是一个测试用例设计专家。你的任务是为指定的测试场景生成多个测试点（Test Point）。
+    const systemPrompt = `你是一个测试点设计专家。你的任务是为指定的测试场景生成多个测试点（Test Point）。
 
 ## 测试点生成原则
 
@@ -1799,6 +2127,70 @@ ${isModifyMode ? `
 - 复杂场景：6-10个测试点
 - 根据场景复杂度决定，不要人为限制
 
+## 🔥 主流程识别与排序（极其重要！）
+
+⚠️ **第一条测试点必须是主流程测试点（正常流程、正向场景）！**
+
+**主流程测试点特征：**
+1. **正常操作路径**：使用正确的数据、正确的操作顺序
+2. **成功场景**：验证功能在理想条件下能够正常工作
+3. **核心功能**：最基本、最常用的业务流程
+4. **正向验证**：不是错误场景、不是边界条件、不是异常情况
+
+**排序规则（必须严格遵守！）：**
+1. **第一位：主流程测试点**（正常流程、正向场景、成功案例）
+   - 例如："用户名和密码均正确，凭据正确"（✅ 主流程）
+   - 例如："正常提交订单"（✅ 主流程）
+   - 例如："有效数据查询"（✅ 主流程）
+   - ❌ 不是："用户名和密码均不为空，但凭据错误"（异常流程）
+   - ❌ 不是："密码错误"（异常流程）
+   - ❌ 不是："库存不足时提交"（异常流程）
+   - 风险等级：通常为 high
+
+2. **第二位：关键异常流程**（业务规则验证、重要异常处理）
+   - 例如："用户名和密码均不为空，但凭据错误"
+   - 例如："库存不足时提交订单"
+   - 风险等级：high 或 medium
+
+3. **后续：边界条件和次要异常**
+   - 例如："用户名为空"、"密码为空"
+   - 风险等级：medium 或 low
+
+**识别主流程的关键词：**
+- ✅ 正确、正常、有效、成功、合法、标准、凭据正确、密码正确、数据有效
+- ❌ 错误、无效、失败、异常、非法、边界、为空、超长、凭据错误、密码错误
+
+**🚨 特别注意：**
+- "用户名和密码均不为空，但凭据错误" 是 ❌ 异常流程（因为包含"错误"）
+- "用户名和密码均正确，凭据正确" 是 ✅ 主流程（因为包含"正确"）
+
+**✅ 正确示例（严格按此格式）：**
+\`\`\`json
+{
+  "testPoints": [
+    {"testPoint": "用户名和密码均正确，凭据正确", "riskLevel": "high"},              // 1. ✅ 主流程（正向场景）
+    {"testPoint": "用户名和密码均不为空，但凭据错误", "riskLevel": "high"},          // 2. 异常流程（关键异常）
+    {"testPoint": "用户名为空", "riskLevel": "medium"},                              // 3. 边界条件
+    {"testPoint": "密码为空", "riskLevel": "medium"}                                 // 4. 边界条件
+  ]
+}
+\`\`\`
+
+**❌ 错误示例（绝对禁止）：**
+\`\`\`json
+{
+  "testPoints": [
+    {"testPoint": "用户名和密码均不为空，但凭据错误", "riskLevel": "high"},  // ❌ 异常流程排第一（错误！）
+    {"testPoint": "用户名和密码均正确，凭据正确", "riskLevel": "high"}      // ❌ 主流程排最后（错误！）
+  ]
+}
+\`\`\`
+
+⚠️ **输出前检查清单：**
+- [ ] 第一个测试点是正常流程（不是错误、不是为空、不是异常）？
+- [ ] 第一个测试点的风险等级是 high？
+- [ ] 测试点按照：正常流程 → 异常流程 → 边界条件 排序？
+
 ## 输出格式
 
 请输出JSON格式：
@@ -1819,13 +2211,18 @@ ${isModifyMode ? `
 \`\`\`
 
 ## 字段说明
-- **testPoint**: 测试点名称，简洁明确
+- **testPoint**: 测试点名称，简洁明确（**必须与steps中的操作内容一致**）
 - **description**: 测试点描述，说明该测试点的测试目的和测试范围
 - **coverageAreas**: 覆盖范围，说明该测试点覆盖的功能点（如：查询条件、数据展示、操作按钮等）
 - **estimatedTestCases**: 预估该测试点会生成多少个测试用例（根据以下原则预估：简单测试点1个，中等测试点2-3个，复杂测试点3-5个）
-- **steps**: 测试步骤，详细的操作步骤
-- **expectedResult**: 预期结果，期望的测试结果
+- **steps**: 测试步骤，详细的操作步骤（**必须与testPoint名称描述的场景一致**）
+- **expectedResult**: 预期结果，期望的测试结果（**必须与testPoint名称和steps对应**）
 - **riskLevel**: 风险等级
+
+⚠️ **数据一致性要求（极其重要！）**
+- 测试点名称、操作步骤、预期结果必须逻辑一致，不能相互矛盾
+- 例如：测试点名为"用户名为空"，则steps中不能输入用户名
+- 例如：测试点名为"密码为空"，则steps中不能输入密码
 
 ${isModifyMode ? `
 ## ⚠️ 修改页面模式特别说明
@@ -1876,9 +2273,26 @@ ${isModifyMode ? `
         tp.testScenario = scenarioName;
       });
 
-      console.log(`✅ 成功生成 ${testPoints.length} 个测试点:`);
+      // 🆕 智能排序：主流程优先 + 风险等级排序
+      testPoints.sort((a, b) => {
+        // 1. 识别主流程测试点（正常流程优先）
+        const isMainFlowA = this.isMainFlowTestPoint(a.testPoint);
+        const isMainFlowB = this.isMainFlowTestPoint(b.testPoint);
+        
+        if (isMainFlowA && !isMainFlowB) return -1; // A是主流程，排前面
+        if (!isMainFlowA && isMainFlowB) return 1;  // B是主流程，排前面
+        
+        // 2. 都是主流程或都不是主流程时，按风险等级排序
+        const riskOrder = { high: 1, medium: 2, low: 3 };
+        const riskA = riskOrder[a.riskLevel as keyof typeof riskOrder] || 2;
+        const riskB = riskOrder[b.riskLevel as keyof typeof riskOrder] || 2;
+        return riskA - riskB;
+      });
+
+      console.log(`✅ 成功生成 ${testPoints.length} 个测试点（已按主流程+风险等级排序）:`);
       testPoints.forEach((tp, i) => {
-        console.log(`   ${i + 1}. ${tp.testPoint} (${tp.riskLevel || 'medium'})`);
+        const isMainFlow = this.isMainFlowTestPoint(tp.testPoint);
+        console.log(`   ${i + 1}. ${tp.testPoint} (${tp.riskLevel || 'medium'})${isMainFlow ? ' 🔥主流程' : ''}`);
       });
 
       return testPoints;
@@ -1936,7 +2350,7 @@ ${isModifyMode ? `
     systemName: string,
     moduleName: string,
     relatedSections: string[]
-  ): Promise<TestCase[]> {
+  ): Promise<TestCaseGenerationResult> {
     console.log('\n╔═══════════════════════════════════════════════════════════════╗');
     console.log(`║       🎯 阶段3：为测试点生成测试用例 - ${testPoint.testPoint}             ║`);
     console.log('╚═══════════════════════════════════════════════════════════════╝\n');
@@ -1946,9 +2360,24 @@ ${isModifyMode ? `
     console.log(`   系统: ${systemName || '未指定'}`);
     console.log(`   模块: ${moduleName || '未指定'}`);
 
-    // 提取章节信息
-    const sectionId = relatedSections[0] || '1.1';
-    const sectionName = scenarioName;
+    // 🆕 提取章节信息 - 正确处理 "编号 标题" 格式
+    const relatedSection = relatedSections[0] || '1.1';
+    let sectionId: string;
+    let sectionNameFromRelated: string | null = null;
+    
+    // 尝试匹配 "编号 标题" 格式
+    const sectionMatch = relatedSection.match(/^([\d.]+)\s+(.+)$/);
+    if (sectionMatch) {
+      // 如果匹配成功，说明是 "1.1 用户登录功能" 格式
+      sectionId = sectionMatch[1]; // 提取编号部分
+      sectionNameFromRelated = sectionMatch[2].trim(); // 提取标题部分
+    } else {
+      // 否则，整个字符串就是编号
+      sectionId = relatedSection;
+    }
+    
+    // 优先使用从relatedSections提取的标题，如果没有则使用scenarioName
+    const sectionName = sectionNameFromRelated || scenarioName;
 
     // 🔍 查询知识库（RAG增强）
     let knowledgeContext = '';
@@ -1971,6 +2400,24 @@ ${isModifyMode ? `
 
     const systemPrompt = `你是一个测试用例设计专家。你的任务是为指定的测试点生成一个或多个测试用例。
 
+## 🚨 最重要的要求：数据一致性
+
+**在生成每个测试用例时，必须确保：**
+1. ✅ **用例名称** 与 **测试数据** 完全一致
+2. ✅ **测试数据** 与 **操作步骤** 完全一致
+3. ✅ **操作步骤** 必须真实执行用例名称描述的场景
+
+**禁止出现的错误：**
+- ❌ 用例名为"用户名为空"，但测试数据或步骤中有用户名的具体值
+- ❌ 用例名为"正常登录"，但步骤中说"保持为空"
+- ❌ 测试数据写了"用户名：admin"，但步骤中没有输入admin
+- ❌ 不同用例的数据和步骤互相搞混
+
+**生成策略：逐个用例独立思考**
+- 先写用例名称 → 再写匹配的测试数据 → 最后写匹配的操作步骤
+- 每个用例生成完后，必须回头检查三者是否一致
+- 不要把不同用例的数据混在一起！
+
 ## 核心概念
 
 **测试用例（TestCase）是什么？**
@@ -1978,18 +2425,23 @@ ${isModifyMode ? `
 - 一个测试点可能对应多个测试用例（不同测试数据、不同场景、不同前置条件等）
 - 每个测试用例包含：用例名称、测试步骤、预期结果、前置条件、测试数据等
 
-**何时生成多个测试用例？**
-- 测试点涉及多种测试数据（如：正常值、边界值、异常值）→ 通常生成2-3个用例
-- 测试点涉及多种场景（如：不同用户角色、不同权限）→ 通常生成2-3个用例
-- 测试点需要不同的前置条件 → 通常生成2个用例
-- 简单测试点（单一场景、单一数据）→ 通常生成1个用例
-- 复杂测试点（多种组合）→ 通常生成3-5个用例
+**何时生成多个测试用例？（默认情况下都应该生成多个）**
+- ✅ **强烈推荐**：测试点涉及输入验证 → **必须生成2-3个用例**（正常、为空、异常）
+- ✅ **强烈推荐**：测试点涉及多种测试数据 → **必须生成2-3个用例**（正常值、边界值、异常值）
+- ✅ **强烈推荐**：测试点涉及多种场景 → **生成2-3个用例**（不同角色、不同权限）
+- ✅ **推荐**：测试点需要不同的前置条件 → **生成2个用例**
+- ⚠️ **谨慎**：极简单测试点（仅查看、只读）→ 可考虑1个用例
+- ✅ **必须**：复杂测试点（多种组合）→ **生成3-5个用例**
+
+**总原则：一个测试点通常应该生成 2-3 个用例，而不是 1 个！**
 
 **预估测试用例数量的原则：**
 - 分析测试点的复杂度：步骤数量、涉及的数据类型、场景数量
-- 简单测试点（3步以内，单一场景）：预估1个用例
-- 中等测试点（4-6步，2-3种情况）：预估2-3个用例
-- 复杂测试点（7步以上，多种组合）：预估3-5个用例
+- **默认策略：每个测试点生成 2-3 个用例**（覆盖正常、边界、异常场景）
+- 极简单测试点（纯查看、单一只读操作）：可考虑1个用例
+- 中等测试点（输入、查询、操作类）：**强烈建议 2-3 个用例**
+- 复杂测试点（多步骤、多分支、关键功能）：**建议 3-5 个用例**
+- 🔥 **原则：宁多勿少，确保覆盖全面**
 
 ## 输出格式
 
@@ -2007,21 +2459,78 @@ ${isModifyMode ? `
       "sectionId": "1.1",
       "sectionName": "章节名称",
       "priority": "high|medium|low",
+      "caseType": "SMOKE|FULL|BOUNDARY|ABNORMAL",
       "tags": ["标签1", "标签2"],
       "preconditions": "前置条件",
-      "testData": "测试数据",
-      "steps": "详细的测试步骤（基于测试点的steps扩展）",
-      "assertions": "详细的预期结果（基于测试点的expectedResult扩展）"
+      "testData": "用户名：admin\\n密码：123456\\n邮箱：test@example.com",
+      "steps": "1. 【操作】具体操作步骤1\\n   【预期】该步骤的预期结果\\n2. 【操作】具体操作步骤2\\n   【预期】该步骤的预期结果\\n3. 【操作】具体操作步骤3\\n   【预期】该步骤的预期结果",
+      "assertions": "1. 步骤1的预期结果\\n2. 步骤2的预期结果\\n3. 步骤3的预期结果（保持与steps中的预期一致）"
     }
   ]
 }
 \`\`\`
 
+## 🔥 关键要求：步骤与预期结果的对应关系
+
+**每个测试步骤必须包含两部分：**
+1. **【操作】** - 具体的操作动作
+2. **【预期】** - 该操作的预期结果
+
+**格式示例：**
+1. 【操作】打开用户登录页面
+   【预期】页面正常加载，显示用户名和密码输入框
+2. 【操作】输入正确的用户名"admin"和密码"123456"
+   【预期】输入框正常接收输入，密码显示为掩码
+3. 【操作】点击"登录"按钮
+   【预期】系统验证通过，跳转到首页，显示欢迎信息
+
+**assertions字段说明：**
+- assertions字段应该汇总所有步骤的预期结果
+- 数量必须与steps中的步骤数量一致
+- 内容应该与steps中的【预期】部分保持一致
+- 每条预期结果独立成行，便于测试人员验证
+
+## 用例类型判断规则（caseType）
+
+⚠️ **强制要求：每次生成的测试用例中，必须至少包含 1 条 SMOKE（冒烟用例）！**
+
+- **SMOKE（冒烟用例）**【必须生成至少1条，优先级必须为 high】：核心功能验证、基本正向流程、高优先级场景、主要业务路径、必须通过的基础功能
+  * 示例：用户登录的正常流程、订单创建的基本流程、数据查询的主要功能
+  * 判断标准：如果该功能不通过，整个模块基本不可用
+  * 🔥 **SMOKE 用例的 priority 字段必须设置为 "high"**
+  
+- **FULL（全量用例）**：详细功能验证、边界条件测试、异常情况处理、各种输入组合、非核心功能验证
+- **ABNORMAL（异常用例）**：异常情况处理、各种输入组合、非核心功能验证
+- **BOUNDARY（边界用例）**：边界条件测试、各种输入组合、非核心功能验证
+- **PERFORMANCE（性能用例）**：性能测试、各种输入组合、非核心功能验证
+- **SECURITY（安全用例）**：安全测试、各种输入组合、非核心功能验证
+- **USABILITY（可用性用例）**：可用性测试、各种输入组合、非核心功能验证
+- **COMPATIBILITY（兼容性用例）**：兼容性测试、各种输入组合、非核心功能验证
+- **RELIABILITY（可靠性用例）**：可靠性测试、各种输入组合、非核心功能验证
+
 ## 重要提示
+
+### 用例数量要求（重要！）
+- **一个测试点通常需要生成 2-3 个测试用例**，覆盖不同的测试场景：
+  * 至少1个 SMOKE（冒烟用例）- 正常流程
+  * 1-2个 BOUNDARY（边界用例）- 边界条件
+  * 0-1个 ABNORMAL（异常用例）- 异常情况
+- **只有极其简单的测试点才生成1个用例**（如：纯查看类、单一操作）
+- **大多数测试点都应该生成多个用例**，以覆盖：
+  * 正常情况 vs 异常情况
+  * 有数据 vs 无数据
+  * 不同的输入组合
+  * 不同的边界值
+
+### 步骤格式要求
 - 测试用例的步骤应该基于测试点的steps，但可以更详细
-- 测试用例的预期结果应该基于测试点的expectedResult，但可以更具体
-- 如果测试点比较简单，通常生成1个测试用例
-- 如果测试点涉及多种情况，可以生成2-3个测试用例
+- **每个步骤必须包含【操作】和【预期】两部分**
+- steps字段中的每一步都要用"【操作】...【预期】..."的格式
+- assertions字段要汇总所有【预期】内容，且数量必须与步骤数量一致
+
+### 测试数据要求
+- 🔥 **如果步骤中使用了具体的测试数据，必须在 testData 字段中列出**
+- 格式："字段1：值1\\n字段2：值2\\n字段3：值3"
 
 ${knowledgeContext}
 
@@ -2031,7 +2540,15 @@ ${isModifyMode ? `
 生成的测试用例应该聚焦于变更的功能点。
 ` : ''}`;
 
-    const userPrompt = `请为以下测试点生成测试用例：
+const userPrompt = `请为以下测试点生成测试用例：
+
+## 测试场景信息
+- 系统名称: ${systemName}
+- 模块名称: ${moduleName}
+- 场景ID: ${scenarioId}
+- 场景名称: ${scenarioName}
+- 场景描述: ${scenarioDescription}
+- 关联章节: ${relatedSections.join(', ')}
 
 ## 测试点信息
 - 测试点名称: ${testPoint.testPoint}
@@ -2039,18 +2556,134 @@ ${isModifyMode ? `
 - 预期结果: ${testPoint.expectedResult}
 - 风险等级: ${testPoint.riskLevel || 'medium'}
 
-## 测试场景信息
-- 场景ID: ${scenarioId}
-- 场景名称: ${scenarioName}
-- 场景描述: ${scenarioDescription}
-- 系统名称: ${systemName}
-- 模块名称: ${moduleName}
-- 关联章节: ${relatedSections.join(', ')}
-
 ## 相关需求内容
 ${requirementDoc.substring(0, 2000)}
 
-请基于测试点的步骤和预期结果，生成详细的测试用例。如果测试点涉及多种情况，可以生成多个测试用例。直接输出JSON格式，不要其他说明文字。`;
+## 🔥 生成要求（必须严格遵守）
+
+### 1. 数据一致性要求（最重要！）
+⚠️ **严格检查：用例名称、测试数据、操作步骤、预期结果必须完全一致，不能相互矛盾！**
+
+**✅ 正确示例1：用户名不为空，密码为空 - BOUNDARY**
+- 用例名称："用户名不为空，密码为空"
+- testData："用户名：admin\\n密码：（空）"
+- steps："1. 【操作】打开登录页面\\n   【预期】页面正常加载\\n2. 【操作】在用户名输入框中输入'admin'\\n   【预期】输入框正常接收输入\\n3. 【操作】密码输入框保持为空\\n   【预期】密码输入框保持空白状态\\n4. 【操作】点击登录按钮\\n   【预期】显示错误提示：密码不能为空"
+- 说明：✅ 用例名说"密码为空"，testData标记"密码：（空）"，steps说"保持为空" - 三者完全一致！
+
+**✅ 正确示例2：用户名为空，密码不为空 - BOUNDARY**
+- 用例名称："用户名为空，密码不为空"
+- testData："用户名：（空）\\n密码：123456"
+- steps："1. 【操作】打开登录页面\\n   【预期】页面正常加载\\n2. 【操作】用户名输入框保持为空\\n   【预期】用户名输入框保持空白状态\\n3. 【操作】在密码输入框中输入'123456'\\n   【预期】输入框正常接收输入\\n4. 【操作】点击登录按钮\\n   【预期】显示错误提示：用户名不能为空"
+- 说明：✅ 用例名说"用户名为空"，testData标记"用户名：（空）"，steps说"保持为空" - 三者完全一致！
+
+**❌ 错误示例（绝对禁止）：**
+- 用例名称："用户名为空，密码不为空"
+- testData："用户名：（空）\\n密码：123456"  ← 这里是对的
+- steps："1. 打开登录页面\\n2. 在用户名输入框中输入'admin'\\n3. 在密码输入框中输入'123456'"  ← ❌❌❌ 错误！用例名说"用户名为空"，但步骤却在输入admin！
+- 问题：用例名和testData说"用户名为空"，但steps却在输入用户名，完全矛盾！这种用例会被系统自动过滤掉！
+
+**检查清单（生成前必须逐项检查）：**
+- [ ] 用例名称描述的场景与测试数据一致？
+- [ ] 测试数据与操作步骤中使用的数据一致？
+- [ ] 操作步骤是否真的在执行用例名称描述的场景？
+- [ ] 预期结果是否符合用例名称描述的场景？
+- [ ] 如果用例名称说"为空"，则测试数据必须标记为"（空）"，步骤中不能输入该字段
+- [ ] 如果用例名称说"不为空"，则测试数据必须有具体值，步骤中必须输入该字段
+- [ ] 步骤中使用的所有具体值（如 'admin'、'123456'）必须在测试数据中列出
+
+**🔥 特别注意：**
+- 如果测试数据字段为空，请在测试数据中明确标记为"字段名：（空）"
+- 步骤中使用的任何具体数据（账号、密码、数字等）都必须在 testData 字段中完整列出
+
+### 2. 步骤格式要求
+1. **每个测试步骤必须包含【操作】和【预期】两部分**
+2. 格式：
+   - 1. 【操作】具体操作内容
+   -    【预期】该步骤的预期结果
+3. assertions字段要汇总所有【预期】内容，数量与步骤数一致
+
+### 3. 用例数量要求（关键！）
+🔥 **请为该测试点生成 2-3 个测试用例，覆盖不同场景**：
+   - 至少1个正常场景用例（SMOKE）
+   - 1-2个边界/异常场景用例（BOUNDARY/ABNORMAL）
+   - 例如：登录测试点应生成：
+     * "正常登录" (SMOKE)
+     * "用户名为空" (BOUNDARY)
+     * "密码错误" (ABNORMAL)
+   - **只有极其简单的测试点才生成1个用例**
+
+### 4. 🔥 主流程用例识别与排序（极其重要！）
+
+⚠️ **第一条测试用例必须是主流程用例（正常流程、正向场景、SMOKE类型）！**
+
+**主流程用例特征：**
+- 正常操作路径、成功场景、理想条件
+- 使用正确的数据、正确的操作顺序
+- 不是错误场景、不是边界条件、不是异常情况
+- 必须是 SMOKE 类型，优先级为 high
+
+**排序规则：**
+1. **第一位：主流程用例**（SMOKE类型，正常流程）
+   - 例如："用户名和密码均正确，正常登录"（而不是"密码错误"）
+   - 例如："正常提交订单"（而不是"库存不足时提交"）
+2. **第二位及之后：边界和异常用例**
+   - BOUNDARY、ABNORMAL 等类型
+
+**识别主流程的关键词：**
+- ✅ 正常、正确、有效、成功、合法、标准、不为空
+- ❌ 错误、无效、失败、异常、为空、超长、边界
+
+**正确示例：**
+\`\`\`json
+{
+  "testCases": [
+    {"name": "用户名和密码均正确，正常登录", "caseType": "SMOKE", "priority": "high"},  // 1. 主流程
+    {"name": "密码错误", "caseType": "ABNORMAL", "priority": "medium"},                    // 2. 异常
+    {"name": "用户名为空", "caseType": "BOUNDARY", "priority": "medium"}                  // 3. 边界
+  ]
+}
+\`\`\`
+
+⚠️ **输出前检查清单：**
+- [ ] 第一个用例是正常流程（不是错误、不是为空、不是异常）？
+- [ ] 第一个用例的 caseType 是 SMOKE？
+- [ ] 第一个用例的 priority 是 high？
+- [ ] 用例按照：正常流程 → 异常流程 → 边界条件 排序？
+
+### 5. 冒烟用例要求
+⚠️ **强制要求：生成的测试用例中，必须至少包含 1 条 caseType="SMOKE" 的冒烟用例**
+   - 冒烟用例用于验证核心功能的基本正向流程
+   - 优先将最重要、最基础的测试用例设置为 SMOKE 类型
+   - 主流程用例通常就是 SMOKE 用例
+
+### 6. 测试数据要求
+🔥 **testData 字段格式要求**：
+- **必须换行显示**：每个字段占一行，格式为"字段名：值\\n"
+- 示例："用户名：admin\\n密码：123456\\n邮箱：test@example.com"
+- ⚠️ 如果字段为空，明确标记："字段名：（空）"
+- 如果步骤中使用了具体的测试数据，必须在 testData 字段中列出
+- 确保与用例名称、步骤内容完全一致
+
+### 🚨 生成前自查清单（每个用例生成前必须逐项检查）
+**为了避免数据混乱，请在生成每个用例时，严格按照以下步骤自查：**
+
+1. **读取用例名称** → 确定该用例要测试什么场景
+2. **编写测试数据** → 根据用例名称填写 testData 字段
+   - 例如：名称是"用户名为空"，则 testData 必须写 "用户名：（空）"
+   - 例如：名称是"正常登录"，则 testData 必须写具体的用户名和密码值
+3. **编写操作步骤** → steps 中的操作必须与 testData 完全一致
+   - 如果 testData 中某字段为（空），则 steps 中该字段必须"保持为空"
+   - 如果 testData 中某字段有具体值，则 steps 中必须"输入该具体值"
+4. **交叉验证** → 用例名称、testData、steps 三者必须完全一致，不能有任何矛盾
+
+**🔥 特别警告：**
+- ⛔ 绝对不允许出现：用例名为"用户名为空"，但 testData 或 steps 中有用户名的具体值
+- ⛔ 绝对不允许出现：用例名为"用户名不为空"，但 testData 或 steps 中没有用户名
+- ⛔ 如果 testData 写了 "用户名：admin"，则 steps 必须写 "输入'admin'"
+- ⛔ 如果 testData 写了 "密码：（空）"，则 steps 必须写 "密码保持为空"
+- ⛔ 不要把不同用例的数据和步骤搞混！每个用例独立检查！
+
+请基于测试点的步骤和预期结果，**生成 2-3 个测试用例**。**生成时请逐个用例检查数据一致性！** 直接输出JSON格式，不要其他说明文字。`;
 
     try {
       console.log(`🤖 正在为测试点"${testPoint.testPoint}"生成测试用例...`);
@@ -2069,54 +2702,206 @@ ${requirementDoc.substring(0, 2000)}
         tc.sectionId = sectionId;
         tc.sectionName = sectionName;
         
+        // 🆕 确保用例类型字段存在（如果 AI 没有返回，根据优先级和风险等级自动判断）
+        if (!tc.caseType) {
+          tc.caseType = this.determineCaseType(tc, testPoint);
+        }
+        
         // 确保每个测试用例都包含关联的测试点信息
+        // 使用类型断言访问 AI 返回的动态字段
+        const tcAny = tc as any;
         if (!tc.testPoints) {
+          // 🔧 修复：优先使用测试用例自己的 steps 和 expectedResult，而不是测试点的默认值
           tc.testPoints = [{
-            ...testPoint,
+            testPoint: testPoint.testPoint,  // 测试点名称
+            riskLevel: tcAny.riskLevel || testPoint.riskLevel || 'medium',
+            description: testPoint.description || '',
+            coverageAreas: testPoint.coverageAreas || '',
             testScenario: scenarioName,
-            testPurpose: tc.testPurpose || tc.description || ''
+            testPurpose: tc.testPurpose || tc.description || '',
+            // 🔧 关键修复：测试用例自己的值优先于测试点的默认值
+            steps: tc.steps || testPoint.steps || '',
+            expectedResult: tc.assertions || tcAny.expectedResult || testPoint.expectedResult || ''
           }];
         } else {
-          // 确保每个测试点都有 testPurpose
+          // 确保每个测试点都有 testPurpose，并优先使用测试用例自己的步骤和预期结果
           tc.testPoints = tc.testPoints.map(tp => ({
             ...tp,
             testPurpose: tp.testPurpose || tc.testPurpose || tc.description || '',
-            testScenario: tp.testScenario || scenarioName
+            testScenario: tp.testScenario || scenarioName,
+            // 🔧 关键修复：测试用例自己的值优先
+            steps: tp.steps || tc.steps || '',
+            expectedResult: tp.expectedResult || tc.assertions || tcAny.expectedResult || ''
           }));
         }
       });
 
-      console.log(`✅ 成功生成 ${testCases.length} 个测试用例`);
-      testCases.forEach((tc, i) => {
-        console.log(`   ${i + 1}. ${tc.name}`);
+      // 🔥 强制要求：确保至少有一条 SMOKE 冒烟用例，且优先级为 high
+      const hasSmokeCase = testCases.some(tc => tc.caseType === 'SMOKE');
+      if (!hasSmokeCase && testCases.length > 0) {
+        console.warn('⚠️  警告：生成的测试用例中没有冒烟用例，自动将第一个高优先级用例转换为 SMOKE 类型');
+        
+        // 查找第一个高优先级用例，如果没有则使用第一个用例
+        const targetCase = testCases.find(tc => tc.priority === 'high') || testCases[0];
+        targetCase.caseType = 'SMOKE';
+        targetCase.priority = 'high'; // 🔥 冒烟用例优先级必须为 high
+        
+        console.log(`   ✅ 已将用例 "${targetCase.name}" 设置为 SMOKE（冒烟用例），优先级：high`);
+      }
+      
+      // 🔥 确保所有 SMOKE 用例的优先级都是 high
+      testCases.forEach(tc => {
+        if (tc.caseType === 'SMOKE' && tc.priority !== 'high') {
+          console.log(`   ⚠️  修正冒烟用例 "${tc.name}" 的优先级：${tc.priority} -> high`);
+          tc.priority = 'high';
+        }
       });
 
-      return testCases;
+      // 🔥 验证测试用例的数据一致性
+      console.log(`\n🔍 [数据一致性验证] 检查生成的测试用例...`);
+      let hasConsistencyIssues = false;
+      let hasCriticalErrors = false;
+      const validTestCases: TestCase[] = [];
+      const invalidTestCases: { case: TestCase; validation: any }[] = [];
+      
+      testCases.forEach((tc, index) => {
+        const validation = this.validateTestCaseConsistency(tc);
+        if (!validation.isValid) {
+          hasConsistencyIssues = true;
+          console.error(`\n${validation.severity === 'error' ? '❌' : '⚠️'} [一致性问题] 用例 ${index + 1}: "${tc.name}" [${validation.severity.toUpperCase()}]`);
+          validation.warnings.forEach(warning => {
+            console.error(`   ${warning}`);
+          });
+          console.error(`   📋 用例信息:`);
+          console.error(`      - 测试数据: ${tc.testData || '无'}`);
+          console.error(`      - 操作步骤预览: ${(tc.steps || '').substring(0, 150)}...`);
+          
+          if (validation.severity === 'error') {
+            hasCriticalErrors = true;
+            invalidTestCases.push({ case: tc, validation });
+            console.error(`   🚫 此用例存在严重错误，将被过滤掉\n`);
+          } else {
+            validTestCases.push(tc);
+            console.warn(`   ⚠️ 此用例存在警告，但仍会保留\n`);
+          }
+        } else {
+          validTestCases.push(tc);
+          console.log(`   ✅ 用例 ${index + 1}: "${tc.name}" - 数据一致性检查通过`);
+        }
+      });
+
+      if (hasCriticalErrors) {
+        console.error(`\n🚫 [严重错误] 检测到 ${invalidTestCases.length} 个用例存在严重的数据一致性问题，已被过滤`);
+        console.error(`   保留了 ${validTestCases.length} 个有效用例`);
+        console.error(`   建议：请检查AI生成质量，或考虑重新生成\n`);
+      } else if (hasConsistencyIssues) {
+        console.warn(`\n⚠️ [警告] 部分用例存在轻微的一致性问题，但仍会保留\n`);
+      } else {
+        console.log(`   ✅ 所有测试用例数据一致性检查通过\n`);
+      }
+
+      // 如果所有用例都被过滤了，返回原始用例但添加警告标签
+      const finalTestCases = validTestCases.length > 0 ? validTestCases : testCases.map(tc => ({
+        ...tc,
+        tags: [...(tc.tags || []), '⚠️数据可能不一致']
+      }));
+
+      // 🔥 智能排序：主流程 + SMOKE类型 + 优先级
+      finalTestCases.sort((a, b) => {
+        // 1. 识别主流程用例（正常流程优先）
+        const isMainFlowA = this.isMainFlowTestCase(a.name);
+        const isMainFlowB = this.isMainFlowTestCase(b.name);
+        
+        if (isMainFlowA && !isMainFlowB) return -1; // A是主流程，排前面
+        if (!isMainFlowA && isMainFlowB) return 1;  // B是主流程，排前面
+        
+        // 2. 都是主流程或都不是主流程时，按用例类型排序（SMOKE 最高优先级）
+        const typeOrder: Record<string, number> = {
+          SMOKE: 1,
+          FULL: 2,
+          BOUNDARY: 3,
+          ABNORMAL: 4,
+          PERFORMANCE: 5,
+          SECURITY: 6,
+          USABILITY: 7,
+          COMPATIBILITY: 8
+        };
+        const typeA = typeOrder[a.caseType || 'FULL'] || 9;
+        const typeB = typeOrder[b.caseType || 'FULL'] || 9;
+        if (typeA !== typeB) {
+          return typeA - typeB;
+        }
+
+        // 3. 用例类型相同时，按优先级排序（high → medium → low）
+        const priorityOrder: Record<string, number> = { high: 1, medium: 2, low: 3 };
+        const priorityA = priorityOrder[a.priority] || 2;
+        const priorityB = priorityOrder[b.priority] || 2;
+        return priorityA - priorityB;
+      });
+
+      console.log(`✅ 成功生成 ${finalTestCases.length} 个有效测试用例（已按主流程+优先级排序）${validTestCases.length < testCases.length ? ` (过滤掉 ${testCases.length - validTestCases.length} 个)` : ''}`);
+      finalTestCases.forEach((tc, i) => {
+        const isMainFlow = this.isMainFlowTestCase(tc.name);
+        console.log(`   ${i + 1}. ${tc.name} [${tc.caseType || 'FULL'}] [${tc.priority}]${isMainFlow ? ' 🔥主流程' : ''}`);
+      });
+
+      // 🆕 构建被过滤用例列表（带标记）
+      const filteredCasesWithMark = invalidTestCases.map(({ case: tc, validation }) => ({
+        ...tc,
+        isFiltered: true,
+        filterReason: validation.warnings.join('; ')
+      }));
+
+      // 🆕 返回包含过滤信息的完整结果
+      return {
+        validCases: finalTestCases,
+        filteredCases: filteredCasesWithMark,
+        totalGenerated: testCases.length,
+        validCount: finalTestCases.length,
+        filteredCount: invalidTestCases.length
+      };
     } catch (error: any) {
-      console.error('❌ 生成测试用例失败:', error.message);
+      console.error('❌ 生成测试用例失败2:', error.message);
       // 回退方案：生成一个基础测试用例
-      const sectionId = relatedSections[0] || '1.1';
-      return [{
-        name: `${sectionId}-${testPoint.testPoint}`,
+      // 🆕 从 relatedSections 中正确提取 sectionId
+      const relatedSection = relatedSections[0] || '1.1';
+      const sectionMatch = relatedSection.match(/^([\d.]+)\s+(.+)$/);
+      const fallbackSectionId = sectionMatch ? sectionMatch[1] : relatedSection;
+      const fallbackCase: TestCase = {
+        name: `${fallbackSectionId}-${testPoint.testPoint}`,
         description: `基于测试点"${testPoint.testPoint}"的测试用例`,
         testScenario: scenarioName,
         testScenarioId: scenarioId,
-        testPoint: testPoint.testPoint,
         system: systemName,
         module: moduleName,
-        sectionId,
+        sectionId: fallbackSectionId,
         sectionName: scenarioName,
         priority: testPoint.riskLevel === 'high' ? 'high' : testPoint.riskLevel === 'low' ? 'low' : 'medium',
-        tags: [scenarioName, 'AI生成'],
+        caseType: 'SMOKE', // 🔥 回退方案默认生成冒烟用例
+        tags: [scenarioName, 'AI生成', '冒烟用例'],
         preconditions: '准备测试环境和数据',
         testData: '使用系统提供的测试数据',
         steps: testPoint.steps,
         assertions: testPoint.expectedResult,
         testPoints: [{
-          ...testPoint,
-          testScenario: scenarioName
+          testPoint: testPoint.testPoint,
+          riskLevel: testPoint.riskLevel || 'medium',
+          description: testPoint.description || '',
+          coverageAreas: testPoint.coverageAreas || '',
+          testScenario: scenarioName,
+          // 🔧 回退方案：使用测试点的步骤和预期结果
+          steps: testPoint.steps,
+          expectedResult: testPoint.expectedResult
         }]
-      }];
+      };
+      // 🆕 返回包含过滤信息的完整结果（回退方案无过滤）
+      return {
+        validCases: [fallbackCase],
+        filteredCases: [],
+        totalGenerated: 1,
+        validCount: 1,
+        filteredCount: 0
+      };
     }
   }
 
@@ -2136,7 +2921,7 @@ ${requirementDoc.substring(0, 2000)}
   ): Promise<TestCase> {
     // 如果只有一个测试点，直接生成
     if (testPoints.length === 1) {
-      const testCases = await this.generateTestCaseForTestPoint(
+      const result = await this.generateTestCaseForTestPoint(
         testPoints[0],
         scenarioId,
         scenarioName,
@@ -2146,11 +2931,11 @@ ${requirementDoc.substring(0, 2000)}
         moduleName,
         relatedSections
       );
-      return testCases[0]; // 返回第一个测试用例
+      return result.validCases[0]; // 返回第一个有效测试用例
     }
 
     // 多个测试点：为第一个测试点生成测试用例（兼容旧逻辑）
-    const testCases = await this.generateTestCaseForTestPoint(
+    const result = await this.generateTestCaseForTestPoint(
       testPoints[0],
       scenarioId,
       scenarioName,
@@ -2160,7 +2945,7 @@ ${requirementDoc.substring(0, 2000)}
       moduleName,
       relatedSections
     );
-    return testCases[0];
+    return result.validCases[0];
   }
 
   /**
@@ -2173,6 +2958,294 @@ ${requirementDoc.substring(0, 2000)}
     if (highRiskCount > 0) return 'high';
     if (mediumRiskCount > testPoints.length / 2) return 'medium';
     return 'low';
+  }
+
+  /**
+   * 根据测试用例名称、描述、优先级和测试点风险等级自动判断用例类型
+   * @param tc 测试用例对象
+   * @param testPoint 关联的测试点
+   * @returns 用例类型
+   */
+  private determineCaseType(tc: any, testPoint: TestPoint): string {
+    const caseName = tc.name || '';
+    const caseDescription = tc.description || '';
+    const testPointName = testPoint.testPoint || '';
+    
+    // 合并所有文本用于关键词匹配
+    const combinedText = `${caseName} ${caseDescription} ${testPointName}`.toLowerCase();
+    
+    // 按优先级顺序判断用例类型（优先级从高到低）
+    
+    // 1. 性能用例 - 关键词：性能、响应时间、并发、吞吐量、负载
+    if (this.containsKeywords(combinedText, ['性能', '响应时间', '并发', '吞吐量', '负载', '压力测试', '稳定性测试'])) {
+      return 'PERFORMANCE';
+    }
+    
+    // 2. 安全用例 - 关键词：安全、权限、加密、认证、授权、XSS、SQL注入
+    if (this.containsKeywords(combinedText, ['安全', '权限', '加密', '认证', '授权', 'xss', 'sql注入', '防护', '攻击'])) {
+      return 'SECURITY';
+    }
+    
+    // 3. 兼容性用例 - 关键词：兼容、浏览器、设备、平台、版本
+    if (this.containsKeywords(combinedText, ['兼容', '浏览器', '设备', '平台', '版本', '适配', '多端'])) {
+      return 'COMPATIBILITY';
+    }
+    
+    // 4. 边界用例 - 关键词：边界、最大、最小、极限、超出、范围
+    if (this.containsKeywords(combinedText, ['边界', '最大', '最小', '极限', '超出', '范围', '限制', '上限', '下限'])) {
+      return 'BOUNDARY';
+    }
+    
+    // 5. 异常用例 - 关键词：异常、错误、失败、非法、无效、中断
+    if (this.containsKeywords(combinedText, ['异常', '错误', '失败', '非法', '无效', '中断', '故障', '容错', '降级'])) {
+      return 'ABNORMAL';
+    }
+    
+    // 6. 可用性用例 - 关键词：可用性、易用、友好、体验、交互
+    if (this.containsKeywords(combinedText, ['可用性', '易用', '友好', '体验', '交互', 'ui', 'ux', '界面'])) {
+      return 'USABILITY';
+    }
+    
+    // 7. 冒烟用例 - 判断条件：
+    //    - 高优先级或高风险
+    //    - 包含核心、基本、主流程等关键词
+    const isHighPriorityOrRisk = tc.priority === 'high' || testPoint.riskLevel === 'high';
+    const isCoreFunction = this.containsKeywords(combinedText, ['核心', '基本', '主流程', '关键', '必须', '登录', '注册']);
+    
+    if (isHighPriorityOrRisk || isCoreFunction) {
+      return 'SMOKE';
+    }
+    
+    // 8. 默认为全量用例
+    return 'FULL';
+  }
+
+  /**
+   * 检查文本中是否包含任意关键词
+   * @param text 要检查的文本
+   * @param keywords 关键词列表
+   * @returns 是否包含任意关键词
+   */
+  private containsKeywords(text: string, keywords: string[]): boolean {
+    return keywords.some(keyword => text.includes(keyword));
+  }
+
+  /**
+   * 验证测试用例的数据一致性
+   * @param testCase 测试用例
+   * @returns 是否存在一致性问题
+   */
+  private validateTestCaseConsistency(testCase: TestCase): { isValid: boolean; warnings: string[]; severity: 'error' | 'warning' | 'ok' } {
+    const warnings: string[] = [];
+    let severity: 'error' | 'warning' | 'ok' = 'ok';
+    const caseName = (testCase.name || '').toLowerCase();
+    const testData = (testCase.testData || '').toLowerCase();
+    const steps = (testCase.steps || '').toLowerCase();
+
+    // 🔥 智能提取用例名称中提到的字段（通用方案）
+    
+    // 第一步：预处理组合表达，拆分成独立字段
+    // 处理 "XX和YY均..." 或 "XX、YY均..." 格式
+    let processedCaseName = caseName;
+    const combinationPatterns = [
+      /([^，。、\s和]{2,6})和([^，。、\s和]{2,6})均(正确|错误|为空|不为空|有效|无效)/g,
+      /([^，。、\s、]{2,6})、([^，。、\s、]{2,6})均(正确|错误|为空|不为空|有效|无效)/g,
+    ];
+    
+    combinationPatterns.forEach(pattern => {
+      processedCaseName = processedCaseName.replace(pattern, (match, field1, field2, status) => {
+        // 将 "XX和YY均正确" 转换为 "XX正确，YY正确"
+        return `${field1}${status}，${field2}${status}`;
+      });
+    });
+
+    // 第二步：从处理后的用例名称中提取字段
+    // 匹配模式：XX为空、XX不为空、XX正确、XX错误、XX不填、输入XX等
+    const fieldExtractionPatterns = [
+      /([^，。、\s]{2,8}?)为空/g,
+      /([^，。、\s]{2,8}?)不为空/g,
+      /([^，。、\s]{2,8}?)不填/g,
+      /([^，。、\s]{2,8}?)正确/g,
+      /([^，。、\s]{2,8}?)错误/g,
+      /([^，。、\s]{2,8}?)有效/g,
+      /([^，。、\s]{2,8}?)无效/g,
+      /不输入([^，。、\s]{2,8})/g,
+      /输入([^，。、\s]{2,8})/g,
+    ];
+
+    // 提取所有可能的字段名
+    const detectedFields = new Set<string>();
+    fieldExtractionPatterns.forEach(pattern => {
+      const matches = processedCaseName.matchAll(pattern);
+      for (const match of matches) {
+        const field = match[1];
+        // 过滤掉一些常见的非字段词、抽象概念词和无效字段
+        // 🔥 增加抽象概念词排除：凭据、信息、数据、内容、资料、参数、格式 等
+        const excludeWords = [
+          // 测试相关
+          '测试', '用例', '场景', '功能', '检查', '验证', '系统', '正常', '成功', '失败',
+          // 抽象概念词（不是具体输入字段）
+          '凭据', '信息', '数据', '内容', '资料', '参数', '格式', '条件', '状态', '结果',
+          '登录', '注册', '提交', '请求', '响应', '操作', '流程', '规则', '逻辑'
+        ];
+        const isValidField = field && 
+                            field.length >= 2 && 
+                            field.length <= 8 && 
+                            !excludeWords.includes(field) &&
+                            !field.includes('和') &&
+                            !field.includes('或');
+        
+        if (isValidField) {
+          detectedFields.add(field);
+        }
+      }
+    });
+
+    // 检查1: 用例名称与测试数据的一致性（通用检查）
+    // 如果用例名称包含"XX为空"、"XX不填"等，测试数据和步骤中不应该有该字段的值
+    const emptyKeywordPatterns = ['为空', '不填', '不输入', '未输入', '空值'];
+    const notEmptyKeywordPatterns = ['不为空', '正确', '有效', '输入'];
+
+    // 对每个检测到的字段进行动态验证
+    detectedFields.forEach(field => {
+      // 判断该字段是"为空"场景还是"不为空"场景（使用预处理后的名称）
+      const isEmptyScenario = emptyKeywordPatterns.some(kw => 
+        processedCaseName.includes(`${field}${kw}`) || processedCaseName.includes(`${kw}${field}`)
+      );
+      const isNotEmptyScenario = notEmptyKeywordPatterns.some(kw => 
+        processedCaseName.includes(`${field}${kw}`) || processedCaseName.includes(`${kw}${field}`)
+      );
+
+      // 验证"为空"场景
+      if (isEmptyScenario) {
+        // 检查测试数据中该字段的值
+        if (testData.includes(field)) {
+          const hasEmptyMarker = testData.includes(`${field}：（空）`) || 
+                                 testData.includes(`${field}：空`) ||
+                                 testData.includes(`${field}:（空）`) ||
+                                 testData.includes(`${field}:空`) ||
+                                 testData.includes(`${field}为空`);
+          
+          // 提取当前字段的值（更精确的检查）
+          const fieldValueMatch = testData.match(new RegExp(`${field}[：:]\\s*([^\\n]+)`));
+          const fieldValue = fieldValueMatch ? fieldValueMatch[1].trim() : '';
+          
+          // 检查该字段的值是否为空标记
+          const isEmptyValue = fieldValue.includes('（空）') || fieldValue.includes('空') || fieldValue.length === 0;
+          
+          // 检查该字段是否有具体的值
+          const hasConcreteValue = fieldValue && !isEmptyValue && fieldValue.length > 0;
+
+          if (!hasEmptyMarker && hasConcreteValue) {
+            warnings.push(`❌ 严重错误：用例名称表明"${field}为空"，但测试数据中显示${field}有具体值（${fieldValue}）`);
+            severity = 'error';
+          }
+        }
+
+        // 检查步骤中是否在输入该字段
+        const keepEmptyPatterns = ['保持为空', '不输入', '不填写', '留空'];
+        const hasKeepEmptyAction = keepEmptyPatterns.some(pattern => 
+          steps.includes(pattern) && steps.includes(field)
+        );
+        
+        // 使用通用的输入检测模式
+        const inputFieldPattern = new RegExp(`(在|向)?${field}(输入框|字段)?[中]?输入['"]?[\\w\\u4e00-\\u9fa5]+['"]?`, 'i');
+        const isInputtingField = inputFieldPattern.test(steps);
+
+        if (isInputtingField && !hasKeepEmptyAction) {
+          warnings.push(`❌ 严重错误：用例名称表明"${field}为空"，但操作步骤中在输入${field}的具体值`);
+          severity = 'error';
+        }
+      }
+
+      // 验证"不为空"场景
+      if (isNotEmptyScenario) {
+        // 检查测试数据中是否标记为空
+        const isMarkedAsEmpty = testData.includes(`${field}：（空）`) || 
+                                testData.includes(`${field}：空`) ||
+                                testData.includes(`${field}:（空）`) ||
+                                testData.includes(`${field}:空`);
+
+        if (isMarkedAsEmpty) {
+          warnings.push(`❌ 严重错误：用例名称表明"${field}不为空"，但测试数据中标记为"（空）"`);
+          severity = 'error';
+        }
+
+        // 🔥 优化输入操作检测逻辑 - 增加更多匹配模式
+        // 检查步骤中是否有输入操作
+        const inputKeywords = ['输入', '填写', '选择', '填入'];
+        const hasInputAction = inputKeywords.some(keyword => 
+          steps.includes(`${keyword}${field}`) || steps.includes(`${field}${keyword}`)
+        );
+
+        if (!hasInputAction) {
+          // 额外检查1：查找"在XX输入框/字段"的模式（包含"中"字）
+          const inputBoxPattern = new RegExp(`(在|向)${field}(输入框|字段|框)?[中]?(输入|填写|填入)`, 'i');
+          const hasInputBox = inputBoxPattern.test(steps);
+          
+          // 额外检查2：查找"在XX输入框中输入'value'"的模式（更宽松）
+          const inputWithValuePattern = new RegExp(`${field}[^\\n]*输入['"]?[\\w\\u4e00-\\u9fa5@]+['"]?`, 'i');
+          const hasInputWithValue = inputWithValuePattern.test(steps);
+          
+          // 额外检查3：查找测试数据中该字段是否有值，如果有值则认为会有输入操作
+          const fieldValueMatch = testData.match(new RegExp(`${field}[：:]\\s*([^\\n（空]+)`));
+          const hasConcreteTestData = fieldValueMatch && fieldValueMatch[1]?.trim().length > 0;
+          
+          if (!hasInputBox && !hasInputWithValue && !hasConcreteTestData) {
+            warnings.push(`❌ 严重错误：用例名称表明"${field}不为空"或需要输入${field}，但操作步骤中没有输入${field}的操作`);
+            severity = 'error';
+          }
+        }
+      }
+    });
+
+    // 检查2: 步骤中提到的具体值应该在测试数据中体现（通用检查）
+    // 提取步骤中所有 "输入'xxx'" 或 "输入\"xxx\"" 的值
+    const inputValuePattern = /输入['"]([^'"]{1,50})['"]|填写['"]([^'"]{1,50})['"]|选择['"]([^'"]{1,50})['"]|填入['"]([^'"]{1,50})['"]/g;
+    const inputMatches = steps.matchAll(inputValuePattern);
+    
+    for (const match of inputMatches) {
+      const value = match[1] || match[2] || match[3] || match[4];
+      if (value && value.trim()) {
+        // 检查这个值是否在测试数据中列出
+        if (!testData.includes(value.toLowerCase().trim())) {
+          // 排除一些通用的占位符描述
+          const placeholders = ['xxx', 'yyy', 'zzz', '具体值', '相应内容', '对应值'];
+          if (!placeholders.includes(value.toLowerCase())) {
+            warnings.push(`⚠️ 警告：操作步骤中使用了值"${value}"，但测试数据中未列出`);
+            if (severity === 'ok') severity = 'warning';
+          }
+        }
+      }
+    }
+
+    // 检查3: 交叉验证 - 测试数据中的值必须在步骤中使用（通用检查）
+    // 提取测试数据中所有 "字段名：值" 的格式
+    const dataFieldPattern = /([^\n：:]{1,10})[：:]\s*([^（\n]{1,100})/g;
+    const dataMatches = testData.matchAll(dataFieldPattern);
+    
+    for (const match of dataMatches) {
+      const field = match[1]?.trim();
+      const value = match[2]?.trim();
+      
+      if (field && value && !value.includes('空') && value.length > 0) {
+        // 检查步骤中是否使用了这个值
+        if (!steps.includes(value.toLowerCase())) {
+          // 排除一些元数据字段
+          const metaFields = ['备注', '说明', '描述', '注释'];
+          if (!metaFields.includes(field)) {
+            warnings.push(`⚠️ 警告：测试数据中列出了${field}的值"${value}"，但操作步骤中未使用`);
+            if (severity === 'ok') severity = 'warning';
+          }
+        }
+      }
+    }
+
+    return {
+      isValid: severity === 'ok',
+      warnings,
+      severity
+    };
   }
 
   /**
@@ -2209,13 +3282,28 @@ ${requirementDoc.substring(0, 2000)}
 2. 保持用例的核心测试目标不变
 3. 根据指令优化步骤、验证点、优先级等
 4. 确保优化后的用例更完善、更易执行
+5. **每个测试步骤必须包含【操作】和【预期】两部分**
+6. ⚠️ **强制要求：优化后的测试用例中，必须至少保留或生成 1 条 caseType="SMOKE" 的冒烟用例**
+
+## 🔥 步骤格式要求
+每个步骤必须使用以下格式：
+1. 【操作】具体操作内容
+   【预期】该步骤的预期结果
+2. 【操作】具体操作内容
+   【预期】该步骤的预期结果
+
+## 🔥 用例类型要求
+- **必须确保至少有 1 条 SMOKE（冒烟用例）**
+- SMOKE 用例用于验证核心功能的基本正向流程
+- 如果原始用例中有 SMOKE 类型，必须保留
+- 如果原始用例中没有 SMOKE 类型，需要将最核心的用例设置为 SMOKE
 
 常见优化指令类型：
 - "补充边界条件" - 添加更多边界值测试
-- "增强步骤描述" - 让步骤更详细清晰
+- "增强步骤描述" - 让步骤更详细清晰，每步都要有【操作】和【预期】
 - "增加异常场景" - 补充异常流程验证
 - "调整优先级" - 重新评估优先级
-- "细化验证点" - 增加更具体的验证项`;
+- "细化验证点" - 增加更具体的验证项，确保每步都有对应的预期结果`;
 
     const originalCasesList = originalCases.map((tc, i) => `
 ### 用例 ${i + 1}: ${tc.name}
@@ -2239,6 +3327,53 @@ ${originalCasesList}
 ## 需求文档(参考)
 ${requirementDoc.substring(0, 1500)}...
 
+## 🔥 输出要求
+
+### 1. 数据一致性要求（最重要！必须严格遵守！）
+⚠️ **严格检查：用例名称、测试数据、操作步骤、预期结果必须完全一致，不能相互矛盾！**
+
+**✅ 正确示例1：用户名不为空，密码为空 - BOUNDARY**
+{
+  "name": "用户名不为空，密码为空",
+  "testData": "用户名：admin\\n密码：（空）",
+  "steps": "1. 【操作】在用户名输入框中输入'admin'\\n   【预期】输入框正常接收输入\\n2. 【操作】密码输入框保持为空\\n   【预期】密码输入框保持空白状态\\n3. 【操作】点击登录按钮\\n   【预期】显示错误提示：密码不能为空"
+}
+→ ✅ 三者一致：名称说"密码为空"，testData标记"密码：（空）"，steps说"保持为空"
+
+**✅ 正确示例2：用户名为空，密码不为空 - BOUNDARY**
+{
+  "name": "用户名为空，密码不为空",
+  "testData": "用户名：（空）\\n密码：123456",
+  "steps": "1. 【操作】用户名输入框保持为空\\n   【预期】用户名输入框保持空白状态\\n2. 【操作】在密码输入框中输入'123456'\\n   【预期】输入框正常接收输入\\n3. 【操作】点击登录按钮\\n   【预期】显示错误提示：用户名不能为空"
+}
+→ ✅ 三者一致：名称说"用户名为空"，testData标记"用户名：（空）"，steps说"保持为空"
+
+**❌ 严重错误示例（此类用例将被自动过滤）：**
+{
+  "name": "用户名为空，密码不为空",
+  "testData": "用户名：（空）\\n密码：123456",
+  "steps": "1. 【操作】在用户名输入框中输入'admin'\\n2. 【操作】在密码输入框中输入'123456'"
+}
+→ ❌ 名称和testData说"用户名为空"，但steps却在输入用户名 - 完全矛盾！会被过滤！
+
+**检查清单（生成每个用例前必须逐项检查）：**
+- [ ] 用例名称描述的场景与测试数据一致？
+- [ ] 测试数据与操作步骤中使用的数据一致？
+- [ ] 操作步骤是否真的在执行用例名称描述的场景？
+- [ ] 预期结果是否符合用例名称描述的场景？
+- [ ] 如果用例名称说"为空"，则测试数据必须标记为"（空）"，步骤中不能输入该字段
+- [ ] 如果用例名称说"不为空"，则测试数据必须有具体值，步骤中必须输入该字段
+- [ ] 步骤中使用的所有具体值（如 'admin'、'123456'）必须在测试数据中列出
+
+### 2. 测试数据格式要求
+🔥 **testData 字段必须换行显示，每个字段一行**：
+- 格式："字段1：值1\\n字段2：值2\\n字段3：值3"
+- 示例："用户名：admin\\n密码：123456\\n邮箱：test@example.com"
+- ⚠️ 如果字段为空，必须明确标记："字段名：（空）"
+
+### 3. 步骤格式要求
+**每个步骤必须包含【操作】和【预期】两部分！**
+
 请输出优化后的测试用例，保持JSON格式：
 \`\`\`json
 {
@@ -2246,9 +3381,11 @@ ${requirementDoc.substring(0, 1500)}...
     {
       "name": "用例名称",
       "description": "用例描述",
-      "steps": "1. 步骤1\\n2. 步骤2",
-      "assertions": "1. 验证点1\\n2. 验证点2",
+      "testData": "字段1：值1\\n字段2：值2\\n字段3：值3",
+      "steps": "1. 【操作】具体操作步骤1\\n   【预期】该步骤的预期结果\\n2. 【操作】具体操作步骤2\\n   【预期】该步骤的预期结果",
+      "assertions": "1. 步骤1的预期结果\\n2. 步骤2的预期结果",
       "priority": "high/medium/low",
+      "caseType": "SMOKE/FULL/BOUNDARY/ABNORMAL",
       "tags": ["标签"],
       "system": "系统名",
       "module": "模块名"
@@ -2271,8 +3408,78 @@ ${requirementDoc.substring(0, 1500)}...
       const parsed = JSON.parse(jsonText);
       const newCases: TestCase[] = parsed.testCases || [];
 
-      console.log(`✅ AI重新生成完成，共${newCases.length}个用例`);
-      return newCases;
+      // 🔥 强制要求：确保至少有一条 SMOKE 冒烟用例，且优先级为 high
+      const hasSmokeCase = newCases.some(tc => tc.caseType === 'SMOKE');
+      if (!hasSmokeCase && newCases.length > 0) {
+        console.warn('⚠️  警告：重新生成的测试用例中没有冒烟用例，自动将第一个高优先级用例转换为 SMOKE 类型');
+        
+        // 查找第一个高优先级用例，如果没有则使用第一个用例
+        const targetCase = newCases.find(tc => tc.priority === 'high') || newCases[0];
+        targetCase.caseType = 'SMOKE';
+        targetCase.priority = 'high'; // 🔥 冒烟用例优先级必须为 high
+        
+        console.log(`   ✅ 已将用例 "${targetCase.name}" 设置为 SMOKE（冒烟用例），优先级：high`);
+      }
+      
+      // 🔥 确保所有 SMOKE 用例的优先级都是 high
+      newCases.forEach(tc => {
+        if (tc.caseType === 'SMOKE' && tc.priority !== 'high') {
+          console.log(`   ⚠️  修正冒烟用例 "${tc.name}" 的优先级：${tc.priority} -> high`);
+          tc.priority = 'high';
+        }
+      });
+
+      // 🔥 验证测试用例的数据一致性
+      console.log(`\n🔍 [数据一致性验证] 检查重新生成的测试用例...`);
+      let hasConsistencyIssues = false;
+      let hasCriticalErrors = false;
+      const validNewCases: TestCase[] = [];
+      const invalidNewCases: { case: TestCase; validation: any }[] = [];
+      
+      newCases.forEach((tc, index) => {
+        const validation = this.validateTestCaseConsistency(tc);
+        if (!validation.isValid) {
+          hasConsistencyIssues = true;
+          console.error(`\n${validation.severity === 'error' ? '❌' : '⚠️'} [一致性问题] 重新生成的用例 ${index + 1}: "${tc.name}" [${validation.severity.toUpperCase()}]`);
+          validation.warnings.forEach(warning => {
+            console.error(`   ${warning}`);
+          });
+          console.error(`   📋 用例信息:`);
+          console.error(`      - 测试数据: ${tc.testData || '无'}`);
+          console.error(`      - 操作步骤预览: ${(tc.steps || '').substring(0, 150)}...`);
+          
+          if (validation.severity === 'error') {
+            hasCriticalErrors = true;
+            invalidNewCases.push({ case: tc, validation });
+            console.error(`   🚫 此用例存在严重错误，将被过滤掉\n`);
+          } else {
+            validNewCases.push(tc);
+            console.warn(`   ⚠️ 此用例存在警告，但仍会保留\n`);
+          }
+        } else {
+          validNewCases.push(tc);
+          console.log(`   ✅ 重新生成的用例 ${index + 1}: "${tc.name}" - 数据一致性检查通过`);
+        }
+      });
+
+      if (hasCriticalErrors) {
+        console.error(`\n🚫 [严重错误] 重新生成的用例中检测到 ${invalidNewCases.length} 个存在严重的数据一致性问题，已被过滤`);
+        console.error(`   保留了 ${validNewCases.length} 个有效用例`);
+        console.error(`   建议：请再次重新生成或手动修正\n`);
+      } else if (hasConsistencyIssues) {
+        console.warn(`\n⚠️ [警告] 重新生成的用例中部分存在轻微的一致性问题，但仍会保留\n`);
+      } else {
+        console.log(`   ✅ 所有重新生成的测试用例数据一致性检查通过\n`);
+      }
+
+      // 如果所有用例都被过滤了，返回原始用例
+      const finalNewCases = validNewCases.length > 0 ? validNewCases : originalCases.map(tc => ({
+        ...tc,
+        tags: [...(tc.tags || []), '⚠️重新生成失败-使用原版']
+      }));
+
+      console.log(`✅ AI重新生成完成，共${finalNewCases.length}个有效用例${validNewCases.length < newCases.length ? ` (过滤掉 ${newCases.length - validNewCases.length} 个)` : ''}`);
+      return finalNewCases;
 
     } catch (error: any) {
       console.error(`❌ 重新生成失败，使用回退方案:`, error.message);
@@ -2283,6 +3490,24 @@ ${requirementDoc.substring(0, 1500)}...
         assertions: tc.assertions + '\n' + this.getOptimizationAssertion(instruction),
         tags: [...tc.tags, instruction.substring(0, 10)]
       }));
+
+      // 🔥 强制要求：确保至少有一条 SMOKE 冒烟用例（回退方案），且优先级为 high
+      const hasSmokeCase = newCases.some(tc => tc.caseType === 'SMOKE');
+      if (!hasSmokeCase && newCases.length > 0) {
+        console.warn('⚠️  回退方案：自动将第一个高优先级用例转换为 SMOKE 类型');
+        const targetCase = newCases.find(tc => tc.priority === 'high') || newCases[0];
+        targetCase.caseType = 'SMOKE';
+        targetCase.priority = 'high'; // 🔥 冒烟用例优先级必须为 high
+        console.log(`   ✅ 已将用例 "${targetCase.name}" 设置为 SMOKE（冒烟用例），优先级：high`);
+      }
+      
+      // 🔥 确保所有 SMOKE 用例的优先级都是 high
+      newCases.forEach(tc => {
+        if (tc.caseType === 'SMOKE' && tc.priority !== 'high') {
+          console.log(`   ⚠️  修正冒烟用例 "${tc.name}" 的优先级：${tc.priority} -> high`);
+          tc.priority = 'high';
+        }
+      });
 
       console.log(`✅ 回退方案重新生成完成`);
       return newCases;
@@ -2412,6 +3637,130 @@ ${requirementDoc.substring(0, 1500)}...
       return '5. 所有验证点均通过';
     }
     return '5. 补充验证项符合要求';
+  }
+
+  /**
+   * 🔥 识别主流程测试点（正常流程、正向场景）
+   */
+  private isMainFlowTestPoint(testPointName: string): boolean {
+    const name = testPointName.toLowerCase();
+    
+    // 🔥 最强正向关键词（明确表示主流程，优先级最高）
+    const strongPositiveKeywords = [
+      '正确', '正常', '有效', '成功', '合法', '均正确', '都正确', '全部正确',
+      '均有效', '都有效', '全部有效', '均成功', '都成功',
+      '凭据正确', '凭证正确', '密码正确', '账号正确',
+      '数据有效', '输入有效', '格式正确', '信息正确'
+    ];
+    
+    // 如果包含强正向关键词，一定是主流程
+    const hasStrongPositiveKeyword = strongPositiveKeywords.some(keyword => name.includes(keyword));
+    if (hasStrongPositiveKeyword) {
+      return true;
+    }
+    
+    // 负向关键词（这些表示异常流程、边界条件）
+    const negativeKeywords = [
+      '为空', '空值', '不填', '未填',
+      '错误', '无效', '失败', '异常', '非法',
+      '超长', '超过', '过长', '过短',
+      '不存在', '不匹配', '不一致',
+      '未授权', '无权限', '禁止',
+      '格式错误', '类型错误', '长度不足',
+      '缺少', '缺失', '不完整',
+      '边界', '极限', '最大', '最小',
+      '重复', '冲突', '不符合',
+      '凭据错误', '凭证错误', '密码错误', '账号错误',
+      '数据无效', '输入无效', '格式错误', '信息错误'
+    ];
+    
+    // 检查是否包含负向关键词
+    const hasNegativeKeyword = negativeKeywords.some(keyword => name.includes(keyword));
+    
+    // 如果包含负向关键词，不是主流程
+    if (hasNegativeKeyword) {
+      return false;
+    }
+    
+    // 一般正向关键词（这些表示正常流程）
+    const positiveKeywords = [
+      '标准', '完整', '匹配', '一致',
+      '有权限', '已授权', '允许',
+      '符合', '满足', '通过'
+    ];
+    
+    // 如果包含正向关键词，是主流程
+    const hasPositiveKeyword = positiveKeywords.some(keyword => name.includes(keyword));
+    if (hasPositiveKeyword) {
+      return true;
+    }
+    
+    // 既没有负向也没有正向关键词，通过其他规则判断
+    // 例如："提交订单"、"查询数据"这类简单动作通常是主流程
+    // 但"重复提交"、"查询不存在的数据"则不是
+    
+    // 默认：如果没有明确的负向关键词，且名称较简单，认为是主流程
+    return !hasNegativeKeyword;
+  }
+
+  /**
+   * 🔥 识别主流程测试用例（正常流程、正向场景）
+   */
+  private isMainFlowTestCase(testCaseName: string): boolean {
+    const name = testCaseName.toLowerCase();
+    
+    // 🔥 最强正向关键词（明确表示主流程，优先级最高）
+    const strongPositiveKeywords = [
+      '正确', '正常', '有效', '成功', '合法', '均正确', '都正确', '全部正确',
+      '均有效', '都有效', '全部有效', '均成功', '都成功',
+      '凭据正确', '凭证正确', '密码正确', '账号正确',
+      '数据有效', '输入有效', '格式正确', '信息正确'
+    ];
+    
+    // 如果包含强正向关键词，一定是主流程
+    const hasStrongPositiveKeyword = strongPositiveKeywords.some(keyword => name.includes(keyword));
+    if (hasStrongPositiveKeyword) {
+      return true;
+    }
+    
+    // 负向关键词（这些表示异常流程、边界条件）
+    const negativeKeywords = [
+      '为空', '空值', '不填', '未填',
+      '错误', '无效', '失败', '异常', '非法',
+      '超长', '超过', '过长', '过短',
+      '凭据错误', '凭证错误', '密码错误', '账号错误',
+      '数据无效', '输入无效', '格式错误', '信息错误',
+      '不存在', '不匹配', '不一致',
+      '未授权', '无权限', '禁止',
+      '格式错误', '类型错误', '长度不足',
+      '缺少', '缺失', '不完整',
+      '边界', '极限', '最大', '最小',
+      '重复', '冲突', '不符合'
+    ];
+    
+    // 检查是否包含负向关键词
+    const hasNegativeKeyword = negativeKeywords.some(keyword => name.includes(keyword));
+    
+    // 如果包含负向关键词，不是主流程
+    if (hasNegativeKeyword) {
+      return false;
+    }
+    
+    // 一般正向关键词（这些表示正常流程）
+    const positiveKeywords = [
+      '标准', '完整', '匹配', '一致',
+      '有权限', '已授权', '允许',
+      '符合', '满足', '通过'
+    ];
+    
+    // 如果包含正向关键词，是主流程
+    const hasPositiveKeyword = positiveKeywords.some(keyword => name.includes(keyword));
+    if (hasPositiveKeyword) {
+      return true;
+    }
+    
+    // 默认：如果没有明确的负向关键词，且名称较简单，认为是主流程
+    return !hasNegativeKeyword;
   }
 
   /**

@@ -11,7 +11,8 @@ export default defineConfig({
   workers: process.env.CI ? 1 : undefined,
   reporter: 'html',
   use: {
-    trace: 'on-first-retry',
+    // trace: 'on-first-retry', // 仅在重试时生成
+    trace: 'on', // 🔥 修改：始终启用 trace 录制，生成 trace 文件用于调试
     headless: false,
     // viewport 设置已删除，浏览器将使用默认全屏大小
     launchOptions: {

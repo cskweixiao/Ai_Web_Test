@@ -123,9 +123,11 @@ export const ChartCard: React.FC<ChartCardProps> = ({
           borderRadius: '20px',
           overflow: 'hidden',
         }}
-        bodyStyle={{
-          padding: '24px',
-          background: 'transparent',
+        styles={{
+          body: {
+            padding: '24px',
+            background: 'transparent',
+          }
         }}
       >
         <motion.div

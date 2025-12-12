@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Card, Table, Tag, Empty, Spin, Select, DatePicker, Button } from 'antd';
+import { Card, Table, Tag, Empty, Spin, Select, Button } from 'antd';
 import { Line, Pie } from '@ant-design/charts';
 import {
   BugIcon,
@@ -16,7 +16,6 @@ import { reportService, BugStats, TrendDataPoint, FailureReason, FlakyTest, Fail
 import { format, subDays } from 'date-fns';
 import type { ColumnsType } from 'antd/es/table';
 
-const { RangePicker } = DatePicker;
 const { Option } = Select;
 
 // 快捷日期选项
@@ -30,9 +29,14 @@ const quickDateRanges = {
 
 export function TestReports() {
   // 筛选条件状态
-  const [dateRange, setDateRange] = useState<[Date, Date]>(quickDateRanges['最近7天'] as [Date, Date]);
-  const [department, setDepartment] = useState<string>('all');
+  const [dateRange, setDateRange] = useState<[Date, Date]>(quickDateRanges['今天'] as [Date, Date]);
+  const [project, setProject] = useState<string>('all');
   const [suiteId, setSuiteId] = useState<string>('all');
+  
+  // 套件和项目列表
+  const [suites, setSuites] = useState<Array<{ id: number; name: string }>>([]);
+  const [projects, setProjects] = useState<Array<string>>([]);
+  const [loadingOptions, setLoadingOptions] = useState(false);
 
   // 数据状态
   const [loading, setLoading] = useState(true);
@@ -44,6 +48,57 @@ export function TestReports() {
   const [failedCasesTotal, setFailedCasesTotal] = useState(0);
   const [failedCasesPage, setFailedCasesPage] = useState(1);
   const [suiteSummary, setSuiteSummary] = useState<SuiteSummary[]>([]);
+  
+  // 加载套件和项目列表
+  const loadOptions = async () => {
+    try {
+      setLoadingOptions(true);
+      const { getApiBaseUrl } = await import('../config/api');
+      const apiBaseUrl = getApiBaseUrl('/api');
+      
+      // 并行获取套件列表和项目列表（从项目管理获取）
+      const [suitesResponse, projectsResponse] = await Promise.all([
+        fetch(`${apiBaseUrl}/suites`, {
+          headers: {
+            'Authorization': `Bearer ${localStorage.getItem('authToken') || ''}`
+          }
+        }),
+        reportService.getProjects().catch((err) => {
+          console.warn('从报告API获取项目列表失败，尝试从系统管理API获取:', err);
+          // 降级方案：从系统管理API获取
+          return fetch(`${apiBaseUrl}/v1/systems/active`, {
+            headers: {
+              'Authorization': `Bearer ${localStorage.getItem('authToken') || ''}`
+            }
+          }).then(res => res.json())
+            .then(data => Array.isArray(data) ? data.map((sys: { name: string }) => sys.name) : [])
+            .catch(() => []);
+        })
+      ]);
+      
+      const suitesData = await suitesResponse.json();
+      
+      if (suitesData.success) {
+        setSuites(suitesData.data.map((suite: { id: number; name: string }) => ({ 
+          id: suite.id, 
+          name: suite.name 
+        })));
+      }
+      
+      // 设置项目列表（从项目管理 systems 表获取）
+      if (Array.isArray(projectsResponse) && projectsResponse.length > 0) {
+        setProjects(projectsResponse);
+      }
+    } catch (error) {
+      console.error('加载套件和项目列表失败:', error);
+    } finally {
+      setLoadingOptions(false);
+    }
+  };
+  
+  useEffect(() => {
+    loadOptions();
+  }, []);
 
   // 加载数据
   const loadReportData = async () => {
@@ -52,7 +107,7 @@ export function TestReports() {
       const params = {
         startDate: format(dateRange[0], 'yyyy-MM-dd'),
         endDate: format(dateRange[1], 'yyyy-MM-dd'),
-        department: department !== 'all' ? department : undefined,
+        project: project !== 'all' ? project : undefined,
         suiteId: suiteId !== 'all' ? suiteId : undefined,
       };
 
@@ -86,7 +141,8 @@ export function TestReports() {
 
   useEffect(() => {
     loadReportData();
-  }, [dateRange, department, suiteId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dateRange, project, suiteId]);
 
   // KPI卡片数据
   const kpiCards = bugStats ? [
@@ -406,28 +462,39 @@ export function TestReports() {
               value={suiteId}
               onChange={setSuiteId}
               className="w-full"
+              loading={loadingOptions}
             >
               <Option value="all">全部套件</Option>
-              {/* TODO: 动态加载套件列表 */}
+              {suites.map(suite => (
+                <Option key={suite.id} value={suite.id.toString()}>
+                  {suite.name}
+                </Option>
+              ))}
             </Select>
           </div>
           <div className="min-w-[150px]">
-            <label className="block text-sm font-medium text-gray-700 mb-1">部门</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">项目</label>
             <Select
-              value={department}
-              onChange={setDepartment}
+              value={project}
+              onChange={setProject}
               className="w-full"
+              loading={loadingOptions}
             >
-              <Option value="all">全部部门</Option>
-              {/* TODO: 动态加载部门列表 */}
+              <Option value="all">全部项目</Option>
+              {projects.map(proj => (
+                <Option key={proj} value={proj}>
+                  {proj}
+                </Option>
+              ))}
             </Select>
           </div>
         </div>
       </motion.div>
 
       {loading ? (
-        <div className="flex items-center justify-center h-64">
-          <Spin size="large" tip="加载中..." />
+        <div className="flex flex-col items-center justify-center h-64">
+          <Spin size="large" />
+          <div className="mt-4 text-gray-500">加载中...</div>
         </div>
       ) : (
         <>

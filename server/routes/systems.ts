@@ -77,33 +77,52 @@ router.get('/:id', async (req: Request, res: Response) => {
 
 /**
  * POST /api/v1/systems
- * 创建系统
+ * 创建项目（支持同时创建初始版本）
  */
 router.post('/', async (req: Request, res: Response) => {
   try {
-    const { name, description, status, sort_order } = req.body;
+    const { name, short_name, description, status, sort_order, initial_version } = req.body;
 
     if (!name || !name.trim()) {
-      return res.status(400).json({ error: '系统名称不能为空' });
+      return res.status(400).json({ error: '项目名称不能为空' });
     }
 
+    // 创建项目
     const system = await systemService.createSystem({
       name: name.trim(),
+      short_name: short_name?.trim(),  // 🆕 项目简称
       description: description?.trim(),
       status,
       sort_order
     });
 
+    // 如果有初始版本，创建版本
+    if (initial_version && initial_version.version_name && initial_version.version_code) {
+      try {
+        await systemService.createProjectVersion({
+          project_id: system.id,
+          version_name: initial_version.version_name.trim(),
+          version_code: initial_version.version_code.trim(),
+          description: initial_version.description?.trim(),
+          is_main: initial_version.is_main !== false, // 默认为主线版本
+          status: 'active'
+        });
+      } catch (versionError) {
+        console.error('创建初始版本失败:', versionError);
+        // 不影响项目创建，但记录错误
+      }
+    }
+
     res.status(201).json(system);
   } catch (error) {
-    console.error('创建系统失败:', error);
+    console.error('创建项目失败:', error);
 
     if (error instanceof Error && error.message === '系统名称已存在') {
-      return res.status(400).json({ error: error.message });
+      return res.status(400).json({ error: '项目名称已存在' });
     }
 
     res.status(500).json({
-      error: '创建系统失败',
+      error: '创建项目失败',
       message: error instanceof Error ? error.message : '未知错误'
     });
   }
@@ -116,11 +135,12 @@ router.post('/', async (req: Request, res: Response) => {
 router.put('/:id', async (req: Request, res: Response) => {
   try {
     const id = parseInt(req.params.id);
-    const { name, description, status, sort_order } = req.body;
+    const { name, short_name, description, status, sort_order } = req.body;
 
     const updateData: systemService.UpdateSystemInput = {};
 
     if (name !== undefined) updateData.name = name.trim();
+    if (short_name !== undefined) updateData.short_name = short_name?.trim();  // 🆕 项目简称
     if (description !== undefined) updateData.description = description?.trim();
     if (status !== undefined) updateData.status = status;
     if (sort_order !== undefined) updateData.sort_order = sort_order;
@@ -296,6 +316,164 @@ router.delete('/:id/knowledge-collection', async (req: Request, res: Response) =
     console.error('删除知识库集合失败:', error);
     res.status(500).json({
       error: '删除知识库集合失败',
+      message: error instanceof Error ? error.message : '未知错误'
+    });
+  }
+});
+
+// 🔥 ===== 项目版本管理API ===== 🔥
+
+/**
+ * GET /api/v1/systems/:id/versions
+ * 获取项目的所有版本
+ */
+router.get('/:id/versions', async (req: Request, res: Response) => {
+  try {
+    const projectId = parseInt(req.params.id);
+    
+    // 检查项目是否存在
+    const project = await systemService.getSystemById(projectId);
+    if (!project) {
+      return res.status(404).json({ error: '项目不存在' });
+    }
+
+    const versions = await systemService.getProjectVersions(projectId);
+    res.json(versions);
+  } catch (error) {
+    console.error('获取项目版本失败:', error);
+    res.status(500).json({
+      error: '获取项目版本失败',
+      message: error instanceof Error ? error.message : '未知错误'
+    });
+  }
+});
+
+/**
+ * POST /api/v1/systems/:id/versions
+ * 创建项目版本
+ */
+router.post('/:id/versions', async (req: Request, res: Response) => {
+  try {
+    const projectId = parseInt(req.params.id);
+    const { version_name, version_code, description, is_main, status, release_date } = req.body;
+
+    if (!version_name || !version_name.trim()) {
+      return res.status(400).json({ error: '版本名称不能为空' });
+    }
+
+    if (!version_code || !version_code.trim()) {
+      return res.status(400).json({ error: '版本号不能为空' });
+    }
+
+    const version = await systemService.createProjectVersion({
+      project_id: projectId,
+      version_name: version_name.trim(),
+      version_code: version_code.trim(),
+      description: description?.trim(),
+      is_main,
+      status,
+      release_date
+    });
+
+    res.status(201).json(version);
+  } catch (error) {
+    console.error('创建项目版本失败:', error);
+
+    if (error instanceof Error) {
+      if (error.message === '项目不存在' || error.message === '该版本号已存在') {
+        return res.status(400).json({ error: error.message });
+      }
+    }
+
+    res.status(500).json({
+      error: '创建项目版本失败',
+      message: error instanceof Error ? error.message : '未知错误'
+    });
+  }
+});
+
+/**
+ * PUT /api/v1/systems/:id/versions/:versionId
+ * 更新项目版本
+ */
+router.put('/:id/versions/:versionId', async (req: Request, res: Response) => {
+  try {
+    const projectId = parseInt(req.params.id);
+    const versionId = parseInt(req.params.versionId);
+    const { version_name, version_code, description, status, release_date } = req.body;
+
+    const updateData: systemService.UpdateVersionInput = {};
+    if (version_name !== undefined) updateData.version_name = version_name.trim();
+    if (version_code !== undefined) updateData.version_code = version_code.trim();
+    if (description !== undefined) updateData.description = description?.trim();
+    if (status !== undefined) updateData.status = status;
+    if (release_date !== undefined) updateData.release_date = release_date;
+
+    const version = await systemService.updateProjectVersion(projectId, versionId, updateData);
+    res.json(version);
+  } catch (error) {
+    console.error('更新项目版本失败:', error);
+
+    if (error instanceof Error) {
+      if (error.message === '版本不存在' || error.message === '该版本号已存在') {
+        return res.status(400).json({ error: error.message });
+      }
+    }
+
+    res.status(500).json({
+      error: '更新项目版本失败',
+      message: error instanceof Error ? error.message : '未知错误'
+    });
+  }
+});
+
+/**
+ * DELETE /api/v1/systems/:id/versions/:versionId
+ * 删除项目版本
+ */
+router.delete('/:id/versions/:versionId', async (req: Request, res: Response) => {
+  try {
+    const projectId = parseInt(req.params.id);
+    const versionId = parseInt(req.params.versionId);
+
+    await systemService.deleteProjectVersion(projectId, versionId);
+    res.json({ message: '版本删除成功' });
+  } catch (error) {
+    console.error('删除项目版本失败:', error);
+
+    if (error instanceof Error) {
+      if (error.message === '版本不存在' || error.message.includes('主线版本')) {
+        return res.status(400).json({ error: error.message });
+      }
+    }
+
+    res.status(500).json({
+      error: '删除项目版本失败',
+      message: error instanceof Error ? error.message : '未知错误'
+    });
+  }
+});
+
+/**
+ * PUT /api/v1/systems/:id/versions/:versionId/set-main
+ * 设置主线版本
+ */
+router.put('/:id/versions/:versionId/set-main', async (req: Request, res: Response) => {
+  try {
+    const projectId = parseInt(req.params.id);
+    const versionId = parseInt(req.params.versionId);
+
+    const version = await systemService.setMainVersion(projectId, versionId);
+    res.json(version);
+  } catch (error) {
+    console.error('设置主线版本失败:', error);
+
+    if (error instanceof Error && error.message === '版本不存在') {
+      return res.status(404).json({ error: error.message });
+    }
+
+    res.status(500).json({
+      error: '设置主线版本失败',
       message: error instanceof Error ? error.message : '未知错误'
     });
   }

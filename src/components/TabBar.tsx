@@ -128,21 +128,23 @@ export const TabBar: React.FC = () => {
       >
         <AnimatePresence mode="popLayout">
           {tabs.map((tab) => (
-            <Dropdown
+            <motion.div
               key={tab.id}
-              menu={{ items: getContextMenuItems(tab.id) }}
-              trigger={['contextMenu']}
+              layout
+              initial={{ opacity: 0, scale: 0.8 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.8 }}
+              transition={{ duration: 0.2 }}
             >
-              <div>
-                <TabItem
-                  tab={tab}
-                  isActive={activeTabId === tab.id}
-                  onSelect={() => setActiveTab(tab.id)}
-                  onClose={() => removeTab(tab.id)}
-                  onContextMenu={(e) => handleContextMenu(e, tab.id)}
-                />
-              </div>
-            </Dropdown>
+              <TabItem
+                tab={tab}
+                isActive={activeTabId === tab.id}
+                onSelect={() => setActiveTab(tab.id)}
+                onClose={() => removeTab(tab.id)}
+                onContextMenu={(e) => handleContextMenu(e, tab.id)}
+                menu={{ menu: { items: getContextMenuItems(tab.id) } }}
+              />
+            </motion.div>
           ))}
         </AnimatePresence>
       </div>

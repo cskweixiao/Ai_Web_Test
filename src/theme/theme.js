@@ -189,7 +189,7 @@ export const antdThemeConfig = {
     },
     Select: {
       borderRadius: 8,
-      controlHeight: 40,
+      controlHeight: 32,
     },
     Table: {
       borderRadiusLG: 12,

@@ -84,7 +84,7 @@ export const DurationDistribution: React.FC<DurationDistributionProps> = ({
             <span className="font-semibold">执行时长分布</span>
           </div>
         }
-        bordered={false}
+        variant="borderless"
         className="shadow-sm hover:shadow-md transition-shadow"
       >
         {data.length === 0 ? (

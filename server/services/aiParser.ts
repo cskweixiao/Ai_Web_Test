@@ -23,6 +23,7 @@ export interface TestStep {
   id: string;
   action: string;
   description: string;
+  order: number;  // 🔥 添加：步骤顺序
   selector?: string;
   value?: string;
   url?: string;
@@ -51,6 +52,7 @@ export class AITestParser {
   private mcpClient: PlaywrightMcpClient;
   private configManager: LLMConfigManager;
   private useConfigManager: boolean;
+  private legacyConfig: LLMConfig | null = null; // 🔥 存储传统模式下的配置
 
   constructor(mcpClient: PlaywrightMcpClient, llmConfig?: LLMConfig) {
     this.mcpClient = mcpClient;
@@ -61,6 +63,7 @@ export class AITestParser {
 
     if (llmConfig) {
       // 传统模式：使用传入的配置
+      this.legacyConfig = llmConfig; // 🔥 存储配置以便后续使用
       console.log('🤖 AI解析器启用 (传统模式)，模型:', llmConfig.model);
     } else {
       // 配置管理器模式：使用动态配置
@@ -159,24 +162,143 @@ export class AITestParser {
   }
 
   /**
-   * 获取当前模型信息（用于日志和调试）
+   * 从模型字符串中解析 provider 信息
+   * 例如: "openai/gpt-4o" -> "OpenAI", "deepseek/deepseek-chat" -> "DeepSeek"
+   */
+  private parseProviderFromModel(modelString: string): string {
+    if (!modelString) return '未知';
+    
+    // 尝试从 modelRegistry 中查找匹配的模型
+    try {
+      // 动态导入 modelRegistry（避免循环依赖）
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { modelRegistry } = require('../../src/services/modelRegistry.js');
+      const allModels = modelRegistry.getAllModels();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const matchedModel = allModels.find((m: any) => m.openRouterModel === modelString);
+      if (matchedModel) {
+        return matchedModel.provider;
+      }
+    } catch {
+      // 如果无法加载 modelRegistry，继续使用字符串解析
+    }
+
+    // 如果找不到匹配的模型，从字符串中解析 provider
+    // 格式通常是 "provider/model-name"
+    const parts = modelString.split('/');
+    if (parts.length >= 2) {
+      const providerPart = parts[0].toLowerCase();
+      // 将常见的 provider 名称转换为友好的显示名称
+      const providerMap: Record<string, string> = {
+        'openai': 'OpenAI',
+        'deepseek': 'DeepSeek',
+        'anthropic': 'Anthropic',
+        'google': 'Google',
+        'meta': 'Meta',
+        'mistralai': 'Mistral AI',
+        'cohere': 'Cohere',
+        'perplexity': 'Perplexity',
+        'qwen': 'Qwen',
+        '01-ai': '01.AI'
+      };
+      return providerMap[providerPart] || parts[0].charAt(0).toUpperCase() + parts[0].slice(1);
+    }
+    
+    return '未知';
+  }
+
+  /**
+   * 获取当前模型信息（用于日志和调试）- 同步版本
    */
   public getCurrentModelInfo(): { modelName: string; provider: string; mode: string } {
-    if (this.useConfigManager && this.configManager.isReady()) {
-      const summary = this.configManager.getConfigSummary();
-      return {
-        modelName: summary.modelName,
-        provider: summary.provider,
-        mode: '配置管理器模式'
-      };
-    } else {
-      // 回退到默认配置信息
-      return {
-        modelName: 'openai/gpt-4o',
-        provider: '未知',
-        mode: '传统模式'
-      };
+    // 🔥 修复：在配置管理器模式下，尝试获取配置管理器的模型信息
+    if (this.useConfigManager) {
+      try {
+        // 即使配置管理器未完全就绪，也尝试获取配置（可能已经在初始化过程中有配置）
+        if (this.configManager.isReady()) {
+          const summary = this.configManager.getConfigSummary();
+          // 只有在获取到有效配置时才使用
+          if (summary && summary.modelName && summary.modelName !== '未初始化') {
+            return {
+              modelName: summary.modelName,
+              provider: summary.provider,
+              mode: '配置管理器模式'
+            };
+          }
+        }
+        // 如果配置管理器未就绪或配置无效，尝试直接读取后端设置
+        // 注意：这里不能等待异步操作，所以只能尝试同步获取
+      } catch (error) {
+        console.warn('⚠️ 获取配置管理器模型信息失败，尝试其他方式:', error);
+      }
     }
+    
+    // 回退方案：从实际配置中获取模型信息
+    const config = this.legacyConfig || {
+      model: process.env.DEFAULT_MODEL || 'openai/gpt-4o',
+    };
+    
+    const modelString = config.model;
+    const provider = this.parseProviderFromModel(modelString);
+    
+    return {
+      modelName: modelString,
+      provider: provider,
+      mode: this.useConfigManager ? '配置管理器模式（未就绪）' : '传统模式'
+    };
+  }
+
+  /**
+   * 获取当前模型信息（异步版本，确保配置管理器已初始化）
+   */
+  public async getCurrentModelInfoAsync(): Promise<{ modelName: string; provider: string; mode: string }> {
+    // 🔥 修复：在配置管理器模式下，确保配置管理器已初始化
+    if (this.useConfigManager) {
+      try {
+        // 如果配置管理器未就绪，尝试初始化
+        if (!this.configManager.isReady()) {
+          console.log('⏳ 配置管理器未就绪，开始初始化...');
+          try {
+            await Promise.race([
+              this.initializeConfigManager(),
+              new Promise((_, reject) =>
+                setTimeout(() => reject(new Error('配置管理器初始化超时')), 5000)
+              )
+            ]);
+          } catch (error) {
+            console.warn('⚠️ 配置管理器初始化失败，使用回退方案:', error);
+          }
+        }
+
+        // 再次尝试获取配置
+        if (this.configManager.isReady()) {
+          const summary = this.configManager.getConfigSummary();
+          if (summary && summary.modelName && summary.modelName !== '未初始化') {
+            return {
+              modelName: summary.modelName,
+              provider: summary.provider,
+              mode: '配置管理器模式'
+            };
+          }
+        }
+      } catch (error) {
+        console.warn('⚠️ 获取配置管理器模型信息失败:', error);
+      }
+    }
+
+    // 回退方案：从实际配置中获取模型信息
+    const config = this.legacyConfig || {
+      model: process.env.DEFAULT_MODEL || 'openai/gpt-4o',
+    };
+    
+    const modelString = config.model;
+    const provider = this.parseProviderFromModel(modelString);
+    
+    return {
+      modelName: modelString,
+      provider: provider,
+      mode: this.useConfigManager ? '配置管理器模式（未就绪）' : '传统模式'
+    };
   }
 
   /**
@@ -320,13 +442,33 @@ export class AITestParser {
         const assertionText = assertionLines[i].trim();
         const mcpCommand = await this.generateAssertionCommand(assertionText, snapshot);
 
-        steps.push({
+        // 🔥 构建步骤，包含结构化断言信息
+        const step: TestStep = {
           id: `assertion-${i + 1}`,
-          action: mcpCommand.name,
+          action: mcpCommand.name as any,
           description: assertionText,
+          order: i + 1,  // 🔥 添加order字段
           stepType: 'assertion',  // 🔥 标记为断言步骤
           ...mcpCommand.arguments
-        });
+        };
+
+        // 🔥 如果AI返回了结构化断言信息，添加到步骤中
+        if (mcpCommand.assertion) {
+          step.element = mcpCommand.assertion.element;
+          step.ref = mcpCommand.assertion.ref;
+          step.condition = mcpCommand.assertion.condition || 'visible';
+          step.value = mcpCommand.assertion.value;
+          step.selector = mcpCommand.assertion.selector;
+          
+          console.log(`✅ [${runId}] 断言 ${i + 1} 结构化信息:`, {
+            element: step.element,
+            ref: step.ref,
+            condition: step.condition,
+            value: step.value
+          });
+        }
+
+        steps.push(step);
       }
 
       return { success: true, steps };
@@ -533,7 +675,7 @@ export class AITestParser {
   /**
    * 🔥 真正的AI解析：根据断言描述和快照生成断言命令
    */
-  private async generateAssertionCommand(assertionDescription: string, snapshot: any): Promise<MCPCommand> {
+  private async generateAssertionCommand(assertionDescription: string, snapshot: any): Promise<MCPCommand & { assertion?: any }> {
     console.log(`🤖 使用AI解析断言: "${assertionDescription}"`);
 
     try {
@@ -549,10 +691,13 @@ export class AITestParser {
       // 4. 调用AI模型（断言模式）
       const aiResponse = await this.callLLM(userPrompt, 'assertion');
 
-      // 5. 解析AI响应
+      // 5. 解析AI响应（包含结构化断言信息）
       const mcpCommand = this.parseAIResponse(aiResponse);
 
       console.log(`✅ AI断言解析成功: ${mcpCommand.name}`);
+      if (mcpCommand.assertion) {
+        console.log(`📋 结构化断言信息:`, JSON.stringify(mcpCommand.assertion, null, 2));
+      }
       return mcpCommand;
 
     } catch (error: any) {
@@ -890,44 +1035,211 @@ ${elementsContext}
 4. 判断核心功能是否满足断言要求
 5. 给出明确结论：通过/失败
 
-# 输出格式要求
+# ⭐ 输出格式要求（关键）
+你必须返回结构化的断言信息，包括元素定位、验证条件和验证值：
+
 <THOUGHTS>
-1. 分析断言类型（文本存在、元素可见性、页面内容等）
-2. 确定验证策略（快照分析、等待验证、截图验证）
-3. 定位相关元素（如果需要）
-4. 构建验证命令
+1. **分析断言类型**：
+   - 文本验证：验证元素中的文本内容（如"输入框包含'默认值'"）
+   - 可见性验证：验证元素是否可见/隐藏（如"按钮可见"）
+   - 属性验证：验证元素的属性值（如"输入框的value为'xxx'"）
+   - 状态验证：验证元素的状态（如"复选框已选中"）
+   - 数量验证：验证元素数量（如"搜索结果有10条"）
+
+2. **提取元素信息**：
+   - 从断言描述中提取目标元素（如"搜索输入框"、"提交按钮"）
+   - 在页面元素列表中找到匹配的元素ref
+   - 确定元素类型（textbox, button, link等）
+
+3. **提取验证内容**：
+   - 从断言描述中提取要验证的内容（如"默认搜索内容"、"10条"）
+   - 确定验证条件类型（contains_text, has_text, visible, hidden等）
+
+4. **构建结构化断言信息**：
+   - element: 元素的中文描述（如"搜索输入框"）
+   - ref: 元素的ref引用（从页面元素列表中选择）
+   - condition: 验证条件（visible, contains_text, has_text, hidden, checked等）
+   - value: 验证值（如要验证的文本内容、数量等）
+   - selector: 可选，如果需要CSS选择器
 </THOUGHTS>
+
 <COMMAND>
 {
-  "name": "命令名称",
-  "args": {...}
+  "name": "browser_snapshot",
+  "args": {},
+  "assertion": {
+    "element": "元素的中文描述",
+    "ref": "element_ref_from_page",
+    "condition": "验证条件类型",
+    "value": "验证值（如果需要）",
+    "selector": "可选的选择器"
+  }
 }
 </COMMAND>
 
-# 支持的MCP断言命令
-## 快照验证（推荐）
-- 获取页面快照: {"name": "browser_snapshot", "args": {}}
-  用途：获取页面完整状态供应用层分析文本内容、元素状态
+# ⭐ 验证条件类型说明
+- **visible**: 元素可见（默认）
+- **hidden**: 元素隐藏
+- **contains_text**: 元素文本/值包含指定内容（用于输入框、文本元素）
+- **has_text**: 元素文本/值完全匹配（精确匹配）
+- **has_value**: 元素的值属性匹配（用于输入框）
+- **checked**: 复选框/单选框已选中
+- **enabled**: 元素可用（未禁用）
+- **disabled**: 元素禁用
+- **count**: 元素数量匹配（用于列表、搜索结果等）
 
-## 等待验证
-- 等待文本出现: {"name": "browser_wait_for", "args": {"text": "期望的文本内容"}}
-- 等待文本消失: {"name": "browser_wait_for", "args": {"textGone": "不应该存在的文本"}}
-- 等待元素可见: {"name": "browser_wait_for", "args": {"ref": "element_ref", "state": "visible"}}
-- 等待元素隐藏: {"name": "browser_wait_for", "args": {"ref": "element_ref", "state": "hidden"}}
+# ⭐ 验证条件类型说明（字符串格式）
+- **"visible"**: 元素可见（默认）
+- **"hidden"**: 元素隐藏
+- **"contains_text"**: 元素文本/值包含指定内容（用于输入框、文本元素）
+- **"has_text"**: 元素文本/值完全匹配（精确匹配）
+- **"has_value"**: 元素的值属性匹配（用于输入框）
+- **"checked"**: 复选框/单选框已选中
+- **"enabled"**: 元素可用（未禁用）
+- **"disabled"**: 元素禁用
+- **"count"**: 元素数量匹配（用于列表、搜索结果等）
 
-## 截图验证
-- 截取页面截图: {"name": "browser_take_screenshot", "args": {"filename": "assertion_proof.png"}}
-  用途：保存视觉证据，用于复杂UI状态验证
+# ⭐ 元素类型识别
+- **输入框/文本框**: textbox, combobox（验证时使用inputValue获取值）
+- **按钮**: button（验证时使用textContent获取文本）
+- **链接**: link（验证时使用textContent获取文本）
+- **复选框**: checkbox（验证时使用checked状态）
+- **文本元素**: text, heading, paragraph（验证时使用textContent获取文本）
 
-## 执行流程建议
-1. 首选 browser_snapshot 获取页面状态进行文本和内容分析
-2. 对于动态内容使用 browser_wait_for 等待特定状态
-3. 可选使用 browser_take_screenshot 保存验证截图作为证据
+# ⭐ 断言类型识别和验证策略（关键）
 
-# 重要提醒
-- 由于Playwright MCP不提供专门的断言工具，主要通过快照分析实现验证
-- element和ref参数规则与操作模式相同：element为中文描述，ref为页面元素的确切引用
-- 断言失败将在应用层处理，你只需提供合适的验证命令`;
+## 常见断言模式识别
+
+### 1. 存在性验证（宽松验证，允许回退）
+- **关键词**: "存在"、"有"、"包含"、"显示"、"出现"
+- **示例**: 
+  - "搜索输入框存在默认搜索内容" → 查找输入框，验证是否有内容（即使找不到特定输入框，也可以查找所有有内容的输入框）
+  - "页面显示登录按钮" → 查找按钮，验证是否可见
+- **策略**: 
+  - 优先查找特定元素
+  - 如果找不到，可以查找同类元素（如所有输入框、所有按钮）
+  - 验证条件通常为 "contains_text" 或 "visible"
+  - 对于"存在内容"类型，只要找到有内容的元素即可通过
+
+### 2. 内容验证（根据条件决定严格程度）
+- **关键词**: "包含"、"是"、"等于"、"为"
+- **示例**:
+  - "标题文本为'欢迎使用'" → 精确匹配
+  - "输入框包含'默认值'" → 部分匹配
+- **策略**: 
+  - "为"、"是"、"等于" → 使用 "has_text"（严格）
+  - "包含" → 使用 "contains_text"（宽松）
+
+### 3. 可见性验证（严格验证）
+- **关键词**: "可见"、"隐藏"、"不可见"
+- **示例**: "提交按钮可见"、"错误提示隐藏"
+- **策略**: 使用 "visible" 或 "hidden"，必须找到特定元素
+
+### 4. 状态验证（严格验证）
+- **关键词**: "已选中"、"已启用"、"已禁用"、"激活"
+- **示例**: "同意条款复选框已选中"
+- **策略**: 使用 "checked"、"enabled"、"disabled"，必须找到特定元素
+
+### 5. 数量验证（严格验证）
+- **关键词**: "有X条"、"共X个"、"数量为X"
+- **示例**: "搜索结果有10条"
+- **策略**: 使用 "count"，必须找到特定容器元素
+
+### 6. 属性验证（严格验证）
+- **关键词**: "值为"、"属性为"
+- **示例**: "输入框的value为'xxx'"
+- **策略**: 使用 "has_value" 或自定义属性验证
+
+# ⭐ 验证策略选择原则
+
+## 元素定位策略（按优先级）
+1. **精确匹配**: 通过element描述和ref精确找到元素
+2. **模糊匹配**: 通过element描述的关键词找到元素
+3. **类型匹配**: 如果找不到特定元素，查找同类元素（启用回退机制）
+4. **全局查找**: 如果还是找不到，在整个页面中查找
+
+## 验证条件策略
+1. **严格验证**: 如果断言指定了具体值，必须精确匹配
+2. **宽松验证**: 如果断言只是"存在"、"有内容"，只要找到符合条件的内容即可
+3. **部分匹配**: 对于"包含"类断言，支持部分匹配
+
+## 回退机制启用条件
+- ✅ **启用回退**: "存在"、"有"、"包含"类断言，特别是"存在内容"类型
+- ❌ **不启用回退**: "是"、"等于"、"为"类精确匹配断言
+
+# ⭐ 断言解析示例
+
+## 示例1: 存在性验证（宽松，允许回退）
+**断言**: "搜索输入框存在默认搜索内容"
+**解析**:
+- element: "搜索输入框"
+- ref: 从页面元素列表中找到textbox类型的元素ref（如果找不到可省略）
+- condition: "contains_text"
+- value: "默认搜索内容"（如果AI从页面快照中提取到了具体内容）
+- **验证策略**: 
+  - 优先查找"搜索输入框"
+  - 如果找不到，查找所有有内容的输入框
+  - 只要找到有内容的输入框，就认为通过（即使value不完全匹配）
+
+## 示例2: 元素可见性验证（严格，不允许回退）
+**断言**: "提交按钮可见"
+**解析**:
+- element: "提交按钮"
+- ref: 从页面元素列表中找到button类型的元素ref（必须找到）
+- condition: "visible"
+- value: null
+- **验证策略**: 必须找到"提交按钮"，不允许回退到其他按钮
+
+## 示例3: 精确文本匹配（严格）
+**断言**: "标题文本为'欢迎使用'"
+**解析**:
+- element: "标题"
+- ref: 从页面元素列表中找到heading类型的元素ref
+- condition: "has_text"
+- value: "欢迎使用"
+- **验证策略**: 必须精确匹配文本，不允许部分匹配
+
+## 示例4: 元素状态验证（严格）
+**断言**: "同意条款复选框已选中"
+**解析**:
+- element: "同意条款复选框"
+- ref: 从页面元素列表中找到checkbox类型的元素ref
+- condition: "checked"
+- value: null
+- **验证策略**: 必须找到特定复选框并验证状态
+
+## 示例5: 数量验证（严格）
+**断言**: "搜索结果有10条"
+**解析**:
+- element: "搜索结果"
+- ref: 从页面元素列表中找到列表容器或列表项的元素ref
+- condition: "count"
+- value: "10"
+- **验证策略**: 必须找到搜索结果容器，精确验证数量
+
+## 示例6: 宽松的存在性验证（允许回退）
+**断言**: "输入框存在内容"
+**解析**:
+- element: "输入框"
+- ref: 可选（如果找不到特定输入框可省略）
+- condition: "contains_text"
+- value: null（不指定具体内容）
+- **验证策略**: 
+  - 优先查找"输入框"
+  - 如果找不到，查找所有有内容的输入框
+  - 只要找到任何一个有内容的输入框，就认为通过
+
+# ⭐ 重要规则
+1. **必须返回assertion字段**：包含完整的元素定位和验证信息
+2. **ref必须从页面元素列表中选择**：不能随意生成
+3. **condition必须准确**：根据断言类型选择合适的验证条件
+4. **value只在需要时提供**：如文本验证、数量验证等
+5. **element使用中文描述**：便于理解和调试
+
+# ⭐ 支持的MCP命令（用于获取页面状态）
+- browser_snapshot: 获取页面快照（用于分析）
+- browser_wait_for: 等待特定状态（用于动态内容）
+- browser_take_screenshot: 保存截图（用于证据）`;
   }
 
   /**
@@ -994,24 +1306,70 @@ ${elementsContext}
 \`\`\`
 **适用于**: 复杂布局验证、UI状态记录
 
-## 验证步骤（逐步分析）
+## ⭐ 验证步骤（逐步分析）
 
-### Step 1: 明确核心目标
-- 断言的核心验证点是什么？
-- 成功标准是什么？
+### Step 1: 识别断言类型和验证策略
+- **分析断言意图**：
+  - "存在"、"有"、"包含" → 存在性验证（宽松，允许回退）
+  - "是"、"等于"、"为" → 内容验证（严格或宽松，取决于是否精确匹配）
+  - "可见"、"隐藏" → 可见性验证（严格）
+  - "已选中"、"已启用" → 状态验证（严格）
+  - "有X条"、"共X个" → 数量验证（严格）
+- **判断验证严格程度**：
+  - 宽松（loose）："存在"、"有内容"类断言，只要找到符合条件的内容即可
+  - 严格（strict）："是"、"等于"类断言，必须精确匹配
+  - 灵活（flexible）："存在内容"类断言，找不到特定元素时可以查找同类元素
 
-### Step 2: 选择验证策略
-- 根据上述策略选择最合适的命令
-- 优先使用 browser_snapshot（简单高效）
+### Step 2: 提取目标元素信息
+- **提取元素描述**：从断言描述中识别要验证的元素（如"搜索输入框"、"提交按钮"）
+- **查找元素ref**：在页面元素列表中找到匹配的元素ref
+  - 如果找不到特定元素，对于"存在"类断言可以省略ref
+- **确定元素类型**：识别元素是textbox、button、link、checkbox等
+  - 用于回退查找时确定查找范围
 
-### Step 3: 构建验证命令
-- 确保命令参数准确
-- 避免过度验证（只验证核心功能）
+### Step 3: 提取验证内容
+- **提取验证值**：从断言描述中提取要验证的内容（如"默认搜索内容"、"10条"）
+  - 注意：如果断言是"存在内容"但没有指定具体内容，value可以为null
+  - 如果AI从页面快照中看到了具体内容，可以提取作为value（但验证时会宽松处理）
+- **确定验证条件**：根据断言类型选择condition
+  - "存在"、"包含" → "contains_text"（宽松）
+  - "是"、"等于"、"为" → "has_text"（严格）或 "contains_text"（宽松，取决于上下文）
+  - "可见" → "visible"
+  - "已选中" → "checked"
 
-### Step 4: 预期结果判断
-- 如果核心功能正确 → 判定为 PASS
-- 如果核心功能错误/缺失 → 判定为 FAIL
-- Console错误不影响判断 → 仍应判定为 PASS
+### Step 4: 构建结构化断言信息
+- **element**: 元素的中文描述（必须）
+- **ref**: 元素的ref引用（从页面元素列表中选择，如果找不到特定元素且是"存在"类断言可省略）
+- **condition**: 验证条件类型（必须）
+- **value**: 验证值（如果需要，如文本验证、数量验证）
+  - 对于"存在内容"类断言，如果AI提取到了具体内容可以作为value，但验证时会宽松处理
+- **selector**: 可选的选择器
+
+### Step 5: 返回结构化JSON
+必须返回包含assertion字段的完整JSON，格式如下：
+\`\`\`json
+{
+  "name": "browser_snapshot",
+  "args": {},
+  "assertion": {
+    "element": "搜索输入框",
+    "ref": "element_xxx（可选，如果找不到可省略）",
+    "condition": "contains_text",
+    "value": "默认搜索内容（可选，如果AI从页面快照中提取到了具体内容）"
+  }
+}
+\`\`\`
+
+## ⭐ 重要提示
+1. **对于"存在内容"类断言**：
+   - 如果找不到特定元素，可以省略ref
+   - 如果AI从页面快照中提取到了具体内容，可以作为value，但验证时会宽松处理
+   - 验证策略：只要找到有内容的同类元素（如所有输入框），就认为通过
+
+2. **对于精确匹配类断言**：
+   - 必须找到特定元素
+   - 必须精确匹配value
+   - 不允许回退到其他元素
 
 ## 示例对比
 
@@ -1184,9 +1542,9 @@ ${elementsContext}
   }
 
   /**
-   * 🔥 解析AI响应为MCP命令 (支持V3格式)
+   * 🔥 解析AI响应为MCP命令 (支持V3格式，支持结构化断言信息)
    */
-  private parseAIResponse(aiResponse: string): MCPCommand {
+  private parseAIResponse(aiResponse: string): MCPCommand & { assertion?: any } {
     try {
       console.log(`🔍 开始解析AI响应: ${aiResponse.substring(0, 200)}...`);
 
@@ -1252,10 +1610,19 @@ ${elementsContext}
       }
 
       console.log(`✅ AI响应解析成功: ${parsed.name}`);
-      return {
+      
+      const result: MCPCommand & { assertion?: any } = {
         name: parsed.name,
         arguments: parsed.args
       };
+
+      // 🔥 新增：如果包含assertion字段，也返回它
+      if (parsed.assertion) {
+        result.assertion = parsed.assertion;
+        console.log(`✅ 解析到结构化断言信息:`, JSON.stringify(parsed.assertion, null, 2));
+      }
+
+      return result;
 
     } catch (error: any) {
       console.error(`❌ AI响应解析失败: ${error.message}`);

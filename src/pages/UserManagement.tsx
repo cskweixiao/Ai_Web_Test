@@ -10,7 +10,7 @@ interface User {
   email: string;
   username: string;
   accountName?: string;
-  department?: string;
+  project?: string; // 🔥 修复：使用 project 字段
   isSuperAdmin: boolean;
   createdAt: string;
 }
@@ -20,7 +20,7 @@ interface CreateUserForm {
   username: string;
   password: string;
   accountName?: string;
-  department?: string;
+  project?: string; // 🔥 修复：使用 project 字段
   isSuperAdmin: boolean;
 }
 
@@ -28,7 +28,7 @@ interface UpdateUserForm {
   email: string;
   username: string;
   accountName?: string;
-  department?: string;
+  project?: string; // 🔥 修复：使用 project 字段
   isSuperAdmin: boolean;
 }
 
@@ -113,7 +113,7 @@ export function UserManagement() {
       email: user.email,
       username: user.username,
       accountName: user.accountName,
-      department: user.department,
+      project: user.project, // 🔥 修复：使用 project 字段
       isSuperAdmin: user.isSuperAdmin,
     });
     setIsEditModalOpen(true);
@@ -168,9 +168,9 @@ export function UserManagement() {
       render: (text) => text || '-',
     },
     {
-      title: '部门',
-      dataIndex: 'department',
-      key: 'department',
+      title: '项目', // 🔥 修复：改为项目
+      dataIndex: 'project', // 🔥 修复：使用 project 字段
+      key: 'project',
       width: 150,
       render: (text) => text || '-',
     },
@@ -344,10 +344,10 @@ export function UserManagement() {
           </Form.Item>
 
           <Form.Item
-            label="部门"
-            name="department"
+            label="项目" // 🔥 修复：改为项目
+            name="project" // 🔥 修复：使用 project 字段
           >
-            <Input placeholder="请输入部门（可选）" />
+            <Input placeholder="请输入项目（可选）" /> {/* 🔥 修复：改为项目 */}
           </Form.Item>
 
           <Form.Item
@@ -422,10 +422,10 @@ export function UserManagement() {
           </Form.Item>
 
           <Form.Item
-            label="部门"
-            name="department"
+            label="项目" // 🔥 修复：改为项目
+            name="project" // 🔥 修复：使用 project 字段
           >
-            <Input placeholder="请输入部门（可选）" />
+            <Input placeholder="请输入项目（可选）" /> {/* 🔥 修复：改为项目 */}
           </Form.Item>
 
           <Form.Item

@@ -8,12 +8,12 @@ export function suiteRoutes(suiteExecutionService: SuiteExecutionService): Route
   router.get('/', async (req: Request, res: Response) => {
     try {
       // 🔥 获取当前用户信息（从认证中间件）
-      const userDepartment = req.user?.department || undefined;
+      const userProject = req.user?.project || undefined;
       const isSuperAdmin = req.user?.isSuperAdmin || false;
 
-      console.log('🔍 获取测试套件 - 用户部门:', userDepartment, '超级管理员:', isSuperAdmin);
+      console.log('🔍 获取测试套件 - 用户项目:', userProject, '超级管理员:', isSuperAdmin);
 
-      const suites = await suiteExecutionService.getAllTestSuites(userDepartment, isSuperAdmin);
+      const suites = await suiteExecutionService.getAllTestSuites(userProject, isSuperAdmin);
       res.json({ success: true, data: suites });
     } catch (error: any) {
       res.status(500).json({ success: false, error: error.message });

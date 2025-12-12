@@ -6,8 +6,10 @@ import { ViewProps, TestCaseItem } from '../types';
 export const KanbanView: React.FC<ViewProps> = ({
     organizedData,
     loading,
+    onViewDetail,
     onEditCase,
     onDeleteCase,
+    onExecuteCase,
 }) => {
     // 按状态分组
     const groupedByStatus = useMemo(() => {

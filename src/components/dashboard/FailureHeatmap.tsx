@@ -63,7 +63,7 @@ export const FailureHeatmap: React.FC<FailureHeatmapProps> = ({ data, loading = 
             <span className="font-semibold">测试失败热力图</span>
           </div>
         }
-        bordered={false}
+        variant="borderless"
         className="shadow-sm hover:shadow-md transition-shadow"
       >
         {data.length === 0 ? (

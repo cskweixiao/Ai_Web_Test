@@ -17,6 +17,7 @@ import {
   ChevronsLeft,
   ChevronRight as ChevronRightIcon,
   ChevronsRight,
+  Terminal,
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import type { TestCase } from '../types/test';
@@ -39,7 +40,7 @@ interface TestCaseTableProps {
   onPageSizeChange?: (pageSize: number) => void;
 }
 
-type SortField = 'name' | 'priority' | 'status' | 'created' | 'lastRun' | 'success_rate';
+type SortField = 'name' | 'priority' | 'status' | 'created' | 'lastRun' | 'success_rate' | 'author' | 'system' | 'module';
 type SortDirection = 'asc' | 'desc';
 
 export function TestCaseTable({
@@ -188,6 +189,13 @@ export function TestCaseTable({
           <thead className="bg-gray-50">
             <tr>
               <th className="w-12 px-4 py-3"></th>
+              
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                所属项目
+              </th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                所属模块
+              </th>
               <th
                 className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
                 onClick={() => handleSort('name')}
@@ -198,7 +206,7 @@ export function TestCaseTable({
                 </div>
               </th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                系统/模块
+                标签
               </th>
               <th
                 className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
@@ -218,9 +226,7 @@ export function TestCaseTable({
                   <SortIcon field="status" />
                 </div>
               </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                标签
-              </th>
+              
               <th
                 className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
                 onClick={() => handleSort('success_rate')}
@@ -228,6 +234,15 @@ export function TestCaseTable({
                 <div className="flex items-center space-x-2">
                   <span>成功率</span>
                   <SortIcon field="success_rate" />
+                </div>
+              </th>
+              <th 
+              className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+              onClick={() => handleSort('author')}
+              >
+                <div className="flex items-center space-x-2">
+                  <span>创建者</span>
+                  <SortIcon field="author" />
                 </div>
               </th>
               <th
@@ -248,7 +263,7 @@ export function TestCaseTable({
                   <SortIcon field="lastRun" />
                 </div>
               </th>
-              <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 操作
               </th>
             </tr>
@@ -281,18 +296,7 @@ export function TestCaseTable({
                     </button>
                   </td>
 
-                  {/* Test Case Name */}
-                  <td className="px-6 py-4">
-                    <div className="text-sm font-medium text-gray-900 max-w-xs truncate" title={testCase.name}>
-                      {testCase.name}
-                    </div>
-                    {testCase.author && (
-                      <div className="flex items-center text-sm text-gray-700 mt-1">
-                        <User className="h-3 w-3 mr-1" />
-                        {testCase.author}
-                      </div>
-                    )}
-                  </td>
+                  
 
                   {/* System/Module */}
                   <td className="px-6 py-4">
@@ -300,35 +304,33 @@ export function TestCaseTable({
                       {testCase.system && (
                         <div className="font-medium">{testCase.system}</div>
                       )}
-                      {testCase.module && (
+                      {/* {testCase.module && (
                         <div className="text-gray-500 text-xs">{testCase.module}</div>
                       )}
                       {!testCase.system && !testCase.module && (
                         <span className="text-gray-600 text-sm">-</span>
+                      )} */}
+                    </div>
+                  </td>
+                  <td className="px-6 py-4">
+                    <div className="text-sm text-gray-900">
+                      {testCase.module && (
+                        <div className="text-gray-500 text-xs">{testCase.module}</div>
                       )}
                     </div>
                   </td>
-
-                  {/* Priority */}
+                  {/* Test Case Name */}
                   <td className="px-6 py-4">
-                    <span className={clsx(
-                      'inline-flex px-2 py-1 rounded-full text-xs font-medium border',
-                      getPriorityColor(testCase.priority)
-                    )}>
-                      {getPriorityText(testCase.priority)}
-                    </span>
+                    <div className="text-sm font-medium text-gray-900 max-w-xs truncate" title={testCase.name}>
+                      {testCase.name}
+                    </div>
+                    {/* {testCase.author && (
+                      <div className="flex items-center text-sm text-gray-700 mt-1">
+                        <User className="h-3 w-3 mr-1" />
+                        {testCase.author}
+                      </div>
+                    )} */}
                   </td>
-
-                  {/* Status */}
-                  <td className="px-6 py-4">
-                    <span className={clsx(
-                      'inline-flex px-2 py-1 rounded-full text-xs font-medium border',
-                      getStatusColor(testCase.status)
-                    )}>
-                      {getStatusText(testCase.status)}
-                    </span>
-                  </td>
-
                   {/* Tags */}
                   <td className="px-6 py-4">
                     <div className="flex flex-wrap gap-1 max-w-32">
@@ -349,6 +351,25 @@ export function TestCaseTable({
                       )}
                     </div>
                   </td>
+                  {/* Priority */}
+                  <td className="px-6 py-4">
+                    <span className={clsx(
+                      'inline-flex px-2 py-1 rounded-full text-xs font-medium border',
+                      getPriorityColor(testCase.priority)
+                    )}>
+                      {getPriorityText(testCase.priority)}
+                    </span>
+                  </td>
+
+                  {/* Status */}
+                  <td className="px-6 py-4">
+                    <span className={clsx(
+                      'inline-flex px-2 py-1 rounded-full text-xs font-medium border',
+                      getStatusColor(testCase.status)
+                    )}>
+                      {getStatusText(testCase.status)}
+                    </span>
+                  </td>
 
                   {/* Success Rate */}
                   <td className="px-6 py-4">
@@ -368,7 +389,13 @@ export function TestCaseTable({
                       <span className="text-gray-600 text-sm">-</span>
                     )}
                   </td>
-
+                  {/* Author */}
+                  <td className="px-6 py-4">
+                    <div className="flex items-center text-sm text-gray-500">
+                      <User className="h-3 w-3 mr-1" />
+                      {testCase.author}
+                    </div>
+                  </td>
                   {/* Created Time */}
                   <td className="px-6 py-4">
                     <div className="flex items-center text-sm text-gray-500">
@@ -390,8 +417,8 @@ export function TestCaseTable({
                   </td>
 
                   {/* Actions */}
-                  <td className="px-6 py-4 text-right">
-                    <div className="flex items-center justify-end space-x-2">
+                  <td className="px-6 py-4 text-left">
+                    <div className="flex items-center justify-start space-x-2">
                       <button
                         onClick={() => onRunTest(testCase)}
                         disabled={runningTestId === testCase.id}
@@ -409,6 +436,15 @@ export function TestCaseTable({
                           <Play className="h-4 w-4" />
                         )}
                       </button>
+                        {/* <motion.button
+                          whileHover={{ scale: 1.1 }}
+                          whileTap={{ scale: 0.9 }}
+                          onClick={() => window.open(`/test-runs/${testCase.id}/detail`, '_blank')}
+                          className="p-2 text-gray-600 hover:text-blue-600 transition-colors"
+                          title="查看详细执行日志"
+                        >
+                          <Terminal className="h-4 w-4" />
+                        </motion.button> */}
                       <button
                         onClick={() => onEditTestCase(testCase)}
                         className="p-1.5 rounded text-gray-600 hover:text-green-600 hover:bg-green-50 transition-colors"
@@ -501,33 +537,19 @@ export function TestCaseTable({
 
       {/* 分页控件 */}
       {pagination && (onPageChange || onPageSizeChange) && (
-        <div className="flex items-center justify-between px-6 py-4 border-t border-gray-200 bg-gray-50">
-          {/* 左侧：每页条数选择器 */}
-          <div className="flex items-center space-x-2">
-            <span className="text-sm text-gray-700">每页显示</span>
-            {onPageSizeChange && (
-              <select
-                value={pagination.pageSize}
-                onChange={(e) => onPageSizeChange(parseInt(e.target.value))}
-                className="px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                <option value={10}>10</option>
-                <option value={20}>20</option>
-                <option value={50}>50</option>
-                <option value={100}>100</option>
-              </select>
-            )}
-            <span className="text-sm text-gray-700">条</span>
-          </div>
-
+        <div className="flex justify-between items-center  px-6 py-4 border-t border-gray-200 bg-gray-50">
           {/* 中间：页码信息 */}
-          <div className="flex items-center space-x-4">
+          {/* <div className="flex  space-x-4">
             <span className="text-sm text-gray-700">
               显示第 {Math.min((pagination.page - 1) * pagination.pageSize + 1, pagination.total)} 到{' '}
               {Math.min(pagination.page * pagination.pageSize, pagination.total)} 条，共 {pagination.total} 条
             </span>
+          </div> */}
+          <div className="text-sm text-gray-500">
+            共 <span className="font-semibold text-gray-700">{pagination.total}</span> 条记录，
+            第 <span className="font-semibold text-gray-700">{pagination.page}</span> / <span className="font-semibold text-gray-700">{pagination.totalPages}</span> 页
           </div>
-
+          <div className="flex  space-x-4">
           {/* 右侧：分页按钮 */}
           {onPageChange && (
             <div className="flex items-center space-x-1">
@@ -610,6 +632,25 @@ export function TestCaseTable({
               </button>
             </div>
           )}
+
+          {/* 左侧：每页条数选择器 */}
+          <div className="flex items-center space-x-2">
+            <span className="text-sm text-gray-700">每页显示</span>
+            {onPageSizeChange && (
+              <select
+                value={pagination.pageSize}
+                onChange={(e) => onPageSizeChange(parseInt(e.target.value))}
+                className="px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value={10}>10</option>
+                <option value={20}>20</option>
+                <option value={50}>50</option>
+                <option value={100}>100</option>
+              </select>
+            )}
+            <span className="text-sm text-gray-700">条</span>
+          </div>
+        </div>
         </div>
       )}
     </div>

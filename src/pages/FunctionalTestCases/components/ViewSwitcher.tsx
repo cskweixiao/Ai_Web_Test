@@ -9,8 +9,8 @@ interface ViewSwitcherProps {
 }
 
 const viewOptions = [
-    { mode: 'card' as ViewMode, label: '卡片视图', icon: LayoutGrid },
     { mode: 'table' as ViewMode, label: '表格视图', icon: Table2 },
+    { mode: 'card' as ViewMode, label: '卡片视图', icon: LayoutGrid },
     { mode: 'kanban' as ViewMode, label: '看板视图', icon: Trello },
     { mode: 'timeline' as ViewMode, label: '时间线视图', icon: Clock },
 ];
@@ -25,7 +25,7 @@ export const ViewSwitcher: React.FC<ViewSwitcherProps> = ({ currentView, onViewC
                     className={clsx(
                         'inline-flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-all',
                         currentView === mode
-                            ? 'bg-blue-600 text-white shadow-sm'
+                            ? 'bg-purple-600 text-white shadow-sm'
                             : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
                     )}
                     title={label}

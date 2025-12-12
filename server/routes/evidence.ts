@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { EvidenceService } from '../services/evidenceService.js';
 import * as fs from 'fs';
+import * as path from 'path';
 
 const router = Router();
 
@@ -30,13 +31,29 @@ router.get('/api/evidence/download/:runId/:filename', async (req, res) => {
     const filePath = await evidenceService.getArtifactPath(runId, filename);
     const stats = await fs.promises.stat(filePath);
     
+    // 获取文件扩展名以设置正确的 Content-Type
+    const ext = path.extname(filename).toLowerCase();
+    const mimeTypes: Record<string, string> = {
+      '.png': 'image/png',
+      '.jpg': 'image/jpeg',
+      '.jpeg': 'image/jpeg',
+      '.gif': 'image/gif',
+      '.webm': 'video/webm',
+      '.mp4': 'video/mp4',
+      '.zip': 'application/zip',
+      '.log': 'text/plain',
+      '.txt': 'text/plain'
+    };
+    const contentType = mimeTypes[ext] || 'application/octet-stream';
+    
     // 设置响应头
     res.setHeader('Accept-Ranges', 'bytes');
+    res.setHeader('Content-Type', contentType);
     res.setHeader('Content-Length', stats.size);
     
-    if (download) {
-      res.setHeader('Content-Disposition', `attachment; filename="${download}"`);
-    }
+    // 🔥 修复：总是设置 Content-Disposition 头以触发下载
+    const downloadFilename = (typeof download === 'string' ? download : filename);
+    res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(downloadFilename)}"`);
     
     // 🔥 修正：支持Range请求
     const range = req.headers.range;

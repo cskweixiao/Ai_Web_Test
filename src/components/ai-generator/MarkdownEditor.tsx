@@ -97,30 +97,24 @@ export function MarkdownEditor({
         />
       ) : (
         <div
-          className="markdown-preview bg-white rounded-xl p-8 border border-gray-200 overflow-auto"
+          className="markdown-preview bg-white rounded-xl p-6 border border-gray-200 shadow-sm overflow-auto"
           style={{ maxHeight: `${rows * 24}px`, minHeight: '400px' }}
         >
           {value ? (
             <div
-              className="prose prose-slate max-w-none
+              className="prose prose-slate max-w-none prose-sm
                 prose-headings:text-gray-900
-                prose-h1:text-3xl prose-h1:font-bold prose-h1:mb-6 prose-h1:border-b prose-h1:border-gray-200 prose-h1:pb-3
-                prose-h2:text-2xl prose-h2:font-semibold prose-h2:mt-10 prose-h2:mb-4 prose-h2:border-b prose-h2:border-gray-100 prose-h2:pb-2
-                prose-h3:text-xl prose-h3:font-semibold prose-h3:mt-8 prose-h3:mb-3 prose-h3:text-blue-700
-                prose-h4:text-lg prose-h4:font-medium prose-h4:mt-6 prose-h4:mb-2 prose-h4:text-gray-800
-                prose-p:text-gray-700 prose-p:leading-relaxed prose-p:mb-4
-                prose-ul:my-4 prose-ol:my-4
+                prose-h1:text-2xl prose-h1:font-bold prose-h1:mb-4 prose-h1:border-b prose-h1:border-gray-200 prose-h1:pb-2
+                prose-h2:text-xl prose-h2:font-semibold prose-h2:mt-6 prose-h2:mb-3 prose-h2:text-blue-700
+                prose-h3:text-lg prose-h3:font-semibold prose-h3:mt-4 prose-h3:mb-2
+                prose-p:text-gray-700 prose-p:leading-relaxed prose-p:mb-3
+                prose-ul:my-3 prose-ol:my-3
                 prose-li:text-gray-700 prose-li:my-1
-                prose-strong:text-gray-900 prose-strong:font-semibold
-                prose-code:text-pink-600 prose-code:bg-pink-50 prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded prose-code:text-sm prose-code:font-mono prose-code:before:content-[''] prose-code:after:content-['']
-                prose-pre:bg-gray-900 prose-pre:text-gray-100 prose-pre:p-4 prose-pre:rounded-lg prose-pre:overflow-x-auto
-                prose-table:w-full prose-table:border-collapse prose-table:text-sm prose-table:my-6
-                prose-thead:bg-gradient-to-r prose-thead:from-blue-50 prose-thead:to-indigo-50
-                prose-th:border prose-th:border-gray-300 prose-th:p-3 prose-th:text-left prose-th:font-semibold prose-th:text-gray-900
-                prose-td:border prose-td:border-gray-300 prose-td:p-3 prose-td:text-gray-700
-                prose-tr:even:bg-gray-50
-                prose-blockquote:border-l-4 prose-blockquote:border-blue-500 prose-blockquote:pl-4 prose-blockquote:italic prose-blockquote:text-gray-600
-                prose-a:text-blue-600 prose-a:underline prose-a:hover:text-blue-800
+                prose-strong:text-gray-900
+                prose-table:w-full prose-table:border-collapse prose-table:text-sm prose-table:my-4
+                prose-thead:bg-blue-50
+                prose-th:border prose-th:border-gray-300 prose-th:p-2 prose-th:text-left prose-th:font-semibold
+                prose-td:border prose-td:border-gray-300 prose-td:p-2
               "
               dangerouslySetInnerHTML={{ __html: htmlContent }}
             />

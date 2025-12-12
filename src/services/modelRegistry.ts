@@ -114,6 +114,21 @@ export class ModelRegistry {
         costLevel: 'high'
       },
       {
+        id: 'qwen3-max',
+        name: '通义千问3 Max',
+        provider: '阿里云',
+        openRouterModel: 'qwen3-max',
+        customBaseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+        requiresCustomAuth: false,
+        defaultConfig: {
+          temperature: 0.3,
+          maxTokens: 2000
+        },
+        capabilities: ['text-generation', 'multimodal', 'reasoning', 'code-analysis', 'chinese-friendly'],
+        description: '阿里云通义千问3 Max模型，最强性能，支持多模态',
+        costLevel: 'high'
+      },
+      {
         id: 'kimi-chat-8k',
         name: 'Kimi Chat 8K',
         provider: '月之暗面',

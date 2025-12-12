@@ -11,7 +11,7 @@ declare global {
         email: string;
         username: string;
         accountName: string | null;
-        department: string | null;
+        project: string | null;
         isSuperAdmin: boolean;
       };
     }

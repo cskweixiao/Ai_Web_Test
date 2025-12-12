@@ -37,12 +37,14 @@ export const StatCard: React.FC<StatCardProps> = ({
           background: 'linear-gradient(135deg, #ffffff 0%, #f8fafc 100%)',
           borderRadius: '16px',
         }}
-        bodyStyle={{
-          padding: '24px',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '20px',
-          height: '100%',
+        styles={{
+          body: {
+            padding: '24px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '20px',
+            height: '100%',
+          }
         }}
       >
         {/* 图标容器 - 玻璃拟态效果 */}

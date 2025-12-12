@@ -9,7 +9,7 @@ export interface User {
   email: string;
   username: string;
   accountName?: string;
-  department?: string;
+  project?: string; // 🔥 修复：使用 project 字段
   isSuperAdmin: boolean;
   createdAt: string;
 }
@@ -19,7 +19,7 @@ export interface CreateUserDto {
   username: string;
   password: string;
   accountName?: string;
-  department?: string;
+  project?: string; // 🔥 修复：使用 project 字段
   isSuperAdmin: boolean;
 }
 
@@ -27,7 +27,7 @@ export interface UpdateUserDto {
   email: string;
   username: string;
   accountName?: string;
-  department?: string;
+  project?: string; // 🔥 修复：使用 project 字段
   isSuperAdmin: boolean;
 }
 

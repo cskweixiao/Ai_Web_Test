@@ -3,6 +3,7 @@ import { DatabaseService } from './databaseService.js';
 import { modelRegistry } from '../../src/services/modelRegistry.js';
 import { validateLLMSettings as validateLLMSettingsShared } from '../../src/utils/llmSettingsValidation.js';
 import type { LLMSettings, AppSettings, ValidationResult } from '../../src/services/settingsService.js';
+import { getNow } from '../utils/timezone.js';
 
 // 后端设置服务类
 export class BackendSettingsService {
@@ -196,12 +197,12 @@ export class BackendSettingsService {
         where: { key: 'app_settings' },
         update: {
           value: JSON.stringify(settings),
-          updated_at: new Date()
+          updated_at: getNow()
         },
         create: {
           key: 'app_settings',
           value: JSON.stringify(settings),
-          updated_at: new Date()
+          updated_at: getNow()
         }
       });
 

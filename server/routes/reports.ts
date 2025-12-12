@@ -57,7 +57,7 @@ export function createReportsRoutes(prisma: PrismaClient): Router {
    */
   router.get('/bug-stats', async (req: Request, res: Response) => {
     try {
-      const { startDate, endDate, department, suiteId } = req.query;
+      const { startDate, endDate, project, suiteId } = req.query;
 
       // 参数验证
       if (!startDate || !endDate) {
@@ -67,8 +67,13 @@ export function createReportsRoutes(prisma: PrismaClient): Router {
         });
       }
 
+      // 🔥 修复：确保日期范围包含整天
+      // startDate 设置为当天的 00:00:00
+      // endDate 设置为当天的 23:59:59.999
       const start = new Date(startDate as string);
+      start.setHours(0, 0, 0, 0);
       const end = new Date(endDate as string);
+      end.setHours(23, 59, 59, 999);
 
       // 计算上一周期的时间范围
       const duration = end.getTime() - start.getTime();
@@ -83,10 +88,10 @@ export function createReportsRoutes(prisma: PrismaClient): Router {
         }
       };
 
-      if (department && department !== 'all') {
+      if (project && project !== 'all') {
         whereCondition.test_runs = {
           test_suites: {
-            department: department as string
+            project: project as string
           }
         };
       }
@@ -106,7 +111,7 @@ export function createReportsRoutes(prisma: PrismaClient): Router {
         prisma.test_run_results.count({ where: whereCondition }),
         // 失败用例数（BUG数）
         prisma.test_run_results.count({
-          where: { ...whereCondition, status: 'failed' }
+          where: { ...whereCondition, status: 'FAILED' }
         }),
         // 平均执行时长
         prisma.test_run_results.aggregate({
@@ -133,7 +138,7 @@ export function createReportsRoutes(prisma: PrismaClient): Router {
       const [prevTotalResults, prevFailedResults, prevTotalDuration] = await Promise.all([
         prisma.test_run_results.count({ where: prevWhereCondition }),
         prisma.test_run_results.count({
-          where: { ...prevWhereCondition, status: 'failed' }
+          where: { ...prevWhereCondition, status: 'FAILED' }
         }),
         prisma.test_run_results.aggregate({
           where: prevWhereCondition,
@@ -183,7 +188,7 @@ export function createReportsRoutes(prisma: PrismaClient): Router {
    */
   router.get('/bug-trend', async (req: Request, res: Response) => {
     try {
-      const { startDate, endDate, department, suiteId, granularity = 'day' } = req.query;
+      const { startDate, endDate, project, suiteId, granularity = 'day' } = req.query;
 
       if (!startDate || !endDate) {
         return res.status(400).json({
@@ -192,8 +197,13 @@ export function createReportsRoutes(prisma: PrismaClient): Router {
         });
       }
 
+      // 🔥 修复：确保日期范围包含整天
+      // startDate 设置为当天的 00:00:00
+      // endDate 设置为当天的 23:59:59.999
       const start = new Date(startDate as string);
+      start.setHours(0, 0, 0, 0);
       const end = new Date(endDate as string);
+      end.setHours(23, 59, 59, 999);
 
       // 构建筛选条件
       const whereCondition: any = {
@@ -203,10 +213,10 @@ export function createReportsRoutes(prisma: PrismaClient): Router {
         }
       };
 
-      if (department && department !== 'all') {
+      if (project && project !== 'all') {
         whereCondition.test_runs = {
           test_suites: {
-            department: department as string
+            project: project as string
           }
         };
       }
@@ -246,7 +256,7 @@ export function createReportsRoutes(prisma: PrismaClient): Router {
 
         const stats = trendMap.get(dateKey)!;
         stats.caseCount++;
-        if (result.status === 'failed') {
+        if (result.status === 'FAILED') {
           stats.bugCount++;
         }
       });
@@ -277,7 +287,7 @@ export function createReportsRoutes(prisma: PrismaClient): Router {
    */
   router.get('/failure-reasons', async (req: Request, res: Response) => {
     try {
-      const { startDate, endDate, department, suiteId } = req.query;
+      const { startDate, endDate, project, suiteId } = req.query;
 
       if (!startDate || !endDate) {
         return res.status(400).json({
@@ -286,20 +296,80 @@ export function createReportsRoutes(prisma: PrismaClient): Router {
         });
       }
 
+      // 🔥 修复：确保日期范围包含整天
+      // startDate 设置为当天的 00:00:00
+      // endDate 设置为当天的 23:59:59.999
       const start = new Date(startDate as string);
+      start.setHours(0, 0, 0, 0);
       const end = new Date(endDate as string);
+      end.setHours(23, 59, 59, 999);
+
+      // 🔥 修复：通过 test_suites.project 过滤项目，保持与其他API一致
+      // 由于 test_case_executions 没有直接关联到 test_suites，我们需要先找到符合条件的用例ID
+      let caseIds: number[] | undefined = undefined;
+
+      if ((project && project !== 'all') || (suiteId && suiteId !== 'all')) {
+        // 构建套件筛选条件
+        const suiteWhere: any = {};
+        if (project && project !== 'all') {
+          suiteWhere.project = project as string;
+        }
+        if (suiteId && suiteId !== 'all') {
+          suiteWhere.id = parseInt(suiteId as string);
+        }
+
+        // 获取符合条件的套件
+        const suites = await prisma.test_suites.findMany({
+          where: suiteWhere,
+          select: { id: true }
+        });
+
+        if (suites.length === 0) {
+          // 如果没有符合条件的套件，返回空结果
+          return res.json({
+            success: true,
+            data: []
+          });
+        }
+
+        // 获取这些套件下的所有用例ID
+        const suiteIds = suites.map(s => s.id);
+        const suiteCases = await prisma.suite_case_map.findMany({
+          where: { suite_id: { in: suiteIds } },
+          select: { case_id: true }
+        });
+        caseIds = suiteCases.map(sc => sc.case_id);
+
+        if (caseIds.length === 0) {
+          // 如果套件下没有用例，返回空结果
+          return res.json({
+            success: true,
+            data: []
+          });
+        }
+      }
+
+      // 构建筛选条件
+      const whereCondition: any = {
+        status: 'failed', // test_case_executions 使用小写
+        finished_at: { // 使用 finished_at 而不是 queued_at，因为我们需要执行完成的时间
+          gte: start,
+          lte: end
+          // finished_at 不为 null 的条件通过 status='failed' 已经隐含了（失败的用例应该有 finished_at）
+        }
+      };
+
+      // 如果有用例ID限制，添加过滤条件
+      if (caseIds && caseIds.length > 0) {
+        whereCondition.test_case_id = {
+          in: caseIds
+        };
+      }
 
       // 获取失败的测试用例执行记录
-      // 由于test_run_results没有error字段，我们从test_case_execution_queue获取错误信息
-      const failedExecutions = await prisma.test_case_execution_queue.findMany({
-        where: {
-          status: 'failed',
-          queued_at: {
-            gte: start,
-            lte: end
-          },
-          ...(department && department !== 'all' ? { executor_department: department as string } : {})
-        },
+      // 由于test_run_results没有error字段，我们从test_case_executions获取错误信息
+      const failedExecutions = await prisma.test_case_executions.findMany({
+        where: whereCondition,
         select: {
           error_message: true
         }
@@ -347,7 +417,7 @@ export function createReportsRoutes(prisma: PrismaClient): Router {
    */
   router.get('/flaky-tests', async (req: Request, res: Response) => {
     try {
-      const { startDate, endDate, department, suiteId, limit = '10' } = req.query;
+      const { startDate, endDate, project, suiteId, limit = '10' } = req.query;
 
       if (!startDate || !endDate) {
         return res.status(400).json({
@@ -356,8 +426,13 @@ export function createReportsRoutes(prisma: PrismaClient): Router {
         });
       }
 
+      // 🔥 修复：确保日期范围包含整天
+      // startDate 设置为当天的 00:00:00
+      // endDate 设置为当天的 23:59:59.999
       const start = new Date(startDate as string);
+      start.setHours(0, 0, 0, 0);
       const end = new Date(endDate as string);
+      end.setHours(23, 59, 59, 999);
       const limitNum = parseInt(limit as string);
 
       // 构建筛选条件
@@ -368,10 +443,10 @@ export function createReportsRoutes(prisma: PrismaClient): Router {
         }
       };
 
-      if (department && department !== 'all') {
+      if (project && project !== 'all') {
         whereCondition.test_runs = {
           test_suites: {
-            department: department as string
+            project: project as string
           }
         };
       }
@@ -425,7 +500,7 @@ export function createReportsRoutes(prisma: PrismaClient): Router {
         const stats = caseStats.get(caseId)!;
         stats.totalRuns++;
 
-        if (result.status === 'failed') {
+        if (result.status === 'FAILED') {
           stats.failures++;
           if (!stats.lastFailure || (result.executed_at && result.executed_at > stats.lastFailure)) {
             stats.lastFailure = result.executed_at;
@@ -472,7 +547,7 @@ export function createReportsRoutes(prisma: PrismaClient): Router {
       const {
         startDate,
         endDate,
-        department,
+        project,
         suiteId,
         page = '1',
         pageSize = '20'
@@ -485,25 +560,30 @@ export function createReportsRoutes(prisma: PrismaClient): Router {
         });
       }
 
+      // 🔥 修复：确保日期范围包含整天
+      // startDate 设置为当天的 00:00:00
+      // endDate 设置为当天的 23:59:59.999
       const start = new Date(startDate as string);
+      start.setHours(0, 0, 0, 0);
       const end = new Date(endDate as string);
+      end.setHours(23, 59, 59, 999);
       const pageNum = parseInt(page as string);
       const pageSizeNum = parseInt(pageSize as string);
       const skip = (pageNum - 1) * pageSizeNum;
 
       // 构建筛选条件
       const whereCondition: any = {
-        status: 'failed',
+        status: 'FAILED',
         executed_at: {
           gte: start,
           lte: end
         }
       };
 
-      if (department && department !== 'all') {
+      if (project && project !== 'all') {
         whereCondition.test_runs = {
           test_suites: {
-            department: department as string
+            project: project as string
           }
         };
       }
@@ -539,29 +619,30 @@ export function createReportsRoutes(prisma: PrismaClient): Router {
         take: pageSizeNum
       });
 
-      // 尝试获取对应的错误信息（从execution_queue）
+      // 尝试获取对应的错误信息（从test_case_executions）
       const caseIds = failedCases.map(c => c.case_id);
-      const errorRecords = await prisma.test_case_execution_queue.findMany({
+      const errorRecords = await prisma.test_case_executions.findMany({
         where: {
-          case_id: {
+          test_case_id: { // test_case_executions 使用 test_case_id 而不是 case_id
             in: caseIds
           },
-          status: 'failed',
-          queued_at: {
+          status: 'failed', // test_case_executions 使用小写
+          finished_at: { // 使用 finished_at 而不是 queued_at，因为我们需要执行完成的时间
             gte: start,
             lte: end
+            // finished_at 不为 null 的条件通过 status='failed' 已经隐含了（失败的用例应该有 finished_at）
           }
         },
         select: {
-          case_id: true,
+          test_case_id: true, // test_case_executions 使用 test_case_id
           error_message: true
         }
       });
 
       const errorMap = new Map<number, string>();
       errorRecords.forEach(record => {
-        if (record.error_message && !errorMap.has(record.case_id)) {
-          errorMap.set(record.case_id, record.error_message);
+        if (record.error_message && !errorMap.has(record.test_case_id)) {
+          errorMap.set(record.test_case_id, record.error_message);
         }
       });
 
@@ -608,7 +689,7 @@ export function createReportsRoutes(prisma: PrismaClient): Router {
    */
   router.get('/suite-summary', async (req: Request, res: Response) => {
     try {
-      const { startDate, endDate, department } = req.query;
+      const { startDate, endDate, project } = req.query;
 
       if (!startDate || !endDate) {
         return res.status(400).json({
@@ -617,13 +698,18 @@ export function createReportsRoutes(prisma: PrismaClient): Router {
         });
       }
 
+      // 🔥 修复：确保日期范围包含整天
+      // startDate 设置为当天的 00:00:00
+      // endDate 设置为当天的 23:59:59.999
       const start = new Date(startDate as string);
+      start.setHours(0, 0, 0, 0);
       const end = new Date(endDate as string);
+      end.setHours(23, 59, 59, 999);
 
       // 获取所有测试套件
       const suites = await prisma.test_suites.findMany({
-        where: department && department !== 'all'
-          ? { department: department as string }
+        where: project && project !== 'all'
+          ? { project: project as string }
           : {},
         include: {
           test_runs: {
@@ -653,9 +739,9 @@ export function createReportsRoutes(prisma: PrismaClient): Router {
         runs.forEach(run => {
           run.test_run_results.forEach(result => {
             totalResults++;
-            if (result.status === 'passed') {
+            if (result.status === 'PASSED') {
               passedResults++;
-            } else if (result.status === 'failed') {
+            } else if (result.status === 'FAILED') {
               bugCount++;
             }
             if (result.duration_ms) {
@@ -687,6 +773,42 @@ export function createReportsRoutes(prisma: PrismaClient): Router {
       });
     } catch (error: any) {
       console.error('❌ 获取套件统计失败:', error);
+      res.status(500).json({
+        success: false,
+        error: error.message
+      });
+    }
+  });
+
+  /**
+   * 获取所有项目列表（从项目管理 systems 表获取）
+   * GET /api/reports/projects
+   */
+  router.get('/projects', async (req: Request, res: Response) => {
+    try {
+      // 从 systems 表获取所有启用的项目（系统名称就是项目名称）
+      const systems = await prisma.systems.findMany({
+        where: {
+          status: 'active'
+        },
+        select: {
+          name: true
+        },
+        orderBy: [
+          { sort_order: 'asc' },
+          { name: 'asc' }
+        ]
+      });
+
+      // 提取项目名称列表
+      const projects = systems.map(system => system.name);
+
+      res.json({
+        success: true,
+        data: projects
+      });
+    } catch (error: any) {
+      console.error('❌ 获取项目列表失败:', error);
       res.status(500).json({
         success: false,
         error: error.message

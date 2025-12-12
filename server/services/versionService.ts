@@ -1,5 +1,6 @@
 import { PrismaClient } from '../../src/generated/prisma/index.js';
 import crypto from 'crypto';
+import { getNow } from '../utils/timezone.js';
 
 export interface CaseVersion {
   id: number;
@@ -88,10 +89,10 @@ export class VersionService {
           meta: {
             original_title: testCase.title,
             snapshot_reason: 'bulk_update_pre_apply',
-            timestamp: new Date().toISOString()
+            timestamp: getNow().toISOString()
           },
           created_by: userId || null,
-          created_at: new Date()
+          created_at: getNow()
         }
       });
 

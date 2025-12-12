@@ -120,7 +120,7 @@ export function Dashboard() {
       animate={{ opacity: 1 }}
       transition={{ duration: 0.45 }}
     >
-      <div className="w-full px-4 sm:px-6 lg:px-8 py-6 sm:py-8 lg:py-10">
+      <div className="w-full">
         {/* 顶部工具条 */}
         <motion.div
           initial={{ opacity: 0, y: 12 }}

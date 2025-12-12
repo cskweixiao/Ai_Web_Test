@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { PrismaClient } from '../../src/generated/prisma/index.js';
+import { getNow } from '../utils/timezone.js';
 
 const prisma = new PrismaClient();
 
@@ -18,12 +19,12 @@ export class FeatureFlagService {
     try {
       await prisma.feature_flags.upsert({
         where: { flag_name: 'FEATURE_AIBULK_UPDATE' },
-        update: { updated_at: new Date() },
+        update: { updated_at: getNow() },
         create: {
           flag_name: 'FEATURE_AIBULK_UPDATE',
           is_enabled: false, // 默认关闭
           rollout_percentage: 0,
-          updated_at: new Date()
+          updated_at: getNow()
         }
       });
 
@@ -43,7 +44,7 @@ export class FeatureFlagService {
         data: {
           is_enabled: true,
           rollout_percentage: Math.max(0, Math.min(100, rolloutPercentage)),
-          updated_at: new Date()
+          updated_at: getNow()
         }
       });
 
@@ -68,7 +69,7 @@ export class FeatureFlagService {
         data: {
           is_enabled: false,
           rollout_percentage: 0,
-          updated_at: new Date()
+          updated_at: getNow()
         }
       });
 
@@ -167,7 +168,7 @@ export class FeatureFlagService {
         flag_name: flag.flag_name,
         is_enabled: flag.is_enabled || false,
         rollout_percentage: flag.rollout_percentage || 0,
-        updated_at: flag.updated_at || new Date()
+        updated_at: flag.updated_at || getNow()
       }));
     } catch (error) {
       console.error('❌ 获取功能开关列表失败:', error);
@@ -189,13 +190,13 @@ export class FeatureFlagService {
         update: {
           is_enabled: isEnabled,
           rollout_percentage: rolloutPercentage ?? undefined,
-          updated_at: new Date()
+          updated_at: getNow()
         },
         create: {
           flag_name: flagName,
           is_enabled: isEnabled,
           rollout_percentage: rolloutPercentage || 0,
-          updated_at: new Date()
+          updated_at: getNow()
         }
       });
 

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
   ArrowLeft,
@@ -35,7 +35,9 @@ interface TestCaseForm {
 export function TestCaseDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const isEditMode = id !== 'new';
+  const location = useLocation();
+  // 判断是否为编辑模式：路径包含 /edit 或者 id 存在且不等于 'new'
+  const isEditMode = location.pathname.includes('/edit') || (id !== undefined && id !== 'new');
 
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -315,11 +317,12 @@ export function TestCaseDetail() {
           <div className="flex items-center gap-3">
             <Button
               type="button"
-              variant="ghost"
+              variant="secondary"
               onClick={handleReset}
               disabled={saving}
+              icon={<RotateCcw className="h-4 w-4 mr-2" />}
             >
-              <RotateCcw className="h-4 w-4 mr-2" />
+              {/* <RotateCcw className="h-4 w-4 mr-2" /> */}
               {isEditMode ? '重置' : '清空'}
             </Button>
             <Button
@@ -327,15 +330,22 @@ export function TestCaseDetail() {
               onClick={handleSubmit}
               disabled={saving}
               className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700"
+              icon={
+                saving ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <Save className="h-4 w-4 mr-2" />
+                )
+              }
             >
               {saving ? (
                 <>
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  {/* <Loader2 className="h-4 w-4 mr-2 animate-spin" /> */}
                   保存中...
                 </>
               ) : (
                 <>
-                  <Save className="h-4 w-4 mr-2" />
+                  {/* <Save className="h-4 w-4 mr-2" /> */}
                   保存
                 </>
               )}

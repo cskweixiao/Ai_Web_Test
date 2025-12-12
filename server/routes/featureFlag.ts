@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { authenticateUser, requireRoles } from '../middleware/auth.js';
 import { FeatureFlagService, requireFeatureFlagAdmin } from '../middleware/featureFlag.js';
 import Joi from 'joi';
+import { getNow } from '../utils/timezone.js';
 
 // 请求验证模式
 const updateFlagSchema = Joi.object({
@@ -116,7 +117,7 @@ export function createFeatureFlagRoutes(): Router {
           is_enabled: isEnabled,
           rollout_percentage: rolloutPercentage || 0,
           updated_by: req.user!.email,
-          updated_at: new Date().toISOString()
+          updated_at: getNow().toISOString()
         }
       });
 
@@ -192,7 +193,7 @@ export function createFeatureFlagRoutes(): Router {
             failed: errors.length
           },
           updated_by: req.user!.email,
-          updated_at: new Date().toISOString()
+          updated_at: getNow().toISOString()
         }
       });
 

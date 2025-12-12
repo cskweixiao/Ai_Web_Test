@@ -24,21 +24,28 @@ const getBackendHost = (): string => {
   }
   
   // 开发环境使用 localhost
-  return 'localhost';
+  return '172.19.1.111';
 };
 
 // 构建 API 基础 URL
 export const getApiBaseUrl = (path: string = '/api'): string => {
-  if (import.meta.env.DEV) {
-    // 开发环境：使用相对路径（通过 Vite 代理）
-    return path;
+  // 🔥 开发环境：强制使用完整URL，确保请求直接到达后端服务器
+  // 这样可以避免Vite代理配置问题
+  if (import.meta.env.DEV || import.meta.env.MODE === 'development') {
+    const host = getBackendHost();
+    const port = getBackendPort();
+    const fullUrl = `http://${host}:${port}${path}`;
+    console.log(`🔗 [API配置] 开发环境 - 完整URL: ${fullUrl}`);
+    return fullUrl;
   }
   
   // 生产环境：构建完整 URL
   const host = getBackendHost();
   const port = getBackendPort();
   const protocol = window.location.protocol === 'https:' ? 'https:' : 'http:';
-  return `${protocol}//${host}:${port}${path}`;
+  const prodUrl = `${protocol}//${host}:${port}${path}`;
+  console.log(`🔗 [API配置] 生产环境 - 完整URL: ${prodUrl}`);
+  return prodUrl;
 };
 
 // 构建 WebSocket URL

@@ -3,9 +3,15 @@ import { axureUpload, axureMultiUpload } from '../middleware/upload.js';
 import { AxureParseService } from '../services/axureParseService.js';
 import { FunctionalTestCaseAIService } from '../services/functionalTestCaseAIService.js';
 import { AIPreAnalysisService } from '../services/aiPreAnalysisService.js';
-import { PrismaClient } from '../../src/generated/prisma/index.js';
 import { DatabaseService } from '../services/databaseService.js';
 import fs from 'fs/promises';
+import path from 'path';
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore
+import pdfParse from 'pdf-parse';
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore
+import mammoth from 'mammoth';
 import { v4 as uuidv4 } from 'uuid';
 
 /**
@@ -467,7 +473,10 @@ export function createAxureRoutes(): Router {
         });
       }
 
-      console.log(`📤 收到HTML文件: ${req.file.originalname}, 大小: ${req.file.size} bytes`);
+      const ext = path.extname(req.file.originalname).toLowerCase();
+      const filePath = req.file.path;
+
+      console.log(`📤 收到文件: ${req.file.originalname}, 大小: ${req.file.size} bytes`);
       console.log(`   平台类型: ${platformType === 'web' ? 'Web端' : '移动端'}`);
       console.log(`   页面模式: ${pageMode === 'new' ? '新增页面' : '修改页面'}`);
       console.log(`   系统名称: ${systemName || '未指定'}, 模块名称: ${moduleName || '未指定'}`);
@@ -475,11 +484,34 @@ export function createAxureRoutes(): Router {
         console.log(`   补充业务规则: ${businessRules.split('\n').length} 行`);
       }
 
-      const filePath = req.file.path;
-
-      // 读取HTML文件内容
-      const htmlContent = await fs.readFile(filePath, 'utf-8');
-      console.log(`📄 HTML文件读取成功，长度: ${htmlContent.length} 字符`);
+      // 按文件类型读取内容
+      let docContent = '';
+      let contentSourceType: 'html' | 'pdf' | 'docx' | 'markdown' | 'text' = 'html';
+      if (ext === '.html' || ext === '.htm') {
+        docContent = await fs.readFile(filePath, 'utf-8');
+        console.log(`📄 HTML文件读取成功，长度: ${docContent.length} 字符`);
+        contentSourceType = 'html';
+      } else if (ext === '.pdf') {
+        const pdfBuffer = await fs.readFile(filePath);
+        const parsed = await pdfParse(pdfBuffer);
+        docContent = parsed.text || '';
+        console.log(`📄 PDF提取成功，文本长度: ${docContent.length} 字符`);
+        contentSourceType = 'pdf';
+      } else if (ext === '.docx') {
+        const extracted = await mammoth.extractRawText({ path: filePath });
+        docContent = extracted.value || '';
+        console.log(`📄 DOCX提取成功，文本长度: ${docContent.length} 字符`);
+        contentSourceType = 'docx';
+      } else if (ext === '.md' || ext === '.markdown' || ext === '.txt') {
+        docContent = await fs.readFile(filePath, 'utf-8');
+        console.log(`📄 文本/Markdown读取成功，长度: ${docContent.length} 字符`);
+        contentSourceType = ext === '.txt' ? 'text' : 'markdown';
+      } else {
+        return res.status(400).json({
+          success: false,
+          error: '暂不支持该文件格式'
+        });
+      }
 
       // 将补充业务规则转换为数组（按行分割，过滤空行）
       const businessRulesArray = businessRules
@@ -488,13 +520,14 @@ export function createAxureRoutes(): Router {
 
       // 直接调用AI生成需求文档（传递 pageMode、platformType 和 businessRules）
       const result = await getAIService().generateRequirementFromHtmlDirect(
-        htmlContent,
+        docContent,
         {
           systemName,
           moduleName,
           pageMode: pageMode as 'new' | 'modify', // 传递页面模式
           platformType: platformType as 'web' | 'mobile', // 传递平台类型
-          businessRules: businessRulesArray // 传递补充业务规则
+          businessRules: businessRulesArray, // 传递补充业务规则
+          contentSourceType
         }
       );
 

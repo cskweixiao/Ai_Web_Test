@@ -67,8 +67,9 @@ export function StepCard({
               e.stopPropagation();
               onEdit?.();
             }}
+            icon={<Edit3 className="w-4 h-4" />}
           >
-            <Edit3 className="w-4 h-4 mr-2" />
+            {/* <Edit3 className="w-4 h-4 mr-2" /> */}
             重新编辑
           </Button>
         </div>

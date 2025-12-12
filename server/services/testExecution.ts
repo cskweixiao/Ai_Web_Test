@@ -7,7 +7,7 @@ import { AITestParser } from './aiParser.js';
 import { ScreenshotService } from './screenshotService.js';
 import { DatabaseService } from './databaseService.js';
 import { testRunStore } from '../../lib/TestRunStore.js';
-import type { TestRun, TestStep, TestLog, TestCase, TestRunStatus } from '../../src/types/test.js';
+import type { TestRun, TestStep, TestLog, TestCase, TestRunStatus, TestAction } from '../../src/types/test.js';
 import type { ScreenshotRecord } from '../types/screenshot.js';
 import * as fs from 'fs';
 import { promises as fsPromises } from 'fs';
@@ -16,8 +16,9 @@ import { QueueService, QueueTask } from './queueService.js';
 import { StreamService } from './streamService.js';
 import { EvidenceService } from './evidenceService.js';
 import { TestCaseExecutionService } from './testCaseExecutionService.js';
+import { PlaywrightTestRunner } from './playwrightTestRunner.js';
 
-// 重构后的测试执行服务：完全基于MCP的新流程
+// 重构后的测试执行服务：支持 MCP 和 Playwright Test Runner 两种执行引擎
 export class TestExecutionService {
   private wsManager: WebSocketManager;
   private mcpClient: PlaywrightMcpClient;
@@ -29,6 +30,7 @@ export class TestExecutionService {
   private streamService: StreamService;
   private evidenceService: EvidenceService;
   private executionService: TestCaseExecutionService;
+  private playwrightRunner: PlaywrightTestRunner | null = null; // 🔥 新增：Playwright Test Runner 实例
 
   // 🚀 Phase 4: 性能监控系统
   private performanceMonitor = {
@@ -113,9 +115,9 @@ export class TestExecutionService {
 
     this.streamService = streamService || new StreamService({
       fps: 2,
-      jpegQuality: 60,
-      width: 1024,
-      height: 768,
+      jpegQuality: 85,  // 🔥 提高质量：从60提升到85，提供更清晰的画面
+      width: 1920,       // 🔥 提高分辨率：从1024提升到1920，支持高清显示
+      height: 1080,      // 🔥 提高分辨率：从768提升到1080，支持高清显示
       maskSelectors: []
     });
 
@@ -124,6 +126,9 @@ export class TestExecutionService {
       path.join(process.cwd(), 'artifacts'),
       process.env.BASE_URL || 'http://localhost:3000'
     );
+
+    // 🔥 初始化 Playwright Test Runner（延迟初始化，按需创建）
+    // this.playwrightRunner 将在需要时创建
 
     // 🔥 初始化测试执行持久化服务
     this.executionService = TestCaseExecutionService.getInstance();
@@ -193,15 +198,22 @@ export class TestExecutionService {
   }
 
   // #region Test Case Management
-  private dbTestCaseToApp(dbCase: { id: number; title: string; steps: Prisma.JsonValue | null; tags: Prisma.JsonValue | null; system: string | null; module: string | null; department?: string | null; created_at: Date | null; }): TestCase {
+  private dbTestCaseToApp(dbCase: { id: number; title: string; steps: Prisma.JsonValue | null; tags: Prisma.JsonValue | null; system: string | null; module: string | null; project?: string | null; created_at: Date | null; }): TestCase {
     let steps = '';
     let assertions = '';
+    let author = 'System'; // 🔥 默认值
     if (typeof dbCase.steps === 'string' && dbCase.steps) {
       try {
         const stepsObj = JSON.parse(dbCase.steps);
         if (stepsObj && typeof stepsObj === 'object') {
           assertions = stepsObj.assertions || '';
           steps = stepsObj.steps || '';
+          // 🔥 修复：从 steps JSON 中读取 author，如果存在则使用，否则使用默认值
+          if (stepsObj.author !== undefined && stepsObj.author !== null && stepsObj.author !== '') {
+            author = stepsObj.author;
+          } else {
+            author = 'System';
+          }
         } else {
           steps = dbCase.steps;
         }
@@ -218,11 +230,11 @@ export class TestExecutionService {
       tags: (Array.isArray(dbCase.tags) ? dbCase.tags : []) as string[],
       system: dbCase.system || undefined,
       module: dbCase.module || undefined,
-      department: dbCase.department || undefined,
+      department: dbCase.project || undefined, // 🔥 注意：TestCase 接口使用 department，但数据库字段是 project
       created: dbCase.created_at?.toISOString(),
       priority: 'medium',
       status: 'active',
-      author: 'System',
+      author: author, // 🔥 使用从 steps JSON 中读取的 author
     };
   }
 
@@ -236,7 +248,7 @@ export class TestExecutionService {
         tags: true,
         system: true,
         module: true,
-        department: true,
+        project: true,
         created_at: true
       }
     });
@@ -252,7 +264,7 @@ export class TestExecutionService {
         tags: true,
         system: true,
         module: true,
-        department: true,
+        project: true,
         created_at: true
       }
     });
@@ -270,7 +282,7 @@ export class TestExecutionService {
         tags: true,
         system: true,
         module: true,
-        department: true,
+        project: true,
         created_at: true
       }
     });
@@ -296,7 +308,7 @@ export class TestExecutionService {
 
     // 🔥 部门权限过滤：非超级管理员只能看自己部门的数据
     if (!isSuperAdmin && userDepartment) {
-      where.department = userDepartment;
+      where.project = userDepartment;
     }
 
     // 搜索条件（标题和步骤）
@@ -335,6 +347,7 @@ export class TestExecutionService {
           tags: true,
           system: true,
           module: true,
+          project: true, // 🔥 修复：添加 project 字段
           created_at: true
         },
         skip,
@@ -368,6 +381,7 @@ export class TestExecutionService {
           tags: true,
           system: true,
           module: true,
+          project: true, // 🔥 修复：添加 project 字段
           created_at: true
         }
       });
@@ -401,10 +415,21 @@ export class TestExecutionService {
   }
 
   public async addTestCase(testCaseData: Partial<TestCase>): Promise<TestCase> {
+    // 🔥 调试日志：检查接收到的 author 值
+    console.log('📝 [addTestCase] 接收到的 author:', testCaseData.author);
+    
+    // 🔥 修复：确保 author 被正确保存（即使为空字符串也要保存，避免被 JSON.stringify 忽略）
+    const authorValue = testCaseData.author !== undefined && testCaseData.author !== null 
+      ? testCaseData.author 
+      : 'System'; // 如果没有提供 author，使用默认值
+    
     const stepsData = JSON.stringify({
       steps: testCaseData.steps || '',
-      assertions: testCaseData.assertions || ''
+      assertions: testCaseData.assertions || '',
+      author: authorValue // 🔥 将 author 存储在 steps JSON 中
     });
+
+    console.log('📝 [addTestCase] 保存的 steps JSON:', stepsData);
 
     const newTestCase = await this.prisma.test_cases.create({
       data: {
@@ -413,27 +438,55 @@ export class TestExecutionService {
         tags: (testCaseData.tags as Prisma.JsonValue) || Prisma.JsonNull,
         system: testCaseData.system || null,
         module: testCaseData.module || null,
-        department: testCaseData.department || null,
+        project: testCaseData.department || null, // 🔥 注意：TestCase 接口使用 department，但数据库字段是 project
       },
     });
-    return this.dbTestCaseToApp(newTestCase);
+    
+    const result = this.dbTestCaseToApp(newTestCase);
+    console.log('📝 [addTestCase] 返回的 author:', result.author);
+    return result;
   }
 
   public async updateTestCase(id: number, testCaseData: Partial<TestCase>): Promise<TestCase | null> {
     try {
+      // 🔥 调试日志：检查接收到的 author 值
+      console.log('📝 [updateTestCase] 接收到的数据:', {
+        id,
+        author: testCaseData.author,
+        hasName: !!testCaseData.name
+      });
+
       const existingCase = await this.findTestCaseById(id);
       if (!existingCase) return null;
 
       const newSteps = testCaseData.steps ?? existingCase.steps;
       const newAssertions = testCaseData.assertions ?? existingCase.assertions;
-      const stepsData = JSON.stringify({ steps: newSteps, assertions: newAssertions });
+      // 🔥 修复：如果传入了新的 author，优先使用新的；否则保留原有的
+      const existingAuthor = existingCase.author || 'System';
+      const newAuthor = testCaseData.author !== undefined && testCaseData.author !== null
+        ? testCaseData.author
+        : existingAuthor;
+      
+      console.log('📝 [updateTestCase] Author 处理:', {
+        existingAuthor,
+        receivedAuthor: testCaseData.author,
+        finalAuthor: newAuthor
+      });
+
+      const stepsData = JSON.stringify({ 
+        steps: newSteps, 
+        assertions: newAssertions,
+        author: newAuthor // 🔥 将 author 存储在 steps JSON 中
+      });
+
+      console.log('📝 [updateTestCase] 保存的 steps JSON:', stepsData);
 
       const dataToUpdate: any = {
         title: testCaseData.name,
         steps: stepsData,
         system: testCaseData.system,
         module: testCaseData.module,
-        department: testCaseData.department,
+        project: testCaseData.department, // 🔥 注意：TestCase 接口使用 department，但数据库字段是 project
       };
 
       if (testCaseData.tags) {
@@ -444,7 +497,10 @@ export class TestExecutionService {
         where: { id },
         data: dataToUpdate,
       });
-      return this.dbTestCaseToApp(updatedTestCase);
+      
+      const result = this.dbTestCaseToApp(updatedTestCase);
+      console.log('📝 [updateTestCase] 返回的 author:', result.author);
+      return result;
     } catch (error) {
       console.error(`更新测试用例 ${id} 失败:`, error);
       return null;
@@ -472,7 +528,10 @@ export class TestExecutionService {
       reuseBrowser?: boolean,
       suiteId?: string,
       contextState?: any,
-      userId?: string
+      userId?: string,
+      executionEngine?: 'mcp' | 'playwright', // 🔥 新增：执行引擎选择
+      enableTrace?: boolean, // 🔥 新增：是否启用 trace（仅 Playwright）
+      enableVideo?: boolean, // 🔥 新增：是否启用 video（仅 Playwright）
     } = {}
   ): Promise<string> {
     // 🚀 性能监控：记录开始时间
@@ -480,6 +539,30 @@ export class TestExecutionService {
     const runId = uuidv4();
     const userId = options.userId || 'system';
 
+    // 🔥 新增：确定执行引擎（默认使用 MCP 保持向后兼容）
+    const executionEngine = options.executionEngine || 'mcp';
+    
+    // 🔥 修复：立即查询用户名（如果 userId 不是 'system'）
+    let executorName = 'System';
+    if (userId && userId !== 'system') {
+      try {
+        const parsedUserId = parseInt(userId);
+        if (!isNaN(parsedUserId)) {
+          const user = await this.prisma.users.findUnique({
+            where: { id: parsedUserId },
+            select: { username: true, email: true }
+          });
+          if (user) {
+            executorName = user.username || user.email || `User-${parsedUserId}`;
+          }
+        }
+      } catch (error) {
+        console.warn(`⚠️ [${runId}] 查询用户信息失败:`, error);
+        // 如果查询失败，使用 userId 作为占位符
+        executorName = `User-${userId}`;
+      }
+    }
+    
     const testRun: TestRun = {
       id: runId, runId, testCaseId, environment, executionMode,
       status: 'queued',
@@ -487,12 +570,21 @@ export class TestExecutionService {
       steps: [],
       successfulSteps: [],
       startedAt: new Date(),
-      ...options
+      executor: executorName, // 🔥 修复：设置执行者名称
+      ...options,
+      executionEngine // 🔥 保存执行引擎到 testRun
     };
 
     testRunStore.set(runId, testRun);
+    
+    // 🔥 记录执行引擎选择
+    console.log(`🎯 [${runId}] 执行引擎: ${executionEngine === 'playwright' ? 'Playwright Test Runner' : 'MCP 客户端'}`);
+    if (executionEngine === 'playwright') {
+      console.log(`   📦 Trace 录制: ${options.enableTrace !== false ? '启用' : '禁用'}`);
+      console.log(`   🎥 Video 录制: ${options.enableVideo !== false ? '启用' : '禁用'}`);
+    }
 
-    // 🔥 立即广播测试创建事件（先用占位符名称，不等待数据库查询）
+    // 🔥 立即广播测试创建事件（使用实际用户名）
     const placeholderName = `测试用例 #${testCaseId}`;
     this.wsManager.broadcast({
       type: 'test_created',
@@ -504,7 +596,7 @@ export class TestExecutionService {
         status: testRun.status,
         startTime: testRun.startedAt,
         environment,
-        executor: userId,
+        executor: executorName, // 🔥 修复：使用实际用户名而不是 userId
         progress: 0,
         totalSteps: 0,
         completedSteps: 0,
@@ -515,7 +607,7 @@ export class TestExecutionService {
         screenshots: []
       }
     });
-    console.log(`📡 [${runId}] 立即广播测试创建事件（占位符）`);
+    console.log(`📡 [${runId}] 立即广播测试创建事件，执行者: ${executorName}`);
 
     // 🔥 性能优化：提前查询测试用例，避免后续重复查询
     console.log(`🔍 [${runId}] 开始查询测试用例信息 testCaseId=${testCaseId}...`);
@@ -541,13 +633,22 @@ export class TestExecutionService {
       console.log(`💾 [${runId}] 准备保存测试执行记录到数据库，actualName="${actualName}"`);
       try {
         console.log(`💾 [${runId}] 调用 executionService.createExecution...`);
+        // 🔥 修复：正确转换用户ID（userId可能是字符串格式的数字或'system'）
+        let executorUserId: number | undefined = undefined;
+        if (userId && userId !== 'system') {
+          const parsedUserId = parseInt(userId);
+          if (!isNaN(parsedUserId)) {
+            executorUserId = parsedUserId;
+          }
+        }
+        console.log(`💾 [${runId}] executorUserId: ${executorUserId || 'undefined'}`);
         await this.executionService.createExecution({
           id: runId,
           testCaseId,
           testCaseTitle: actualName,
           environment,
           executionMode,
-          executorUserId: userId !== 'system' ? parseInt(userId) : undefined,
+          executorUserId: executorUserId,
           // TODO: 从用户信息获取部门
         });
         console.log(`💾 [${runId}] 测试执行记录已保存到数据库`);
@@ -628,9 +729,15 @@ export class TestExecutionService {
 
     console.log(`🚀 [${runId}] 开始执行 [${testCase.name}]`);
 
+    // 🔥 获取执行引擎配置
+    const executionEngine = (testRun as any).executionEngine || 'mcp';
+    const enableTrace = (testRun as any).enableTrace !== false;
+    const enableVideo = (testRun as any).enableVideo !== false;
+
     // 记录当前AI解析器配置信息
     try {
-      const modelInfo = this.aiParser.getCurrentModelInfo();
+      // 🔥 修复：使用异步版本确保配置管理器已初始化，能正确获取模型信息
+      const modelInfo = await this.aiParser.getCurrentModelInfoAsync();
       console.log(`🤖 [${runId}] AI解析器配置信息:`);
       console.log(`   模型: ${modelInfo.modelName} (${modelInfo.provider})`);
       console.log(`   运行模式: ${modelInfo.mode}`);
@@ -647,253 +754,26 @@ export class TestExecutionService {
     }
 
     try {
-      // 🔥 修正：使用原有的MCP初始化流程
-      console.log(`🚀 [${runId}] 正在初始化MCP客户端...`);
-      this.addLog(runId, `🚀 正在初始化MCP客户端...`, 'info');
-      console.log(`📊 [${runId}] MCP客户端状态: isInitialized=${this.mcpClient['isInitialized']}`);
-
-      try {
-        // 🚀 Phase 5: 关键性能优化 - 重用浏览器会话避免重复启动
-        await this.mcpClient.initialize({
-          reuseSession: true,  // 🚀 重用浏览器实例，节省3-5秒启动时间
-          contextState: null
-        });
-        console.log(`✅ [${runId}] MCP客户端初始化成功`);
-        this.addLog(runId, `✅ MCP客户端初始化成功，浏览器已启动`, 'success');
-
-        // 🚀 Phase 5: 异步启动实时流服务，不阻塞主流程
-        setImmediate(async () => {
-          try {
-            console.log(`🎬 [${runId}] 异步启动实时流，runId: ${runId}`);
-            this.streamService.startStreamWithMcp(runId, this.mcpClient);
-            console.log(`📺 [${runId}] 实时流异步启动完成(时钟帧模式)，runId: ${runId}`);
-            this.addLog(runId, `📺 实时流已启动(后台模式)`, 'success');
-          } catch (streamError) {
-            console.error(`❌ [${runId}] 启动实时流失败:`, streamError);
-            this.addLog(runId, `⚠️ 启动实时流失败: ${streamError.message}`, 'warning');
-          }
-        });
-      } catch (initError) {
-        console.error(`❌ [${runId}] MCP初始化失败:`, initError);
-        this.addLog(runId, `❌ MCP初始化失败: ${initError.message}`, 'error');
-        this.updateTestRunStatus(runId, 'failed', `MCP初始化失败: ${initError.message}`);
-        return;
+      // 🔥 根据执行引擎选择初始化方式
+      if (executionEngine === 'playwright') {
+        // 使用 Playwright Test Runner
+        await this.initializePlaywrightRunner(runId, { enableTrace, enableVideo });
+      } else {
+        // 使用 MCP 客户端（默认）
+        await this.initializeMcpClient(runId);
       }
 
-      let remainingSteps = testCase.steps;
-      let stepIndex = 0;
-      let previousStepsText = ''; // 🔥 新增：用于防止无限循环
-      const maxSteps = 50; // 🔥 新增：最大步骤数限制
-
-      // 🔥 新增：计算总步骤数（预估，用于显示进度）
-      const estimatedTotalSteps = this.estimateStepsCount(testCase.steps);
-      if (testRun) {
-        testRun.totalSteps = estimatedTotalSteps;
-        console.log(`📊 [${runId}] 预估总步骤数: ${estimatedTotalSteps}`);
+      // 🔥 根据执行引擎选择不同的执行流程
+      if (executionEngine === 'playwright') {
+        // 使用 Playwright Test Runner 执行
+        await this.executeWithPlaywrightRunner(runId, testCase, testRun, { enableTrace, enableVideo });
+      } else {
+        // 使用 MCP 客户端执行（原有流程）
+        await this.executeWithMcpClient(runId, testCase, testRun);
       }
 
-      // 🔥 详细调试日志：显示测试用例数据
-      console.log(`🔍 [${runId}] ===== 测试执行开始调试 =====`);
-      console.log(`   测试用例ID: ${testCase.id}`);
-      console.log(`   测试用例名称: "${testCase.name}"`);
-      console.log(`   操作步骤原始数据: "${testCase.steps}"`);
-      console.log(`   断言预期原始数据: "${testCase.assertions}"`);
-      console.log(`   remainingSteps初始值: "${remainingSteps}"`);
-      console.log(`   remainingSteps类型: ${typeof remainingSteps}`);
-      console.log(`   remainingSteps长度: ${remainingSteps?.length || 0}`);
-      console.log(`🔍 [${runId}] ===== 测试执行开始调试结束 =====\n`);
-
-      this.addLog(runId, `🔍 测试数据: 操作步骤${testCase.steps ? '有' : '无'}, 断言${testCase.assertions ? '有' : '无'}`, 'info');
-      this.addLog(runId, `📊 预估总步骤数: ${estimatedTotalSteps}`, 'info');
-
-      // 🔥 修正：移除不兼容的代码，使用原有的AI闭环执行流程
-
-      // 🔥 AI闭环执行 - 修复：添加步骤间延迟和无限循环保护
-      while (remainingSteps?.trim()) {
-        stepIndex++;
-
-        // 🚀 修正：每个步骤开始前检查是否被取消
-        if (this.queueService && this.queueService.isCancelled(runId)) {
-          console.log(`⏹️ [${runId}] 测试已被取消，停止执行 (步骤${stepIndex})`);
-          this.addLog(runId, `⏹️ 测试已被用户取消`, 'warning');
-          this.updateTestRunStatus(runId, 'cancelled', '测试已被用户取消');
-          return;
-        }
-
-        // 🔥 防止无限循环：检查是否与上一次步骤相同
-        if (remainingSteps === previousStepsText) {
-          console.error(`❌ [${runId}] 检测到无限循环，剩余步骤未变化: "${remainingSteps}"`);
-          this.addLog(runId, `❌ 检测到无限循环，停止执行`, 'error');
-          this.updateTestRunStatus(runId, 'failed', '检测到无限循环，测试已停止');
-          return;
-        }
-
-        // 🔥 防止步骤数过多
-        if (stepIndex > maxSteps) {
-          console.error(`❌ [${runId}] 步骤数超过限制 (${maxSteps})，可能存在无限循环`);
-          this.addLog(runId, `❌ 步骤数超过限制，停止执行`, 'error');
-          this.updateTestRunStatus(runId, 'failed', `步骤数超过限制 (${maxSteps})，测试已停止`);
-          return;
-        }
-
-        previousStepsText = remainingSteps; // 记录当前步骤文本
-
-        // 🚀 Phase 5: AI解析优化 - 第一步直接跳过快照获取（避免46秒延迟）
-        let snapshot: string;
-        if (stepIndex === 1) {
-          // 第一步直接跳过快照，避免在空白页面耗时46秒
-          this.addLog(runId, `⚡ 第一步：跳过初始快照获取，直接执行导航`, 'info');
-          snapshot = '页面准备中，跳过初始快照...'; // 直接使用占位符
-        } else {
-          this.addLog(runId, `🔍 正在获取页面快照用于AI分析...`, 'info');
-          snapshot = await this.mcpClient.getSnapshot();
-          this.addLog(runId, `📸 页面快照获取成功，开始AI解析`, 'info');
-        }
-
-        // 🔥 增加详细日志：AI解析过程 (仅调试模式)
-        if (process.env.NODE_ENV === 'development') {
-          console.log(`🔍 [${runId}] ===== 第${stepIndex}次循环调试 =====`);
-          console.log(`   当前remainingSteps: "${remainingSteps}"`);
-          console.log(`   remainingSteps类型: ${typeof remainingSteps}`);
-          console.log(`   remainingSteps长度: ${remainingSteps?.length || 0}`);
-          console.log(`🔍 [${runId}] ===== 第${stepIndex}次循环调试结束 =====\n`);
-        }
-
-        this.addLog(runId, `🤖 AI正在解析下一个步骤...`, 'info');
-        const aiResult = await this.aiParser.parseNextStep(remainingSteps, snapshot, runId);
-
-        if (!aiResult.success || !aiResult.step) {
-          this.addLog(runId, `❌ AI解析失败: ${aiResult.error}`, 'error');
-          this.updateTestRunStatus(runId, 'failed', `AI解析失败: ${aiResult.error}`);
-          return;
-        }
-
-        const step = aiResult.step;
-        // 🔥 调试日志：确认操作步骤类型
-        console.log(`🔍 [${runId}] 执行操作步骤 ${stepIndex}: stepType=${step.stepType}, description="${step.description}"`);
-        this.addLog(runId, `✅ AI解析成功: ${step.action} - ${step.description}`, 'success');
-        this.updateTestRunStatus(runId, 'running', `步骤 ${stepIndex}: ${step.description}`);
-
-        // 🚀 Phase 5: 智能UI稳定等待 (仅首次执行需要)
-        if (stepIndex === 1) {
-          this.addLog(runId, `⚡ 第一步：跳过UI稳定等待`, 'info');
-          // 第一步通常是导航，不需要等待UI稳定
-        } else {
-          this.addLog(runId, `⏳ 等待UI稳定...`, 'info');
-          await this.delay(500); // 🚀 优化：减少到0.5秒
-        }
-
-        // 🔥 Phase 1 修复：执行稳定性增强 - 多策略重试机制
-        this.addLog(runId, `🔧 开始执行步骤 ${stepIndex}: ${step.action} - ${step.description}`, 'info');
-
-        // 🔥 实现原始设计理念：执行稳定性优先的多层次重试策略
-        const executionResult = await this.executeStepWithRetryAndFallback(step, runId, stepIndex);
-
-        if (!executionResult.success) {
-          this.addLog(runId, `❌ 步骤执行最终失败: ${executionResult.error}`, 'error');
-          await this.takeStepScreenshot(runId, stepIndex, 'failed', step.description);
-
-          // 🔥 智能失败处理：根据步骤重要性和错误类型决定是否继续
-          const shouldContinue = await this.shouldContinueAfterFailure(step, runId, executionResult.error);
-
-          if (!shouldContinue) {
-            this.updateTestRunStatus(runId, 'failed', `关键步骤 ${stepIndex} 失败: ${executionResult.error}`);
-            return;
-          } else {
-            this.addLog(runId, `⚠️ 步骤 ${stepIndex} 失败但继续执行: ${executionResult.error}`, 'warning');
-            // 🔥 新增：失败步骤也更新进度
-            if (testRun) {
-              testRun.failedSteps = (testRun.failedSteps || 0) + 1;
-              testRun.completedSteps = stepIndex;
-              testRun.progress = Math.round((stepIndex / Math.max(estimatedTotalSteps, stepIndex)) * 100);
-            }
-          }
-        } else {
-          this.addLog(runId, `✅ 步骤 ${stepIndex} 执行成功`, 'success');
-          // 🔥 新增：更新进度和成功步骤数
-          if (testRun) {
-            testRun.passedSteps = (testRun.passedSteps || 0) + 1;
-            testRun.completedSteps = stepIndex;
-            testRun.progress = Math.round((stepIndex / Math.max(estimatedTotalSteps, stepIndex)) * 100);
-            console.log(`📊 [${runId}] 进度更新: ${testRun.completedSteps}/${testRun.totalSteps} (${testRun.progress}%)`);
-          }
-        }
-
-        // 🔥 关键修复：操作后等待，确保页面响应
-        // 🚀 Phase 1: 首次导航跳过延迟操作 (核心优化)
-        // 🚀 Phase 1&3: 智能延迟优化
-        const isFirstStepNavigation = stepIndex === 1 && (step.action === 'navigate' || step.action === 'browser_navigate' || step.action === 'open' || step.action === 'goto');
-        
-        await this.smartWaitAfterOperation(step.action, {
-          runId,
-          isFirstStep: isFirstStepNavigation,
-          stepIndex
-        });
-
-        // 🔥 新增：每个步骤执行成功后都截图
-        await this.takeStepScreenshot(runId, stepIndex, 'success', step.description);
-
-        // 🔥 关键修复：确保步骤正确推进
-        const newRemainingSteps = aiResult.remaining || '';
-
-        // 🔥 增强日志：显示步骤推进情况
-        console.log(`🔄 [${runId}] 步骤推进状态:`);
-        console.log(`   ⬅️ 执行前剩余: "${remainingSteps.substring(0, 100)}..."`);
-        console.log(`   ➡️ 执行后剩余: "${newRemainingSteps.substring(0, 100)}..."`);
-        console.log(`   📊 步骤是否推进: ${remainingSteps !== newRemainingSteps ? '✅ 是' : '❌ 否'}`);
-
-        remainingSteps = newRemainingSteps;
-
-        this.addLog(runId, `📋 步骤推进: ${remainingSteps.trim() ? `还有 ${remainingSteps.split('\n').filter(l => l.trim()).length} 个步骤` : '所有步骤已完成'}`, 'info');
-
-        // 🔥 关键修复：步骤间等待
-        if (remainingSteps.trim()) {
-          this.addLog(runId, `⏳ 等待下一步骤...`, 'info');
-          await this.delay(1500);
-        }
-      }
-
-      // 🔥 AI断言阶段
-      if (testCase.assertions?.trim()) {
-        const assertionSnapshot = await this.mcpClient.getSnapshot();
-        const aiAssertions = await this.aiParser.parseAssertions(
-          testCase.assertions,
-          assertionSnapshot,
-          runId
-        );
-
-        if (!aiAssertions.success) {
-          throw new Error(`AI断言解析失败: ${aiAssertions.error}`);
-        }
-
-        for (let i = 0; i < aiAssertions.steps.length; i++) {
-          const assertion = aiAssertions.steps[i];
-          // 🔥 调试日志：确认断言步骤类型
-          console.log(`🔍 [${runId}] 执行断言步骤 ${i + 1}: stepType=${assertion.stepType}, description="${assertion.description}"`);
-          try {
-            const result = await this.executeMcpCommand(assertion, runId);
-            if (!result.success) {
-              this.updateTestRunStatus(runId, 'failed', `断言 ${i + 1} 失败: ${result.error}`);
-              return;
-            }
-          } catch (error: any) {
-            this.updateTestRunStatus(runId, 'failed', `断言 ${i + 1} 异常: ${error.message}`);
-            return;
-          }
-        }
-      }
-
-      console.log(`✅ [${runId}] 完成 [${testCase.name}]`);
-
-      // 🔥 修正：移除trace相关代码，使用原有流程
-
-      // 🔥 新增：测试完成后截图
-      await this.takeStepScreenshot(runId, 'final', 'completed', '测试执行完成');
-
-      // 🔥 新增：保存测试证据
-      await this.saveTestEvidence(runId, 'completed');
-
-      this.updateTestRunStatus(runId, 'completed', '测试执行完成');
+      // 🔥 修复：最终截图、证据保存、状态更新和数据库同步已在 executeWithMcpClient 或 executeWithPlaywrightRunner 内部完成
+      // 这里不再重复调用，避免重复的日志输出和状态更新
       executionSuccess = true; // 🚀 标记执行成功
 
     } catch (error: any) {
@@ -906,18 +786,29 @@ export class TestExecutionService {
       // 🔥 修正：移除trace相关代码
       this.updateTestRunStatus(runId, 'failed', `测试执行失败: ${error.message}`);
       executionSuccess = false; // 🚀 标记执行失败
+
+      // 🔥 强制同步到数据库，确保失败状态也被保存
+      await this.syncTestRunToDatabase(runId);
+      console.log(`💾 [${runId}] 测试失败，已强制同步到数据库`);
       
     } finally {
       try {
-        // 🔥 停止实时流服务
-        this.streamService.stopStream(runId);
-        console.log(`📺 [${runId}] 实时流已停止`);
-
-        console.log(`🧹 [${runId}] 正在清理MCP客户端...`);
-        await this.mcpClient.close();
-        console.log(`✅ [${runId}] MCP客户端已关闭`);
+        // 🔥 根据执行引擎清理资源
+        const finalExecutionEngine = (testRun as any)?.executionEngine || executionEngine || 'mcp';
+        
+        if (finalExecutionEngine === 'playwright') {
+          // 清理 Playwright Test Runner
+          await this.cleanupPlaywrightRunner(runId, testRun);
+        } else {
+          // 清理 MCP 客户端
+          this.streamService.stopStream(runId);
+          console.log(`📺 [${runId}] 实时流已停止`);
+          console.log(`🧹 [${runId}] 正在清理MCP客户端...`);
+          await this.mcpClient.close();
+          console.log(`✅ [${runId}] MCP客户端已关闭`);
+        }
       } catch (cleanupError) {
-        console.warn(`⚠️ [${runId}] 关闭MCP客户端时出错:`, cleanupError);
+        console.warn(`⚠️ [${runId}] 清理资源时出错:`, cleanupError);
       }
       
       // 🚀 Phase 4: 性能监控记录
@@ -942,19 +833,135 @@ export class TestExecutionService {
 
   // 🔥 修正：移除新增的方法，保持原有结构
 
-  // 🔥 解析测试步骤
+  // 🔥 解析测试步骤 - 智能识别操作类型
   private parseTestSteps(stepsText: string): TestStep[] {
     if (!stepsText?.trim()) return [];
 
     const lines = stepsText.split('\n').filter(line => line.trim());
-    return lines.map((line, index) => ({
-      id: `step-${index + 1}`,
-      action: 'execute', // 默认执行动作
-      description: line.trim(),
-      order: index + 1,
-      selector: '',
-      value: ''
-    }));
+    return lines.map((line, index) => {
+      const description = line.trim();
+      const lowerDesc = description.toLowerCase();
+      
+      // 🔥 智能识别操作类型
+      let action: TestAction = 'navigate';
+      let url: string | undefined;
+      let selector: string | undefined;
+      let value: string | undefined;
+      
+      // 识别导航操作（打开、访问、进入、导航到等）
+      if (lowerDesc.includes('打开') || lowerDesc.includes('访问') || 
+          lowerDesc.includes('进入') || lowerDesc.includes('导航') ||
+          lowerDesc.includes('goto') || lowerDesc.includes('navigate')) {
+        action = 'navigate';
+        // 尝试提取 URL
+        const urlMatch = description.match(/(https?:\/\/[^\s]+|www\.[^\s]+|[a-zA-Z0-9-]+\.[a-zA-Z]{2,}[^\s]*)/);
+        if (urlMatch) {
+          url = urlMatch[1];
+          if (!url.startsWith('http')) {
+            url = `https://${url}`;
+          }
+        } else {
+          // 如果没有明确的 URL，尝试从描述中推断
+          if (lowerDesc.includes('百度')) {
+            url = 'https://www.baidu.com';
+          } else if (lowerDesc.includes('google')) {
+            url = 'https://www.google.com';
+          } else {
+            // 默认使用描述作为 URL（可能需要在执行时进一步处理）
+            url = description.replace(/^(打开|访问|进入|导航到)\s*/i, '').trim();
+            if (!url.startsWith('http')) {
+              url = `https://${url}`;
+            }
+          }
+        }
+      }
+      // 识别点击操作
+      else if (lowerDesc.includes('点击') || lowerDesc.includes('选择') || 
+               lowerDesc.includes('click')) {
+        action = 'click';
+        // 尝试提取选择器（支持多种格式）
+        // 格式1: "点击搜索按钮" -> "搜索按钮"
+        // 格式2: "点击：搜索按钮" -> "搜索按钮"
+        // 格式3: "点击搜索按钮 -> 其他描述" -> "搜索按钮"
+        let elementMatch = description.match(/(?:点击|选择|click)\s*[：:]\s*(.+?)(?:\s*->|$)/i) || 
+                          description.match(/(?:点击|选择|click)\s+(.+?)(?:\s*->|$)/i);
+        
+        if (!elementMatch) {
+          // 如果上面没匹配到，尝试更宽松的匹配
+          elementMatch = description.match(/(?:点击|选择|click)\s+(.+)/i);
+        }
+        
+        if (elementMatch) {
+          selector = elementMatch[1].trim();
+          // 移除可能的后续描述（如"-> 页面出现..."）
+          selector = selector.split('->')[0].trim();
+          selector = selector.split('，')[0].trim();
+          selector = selector.split(',')[0].trim();
+        } else {
+          // 如果还是没匹配到，尝试从描述中提取（移除编号和操作词）
+          selector = description
+            .replace(/^\d+[\.、\)]\s*/, '') // 移除编号
+            .replace(/(?:点击|选择|click)\s*/i, '') // 移除操作词
+            .split('->')[0] // 移除箭头后的描述
+            .trim();
+        }
+      }
+      // 识别输入操作
+      else if (lowerDesc.includes('输入') || lowerDesc.includes('填写') || 
+               lowerDesc.includes('type') || lowerDesc.includes('fill')) {
+        action = 'fill';
+        // 尝试提取选择器和值
+        const fillMatch = description.match(/(?:输入|填写|fill|type)\s*(?:到|到|in|into)?\s*[：:]\s*(.+?)(?:\s*，|,|\s*值为|值为|value\s*[:：]\s*)(.+)/i) ||
+                        description.match(/(?:输入|填写|fill|type)\s+(.+?)\s+(.+)/i);
+        if (fillMatch) {
+          selector = fillMatch[1].trim();
+          value = fillMatch[2].trim();
+        }
+      }
+      // 识别等待操作
+      else if (lowerDesc.includes('等待') || lowerDesc.includes('wait')) {
+        action = 'wait';
+        const waitMatch = description.match(/(\d+)\s*(?:秒|秒|s|second)/i);
+        if (waitMatch) {
+          value = waitMatch[1];
+        }
+      }
+      // 识别断言操作
+      else if (lowerDesc.includes('验证') || lowerDesc.includes('检查') || 
+               lowerDesc.includes('断言') || lowerDesc.includes('expect') ||
+               lowerDesc.includes('应该') || lowerDesc.includes('should') ||
+               lowerDesc.includes('出现') || lowerDesc.includes('显示')) {
+        action = 'expect';
+        // 提取要验证的元素或文本
+        selector = description
+          .replace(/^\d+[\.、\)]\s*/, '') // 移除编号
+          .replace(/(?:验证|检查|断言|expect|应该|should|出现|显示)\s*/i, '') // 移除操作词
+          .split('->')[0] // 移除箭头后的描述
+          .trim();
+      }
+      // 默认：如果是第一个步骤且包含"打开"、"访问"等，视为导航
+      else if (index === 0 && (lowerDesc.includes('打开') || lowerDesc.includes('访问'))) {
+        action = 'navigate';
+        if (lowerDesc.includes('百度')) {
+          url = 'https://www.baidu.com';
+        } else {
+          url = description.replace(/^(打开|访问)\s*/i, '').trim();
+          if (!url.startsWith('http')) {
+            url = `https://${url}`;
+          }
+        }
+      }
+      
+      return {
+        id: `step-${index + 1}`,
+        action,
+        description,
+        order: index + 1,
+        selector: selector || '',
+        value: value || '',
+        url: url || undefined
+      };
+    });
   }
 
   // 🔥 解析断言
@@ -973,7 +980,8 @@ export class TestExecutionService {
     }));
   }
 
-  // 🔥 执行步骤（带重试）
+  // 🔥 执行步骤（带重试）- 已废弃，使用 executeStepWithRetryAndFallback 代替
+  // @deprecated 此方法已被 executeStepWithRetryAndFallback 替代，保留仅为向后兼容
   private async executeStepWithRetry(step: TestStep, runId: string) {
     const maxRetries = 2;
     let attempt = 0;
@@ -1617,7 +1625,14 @@ ${elements.map((el, index) => `${index + 1}. ${el.ref}: ${el.role} "${el.text}"`
             // 🔥 关键修复：增加MCP命令执行验证
             this.addLog(runId, `🔧 正在执行MCP命令: ${mcpCommand.name}`, 'info');
 
-            const result = await this.mcpClient.callTool(mcpCommand);
+            // 🔥 新增：执行MCP命令时显示等待状态
+            const result = await this.executeWithWaitingLog(
+              runId,
+              `执行MCP命令: ${mcpCommand.name}`,
+              async () => {
+                return await this.mcpClient.callTool(mcpCommand);
+              }
+            );
             console.log(`✅ [${runId}] MCP工具调用成功: ${mcpCommand.name}`);
 
             // 🔥 详细检查MCP返回结果
@@ -1704,13 +1719,21 @@ ${elements.map((el, index) => `${index + 1}. ${el.ref}: ${el.role} "${el.text}"`
 
       // 如果步骤没有预解析的action和参数，则通过AI解析
       console.log(`🤖 [${runId}] 步骤未预解析，通过AI重新解析步骤`);
+      this.addLog(runId, `🤖 正在通过AI解析步骤: ${step.description}`, 'info');
 
       // 获取当前页面快照用于AI决策
       const snapshot = await this.mcpClient.getSnapshot();
 
       // 通过AI解析步骤描述生成MCP命令
       try {
-        const aiResult = await this.aiParser.parseNextStep(step.description, snapshot, runId);
+        // 🔥 新增：AI解析时显示等待状态
+        const aiResult = await this.executeWithWaitingLog(
+          runId,
+          'AI正在解析步骤',
+          async () => {
+            return await this.aiParser.parseNextStep(step.description, snapshot, runId);
+          }
+        );
 
         if (!aiResult.success || !aiResult.step) {
           throw new Error(`AI解析失败: ${aiResult.error}`);
@@ -1944,6 +1967,7 @@ ${elements.map((el, index) => `${index + 1}. ${el.ref}: ${el.role} "${el.text}"`
     const urlMatch = snapshot.match(/Page URL: ([^\n]+)/);
     return urlMatch ? urlMatch[1].trim() : null;
   }
+
 
 
   // 🔥 增强：每个步骤执行后的截图方法 - 支持数据库存储和本地文件验证
@@ -2413,12 +2437,31 @@ ${elements.map((el, index) => `${index + 1}. ${el.ref}: ${el.role} "${el.text}"`
         console.log(`⏱️ [${runId}] 记录实际开始执行时间: ${testRun.actualStartedAt.toISOString()}`);
       }
 
+      // 🔥 记录真实的测试执行完成时间（actualEndedAt）
+      // 这是测试真正执行完成的时间，不包括后续的清理、保存等工作
+      if ((status === 'completed' || status === 'failed' || status === 'cancelled' || status === 'error') && !testRun.finishedAt) {
+        testRun.finishedAt = new Date();
+        console.log(`⏱️ [${runId}] 记录真实执行完成时间（actualEndedAt）: ${testRun.finishedAt.toISOString()}`);
+        
+        // 🔥 修复：测试完成时，确保进度为100%，completedSteps等于totalSteps
+        if (status === 'completed' || status === 'failed') {
+          testRun.progress = 100;
+          if (testRun.totalSteps && testRun.totalSteps > 0) {
+            testRun.completedSteps = testRun.totalSteps;
+          }
+          console.log(`📊 [${runId}] 测试完成，设置进度为100%，完成步骤: ${testRun.completedSteps}/${testRun.totalSteps}`);
+        }
+      }
+
       testRun.status = status;
 
-      // 🔥 新增：实时更新执行时长
-      if (testRun.startTime && (status === 'running' || status === 'completed' || status === 'failed')) {
-        testRun.duration = this.formatDuration(testRun.startTime);
+      // 🔥 修复：实时更新执行时长（运行中时），完成时不在这里更新（在 finalizeTestRun 中更新）
+      if (testRun.startTime && status === 'running') {
+        // 运行中时，使用实际开始时间或开始时间计算
+        const effectiveStartTime = testRun.actualStartedAt || testRun.startTime;
+        testRun.duration = this.formatDuration(effectiveStartTime);
       }
+      // 注意：completed 和 failed 状态的时长在 finalizeTestRun 中计算，这里不更新
 
       const logLevel = (status === 'failed' || status === 'error') ? 'error' : 'info';
       if (message) {
@@ -2440,10 +2483,13 @@ ${elements.map((el, index) => `${index + 1}. ${el.ref}: ${el.role} "${el.text}"`
         }
       });
 
-      // 🔥 异步同步到数据库（不阻塞执行）
-      this.syncTestRunToDatabase(runId).catch(err => {
-        console.warn(`⚠️ [${runId}] 同步数据库失败:`, err.message);
-      });
+      // 🔥 移除：不在这里自动同步数据库，避免重复
+      // 同步会在以下时机进行：
+      // 1. finalizeTestRun() 中同步一次
+      // 2. 测试完成后强制同步一次
+      // 在 updateTestRunStatus 中同步会导致重复打印日志
+      
+      // 🔥 已移除自动同步，避免重复
     }
   }
 
@@ -2464,6 +2510,42 @@ ${elements.map((el, index) => `${index + 1}. ${el.ref}: ${el.role} "${el.text}"`
 
   // 🚀 Phase 6: 日志批量处理队列，解决同步WebSocket瓶颈
   private logQueue: Map<string, { logs: TestLog[]; timer?: NodeJS.Timeout }> = new Map();
+
+  /**
+   * 🔥 新增：在长时间操作时输出等待状态日志（只输出一次）
+   * @param runId 测试运行ID
+   * @param operationName 操作名称（如"AI解析元素"、"执行MCP命令"等）
+   */
+  private startWaitingLog(runId: string, operationName: string): void {
+    // 只输出一次等待提示
+    this.addLog(runId, `⏳ ${operationName}，请稍候...`, 'info');
+  }
+
+  /**
+   * 🔥 新增：停止等待状态日志输出（已简化，不再需要）
+   * @param runId 测试运行ID
+   */
+  private stopWaitingLog(runId: string): void {
+    // 不再需要清除定时器，因为已经改为只输出一次
+  }
+
+  /**
+   * 🔥 新增：执行长时间操作并自动输出等待状态日志（只输出一次）
+   * @param runId 测试运行ID
+   * @param operationName 操作名称
+   * @param operation 要执行的操作（异步函数）
+   */
+  private async executeWithWaitingLog<T>(
+    runId: string,
+    operationName: string,
+    operation: () => Promise<T>
+  ): Promise<T> {
+    // 输出一次等待日志
+    this.startWaitingLog(runId, operationName);
+    
+    // 执行操作
+    return await operation();
+  }
 
   private addLog(runId: string, message: string, level?: 'info' | 'success' | 'warning' | 'error') {
     const testRun = testRunStore.get(runId);
@@ -2587,23 +2669,132 @@ ${elements.map((el, index) => `${index + 1}. ${el.ref}: ${el.role} "${el.text}"`
   }
 
   private async finalizeTestRun(runId: string) {
+    const testRun = testRunStore.get(runId);
+    if (!testRun) return;
+
     // 🚀 Phase 6: 确保所有日志都被发送
+    this.flushLogQueue(runId);
+    
+    // 延迟一小段时间确保所有异步日志都已添加
+    await new Promise(resolve => setTimeout(resolve, 50));
+    
+    // 再次刷新，确保没有遗漏的日志
     this.flushLogQueue(runId);
     this.logQueue.delete(runId);
 
-    const testRun = testRunStore.get(runId);
-    if (testRun) {
-      testRun.endedAt = new Date();
-      // 🔥 优化：优先使用actualStartedAt计算实际执行时长，回退到startedAt保证兼容性
-      const effectiveStartTime = testRun.actualStartedAt || testRun.startedAt;
-      const duration = this.calculateDuration(effectiveStartTime, testRun.endedAt);
-      console.log(`⏱️ [${runId}] 计算执行时长: ${duration} (${testRun.actualStartedAt ? '实际' : '入队'}开始时间)`);
-      this.wsManager.broadcast({ type: 'test_update', runId, data: { status: testRun.status, endedAt: testRun.endedAt, duration } });
+    // 🔥 从日志中提取准确的开始和结束时间
+    let logStartTime: Date | undefined;
+    let logEndTime: Date | undefined;
+    
+    if (testRun.logs && testRun.logs.length > 0) {
+      const sortedLogs = [...testRun.logs].sort((a, b) => {
+        const timeA = a.timestamp instanceof Date ? a.timestamp.getTime() : new Date(a.timestamp).getTime();
+        const timeB = b.timestamp instanceof Date ? b.timestamp.getTime() : new Date(b.timestamp).getTime();
+        return timeA - timeB;
+      });
+      
+      const firstLog = sortedLogs[0];
+      const lastLog = sortedLogs[sortedLogs.length - 1];
+      
+      logStartTime = firstLog.timestamp instanceof Date ? firstLog.timestamp : new Date(firstLog.timestamp);
+      logEndTime = lastLog.timestamp instanceof Date ? lastLog.timestamp : new Date(lastLog.timestamp);
+      
+      console.log(`📋 [${runId}] finalizeTestRun - 从日志提取时间:`, {
+        日志数量: sortedLogs.length,
+        开始时间: logStartTime.toISOString(),
+        结束时间: logEndTime.toISOString()
+      });
+    }
+    
+    // 🔥 优先使用日志时间，如果没有则使用其他时间
+    const effectiveStartTime = logStartTime || testRun.actualStartedAt || testRun.startedAt;
+    const effectiveEndTime = logEndTime || testRun.finishedAt || testRun.endedAt || new Date();
+    
+    // 设置 endedAt（用于 WebSocket 消息）
+    testRun.endedAt = effectiveEndTime;
+    if (!testRun.finishedAt) {
+      testRun.finishedAt = effectiveEndTime;
+    }
+    
+    // 🔥 关键修复：使用日志时间计算执行时长
+    const duration = this.calculateDuration(effectiveStartTime, effectiveEndTime);
+    console.log(`⏱️ [${runId}] 计算执行时长（基于日志时间）: ${duration} (开始: ${effectiveStartTime.toISOString()}, 结束: ${effectiveEndTime.toISOString()})`);
+    
+    // 🔥 修复：更新 testRun.duration，确保保存到数据库
+    // 使用统一的格式：保留三位小数（如 "20.923s"），与 calculateDuration 保持一致
+    testRun.duration = duration;
+    
+    // 🔥 修复：只在真正完成所有清理工作后，才发送 test_complete 消息
+    // 确保前端不会在测试还在执行时收到完成提示
+    const finalStatus = testRun.status;
+    if (finalStatus === 'completed' || finalStatus === 'failed' || finalStatus === 'cancelled' || finalStatus === 'error') {
+      // 🔥 修复：确保完成时进度为100%，completedSteps等于totalSteps
+      if (finalStatus === 'completed' || finalStatus === 'failed') {
+        testRun.progress = 100;
+        if (testRun.totalSteps && testRun.totalSteps > 0) {
+          testRun.completedSteps = testRun.totalSteps;
+        }
+      }
+      
+      // 发送最终的 test_update 消息
+      this.wsManager.broadcast({ 
+        type: 'test_update', 
+        runId, 
+        data: { 
+          status: finalStatus, 
+          endedAt: testRun.endedAt, 
+          duration,
+          progress: testRun.progress,
+          completedSteps: testRun.completedSteps ?? testRun.totalSteps ?? 0,
+          totalSteps: testRun.totalSteps ?? 0,
+          passedSteps: testRun.passedSteps ?? 0,
+          failedSteps: testRun.failedSteps ?? 0
+        } 
+      });
+      
+      // 🔥 修复：先同步到数据库，确保数据持久化，然后再发送完成消息
+      try {
+        await this.syncTestRunToDatabase(runId);
+        console.log(`💾 [${runId}] 测试完成，已同步到数据库（duration: ${duration}）`);
+      } catch (err) {
+        console.error(`❌ [${runId}] 同步数据库失败:`, err);
+      }
+      
+      // 🔥 延迟发送 test_complete 消息，确保数据库同步完成
+      // 使用 setTimeout 确保消息在下一个事件循环中发送，让数据库同步先完成
+        setTimeout(() => {
+          console.log(`✅ [${runId}] 测试真正完成，发送 test_complete 消息（duration: ${duration}，基于日志时间）`);
+          this.wsManager.sendTestComplete(runId, {
+            status: finalStatus,
+            startedAt: effectiveStartTime, // 🔥 使用日志时间（最准确）
+            endedAt: effectiveEndTime, // 🔥 使用日志时间（最准确）
+            actualStartedAt: logStartTime || testRun.actualStartedAt, // 🔥 日志开始时间
+            actualEndedAt: logEndTime || testRun.finishedAt, // 🔥 日志结束时间
+            duration,
+            progress: testRun.progress,
+            completedSteps: testRun.completedSteps ?? testRun.totalSteps ?? 0,
+            totalSteps: testRun.totalSteps ?? 0,
+            passedSteps: testRun.passedSteps ?? 0,
+            failedSteps: testRun.failedSteps ?? 0
+          });
+        }, 200); // 延迟200ms，确保数据库同步完成
+    } else {
+      // 非完成状态，只发送 test_update
+      this.wsManager.broadcast({ 
+        type: 'test_update', 
+        runId, 
+        data: { 
+          status: finalStatus, 
+          endedAt: testRun.endedAt, 
+          duration 
+        } 
+      });
     }
   }
 
   private calculateDuration(startTime: Date, endTime: Date): string {
-    return ((endTime.getTime() - startTime.getTime()) / 1000).toFixed(2) + 's';
+    // 🔥 修复：保留三位小数，确保精度（如 5.001s）
+    return ((endTime.getTime() - startTime.getTime()) / 1000).toFixed(3) + 's';
   }
 
   private extractTimeoutFromDescription(description: string): number {
@@ -3891,6 +4082,17 @@ ${elements.map((el, index) => `${index + 1}. ${el.ref}: ${el.role} "${el.text}"`
       console.log(`📁 [${runId}] 开始保存测试证据...`);
       this.addLog(runId, `📁 正在保存测试证据...`, 'info');
 
+      // 🔥 确保 artifacts 目录存在
+      const artifactsDir = this.evidenceService.getArtifactsDir();
+      const runArtifactsDir = path.join(artifactsDir, runId);
+      try {
+        await fsPromises.mkdir(runArtifactsDir, { recursive: true });
+        console.log(`📁 [${runId}] artifacts 目录已确保存在: ${runArtifactsDir}`);
+      } catch (dirError: any) {
+        console.error(`❌ [${runId}] 创建 artifacts 目录失败:`, dirError.message);
+        this.addLog(runId, `⚠️ 创建 artifacts 目录失败: ${dirError.message}`, 'warning');
+      }
+
       // 1. 保存截图证据 - 将screenshots目录中的截图复制到artifacts
       await this.saveScreenshotEvidence(runId);
 
@@ -3919,17 +4121,49 @@ ${elements.map((el, index) => `${index + 1}. ${el.ref}: ${el.role} "${el.text}"`
     try {
       // 获取该测试运行的所有截图
       const screenshots = await this.screenshotService.getScreenshotsByRunId(runId);
-      
+
       if (screenshots.length === 0) {
         console.log(`📸 [${runId}] 没有截图需要保存`);
         return;
       }
 
+      console.log(`🔍 [${runId}] 查询测试运行截图: ${runId}`, {
+        totalFound: screenshots.length,
+        orderBy: 'step_index',
+        orderDirection: 'asc'
+      });
+
+      // 🔥 修复：检查 artifacts 目录中已存在的文件，避免重复保存
+      const artifactsDir = this.evidenceService.getArtifactsDir();
+      const runArtifactsDir = path.join(artifactsDir, runId);
+      let existingFiles: Set<string> = new Set();
+      try {
+        const files = await fsPromises.readdir(runArtifactsDir);
+        existingFiles = new Set(files.filter(f => f.endsWith('.png')));
+      } catch {
+        // 目录不存在，继续处理
+      }
+
       let savedCount = 0;
+      let skippedCount = 0;
       for (const screenshot of screenshots) {
         try {
-          const screenshotPath = path.join(process.cwd(), screenshot.filePath);
-          
+          // 🔥 修复：检查文件是否已在 artifacts 中存在
+          if (existingFiles.has(screenshot.fileName)) {
+            console.log(`⚠️ [${runId}] 截图已存在于 artifacts，跳过: ${screenshot.fileName}`);
+            skippedCount++;
+            continue;
+          }
+
+          // filePath 应该是绝对路径
+          const screenshotPath = screenshot.filePath;
+
+          // 验证filePath不为空
+          if (!screenshotPath) {
+            console.warn(`⚠️ [${runId}] 截图记录缺少文件路径: ${screenshot.fileName} (ID: ${screenshot.id})`);
+            continue;
+          }
+
           // 检查截图文件是否存在
           if (await this.fileExists(screenshotPath)) {
             const screenshotBuffer = await fsPromises.readFile(screenshotPath);
@@ -3940,14 +4174,26 @@ ${elements.map((el, index) => `${index + 1}. ${el.ref}: ${el.role} "${el.text}"`
               screenshot.fileName
             );
             savedCount++;
+          } else {
+            console.warn(`⚠️ [${runId}] 截图文件不存在: ${screenshotPath} (ID: ${screenshot.id})`);
           }
         } catch (error: any) {
-          console.warn(`⚠️ [${runId}] 保存截图证据失败: ${screenshot.fileName}`, error.message);
+          console.warn(`⚠️ [${runId}] 保存截图证据失败: ${screenshot.fileName} (ID: ${screenshot.id})`, error.message);
         }
       }
 
-      console.log(`📸 [${runId}] 已保存 ${savedCount}/${screenshots.length} 个截图证据`);
-      
+      console.log(`📸 [${runId}] 已保存 ${savedCount}/${screenshots.length} 个截图证据，跳过 ${skippedCount} 个已存在的文件`);
+
+      // 如果没有保存任何截图，记录警告
+      if (savedCount === 0 && screenshots.length > 0) {
+        if (skippedCount > 0) {
+          console.log(`ℹ️ [${runId}] 所有截图已存在于 artifacts 目录，无需重复保存`);
+        } else {
+          console.warn(`⚠️ [${runId}] 警告: 找到 ${screenshots.length} 个截图记录但未能保存任何文件`);
+          console.warn(`⚠️ [${runId}] 可能的原因: 截图文件已被删除，或数据库中的路径不正确`);
+        }
+      }
+
     } catch (error: any) {
       console.error(`❌ [${runId}] 保存截图证据失败:`, error.message);
     }
@@ -3964,6 +4210,19 @@ ${elements.map((el, index) => `${index + 1}. ${el.ref}: ${el.role} "${el.text}"`
         return;
       }
 
+      // 🔥 修复：检查日志文件是否已存在
+      const logFilename = `${runId}-execution.log`;
+      const artifactsDir = this.evidenceService.getArtifactsDir();
+      const logFilePath = path.join(artifactsDir, runId, logFilename);
+      
+      try {
+        await fsPromises.access(logFilePath);
+        console.log(`⚠️ [${runId}] 日志文件已存在，跳过保存: ${logFilename}`);
+        return;
+      } catch {
+        // 文件不存在，继续保存
+      }
+
       // 生成日志内容
       const logContent = testRun.logs
         .map(log => {
@@ -3974,7 +4233,6 @@ ${elements.map((el, index) => `${index + 1}. ${el.ref}: ${el.role} "${el.text}"`
 
       // 保存为日志文件
       const logBuffer = Buffer.from(logContent, 'utf8');
-      const logFilename = `${runId}-execution.log`;
       
       await this.evidenceService.saveBufferArtifact(
         runId,
@@ -3995,15 +4253,321 @@ ${elements.map((el, index) => `${index + 1}. ${el.ref}: ${el.role} "${el.text}"`
    */
   private async saveAdditionalEvidence(runId: string): Promise<void> {
     try {
-      // 这里可以扩展保存trace文件、视频录制等
-      // 目前作为占位符，未来可以添加更多证据类型
       console.log(`🔍 [${runId}] 检查其他证据类型...`);
 
-      // TODO: 如果启用了trace录制，保存trace文件
-      // TODO: 如果启用了视频录制，保存视频文件
+      // 🔥 修复：对于 Playwright 模式，视频和 trace 文件在 context close 后处理
+      // 这里只处理 MCP 模式的证据，或者已经存在的文件
+      // Playwright 模式的视频和 trace 文件由 processPlaywrightArtifacts 处理
+      
+      // 1. 查找并保存 trace 文件（MCP 模式或已存在的文件）
+      await this.saveTraceEvidence(runId);
+
+      // 2. 查找并保存视频文件（MCP 模式或已存在的文件）
+      // 注意：Playwright 模式的视频文件需要在 context close 后处理
+      await this.saveVideoEvidence(runId);
 
     } catch (error: any) {
       console.error(`❌ [${runId}] 保存其他证据失败:`, error.message);
+    }
+  }
+
+  /**
+   * 保存 trace 文件
+   */
+  private async saveTraceEvidence(runId: string): Promise<void> {
+    try {
+      const artifactsDir = this.evidenceService.getArtifactsDir();
+      const runArtifactsDir = path.join(artifactsDir, runId);
+      
+      // 🔥 修复：优先检查 artifacts/{runId} 目录中的 trace.zip（Playwright Test Runner 生成）
+      const possibleTraceFiles = [
+        path.join(runArtifactsDir, 'trace.zip'), // Playwright Test Runner 直接生成的
+        path.join(process.cwd(), 'test-results', `${runId}-trace.zip`),
+        path.join(process.cwd(), 'playwright-report', `${runId}-trace.zip`),
+        path.join(process.cwd(), 'traces', `${runId}-trace.zip`),
+      ];
+
+      let traceFileFound = false;
+
+      // 首先检查已知的 trace 文件路径
+      for (const traceFilePath of possibleTraceFiles) {
+        try {
+          if (await this.fileExists(traceFilePath)) {
+            // 🔥 修复：检查是否已经保存过（避免重复保存）
+            const existingArtifacts = await this.evidenceService.getRunArtifacts(runId);
+            const traceFilename = `${runId}-trace.zip`;
+            const alreadySaved = existingArtifacts.some(a => 
+              a.type === 'trace' && a.filename === traceFilename
+            );
+            
+            if (alreadySaved) {
+              // 如果已保存，删除原始的 trace.zip 文件（避免重复）
+              if (traceFilePath.endsWith('trace.zip') && traceFilePath !== path.join(runArtifactsDir, traceFilename)) {
+                try {
+                  await fsPromises.unlink(traceFilePath);
+                  console.log(`🗑️ [${runId}] 已删除重复的 trace.zip 文件: ${path.basename(traceFilePath)}`);
+                } catch (unlinkError) {
+                  // 忽略删除失败
+                }
+              }
+              traceFileFound = true;
+              break;
+            }
+            
+            // 🔥 修复：如果是 trace.zip，重命名而不是复制
+            const renamedTracePath = path.join(runArtifactsDir, traceFilename);
+            if (traceFilePath.endsWith('trace.zip') && traceFilePath !== renamedTracePath) {
+              // 重命名文件
+              await fsPromises.rename(traceFilePath, renamedTracePath);
+              console.log(`📦 [${runId}] Trace 文件已重命名: ${traceFilename}`);
+              
+              // 保存到数据库
+              const traceBuffer = await fsPromises.readFile(renamedTracePath);
+              await this.evidenceService.saveBufferArtifact(
+                runId,
+                'trace',
+                traceBuffer,
+                traceFilename
+              );
+            } else {
+              // 其他路径的文件，直接读取并保存
+              const traceBuffer = await fsPromises.readFile(traceFilePath);
+              await this.evidenceService.saveBufferArtifact(
+                runId,
+                'trace',
+                traceBuffer,
+                traceFilename
+              );
+            }
+            
+            console.log(`📦 [${runId}] 已保存 trace 文件: ${traceFilename}`);
+            traceFileFound = true;
+            break;
+          }
+        } catch (error: any) {
+          // 忽略文件不存在的错误
+          continue;
+        }
+      }
+
+      // 如果未找到，尝试在目录中搜索
+      if (!traceFileFound) {
+        const possibleTraceDirs = [
+          runArtifactsDir,
+          path.join(process.cwd(), 'test-results'),
+          path.join(process.cwd(), 'playwright-report'),
+          path.join(process.cwd(), 'traces'),
+        ];
+
+        for (const traceDir of possibleTraceDirs) {
+          try {
+            if (!(await this.fileExists(traceDir))) {
+              continue;
+            }
+
+            // 查找所有 .zip 文件（trace 文件通常是 zip 格式）
+            const files = await fsPromises.readdir(traceDir, { withFileTypes: true });
+            
+            for (const file of files) {
+              if (file.isFile() && file.name.endsWith('.zip') && 
+                  (file.name === 'trace.zip' || file.name.includes('trace'))) {
+                const traceFilePath = path.join(traceDir, file.name);
+                
+                // 🔥 修复：检查是否已经保存过
+                const existingArtifacts = await this.evidenceService.getRunArtifacts(runId);
+                const traceFilename = `${runId}-trace.zip`;
+                const alreadySaved = existingArtifacts.some(a => 
+                  a.type === 'trace' && a.filename === traceFilename
+                );
+                
+                if (alreadySaved) {
+                  // 如果已保存，删除原始的 trace.zip 文件
+                  if (file.name === 'trace.zip') {
+                    try {
+                      await fsPromises.unlink(traceFilePath);
+                      console.log(`🗑️ [${runId}] 已删除重复的 trace.zip 文件`);
+                    } catch (unlinkError) {
+                      // 忽略删除失败
+                    }
+                  }
+                  traceFileFound = true;
+                  break;
+                }
+                
+                // 🔥 修复：如果是 trace.zip，重命名而不是复制
+                const renamedTracePath = path.join(runArtifactsDir, traceFilename);
+                if (file.name === 'trace.zip' && traceFilePath !== renamedTracePath) {
+                  // 重命名文件
+                  await fsPromises.rename(traceFilePath, renamedTracePath);
+                  console.log(`📦 [${runId}] Trace 文件已重命名: ${traceFilename}`);
+                  
+                  // 保存到数据库
+                  const traceBuffer = await fsPromises.readFile(renamedTracePath);
+                  await this.evidenceService.saveBufferArtifact(
+                    runId,
+                    'trace',
+                    traceBuffer,
+                    traceFilename
+                  );
+                } else {
+                  // 其他文件，直接读取并保存
+                  const traceBuffer = await fsPromises.readFile(traceFilePath);
+                  await this.evidenceService.saveBufferArtifact(
+                    runId,
+                    'trace',
+                    traceBuffer,
+                    traceFilename
+                  );
+                }
+                
+                console.log(`📦 [${runId}] 已保存 trace 文件: ${traceFilename}`);
+                traceFileFound = true;
+                break;
+              }
+            }
+            
+            if (traceFileFound) break;
+          } catch (dirError: any) {
+            // 忽略目录不存在的错误
+            continue;
+          }
+        }
+      }
+
+      if (!traceFileFound) {
+        console.log(`📦 [${runId}] 未找到 trace 文件`);
+        console.log(`   ℹ️  说明: 当前使用 MCP 客户端执行测试，MCP 可能不支持自动生成 trace 文件`);
+        console.log(`   ℹ️  如需 trace 文件，请使用 Playwright Test Runner 执行测试`);
+      }
+    } catch (error: any) {
+      console.error(`❌ [${runId}] 保存 trace 文件失败:`, error.message);
+    }
+  }
+
+  /**
+   * 保存视频文件
+   */
+  private async saveVideoEvidence(runId: string): Promise<void> {
+    try {
+      const artifactsDir = this.evidenceService.getArtifactsDir();
+      const runArtifactsDir = path.join(artifactsDir, runId);
+      
+      // 🔥 修复：检查是否已经在 processPlaywrightArtifacts 中处理过
+      const videoFilename = `${runId}-video.webm`;
+      const renamedVideoPath = path.join(runArtifactsDir, videoFilename);
+      
+      try {
+        await fsPromises.access(renamedVideoPath);
+        const stats = await fsPromises.stat(renamedVideoPath);
+        
+        // 检查文件大小，确保不是空文件
+        if (stats.size > 0) {
+          // 检查数据库记录
+          const existingArtifacts = await this.evidenceService.getRunArtifacts(runId);
+          const alreadySaved = existingArtifacts.some(a => 
+            a.type === 'video' && a.filename === videoFilename
+          );
+          
+          if (!alreadySaved) {
+            // 保存到数据库
+            const videoBuffer = await fsPromises.readFile(renamedVideoPath);
+            await this.evidenceService.saveBufferArtifact(
+              runId,
+              'video',
+              videoBuffer,
+              videoFilename
+            );
+            console.log(`🎥 [${runId}] 视频文件已保存到数据库: ${videoFilename} (${stats.size} bytes)`);
+          } else {
+            console.log(`🎥 [${runId}] 视频文件已存在，跳过重复保存: ${videoFilename}`);
+          }
+          return;
+        } else {
+          console.warn(`⚠️ [${runId}] 视频文件大小为 0，将在 processPlaywrightArtifacts 中处理: ${videoFilename}`);
+        }
+      } catch {
+        // 重命名后的文件不存在，继续查找原始文件
+      }
+
+      // 如果未找到，尝试在其他目录中搜索（兼容旧逻辑）
+      const possibleVideoDirs = [
+        runArtifactsDir,
+        path.join(process.cwd(), 'test-results'),
+        path.join(process.cwd(), 'videos'),
+      ];
+
+      for (const videoDir of possibleVideoDirs) {
+        try {
+          if (!(await this.fileExists(videoDir))) {
+            continue;
+          }
+
+          const files = await fsPromises.readdir(videoDir, { withFileTypes: true });
+          
+          // 查找哈希名称的视频文件（Playwright 生成的原始文件）
+          const videoFiles = files.filter(file => 
+            file.isFile() && 
+            (file.name.endsWith('.webm') || file.name.endsWith('.mp4')) &&
+            !file.name.includes(runId) && // 排除已经重命名的文件
+            file.name.match(/^[a-f0-9]{32,}\.(webm|mp4)$/i) // 匹配哈希名称格式
+          );
+          
+          if (videoFiles.length > 0) {
+            // 按修改时间排序，获取最新的视频文件
+            const videoFilesWithStats = await Promise.all(
+              videoFiles.map(async (file) => {
+                const filePath = path.join(videoDir, file.name);
+                const stats = await fsPromises.stat(filePath);
+                return { file, path: filePath, stats };
+              })
+            );
+            
+            videoFilesWithStats.sort((a, b) => b.stats.mtime.getTime() - a.stats.mtime.getTime());
+            const { file: videoFile, path: videoPath, stats: videoStats } = videoFilesWithStats[0];
+            
+            // 检查文件大小，确保不是空文件
+            if (videoStats.size > 0) {
+              const ext = videoFile.name.split('.').pop() || 'webm';
+              const finalVideoFilename = `${runId}-video.${ext}`;
+              
+              // 检查是否已经保存过
+              const existingArtifacts = await this.evidenceService.getRunArtifacts(runId);
+              const alreadySaved = existingArtifacts.some(a => 
+                a.type === 'video' && a.filename === finalVideoFilename
+              );
+              
+              if (alreadySaved) {
+                console.log(`🎥 [${runId}] 视频文件已存在，跳过重复保存: ${finalVideoFilename}`);
+                return;
+              }
+              
+              // 重命名文件（而不是复制）
+              const finalVideoPath = path.join(runArtifactsDir, finalVideoFilename);
+              await fsPromises.rename(videoPath, finalVideoPath);
+              
+              // 保存到数据库
+              const videoBuffer = await fsPromises.readFile(finalVideoPath);
+              await this.evidenceService.saveBufferArtifact(
+                runId,
+                'video',
+                videoBuffer,
+                finalVideoFilename
+              );
+              
+              console.log(`🎥 [${runId}] 视频文件已保存: ${finalVideoFilename} (${videoStats.size} bytes)`);
+              return;
+            }
+          }
+        } catch (dirError: any) {
+          continue;
+        }
+      }
+
+      console.log(`🎥 [${runId}] 未找到视频文件`);
+      console.log(`   ℹ️  说明: 当前使用 MCP 客户端执行测试，MCP 可能不支持自动生成视频文件`);
+      console.log(`   ℹ️  如需视频录制，请使用 Playwright Test Runner 执行测试`);
+    } catch (error: any) {
+      console.error(`❌ [${runId}] 保存视频文件失败:`, error.message);
     }
   }
 
@@ -4065,6 +4629,1021 @@ ${elements.map((el, index) => `${index + 1}. ${el.ref}: ${el.role} "${el.text}"`
     } catch (error: any) {
       console.error('❌ 批量删除测试运行失败:', error);
       throw error;
+    }
+  }
+
+  // #endregion
+
+  // #region Playwright Test Runner 支持
+
+  /**
+   * 初始化 MCP 客户端
+   */
+  private async initializeMcpClient(runId: string): Promise<void> {
+    console.log(`🚀 [${runId}] 正在初始化MCP客户端...`);
+    this.addLog(runId, `🚀 正在初始化MCP客户端...`, 'info');
+    console.log(`📊 [${runId}] MCP客户端状态: isInitialized=${this.mcpClient['isInitialized']}`);
+
+    // 🚀 Phase 5: 关键性能优化 - 重用浏览器会话避免重复启动
+    await this.mcpClient.initialize({
+      reuseSession: true,  // 🚀 重用浏览器实例，节省3-5秒启动时间
+      contextState: null
+    });
+    console.log(`✅ [${runId}] MCP客户端初始化成功`);
+    this.addLog(runId, `✅ MCP客户端初始化成功，浏览器已启动`, 'success');
+
+    // 🚀 Phase 5: 先导航到初始页面，再启动实时流
+    // 避免"No open pages available"错误
+    try {
+      console.log(`🌐 [${runId}] 正在导航到初始页面...`);
+      const navStep: TestStep = {
+        id: 'init-nav-' + Date.now(),
+        action: 'navigate' as any,
+        url: 'about:blank',
+        description: '导航到初始页面',
+        order: 0
+      };
+      await this.mcpClient.executeMcpStep(navStep, runId);
+      console.log(`✅ [${runId}] 已导航到初始页面`);
+    } catch (navError) {
+      console.warn(`⚠️ [${runId}] 初始页面导航失败: ${navError.message}`);
+      // 不阻断执行，继续启动实时流
+    }
+
+    console.log(`⏳ [${runId}] MCP客户端初始化完成，开始启动实时流`);
+  }
+
+  /**
+   * 初始化 Playwright Test Runner
+   */
+  private async initializePlaywrightRunner(runId: string, options: {
+    enableTrace?: boolean;
+    enableVideo?: boolean;
+  }): Promise<void> {
+    console.log(`🚀 [${runId}] 正在初始化 Playwright Test Runner...`);
+    this.addLog(runId, `🚀 正在初始化 Playwright Test Runner...`, 'info');
+
+    // 创建 Playwright Test Runner 实例
+    const artifactsDir = this.evidenceService.getArtifactsDir();
+    this.playwrightRunner = new PlaywrightTestRunner(
+      this.evidenceService,
+      this.streamService,
+      artifactsDir
+    );
+
+    await this.playwrightRunner.initialize(runId, {
+      headless: false,
+      enableTrace: options.enableTrace !== false,
+      enableVideo: options.enableVideo !== false
+    });
+
+    console.log(`✅ [${runId}] Playwright Test Runner 初始化成功`);
+    this.addLog(runId, `✅ Playwright Test Runner 初始化成功，浏览器已启动`, 'success');
+    this.addLog(runId, `📦 Trace 录制: ${options.enableTrace !== false ? '已启用' : '禁用'}`, 'info');
+    this.addLog(runId, `🎥 Video 录制: ${options.enableVideo !== false ? '已启用' : '禁用'}`, 'info');
+
+    // 启动实时流（如果 Playwright Test Runner 支持）
+    const page = this.playwrightRunner.getPage();
+    if (page) {
+      try {
+        this.streamService.startStream(runId, page);
+        console.log(`📺 [${runId}] 实时流已启动`);
+        this.addLog(runId, `📺 实时流: 已启用`, 'success');
+      } catch (streamError) {
+        console.warn(`⚠️ [${runId}] 启动实时流失败:`, streamError);
+        this.addLog(runId, `⚠️ 启动实时流失败: ${(streamError as Error).message}`, 'warning');
+      }
+    }
+  }
+
+  /**
+   * 使用 MCP 客户端执行测试（原有流程）
+   */
+  private async executeWithMcpClient(runId: string, testCase: TestCase, testRun: TestRun): Promise<void> {
+    let remainingSteps = testCase.steps;
+    let stepIndex = 0;
+    let previousStepsText = '';
+    const maxSteps = 50;
+    const estimatedTotalSteps = this.estimateStepsCount(testCase.steps);
+    
+    if (testRun) {
+      testRun.totalSteps = estimatedTotalSteps;
+      console.log(`📊 [${runId}] 预估总步骤数: ${estimatedTotalSteps}`);
+    }
+
+    // AI闭环执行流程（原有逻辑）
+    while (remainingSteps?.trim()) {
+      stepIndex++;
+
+      if (this.queueService && this.queueService.isCancelled(runId)) {
+        console.log(`⏹️ [${runId}] 测试已被取消，停止执行 (步骤${stepIndex})`);
+        this.addLog(runId, `⏹️ 测试已被用户取消`, 'warning');
+        this.updateTestRunStatus(runId, 'cancelled', '测试已被用户取消');
+        return;
+      }
+
+      if (remainingSteps === previousStepsText) {
+        console.error(`❌ [${runId}] 检测到无限循环，剩余步骤未变化`);
+        this.addLog(runId, `❌ 检测到无限循环，停止执行`, 'error');
+        this.updateTestRunStatus(runId, 'failed', '检测到无限循环，测试已停止');
+        return;
+      }
+
+      if (stepIndex > maxSteps) {
+        console.error(`❌ [${runId}] 步骤数超过限制 (${maxSteps})`);
+        this.addLog(runId, `❌ 步骤数超过限制，停止执行`, 'error');
+        this.updateTestRunStatus(runId, 'failed', `步骤数超过限制 (${maxSteps})，测试已停止`);
+        return;
+      }
+
+      previousStepsText = remainingSteps;
+
+      // 获取快照
+      let snapshot: string;
+      if (stepIndex === 1) {
+        this.addLog(runId, `⚡ 第一步：跳过初始快照获取，直接执行导航`, 'info');
+        snapshot = '页面准备中，跳过初始快照...';
+      } else {
+        this.addLog(runId, `🔍 正在获取页面快照用于AI分析...`, 'info');
+        snapshot = await this.mcpClient.getSnapshot();
+        this.addLog(runId, `📸 页面快照获取成功，开始AI解析`, 'info');
+      }
+
+      // AI 解析步骤
+      this.addLog(runId, `🤖 AI正在解析下一个步骤...`, 'info');
+      const aiResult = await this.aiParser.parseNextStep(remainingSteps, snapshot, runId);
+
+      if (!aiResult.success || !aiResult.step) {
+        this.addLog(runId, `❌ AI解析失败: ${aiResult.error}`, 'error');
+        this.updateTestRunStatus(runId, 'failed', `AI解析失败: ${aiResult.error}`);
+        return;
+      }
+
+      const step = aiResult.step;
+      console.log(`🔍 [${runId}] 执行操作步骤 ${stepIndex}: ${step.action} - ${step.description}`);
+      this.addLog(runId, `✅ AI解析成功: ${step.action} - ${step.description}`, 'success');
+      this.updateTestRunStatus(runId, 'running', `步骤 ${stepIndex}: ${step.description}`);
+
+      // 执行步骤
+      if (stepIndex === 1) {
+        this.addLog(runId, `⚡ 第一步：跳过UI稳定等待`, 'info');
+      } else {
+        this.addLog(runId, `⏳ 等待UI稳定...`, 'info');
+        await this.delay(500);
+      }
+
+      this.addLog(runId, `🔧 开始执行步骤 ${stepIndex}: ${step.action} - ${step.description}`, 'info');
+      const executionResult = await this.executeStepWithRetryAndFallback(step, runId, stepIndex);
+
+      if (!executionResult.success) {
+        this.addLog(runId, `❌ 步骤执行最终失败: ${executionResult.error}`, 'error');
+        await this.takeStepScreenshot(runId, stepIndex, 'failed', step.description);
+        const shouldContinue = await this.shouldContinueAfterFailure(step, runId, executionResult.error);
+        if (!shouldContinue) {
+          this.updateTestRunStatus(runId, 'failed', `关键步骤 ${stepIndex} 失败: ${executionResult.error}`);
+          return;
+        } else {
+          this.addLog(runId, `⚠️ 步骤 ${stepIndex} 失败但继续执行: ${executionResult.error}`, 'warning');
+          if (testRun) {
+            testRun.failedSteps = (testRun.failedSteps || 0) + 1;
+            testRun.completedSteps = stepIndex;
+            testRun.progress = Math.round((stepIndex / Math.max(estimatedTotalSteps, stepIndex)) * 100);
+          }
+        }
+      } else {
+        this.addLog(runId, `✅ 步骤 ${stepIndex} 执行成功`, 'success');
+        if (testRun) {
+          testRun.passedSteps = (testRun.passedSteps || 0) + 1;
+          testRun.completedSteps = stepIndex;
+          testRun.progress = Math.round((stepIndex / Math.max(estimatedTotalSteps, stepIndex)) * 100);
+        }
+
+        if (stepIndex === 1) {
+          setImmediate(async () => {
+            try {
+              console.log(`🎬 [${runId}] 第一个步骤执行成功，开始启动实时流`);
+              this.streamService.startStreamWithMcp(runId, this.mcpClient);
+              console.log(`📺 [${runId}] 实时流启动完成`);
+              this.addLog(runId, `📺 实时流已启动`, 'success');
+            } catch (streamError) {
+              console.error(`❌ [${runId}] 启动实时流失败:`, streamError);
+              this.addLog(runId, `⚠️ 启动实时流失败: ${(streamError as Error).message}`, 'warning');
+            }
+          });
+        }
+      }
+
+      const isFirstStepNavigation = stepIndex === 1 && (step.action === 'navigate' || step.action === 'browser_navigate' || step.action === 'open' || step.action === 'goto');
+      await this.smartWaitAfterOperation(step.action, {
+        runId,
+        isFirstStep: isFirstStepNavigation,
+        stepIndex
+      });
+
+      await this.takeStepScreenshot(runId, stepIndex, 'success', step.description);
+      remainingSteps = aiResult.remaining || '';
+      this.addLog(runId, `📋 步骤推进: ${remainingSteps.trim() ? `还有 ${remainingSteps.split('\n').filter(l => l.trim()).length} 个步骤` : '所有步骤已完成'}`, 'info');
+
+      if (remainingSteps.trim()) {
+        this.addLog(runId, `⏳ 等待下一步骤...`, 'info');
+        await this.delay(1500);
+      }
+    }
+
+    // AI断言阶段
+    if (testCase.assertions?.trim()) {
+      const assertionSnapshot = await this.mcpClient.getSnapshot();
+      const aiAssertions = await this.aiParser.parseAssertions(
+        testCase.assertions,
+        assertionSnapshot,
+        runId
+      );
+
+      if (!aiAssertions.success) {
+        throw new Error(`AI断言解析失败: ${aiAssertions.error}`);
+      }
+
+      for (let i = 0; i < aiAssertions.steps.length; i++) {
+        const assertion = aiAssertions.steps[i];
+        console.log(`🔍 [${runId}] 执行断言步骤 ${i + 1}: ${assertion.description}`);
+        try {
+          const result = await this.executeMcpCommand(assertion, runId);
+          if (!result.success) {
+            this.updateTestRunStatus(runId, 'failed', `断言 ${i + 1} 失败: ${result.error}`);
+            return;
+          }
+        } catch (error: any) {
+          this.updateTestRunStatus(runId, 'failed', `断言 ${i + 1} 异常: ${error.message}`);
+          return;
+        }
+      }
+    }
+
+    console.log(`✅ [${runId}] 完成 [${testCase.name}]`);
+    await this.takeStepScreenshot(runId, 'final', 'completed', '测试执行完成');
+    await this.saveTestEvidence(runId, 'completed');
+    this.updateTestRunStatus(runId, 'completed', '测试执行完成');
+    
+    // 🔥 移除强制同步，避免重复
+    // 同步会在 finalizeTestRun() 中自动完成
+    console.log(`💾 [${runId}] 测试完成，等待 finalizeTestRun 同步到数据库`);
+  }
+
+  /**
+   * 使用 Playwright Test Runner 执行测试
+   */
+  private async executeWithPlaywrightRunner(
+    runId: string,
+    testCase: TestCase,
+    testRun: TestRun,
+    options: { enableTrace?: boolean; enableVideo?: boolean }
+  ): Promise<void> {
+    if (!this.playwrightRunner) {
+      throw new Error('Playwright Test Runner 未初始化');
+    }
+
+    const page = this.playwrightRunner.getPage();
+    if (!page) {
+      throw new Error('页面未初始化');
+    }
+
+    // 解析测试步骤（从字符串转换为 TestStep 数组）
+    const steps = this.parseTestSteps(testCase.steps || '');
+    const assertions = this.parseAssertions(testCase.assertions || '');
+    
+    const totalSteps = steps.length + assertions.length;
+    if (testRun) {
+      testRun.totalSteps = totalSteps;
+    }
+
+    console.log(`📊 [${runId}] 总步骤数: ${totalSteps} (操作: ${steps.length}, 断言: ${assertions.length})`);
+    this.addLog(runId, `📊 总步骤数: ${totalSteps}`, 'info');
+
+    // 执行操作步骤
+    for (let i = 0; i < steps.length; i++) {
+      const step = steps[i];
+      const stepIndex = i + 1;
+
+      if (this.queueService && this.queueService.isCancelled(runId)) {
+        console.log(`⏹️ [${runId}] 测试已被取消，停止执行 (步骤${stepIndex})`);
+        this.addLog(runId, `⏹️ 测试已被用户取消`, 'warning');
+        this.updateTestRunStatus(runId, 'cancelled', '测试已被用户取消');
+        return;
+      }
+
+      console.log(`🎬 [${runId}] 执行步骤 ${stepIndex}/${totalSteps}: ${step.description}`);
+      // this.addLog(runId, `🔧 执行步骤 ${stepIndex}: ${step.description}`, 'info');
+      this.updateTestRunStatus(runId, 'running', `🔧 执行步骤 ${stepIndex}/${totalSteps}: ${step.description}`);
+
+      // 🔥 如果选择器是文本描述（不是 CSS 选择器），使用 AI 解析器智能匹配元素
+      let enhancedStep = step;
+      if (step.selector && !step.selector.startsWith('#') && !step.selector.startsWith('.') && 
+          !step.selector.startsWith('[') && !step.selector.includes(' ') && 
+          (step.action === 'click' || step.action === 'fill')) {
+        try {
+          this.addLog(runId, `🤖 使用 AI 解析器智能匹配元素: ${step.selector}`, 'info');
+          
+          // 🔥 使用等待日志包装长时间操作
+          const result = await this.executeWithWaitingLog(
+            runId,
+            'AI解析器正在匹配元素',
+            async () => {
+              // 获取页面快照（使用 Playwright 的 accessibility snapshot）
+              const page = this.playwrightRunner.getPage();
+              if (page) {
+                // 获取 Playwright 的 accessibility snapshot（类似 MCP 快照格式）
+                const snapshot = await page.accessibility.snapshot();
+                const pageTitle = await page.title();
+                const pageUrl = page.url();
+                
+                // 🔥 修复：建立 ref -> { role, name } 映射表
+                const refToElementMap = new Map<string, { role: string; name: string }>();
+                
+                // 构建快照文本（转换为类似 MCP 快照的格式）
+                let snapshotText = `Page URL: ${pageUrl}\nPage Title: ${pageTitle}\n\n`;
+                
+                // 递归提取可交互元素（使用 MCP 快照格式）
+                const extractElements = (node: any, depth = 0): string[] => {
+                  const elements: string[] = [];
+                  if (!node) return elements;
+                  
+                  // 提取元素信息
+                  if (node.role && (node.role === 'button' || node.role === 'textbox' || 
+                      node.role === 'link' || node.role === 'checkbox' || node.role === 'combobox')) {
+                    const name = node.name || '';
+                    const role = node.role || '';
+                    // 🔥 修复：使用 MCP 快照格式 [ref=xxx] role "text"
+                    const ref = node.id || `element_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+                    elements.push(`[ref=${ref}] ${role} "${name}"`);
+                    
+                    // 🔥 保存映射：ref -> { role, name }
+                    refToElementMap.set(ref, { role, name });
+                  }
+                  
+                  // 递归处理子元素
+                  if (node.children) {
+                    for (const child of node.children) {
+                      elements.push(...extractElements(child, depth + 1));
+                    }
+                  }
+                  
+                  return elements;
+                };
+                
+                const elements = extractElements(snapshot);
+                snapshotText += elements.join('\n');
+                
+                // 如果快照为空，使用 HTML 作为备用
+                if (elements.length === 0) {
+                  const htmlContent = await page.content();
+                  snapshotText += `\n\nHTML Content:\n${htmlContent.substring(0, 50000)}`;
+                }
+                
+                // 使用 AI 解析器查找元素
+                const aiResult = await this.aiParser.parseNextStep(
+                  step.description,
+                  snapshotText,
+                  runId
+                );
+                
+                return { aiResult, refToElementMap };
+              }
+              return { aiResult: null, refToElementMap: null };
+            }
+          );
+          
+          const { aiResult, refToElementMap } = result;
+          
+          if (aiResult && refToElementMap && aiResult.success && aiResult.step) {
+              // 如果 AI 解析出了 ref，通过映射表定位元素
+              if (aiResult.step.ref) {
+                const ref = aiResult.step.ref;
+                // 如果 ref 是 CSS 选择器格式，直接使用
+                if (ref.startsWith('#') || ref.startsWith('.') || ref.startsWith('[')) {
+                  enhancedStep = { ...step, selector: ref };
+                  this.addLog(runId, `✅ AI 匹配成功，使用选择器: ${ref}`, 'success');
+                } else {
+                  // 🔥 修复：通过映射表找到 role 和 name，使用 getByRole 定位
+                  const elementInfo = refToElementMap.get(ref);
+                  const page = this.playwrightRunner.getPage();
+                  if (elementInfo && elementInfo.name && page) {
+                    try {
+                      // 使用 Playwright 的 getByRole 定位元素
+                      const roleLocator = page.getByRole(elementInfo.role as any, { name: elementInfo.name, exact: false });
+                      if (await roleLocator.count() > 0) {
+                        // 使用 role 和 name 的组合作为选择器（Playwright Test Runner 会处理）
+                        enhancedStep = { ...step, selector: `${elementInfo.role}:${elementInfo.name}` };
+                        this.addLog(runId, `✅ AI 匹配成功，使用 role+name: ${elementInfo.role}:${elementInfo.name}`, 'success');
+                      } else {
+                        // 回退到使用 element 描述
+                        if (aiResult.step.element) {
+                          enhancedStep = { ...step, selector: aiResult.step.element };
+                          this.addLog(runId, `✅ AI 匹配成功，使用元素描述: ${aiResult.step.element}`, 'success');
+                        } else {
+                          this.addLog(runId, `⚠️ AI 解析出 ref 但无法定位，使用原始选择器`, 'warning');
+                        }
+                      }
+                    } catch (locatorError) {
+                      // 回退到使用 element 描述
+                      if (aiResult.step.element) {
+                        enhancedStep = { ...step, selector: aiResult.step.element };
+                        this.addLog(runId, `✅ AI 匹配成功，使用元素描述: ${aiResult.step.element}`, 'success');
+                      } else {
+                        this.addLog(runId, `⚠️ AI 解析出 ref 但无法定位，使用原始选择器`, 'warning');
+                      }
+                    }
+                  } else {
+                    // 映射表中没有找到，尝试通过 ID 查找
+                    if (page) {
+                      try {
+                        const idLocator = page.locator(`#${ref}`);
+                        if (await idLocator.count() > 0) {
+                          enhancedStep = { ...step, selector: `#${ref}` };
+                          this.addLog(runId, `✅ AI 匹配成功，使用 ID: #${ref}`, 'success');
+                        } else {
+                          // 使用 element 描述
+                          if (aiResult.step.element) {
+                            enhancedStep = { ...step, selector: aiResult.step.element };
+                            this.addLog(runId, `✅ AI 匹配成功，使用元素描述: ${aiResult.step.element}`, 'success');
+                          } else {
+                            this.addLog(runId, `⚠️ AI 解析出 ref 但无法定位，使用原始选择器`, 'warning');
+                          }
+                        }
+                      } catch (idError: any) {
+                        // 使用 element 描述
+                        if (aiResult.step.element) {
+                          enhancedStep = { ...step, selector: aiResult.step.element };
+                          this.addLog(runId, `✅ AI 匹配成功，使用元素描述: ${aiResult.step.element}`, 'success');
+                        } else {
+                          this.addLog(runId, `⚠️ AI 解析出 ref 但无法定位，使用原始选择器`, 'warning');
+                        }
+                      }
+                    } else {
+                      // 没有 page，使用 element 描述
+                      if (aiResult.step.element) {
+                        enhancedStep = { ...step, selector: aiResult.step.element };
+                        this.addLog(runId, `✅ AI 匹配成功，使用元素描述: ${aiResult.step.element}`, 'success');
+                      } else {
+                        this.addLog(runId, `⚠️ AI 解析出 ref 但无法定位，使用原始选择器`, 'warning');
+                      }
+                    }
+                  }
+                }
+              } else if (aiResult.step.element) {
+                // 如果 AI 提供了元素描述，使用它
+                enhancedStep = { ...step, selector: aiResult.step.element };
+                this.addLog(runId, `✅ AI 匹配成功，使用元素描述: ${aiResult.step.element}`, 'success');
+              } else {
+                this.addLog(runId, `⚠️ AI 解析未找到精确匹配，使用原始选择器`, 'warning');
+              }
+            } else {
+              this.addLog(runId, `⚠️ AI 解析未找到精确匹配，使用原始选择器`, 'warning');
+            }
+        } catch (aiError: any) {
+          console.warn(`⚠️ [${runId}] AI 元素匹配失败，使用原始选择器:`, aiError.message);
+          this.addLog(runId, `⚠️ AI 匹配失败，使用原始选择器: ${aiError.message}`, 'warning');
+        }
+      }
+
+      // 执行步骤
+      const result = await this.playwrightRunner.executeStep(enhancedStep, runId, i);
+
+      if (!result.success) {
+        this.addLog(runId, `❌ 步骤 ${stepIndex} 失败: ${result.error}`, 'error');
+        
+        // 🔥 失败时截图
+        try {
+          const page = this.playwrightRunner.getPage();
+          if (page) {
+            const screenshotBuffer = await page.screenshot({ fullPage: true });
+            const screenshotFilename = `step-${stepIndex}-failed-${Date.now()}.png`;
+            await this.evidenceService.saveBufferArtifact(
+              runId,
+              'screenshot',
+              screenshotBuffer,
+              screenshotFilename
+            );
+            console.log(`📸 [${runId}] 失败步骤 ${stepIndex} 截图已保存: ${screenshotFilename}`);
+          }
+        } catch (screenshotError: any) {
+          console.warn(`⚠️ [${runId}] 失败步骤截图失败:`, screenshotError.message);
+        }
+        
+        this.updateTestRunStatus(runId, 'failed', `步骤 ${stepIndex} 失败: ${result.error}`);
+        return;
+      }
+
+      this.addLog(runId, `✅ 步骤 ${stepIndex} 执行成功`, 'success');
+      
+      // 🔥 使用 Playwright 页面截图
+      try {
+        const page = this.playwrightRunner.getPage();
+        if (page) {
+          const screenshotBuffer = await page.screenshot({ fullPage: true });
+          const screenshotFilename = `step-${stepIndex}-success-${Date.now()}.png`;
+          await this.evidenceService.saveBufferArtifact(
+            runId,
+            'screenshot',
+            screenshotBuffer,
+            screenshotFilename
+          );
+          console.log(`📸 [${runId}] 步骤 ${stepIndex} 截图已保存: ${screenshotFilename}`);
+        }
+      } catch (screenshotError: any) {
+        console.warn(`⚠️ [${runId}] 步骤 ${stepIndex} 截图失败:`, screenshotError.message);
+      }
+
+      if (testRun) {
+        testRun.passedSteps = (testRun.passedSteps || 0) + 1;
+        testRun.completedSteps = stepIndex;
+        testRun.progress = Math.round((stepIndex / totalSteps) * 100);
+      }
+
+      // 步骤间等待
+      if (i < steps.length - 1) {
+        await this.delay(1000);
+      }
+    }
+
+    // 执行断言步骤
+    for (let i = 0; i < assertions.length; i++) {
+      let assertion = assertions[i];
+      const assertionIndex = steps.length + i + 1;
+
+      console.log(`🔍 [${runId}] 执行断言 ${i + 1}/${assertions.length}: ${assertion.description}`);
+      this.addLog(runId, `🔍 执行断言 ${i + 1}: ${assertion.description}`, 'info');
+
+      // 🔥 如果断言步骤缺少选择器或ref，使用AI解析器智能匹配元素
+      if (!assertion.selector && !assertion.ref) {
+        try {
+          this.addLog(runId, `🤖 使用 AI 解析器智能匹配断言元素: ${assertion.description}`, 'info');
+          
+          // 🔥 使用等待日志包装长时间操作
+          const result = await this.executeWithWaitingLog(
+            runId,
+            'AI解析器正在匹配断言元素',
+            async () => {
+              // 获取页面快照（使用 Playwright 的 accessibility snapshot）
+              const page = this.playwrightRunner.getPage();
+              if (page) {
+                // 获取 Playwright 的 accessibility snapshot（类似 MCP 快照格式）
+                const snapshot = await page.accessibility.snapshot();
+                const pageTitle = await page.title();
+                const pageUrl = page.url();
+                
+                // 🔥 建立 ref -> { role, name } 映射表
+                const refToElementMap = new Map<string, { role: string; name: string }>();
+                
+                // 构建快照文本（转换为类似 MCP 快照的格式）
+                let snapshotText = `Page URL: ${pageUrl}\nPage Title: ${pageTitle}\n\n`;
+                
+                // 递归提取可交互元素（使用 MCP 快照格式）
+                const extractElements = (node: any, depth = 0): string[] => {
+                  const elements: string[] = [];
+                  if (!node) return elements;
+                  
+                  // 提取元素信息（包括按钮、文本、链接等可用于断言的元素）
+                  if (node.role && (node.role === 'button' || node.role === 'textbox' || 
+                      node.role === 'link' || node.role === 'checkbox' || node.role === 'combobox' ||
+                      node.role === 'heading' || node.role === 'text' || node.role === 'paragraph')) {
+                    const name = node.name || '';
+                    const role = node.role || '';
+                    const ref = node.id || `element_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+                    elements.push(`[ref=${ref}] ${role} "${name}"`);
+                    
+                    // 保存映射：ref -> { role, name }
+                    refToElementMap.set(ref, { role, name });
+                  }
+                  
+                  // 递归处理子元素
+                  if (node.children) {
+                    for (const child of node.children) {
+                      elements.push(...extractElements(child, depth + 1));
+                    }
+                  }
+                  
+                  return elements;
+                };
+                
+                const elements = extractElements(snapshot);
+                snapshotText += elements.join('\n');
+                
+                // 如果快照为空，使用 HTML 作为备用
+                if (elements.length === 0) {
+                  const htmlContent = await page.content();
+                  snapshotText += `\n\nHTML Content:\n${htmlContent.substring(0, 50000)}`;
+                }
+                
+                // 🔥 使用 AI 解析器解析断言（使用断言模式 - parseAssertions）
+                const aiResult = await this.aiParser.parseAssertions(
+                  assertion.description,
+                  snapshotText,
+                  runId
+                );
+                
+                return { aiResult, refToElementMap };
+              }
+              return { aiResult: null, refToElementMap: null };
+            }
+          );
+          
+          const { aiResult, refToElementMap } = result;
+          
+          if (aiResult && refToElementMap && aiResult.success && aiResult.steps && aiResult.steps.length > 0) {
+            const aiStep = aiResult.steps[0]; // 取第一个解析结果
+            
+            // 🔥 优先使用AI返回的结构化断言信息（element, ref, condition, value等）
+            if (aiStep.element || aiStep.ref || aiStep.condition) {
+                // AI已经返回了结构化的断言信息，直接使用
+                // 🔥 将condition转换为ExpectCondition类型
+                const validConditions = ['visible', 'hidden', 'contains_text', 'has_text', 'has_value', 'checked', 'enabled', 'disabled', 'count'] as const;
+                const condition = (validConditions.includes(aiStep.condition as any) ? aiStep.condition : 'visible') as any;
+                
+                // 🔥 如果AI返回了ref，通过refToElementMap找到对应的role和name，设置selector为role:name格式
+                let selector = aiStep.selector;
+                if (aiStep.ref && !selector) {
+                  const elementInfo = refToElementMap.get(aiStep.ref);
+                  if (elementInfo && elementInfo.role && elementInfo.name) {
+                    // 🔥 对于textbox/combobox类型，如果name看起来像是值而不是label，直接使用element描述
+                    // 判断标准：name长度超过15字符（中文），或者包含具体内容（如数字、具体描述、新闻标题等）
+                    const name = elementInfo.name;
+                    const isValueLike = name.length > 15 || // 长度超过15字符（中文）
+                                      /\d{2,}/.test(name) || // 包含多个数字
+                                      name.includes('岁') || // 包含具体描述
+                                      name.includes('年') ||
+                                      name.includes('月') ||
+                                      name.includes('日') ||
+                                      name.includes('教授') || // 新闻标题常见词
+                                      name.includes('去世') ||
+                                      name.includes('知名') ||
+                                      name.includes('身亡') ||
+                                      name.includes('传媒') ||
+                                      name.includes('大学') ||
+                                      /[\u4e00-\u9fa5]{8,}/.test(name); // 包含8个以上连续中文字符（可能是内容而非label）
+                    
+                    if ((elementInfo.role === 'textbox' || elementInfo.role === 'combobox') && isValueLike) {
+                      // name看起来是值，使用element描述进行智能查找
+                      selector = aiStep.element;
+                      this.addLog(runId, `🔍 ref对应的name是输入框的值而非label（name="${name.substring(0, 30)}..."），使用element描述: "${aiStep.element}"`, 'info');
+                    } else {
+                      // name看起来是label，使用role:name格式
+                      selector = `${elementInfo.role}:${elementInfo.name}`;
+                      this.addLog(runId, `🔍 通过ref映射找到元素: ref="${aiStep.ref}" -> ${selector}`, 'info');
+                    }
+                  } else {
+                    // 如果映射表中没有，使用element描述作为selector
+                    selector = aiStep.element;
+                    this.addLog(runId, `⚠️ ref不在映射表中，使用element描述: "${aiStep.element}"`, 'warning');
+                  }
+                } else if (!selector && aiStep.element) {
+                  selector = aiStep.element;
+                }
+                
+                assertion = {
+                  ...assertion,
+                  element: aiStep.element,
+                  ref: aiStep.ref,
+                  selector: selector,
+                  condition: condition,
+                  value: aiStep.value
+                };
+                
+                this.addLog(runId, `✅ AI 断言解析成功（结构化）: element="${aiStep.element}", ref="${aiStep.ref}", selector="${selector}", condition="${condition}", value="${aiStep.value || 'N/A'}"`, 'success');
+              }
+              // 🔥 如果AI返回的是 browser_snapshot 命令但没有结构化信息，需要从断言描述和页面元素中提取选择器
+              else if ((aiStep.action as string) === 'browser_snapshot' || (aiStep.action as string) === 'snapshot') {
+                // 🔥 修复：智能解析断言描述，区分元素名称和验证内容
+                // 例如："搜索输入框存在默认搜索内容" -> 元素："搜索输入框"，验证内容："默认搜索内容"
+                let assertionDesc = assertion.description;
+                const assertionKeywords = ['存在', '验证', '检查', '断言', '应该', '必须', '确认', 'expect', 'verify', 'check', 'assert'];
+                for (const keyword of assertionKeywords) {
+                  assertionDesc = assertionDesc.replace(new RegExp(`^${keyword}\\s*`, 'i'), '');
+                  assertionDesc = assertionDesc.replace(new RegExp(`\\s*${keyword}\\s*`, 'i'), ' ');
+                }
+                assertionDesc = assertionDesc.trim();
+                
+                // 🔥 尝试从断言描述中提取元素名称和验证内容
+                // 模式1: "X存在Y" -> 元素：X，验证内容：Y
+                // 模式2: "X包含Y" -> 元素：X，验证内容：Y
+                // 模式3: "X显示Y" -> 元素：X，验证内容：Y
+                let elementName = assertionDesc;
+                let expectedValue: string | undefined = undefined;
+                
+                const contentPatterns = [
+                  /(.+?)(?:存在|包含|显示|有|是)(.+)/,
+                  /(.+?)(?:的|中|里)(?:内容|文本|值|默认值|默认内容)(?:是|为|包含|显示)?(.+)?/,
+                  /(.+?)(?:存在|包含|显示)(.+)/,
+                ];
+                
+                for (const pattern of contentPatterns) {
+                  const match = assertionDesc.match(pattern);
+                  if (match && match[1] && match[2]) {
+                    elementName = match[1].trim();
+                    expectedValue = match[2].trim();
+                    break;
+                  }
+                }
+                
+                // 如果没匹配到模式，尝试查找常见分隔词
+                if (!expectedValue) {
+                  const separators = ['存在', '包含', '显示', '有', '是', '为'];
+                  for (const sep of separators) {
+                    const parts = assertionDesc.split(sep);
+                    if (parts.length >= 2) {
+                      elementName = parts[0].trim();
+                      expectedValue = parts.slice(1).join(sep).trim();
+                      break;
+                    }
+                  }
+                }
+                
+                // 提取核心元素名称（移除"按钮"、"链接"等后缀，但保留"输入框"等关键信息）
+                const coreName = elementName.replace(/按钮|链接|复选框|下拉框|搜索按钮/g, '').trim();
+                
+                // 从页面元素中查找匹配的元素
+                let foundElement: { ref: string; role: string; name: string } | null = null;
+                
+                // 遍历所有提取的元素，查找匹配的
+                for (const [ref, elementInfo] of refToElementMap.entries()) {
+                  const elementText = elementInfo.name.toLowerCase();
+                  const searchName = elementName.toLowerCase();
+                  const searchCore = coreName.toLowerCase();
+                  
+                  // 🔥 优先匹配完整元素名称，然后匹配核心名称
+                  if (elementText === searchName || 
+                      elementText.includes(searchName) ||
+                      searchName.includes(elementText)) {
+                    foundElement = { ref, ...elementInfo };
+                    break;
+                  } else if (searchCore && (
+                      elementText === searchCore ||
+                      elementText.includes(searchCore) ||
+                      searchCore.includes(elementText))) {
+                    foundElement = { ref, ...elementInfo };
+                    break;
+                  }
+                }
+                
+                if (foundElement) {
+                  // 使用 role:name 格式作为选择器
+                  assertion = { 
+                    ...assertion, 
+                    selector: `${foundElement.role}:${foundElement.name}`,
+                    ref: foundElement.ref
+                  };
+                  
+                  // 🔥 如果有验证内容，设置 condition 和 value
+                  if (expectedValue) {
+                    // 对于输入框等元素，验证其文本内容
+                    if (foundElement.role === 'textbox' || foundElement.role === 'combobox') {
+                      assertion.condition = 'contains_text';
+                      assertion.value = expectedValue;
+                      this.addLog(runId, `✅ AI 断言匹配成功，使用 role+name: ${foundElement.role}:${foundElement.name}，验证内容: "${expectedValue}"`, 'success');
+                    } else {
+                      // 对于其他元素，验证文本包含
+                      assertion.condition = 'contains_text';
+                      assertion.value = expectedValue;
+                      this.addLog(runId, `✅ AI 断言匹配成功，使用 role+name: ${foundElement.role}:${foundElement.name}，验证文本: "${expectedValue}"`, 'success');
+                    }
+                  } else {
+                    this.addLog(runId, `✅ AI 断言匹配成功，使用 role+name: ${foundElement.role}:${foundElement.name}`, 'success');
+                  }
+                } else {
+                  // 如果没找到，使用提取的元素名称作为选择器（智能查找会处理）
+                  assertion = { ...assertion, selector: elementName || assertion.description };
+                  if (expectedValue) {
+                    assertion.condition = 'contains_text';
+                    assertion.value = expectedValue;
+                  }
+                  this.addLog(runId, `⚠️ 未在页面元素中找到匹配项，使用提取的名称: ${elementName}${expectedValue ? `，验证内容: "${expectedValue}"` : ''}`, 'warning');
+                }
+              }
+              // 如果 AI 解析出了 ref，通过映射表定位元素
+              else if (aiStep.ref) {
+                const ref = aiStep.ref;
+                // 如果 ref 是 CSS 选择器格式，直接使用
+                if (ref.startsWith('#') || ref.startsWith('.') || ref.startsWith('[')) {
+                  assertion = { ...assertion, selector: ref, ref: ref };
+                  this.addLog(runId, `✅ AI 断言匹配成功，使用选择器: ${ref}`, 'success');
+                } else {
+                  // 通过映射表找到 role 和 name，使用 role:name 格式
+                  const elementInfo = refToElementMap.get(ref);
+                  if (elementInfo && elementInfo.name) {
+                    assertion = { ...assertion, selector: `${elementInfo.role}:${elementInfo.name}`, ref: ref };
+                    this.addLog(runId, `✅ AI 断言匹配成功，使用 role+name: ${elementInfo.role}:${elementInfo.name}`, 'success');
+                  } else if (aiStep.element) {
+                    // 回退到使用 element 描述
+                    assertion = { ...assertion, selector: aiStep.element, ref: ref };
+                    this.addLog(runId, `✅ AI 断言匹配成功，使用元素描述: ${aiStep.element}`, 'success');
+                  }
+                }
+              } else if (aiStep.element) {
+                // 如果只有 element 描述，使用它作为选择器
+                assertion = { ...assertion, selector: aiStep.element };
+                this.addLog(runId, `✅ AI 断言匹配成功，使用元素描述: ${aiStep.element}`, 'success');
+              }
+              
+              // 如果 AI 解析出了 condition，也更新它
+              if (aiStep.condition) {
+                assertion = { ...assertion, condition: aiStep.condition as any };
+              }
+            } else {
+              this.addLog(runId, `⚠️ AI 断言解析失败，尝试使用描述文本作为选择器`, 'warning');
+              // 回退：使用断言描述作为选择器（智能查找会处理）
+              assertion = { ...assertion, selector: assertion.description };
+            }
+        } catch (aiError: any) {
+          console.warn(`⚠️ [${runId}] AI 断言解析失败: ${aiError.message}`);
+          this.addLog(runId, `⚠️ AI 断言解析失败，使用描述文本: ${aiError.message}`, 'warning');
+          // 回退：使用断言描述作为选择器
+          assertion = { ...assertion, selector: assertion.description };
+        }
+      }
+
+      const result = await this.playwrightRunner.executeStep(assertion, runId, assertionIndex - 1);
+
+      if (!result.success) {
+        this.addLog(runId, `❌ 断言 ${i + 1} 失败: ${result.error}`, 'error');
+        this.updateTestRunStatus(runId, 'failed', `断言 ${i + 1} 失败: ${result.error}`);
+        return;
+      }
+
+      this.addLog(runId, `✅ 断言 ${i + 1} 通过`, 'success');
+    }
+
+    console.log(`✅ [${runId}] 完成 [${testCase.name}]`);
+    
+    // 🔥 最终截图
+    try {
+      const page = this.playwrightRunner.getPage();
+      if (page) {
+        const screenshotBuffer = await page.screenshot({ fullPage: true });
+        const screenshotFilename = `final-completed-${Date.now()}.png`;
+        await this.evidenceService.saveBufferArtifact(
+          runId,
+          'screenshot',
+          screenshotBuffer,
+          screenshotFilename
+        );
+        console.log(`📸 [${runId}] 最终截图已保存: ${screenshotFilename}`);
+      }
+    } catch (screenshotError: any) {
+      console.warn(`⚠️ [${runId}] 最终截图失败:`, screenshotError.message);
+    }
+    
+    // 停止 trace 录制并保存
+    if (options.enableTrace !== false) {
+      const tracePath = await this.playwrightRunner.stopTrace(runId);
+      if (tracePath) {
+        console.log(`📦 [${runId}] Trace 文件已生成: ${tracePath}`);
+      }
+    }
+
+    // 🔥 修复：在 context close 前保存证据，确保视频文件已写入完成
+    // 注意：视频文件需要在 context close 后才会完成写入
+    await this.saveTestEvidence(runId, 'completed');
+    this.updateTestRunStatus(runId, 'completed', '测试执行完成');
+    
+    // 🔥 移除强制同步，避免重复
+    // 同步会在 finalizeTestRun() 中自动完成
+    console.log(`💾 [${runId}] 测试完成，等待 finalizeTestRun 同步到数据库`);
+  }
+
+  /**
+   * 清理 Playwright Test Runner 资源
+   */
+  private async cleanupPlaywrightRunner(runId: string, testRun: TestRun | null): Promise<void> {
+    try {
+      this.streamService.stopStream(runId);
+      console.log(`📺 [${runId}] 实时流已停止`);
+
+      if (this.playwrightRunner) {
+        console.log(`🧹 [${runId}] 正在清理 Playwright Test Runner...`);
+        
+        // 🔥 修复：关闭 context 后，等待视频文件写入完成
+        await this.playwrightRunner.close();
+        
+        // 等待视频文件写入完成（Playwright 在 context close 后异步写入视频）
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
+        // 🔥 修复：处理视频文件和 trace 文件（重命名而不是复制）
+        await this.processPlaywrightArtifacts(runId);
+        
+        this.playwrightRunner = null;
+        console.log(`✅ [${runId}] Playwright Test Runner 已关闭`);
+      }
+    } catch (cleanupError) {
+      console.warn(`⚠️ [${runId}] 清理 Playwright Test Runner 时出错:`, cleanupError);
+    }
+  }
+
+  /**
+   * 处理 Playwright 生成的原始文件（重命名而不是复制）
+   */
+  private async processPlaywrightArtifacts(runId: string): Promise<void> {
+    try {
+      const artifactsDir = this.evidenceService.getArtifactsDir();
+      const runArtifactsDir = path.join(artifactsDir, runId);
+      
+      if (!(await this.fileExists(runArtifactsDir))) {
+        return;
+      }
+
+      const files = await fsPromises.readdir(runArtifactsDir, { withFileTypes: true });
+      
+      // 1. 处理 trace.zip 文件
+      const traceFile = files.find(f => f.isFile() && f.name === 'trace.zip');
+      if (traceFile) {
+        const tracePath = path.join(runArtifactsDir, 'trace.zip');
+        const newTracePath = path.join(runArtifactsDir, `${runId}-trace.zip`);
+        
+        // 检查是否已存在重命名后的文件
+        try {
+          await fsPromises.access(newTracePath);
+          // 如果已存在，删除原始的 trace.zip
+          await fsPromises.unlink(tracePath);
+          console.log(`🗑️ [${runId}] 已删除重复的 trace.zip 文件`);
+        } catch {
+          // 如果不存在，重命名
+          await fsPromises.rename(tracePath, newTracePath);
+          console.log(`📦 [${runId}] Trace 文件已重命名: ${runId}-trace.zip`);
+          
+          // 保存到数据库
+          const stats = await fsPromises.stat(newTracePath);
+          await this.evidenceService.saveBufferArtifact(
+            runId,
+            'trace',
+            await fsPromises.readFile(newTracePath),
+            `${runId}-trace.zip`
+          );
+        }
+      }
+
+      // 2. 处理视频文件（哈希名称的 .webm 或 .mp4 文件）
+      const videoFiles = files.filter(f => 
+        f.isFile() && 
+        (f.name.endsWith('.webm') || f.name.endsWith('.mp4')) &&
+        !f.name.includes(runId) && // 排除已经重命名的文件
+        f.name.match(/^[a-f0-9]{32,}\.(webm|mp4)$/i) // 匹配哈希名称格式
+      );
+      
+      if (videoFiles.length > 0) {
+        // 按修改时间排序，获取最新的视频文件
+        const videoFilesWithStats = await Promise.all(
+          videoFiles.map(async (file) => {
+            const filePath = path.join(runArtifactsDir, file.name);
+            const stats = await fsPromises.stat(filePath);
+            return { file, path: filePath, stats };
+          })
+        );
+        
+        videoFilesWithStats.sort((a, b) => b.stats.mtime.getTime() - a.stats.mtime.getTime());
+        
+        // 只处理第一个（最新的）视频文件
+        const { file: videoFile, path: videoPath, stats: videoStats } = videoFilesWithStats[0];
+        
+        // 检查文件大小，确保不是空文件
+        if (videoStats.size > 0) {
+          const ext = videoFile.name.split('.').pop() || 'webm';
+          const newVideoPath = path.join(runArtifactsDir, `${runId}-video.${ext}`);
+          
+          // 检查是否已存在重命名后的文件
+          try {
+            await fsPromises.access(newVideoPath);
+            const existingStats = await fsPromises.stat(newVideoPath);
+            
+            // 如果已存在的文件大小为 0，删除它并使用新的
+            if (existingStats.size === 0) {
+              await fsPromises.unlink(newVideoPath);
+              await fsPromises.rename(videoPath, newVideoPath);
+              console.log(`🎥 [${runId}] 视频文件已重命名（替换空文件）: ${runId}-video.${ext}`);
+            } else {
+              // 如果已存在的文件有内容，删除原始的哈希名称文件
+              await fsPromises.unlink(videoPath);
+              console.log(`🗑️ [${runId}] 已删除重复的视频文件: ${videoFile.name}`);
+              return; // 不重复保存到数据库
+            }
+          } catch {
+            // 如果不存在，重命名
+            await fsPromises.rename(videoPath, newVideoPath);
+            console.log(`🎥 [${runId}] 视频文件已重命名: ${runId}-video.${ext}`);
+          }
+          
+          // 保存到数据库
+          const finalStats = await fsPromises.stat(newVideoPath);
+          await this.evidenceService.saveBufferArtifact(
+            runId,
+            'video',
+            await fsPromises.readFile(newVideoPath),
+            `${runId}-video.${ext}`
+          );
+          console.log(`✅ [${runId}] 视频文件已保存到数据库: ${runId}-video.${ext} (${finalStats.size} bytes)`);
+        } else {
+          console.warn(`⚠️ [${runId}] 视频文件大小为 0，跳过: ${videoFile.name}`);
+        }
+      }
+    } catch (error: any) {
+      console.error(`❌ [${runId}] 处理 Playwright 文件失败:`, error.message);
     }
   }
 

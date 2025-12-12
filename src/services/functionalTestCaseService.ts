@@ -44,7 +44,7 @@ async function handleResponse(response: Response) {
 }
 
 /**
- * 列表查询参数
+ * 列表查询参数（使用驼峰命名，会自动转换为下划线格式发送到后端）
  */
 export interface ListParams {
   page: number;
@@ -56,6 +56,14 @@ export interface ListParams {
   system?: string;
   module?: string;
   source?: string;
+  sectionName?: string;
+  createdBy?: string;
+  startDate?: string;
+  endDate?: string;
+  riskLevel?: string;
+  projectVersion?: string;  // 🆕 项目版本筛选
+  caseType?: string;  // 🆕 用例类型筛选
+  executionStatus?: string;  // 🆕 执行结果筛选
 }
 
 /**
@@ -74,131 +82,161 @@ export interface ProjectInfo {
  * 功能测试用例前端服务
  */
 class FunctionalTestCaseService {
+  // 🔥 正在进行的请求缓存（用于去重）
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private pendingRequests = new Map<string, Promise<any>>();
+
+  // 🔥 缓存保留时间（毫秒）- 防止短时间内的重复请求
+  private CACHE_RETAIN_TIME = 300;
+
+  /**
+   * 🔥 构建有序的 Query String，确保去重 Key 一致性
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private buildQueryString(params: Record<string, any>): string {
+    const searchParams = new URLSearchParams();
+    Object.keys(params).sort().forEach(key => {
+      const value = params[key];
+      if (value !== undefined && value !== null && value !== '') {
+        searchParams.append(key, value.toString());
+      }
+    });
+    return searchParams.toString();
+  }
+
+  /**
+   * 通用请求方法（带去重功能）
+   */
+  private async request<T>(url: string, options: RequestInit = {}): Promise<T> {
+    // 只对 GET 请求进行去重
+    const isGet = options.method === 'GET' || !options.method;
+    // 生成唯一请求 Key
+    const requestKey = isGet ? `${url}` : null;
+
+    // 如果已有相同请求（正在进行或刚完成），直接返回该 Promise
+    if (requestKey && this.pendingRequests.has(requestKey)) {
+      console.log('🔄 [functionalTestCaseService] 复用缓存请求:', requestKey.split('?')[0].split('/').pop());
+      return this.pendingRequests.get(requestKey) as Promise<T>;
+    }
+
+    console.log('📤 [functionalTestCaseService] 发起新请求:', url.split('?')[0].split('/').pop());
+
+    const promise = (async () => {
+      try {
+        const response = await fetch(url, {
+          ...options,
+          headers: {
+            ...getAuthHeaders(),
+            ...options.headers,
+          }
+        });
+        return handleResponse(response);
+      } finally {
+        // 🔥 延迟清除缓存，确保短时间内的重复请求能复用结果
+        if (requestKey) {
+          setTimeout(() => {
+            this.pendingRequests.delete(requestKey);
+            console.log('🗑️ [functionalTestCaseService] 清除缓存:', requestKey.split('?')[0].split('/').pop());
+          }, this.CACHE_RETAIN_TIME);
+        }
+      }
+    })();
+
+    // 存入缓存
+    if (requestKey) {
+      this.pendingRequests.set(requestKey, promise);
+    }
+
+    return promise;
+  }
+
   /**
    * 获取功能测试用例列表
    */
   async getList(params: ListParams) {
-    const queryString = new URLSearchParams(params as any).toString();
-    const response = await fetch(`${API_BASE_URL}/functional-test-cases?${queryString}`, {
-      method: 'GET',
-      headers: getAuthHeaders()
-    });
-
-    return handleResponse(response);
+    const queryString = this.buildQueryString(params);
+    return this.request(`${API_BASE_URL}/functional-test-cases?${queryString}`);
   }
 
   /**
    * 获取功能测试用例平铺列表（以测试点为维度展示）
    */
   async getFlatList(params: ListParams) {
-    const queryString = new URLSearchParams(params as any).toString();
-    const response = await fetch(`${API_BASE_URL}/functional-test-cases/flat?${queryString}`, {
-      method: 'GET',
-      headers: getAuthHeaders()
-    });
-
-    return handleResponse(response);
+    const queryString = this.buildQueryString(params);
+    return this.request(`${API_BASE_URL}/functional-test-cases/flat?${queryString}`);
   }
 
   /**
    * 批量保存测试用例
    */
   async batchSave(testCases: any[], aiSessionId: string) {
-    const response = await fetch(`${API_BASE_URL}/functional-test-cases/batch-save`, {
+    return this.request(`${API_BASE_URL}/functional-test-cases/batch-save`, {
       method: 'POST',
-      headers: getAuthHeaders(),
       body: JSON.stringify({ testCases, aiSessionId })
     });
-
-    return handleResponse(response);
   }
 
   /**
    * 获取测试用例详情
    */
   async getById(id: number) {
-    const response = await fetch(`${API_BASE_URL}/functional-test-cases/${id}`, {
-      method: 'GET',
-      headers: getAuthHeaders()
-    });
-
-    return handleResponse(response);
+    return this.request(`${API_BASE_URL}/functional-test-cases/${id}`);
   }
 
   /**
    * 创建测试用例
    */
   async create(data: any) {
-    const response = await fetch(`${API_BASE_URL}/functional-test-cases`, {
+    return this.request(`${API_BASE_URL}/functional-test-cases`, {
       method: 'POST',
-      headers: getAuthHeaders(),
       body: JSON.stringify(data)
     });
-
-    return handleResponse(response);
   }
 
   /**
    * 更新测试用例
    */
   async update(id: number, data: any) {
-    const response = await fetch(`${API_BASE_URL}/functional-test-cases/${id}`, {
+    return this.request(`${API_BASE_URL}/functional-test-cases/${id}`, {
       method: 'PUT',
-      headers: getAuthHeaders(),
       body: JSON.stringify(data)
     });
-
-    return handleResponse(response);
   }
 
   /**
    * 删除测试用例
    */
   async delete(id: number) {
-    const response = await fetch(`${API_BASE_URL}/functional-test-cases/${id}`, {
-      method: 'DELETE',
-      headers: getAuthHeaders()
+    return this.request(`${API_BASE_URL}/functional-test-cases/${id}`, {
+      method: 'DELETE'
     });
-
-    return handleResponse(response);
   }
 
   /**
    * 批量删除测试点
    */
   async batchDelete(testPointIds: number[]) {
-    const response = await fetch(`${API_BASE_URL}/functional-test-cases/batch-delete`, {
+    return this.request(`${API_BASE_URL}/functional-test-cases/batch-delete`, {
       method: 'POST',
-      headers: getAuthHeaders(),
       body: JSON.stringify({ testPointIds })
     });
-
-    return handleResponse(response);
   }
 
   /**
    * 获取测试点详情（含关联用例信息）
    */
   async getTestPointById(id: number) {
-    const response = await fetch(`${API_BASE_URL}/functional-test-cases/test-points/${id}`, {
-      method: 'GET',
-      headers: getAuthHeaders()
-    });
-
-    return handleResponse(response);
+    return this.request(`${API_BASE_URL}/functional-test-cases/test-points/${id}`);
   }
 
   /**
    * 更新测试点
    */
   async updateTestPoint(id: number, data: any) {
-    const response = await fetch(`${API_BASE_URL}/functional-test-cases/test-points/${id}`, {
+    return this.request(`${API_BASE_URL}/functional-test-cases/test-points/${id}`, {
       method: 'PUT',
-      headers: getAuthHeaders(),
       body: JSON.stringify(data)
     });
-
-    return handleResponse(response);
   }
 
   /**
@@ -652,6 +690,94 @@ class FunctionalTestCaseService {
     });
 
     return handleResponse(response);
+  }
+
+  /**
+   * 🆕 获取筛选选项（动态生成）
+   */
+  async getFilterOptions(): Promise<{
+    systems: string[];
+    modules: string[];
+    scenarios: string[];
+    creators: { id: number; username: string }[];
+  }> {
+    const result = await this.request<{data: any}>(`${API_BASE_URL}/functional-test-cases/filter-options`);
+    return result.data;
+  }
+
+  /**
+   * 🆕 根据系统获取项目版本列表
+   */
+  async getProjectVersionsBySystem(systemName: string): Promise<Array<{
+    id: number;
+    version_code: string;
+    version_name: string;
+    is_main: boolean;
+  }>> {
+    const result = await this.request<{data: any}>(`${API_BASE_URL}/functional-test-cases/project-versions?system=${encodeURIComponent(systemName)}`);
+    return result.data;
+  }
+
+  /**
+   * 🆕 根据系统获取测试场景和测试点列表
+   */
+  async getScenariosBySystem(systemName: string): Promise<Array<{
+    value: string;
+    label: string;
+    testPoints: Array<{ value: string; label: string }>;
+  }>> {
+    const result = await this.request<{data: any}>(`${API_BASE_URL}/functional-test-cases/scenarios?system=${encodeURIComponent(systemName)}`);
+    return result.data;
+  }
+
+  /**
+   * 🆕 根据系统获取模块列表
+   */
+  async getModulesBySystem(systemName: string): Promise<Array<{
+    value: string;
+    label: string;
+  }>> {
+    const result = await this.request<{data: any}>(`${API_BASE_URL}/functional-test-cases/modules?system=${encodeURIComponent(systemName)}`);
+    return result.data;
+  }
+
+  /**
+   * 🆕 保存功能测试用例执行结果
+   */
+  async saveExecutionResult(testCaseId: number, data: {
+    testCaseName: string;
+    finalResult: 'pass' | 'fail' | 'block';
+    actualResult: string;
+    comments?: string;
+    durationMs: number;
+    stepResults?: any[];
+    totalSteps?: number;
+    completedSteps?: number;
+    passedSteps?: number;
+    failedSteps?: number;
+    blockedSteps?: number;
+    screenshots?: any[];
+    attachments?: any[];
+    metadata?: any;
+  }) {
+    return this.request(`${API_BASE_URL}/functional-test-cases/${testCaseId}/execute`, {
+      method: 'POST',
+      body: JSON.stringify(data)
+    });
+  }
+
+  /**
+   * 🆕 获取测试用例的执行历史
+   */
+  async getExecutionHistory(testCaseId: number, limit = 10) {
+    return this.request(`${API_BASE_URL}/functional-test-cases/${testCaseId}/executions?limit=${limit}`);
+  }
+
+  /**
+   * 🆕 获取单个执行记录详情
+   */
+  async getExecutionById(executionId: string) {
+    return this.request(`${API_BASE_URL}/functional-test-cases/executions/${executionId}`);
   }
 }
 

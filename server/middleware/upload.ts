@@ -22,25 +22,25 @@ const storage = multer.diskStorage({
   }
 });
 
-// 文件过滤器（单文件上传 - 仅 HTML）
+// 文件过滤器（单文件上传 - 支持多种文档格式）
 const fileFilter = (req: any, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
   const ext = path.extname(file.originalname).toLowerCase();
 
-  if (ext === '.html' || ext === '.htm') {
+  if (ext === '.html' || ext === '.htm' || ext === '.pdf' || ext === '.docx' || ext === '.md' || ext === '.markdown' || ext === '.txt') {
     cb(null, true);
   } else {
-    cb(new Error('只支持 .html 或 .htm 格式的Axure文件'));
+    cb(new Error('只支持 HTML / PDF / DOCX / Markdown / TXT 文件'));
   }
 };
 
-// 文件过滤器（多文件上传 - HTML + JS）
+// 文件过滤器（多文件上传 - HTML + JS，兼容需求文档格式）
 const multiFileFilter = (req: any, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
   const ext = path.extname(file.originalname).toLowerCase();
 
-  if (ext === '.html' || ext === '.htm' || ext === '.js') {
+  if (ext === '.html' || ext === '.htm' || ext === '.js' || ext === '.pdf' || ext === '.docx' || ext === '.md' || ext === '.markdown' || ext === '.txt') {
     cb(null, true);
   } else {
-    cb(new Error('只支持 .html, .htm 和 .js 格式的文件'));
+    cb(new Error('只支持 HTML / JS / PDF / DOCX / Markdown / TXT'));
   }
 };
 

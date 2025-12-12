@@ -54,6 +54,8 @@ import { createReportsRoutes } from './routes/reports.js';
 // 🔥 新增：功能测试用例相关路由
 import { createAxureRoutes } from './routes/axure.js';
 import { createFunctionalTestCaseRoutes } from './routes/functionalTestCase.js';
+// 🆕 需求文档管理路由
+import { createRequirementDocRoutes } from './routes/requirementDoc.js';
 // 🔥 新增：系统字典管理路由
 import systemsRouter from './routes/systems.js';
 // 🔥 新增：知识库管理路由
@@ -79,6 +81,7 @@ import fetch from 'node-fetch';
 import axios from 'axios';
 import os from 'os';
 import fs from 'fs';
+import { getNow } from './utils/timezone.js';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -218,7 +221,7 @@ async function ensureAIConfiguration() {
         data: {
           key: 'app_settings',
           value: JSON.stringify(defaultSettings),
-          updated_at: new Date()
+          updated_at: getNow()
         }
       });
 
@@ -281,7 +284,9 @@ async function ensureDefaultUser() {
           email: 'admin@test.local',
           username: 'admin',
           password_hash: passwordHash,
-          created_at: new Date()
+          account_name: '系统管理员',
+          is_super_admin: true,
+          created_at: getNow()
         }
       });
 
@@ -392,7 +397,7 @@ const corsOptions = {
   },
   credentials: true,
   optionsSuccessStatus: 200, // For legacy browser support
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
 };
 
@@ -421,87 +426,7 @@ app.use((req, res, next) => {
 });
 
 // 🔥 API路由将在startServer函数中注册，因为服务需要先初始化
-
-// 🔥 新增: 报告API路由
-app.get('/api/reports/:runId', async (req, res) => {
-  try {
-    const runId = req.params.runId;
-    
-    // 先检查是否为测试套件运行ID
-    const suiteRun = suiteExecutionService.getSuiteRun(runId);
-    
-    if (suiteRun) {
-      // 尝试从数据库查询报告
-      let reportData: any = null;
-      
-      try {
-        reportData = await prisma.reports.findFirst({
-          where: {
-            run_id: {
-              equals: Number(suiteRun.suiteId) // 尝试匹配suite_id
-            }
-          },
-          include: {
-            test_runs: true
-          }
-        });
-      } catch (dbError) {
-        console.warn('从数据库获取报告数据失败，将使用内存数据:', dbError);
-      }
-      
-      // 无论是否在数据库找到记录，都返回可用的报告数据
-      res.json({ 
-        success: true, 
-        data: {
-          generatedAt: new Date(),
-          summary: {
-            totalCases: suiteRun.totalCases,
-            passedCases: suiteRun.passedCases,
-            failedCases: suiteRun.failedCases,
-            duration: suiteRun.duration || '0s',
-            passRate: suiteRun.totalCases > 0 
-              ? Math.round((suiteRun.passedCases / suiteRun.totalCases) * 100) 
-              : 0,
-            status: suiteRun.status
-          },
-          suiteRun,
-          // 如果数据库有数据，附加进来
-          dbReport: reportData || null
-        }
-      });
-    } else {
-      // 如果不是套件ID，尝试作为单个测试用例处理
-      const testRun = testExecutionService.getTestRun(runId);
-      
-      if (testRun) {
-        res.json({
-          success: true,
-          data: {
-            generatedAt: new Date(),
-            testRun,
-            summary: {
-              status: testRun.status,
-              duration: testRun.endedAt 
-                ? `${Math.round((testRun.endedAt.getTime() - testRun.startedAt.getTime()) / 1000)}s`
-                : '进行中...'
-            }
-          }
-        });
-      } else {
-        res.status(404).json({
-          success: false,
-          error: '找不到指定的测试报告'
-        });
-      }
-    }
-  } catch (error) {
-    console.error('获取测试报告失败:', error);
-    res.status(500).json({
-      success: false,
-      error: `获取测试报告失败: ${error.message}`
-    });
-  }
-});
+// 注意：/api/reports/:runId 路由已移到 startServer 函数内部，在 createReportsRoutes 之后注册
 
 // 🔥 定时清理任务，防止内存泄漏
 const setupCleanupTasks = () => {
@@ -619,9 +544,9 @@ async function startServer() {
     console.log('🔧 开始初始化实时流服务...');
     streamService = new StreamService({
       fps: 2,
-      jpegQuality: 60,
-      width: 1024,
-      height: 768,
+      jpegQuality: 85,  // 🔥 提高质量：从60提升到85，提供更清晰的画面
+      width: 1920,       // 🔥 提高分辨率：从1024提升到1920，支持高清显示
+      height: 1080,      // 🔥 提高分辨率：从768提升到1080，支持高清显示
       maskSelectors: []
     });
     console.log('✅ 实时流服务初始化完成');
@@ -707,10 +632,96 @@ async function startServer() {
     console.log('🔧 注册Reports测试报告路由...');
     app.use('/api/reports', authenticate, createReportsRoutes(prisma));
 
+    // 🔥 新增: 单个测试报告路由（必须在 createReportsRoutes 之后注册，避免拦截其他路由）
+    // GET /api/reports/:runId - 获取单个测试运行或套件的报告
+    app.get('/api/reports/:runId', authenticate, async (req, res) => {
+      try {
+        const runId = req.params.runId;
+        
+        // 先检查是否为测试套件运行ID
+        const suiteRun = suiteExecutionService.getSuiteRun(runId);
+        
+        if (suiteRun) {
+          // 尝试从数据库查询报告
+          let reportData: any = null;
+          
+          try {
+            reportData = await prisma.reports.findFirst({
+              where: {
+                run_id: {
+                  equals: Number(suiteRun.suiteId) // 尝试匹配suite_id
+                }
+              },
+              include: {
+                test_runs: true
+              }
+            });
+          } catch (dbError) {
+            console.warn('从数据库获取报告数据失败，将使用内存数据:', dbError);
+          }
+          
+          // 无论是否在数据库找到记录，都返回可用的报告数据
+          res.json({ 
+            success: true, 
+            data: {
+              generatedAt: new Date(),
+              summary: {
+                totalCases: suiteRun.totalCases,
+                passedCases: suiteRun.passedCases,
+                failedCases: suiteRun.failedCases,
+                duration: suiteRun.duration || '0s',
+                passRate: suiteRun.totalCases > 0 
+                  ? Math.round((suiteRun.passedCases / suiteRun.totalCases) * 100) 
+                  : 0,
+                status: suiteRun.status
+              },
+              suiteRun,
+              // 如果数据库有数据，附加进来
+              dbReport: reportData || null
+            }
+          });
+        } else {
+          // 如果不是套件ID，尝试作为单个测试用例处理
+          const testRun = testExecutionService.getTestRun(runId);
+          
+          if (testRun) {
+            res.json({
+              success: true,
+              data: {
+                generatedAt: new Date(),
+                testRun,
+                summary: {
+                  status: testRun.status,
+                  duration: testRun.endedAt 
+                    ? `${Math.round((testRun.endedAt.getTime() - testRun.startedAt.getTime()) / 1000)}s`
+                    : '进行中...'
+                }
+              }
+            });
+          } else {
+            res.status(404).json({
+              success: false,
+              error: '找不到指定的测试报告'
+            });
+          }
+        }
+      } catch (error: any) {
+        console.error('获取测试报告失败:', error);
+        res.status(500).json({
+          success: false,
+          error: `获取测试报告失败: ${error.message}`
+        });
+      }
+    });
+
     // 🔥 新增：功能测试用例相关路由
     console.log('🔧 注册功能测试用例相关路由...');
     app.use('/api/v1/axure', authenticate, createAxureRoutes());
     app.use('/api/v1/functional-test-cases', authenticate, createFunctionalTestCaseRoutes());
+    
+    // 🆕 需求文档管理路由
+    console.log('🔧 注册需求文档管理路由...');
+    app.use('/api/v1/requirement-docs', authenticate, createRequirementDocRoutes());
 
     // 🔥 新增：系统字典管理路由
     console.log('🔧 注册系统字典管理路由...');

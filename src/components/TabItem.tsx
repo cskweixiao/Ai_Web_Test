@@ -1,7 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, forwardRef } from 'react';
 import { motion } from 'framer-motion';
 import { X } from 'lucide-react';
 import { clsx } from 'clsx';
+import { Dropdown } from 'antd';
+import type { MenuProps } from 'antd';
 import type { Tab } from '../contexts/TabContext';
 
 interface TabItemProps {
@@ -10,15 +12,17 @@ interface TabItemProps {
   onSelect: () => void;
   onClose: () => void;
   onContextMenu: (e: React.MouseEvent) => void;
+  menu?: MenuProps;
 }
 
-export const TabItem: React.FC<TabItemProps> = ({
+export const TabItem = forwardRef<HTMLDivElement, TabItemProps>(({
   tab,
   isActive,
   onSelect,
   onClose,
   onContextMenu,
-}) => {
+  menu,
+}, ref) => {
   const [isHovered, setIsHovered] = useState(false);
 
   const handleClose = (e: React.MouseEvent) => {
@@ -36,13 +40,9 @@ export const TabItem: React.FC<TabItemProps> = ({
     }
   };
 
-  return (
-    <motion.div
-      layout
-      initial={{ opacity: 0, scale: 0.8 }}
-      animate={{ opacity: 1, scale: 1 }}
-      exit={{ opacity: 0, scale: 0.8 }}
-      transition={{ duration: 0.2 }}
+  const content = (
+    <div
+      ref={ref}
       className={clsx(
         'group relative flex items-center h-10 px-3 cursor-pointer select-none transition-all duration-200',
         'border-r border-[var(--color-border)]',
@@ -106,6 +106,18 @@ export const TabItem: React.FC<TabItemProps> = ({
           transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
         />
       )}
-    </motion.div>
+    </div>
   );
-};
+
+  if (menu) {
+    return (
+      <Dropdown menu={menu.menu} trigger={['contextMenu']}>
+        {content}
+      </Dropdown>
+    );
+  }
+
+  return content;
+});
+
+TabItem.displayName = 'TabItem';

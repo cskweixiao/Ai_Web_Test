@@ -61,6 +61,31 @@ export class EvidenceService {
 
     const destPath = path.join(runDir, filename);
     
+    // 🔥 修复：检查文件是否已存在，避免重复保存
+    try {
+      const existingStats = await fs.stat(destPath);
+      // 检查数据库中是否已存在该记录
+      const existingRecord = await this.prisma.run_artifacts.findFirst({
+        where: {
+          runId,
+          filename
+        }
+      });
+      
+      if (existingRecord) {
+        console.log(`⚠️ [${runId}] 证据文件已存在，跳过保存: ${filename}`);
+        return {
+          runId,
+          type,
+          filename,
+          size: existingStats.size,
+          createdAt: existingRecord.createdAt
+        };
+      }
+    } catch {
+      // 文件不存在，继续保存
+    }
+    
     // 直接保存Buffer到文件
     await fs.writeFile(destPath, buffer);
     

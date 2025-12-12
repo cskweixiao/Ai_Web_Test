@@ -29,7 +29,7 @@ export function createFunctionalTestCaseRoutes(): Router {
       } = req.query;
 
       // 获取用户信息（用于数据隔离）
-      const userDepartment = req.user?.department;
+      const userDepartment = req.user?.project;
       const isSuperAdmin = req.user?.isSuperAdmin || false;
 
       console.log(`📋 查询功能测试用例列表 - 页码: ${page}, 用户部门: ${userDepartment}`);
@@ -68,6 +68,120 @@ export function createFunctionalTestCaseRoutes(): Router {
   });
 
   /**
+   * GET /api/v1/functional-test-cases/filter-options
+   * 🆕 获取筛选选项（动态生成）
+   */
+  router.get('/filter-options', async (req: Request, res: Response) => {
+    try {
+      const service = getService();
+      const options = await service.getFilterOptions();
+      res.json({
+        success: true,
+        data: options
+      });
+    } catch (error: any) {
+      console.error('获取筛选选项失败:', error);
+      res.status(500).json({
+        success: false,
+        error: error.message
+      });
+    }
+  });
+
+  /**
+   * GET /api/v1/functional-test-cases/project-versions
+   * 🆕 根据系统获取项目版本列表
+   */
+  router.get('/project-versions', async (req: Request, res: Response) => {
+    try {
+      const { system } = req.query;
+
+      if (!system) {
+        return res.status(400).json({
+          success: false,
+          error: '缺少必填参数: system'
+        });
+      }
+
+      const service = getService();
+      const versions = await service.getProjectVersionsBySystem(system as string);
+      
+      res.json({
+        success: true,
+        data: versions
+      });
+    } catch (error: any) {
+      console.error('获取项目版本失败:', error);
+      res.status(500).json({
+        success: false,
+        error: error.message
+      });
+    }
+  });
+
+  /**
+   * GET /api/v1/functional-test-cases/scenarios
+   * 🆕 根据系统获取测试场景和测试点列表
+   */
+  router.get('/scenarios', async (req: Request, res: Response) => {
+    try {
+      const { system } = req.query;
+
+      if (!system) {
+        return res.status(400).json({
+          success: false,
+          error: '缺少必填参数: system'
+        });
+      }
+
+      const service = getService();
+      const scenarios = await service.getScenariosBySystem(system as string);
+      
+      res.json({
+        success: true,
+        data: scenarios
+      });
+    } catch (error: any) {
+      console.error('获取测试场景失败:', error);
+      res.status(500).json({
+        success: false,
+        error: error.message
+      });
+    }
+  });
+
+  /**
+   * GET /api/v1/functional-test-cases/modules
+   * 🆕 根据系统获取模块列表
+   */
+  router.get('/modules', async (req: Request, res: Response) => {
+    try {
+      const { system } = req.query;
+
+      if (!system) {
+        return res.status(400).json({
+          success: false,
+          error: '缺少必填参数: system'
+        });
+      }
+
+      const service = getService();
+      const modules = await service.getModulesBySystem(system as string);
+      
+      res.json({
+        success: true,
+        data: modules
+      });
+    } catch (error: any) {
+      console.error('获取模块列表失败:', error);
+      res.status(500).json({
+        success: false,
+        error: error.message
+      });
+    }
+  });
+
+  /**
    * GET /api/v1/functional-test-cases/flat
    * 获取功能测试用例平铺列表（以测试点为维度展示）
    */
@@ -87,14 +201,17 @@ export function createFunctionalTestCaseRoutes(): Router {
         createdBy,
         startDate,
         endDate,
-        riskLevel
+        riskLevel,
+        projectVersion,  // 🆕 项目版本筛选
+        caseType,  // 🆕 用例类型筛选
+        executionStatus  // 🆕 执行结果筛选
       } = req.query;
 
       // 获取用户信息（用于数据隔离）
-      const userDepartment = req.user?.department;
+      const userDepartment = req.user?.project;
       const isSuperAdmin = req.user?.isSuperAdmin || false;
 
-      console.log(`📋 查询功能测试用例平铺列表 - 页码: ${page}, 用户部门: ${userDepartment}`);
+      console.log(`📋 查询功能测试用例平铺列表 - 页码: ${page}, 用户部门: ${userDepartment}, 执行结果: ${executionStatus}`);
 
       const result = await getService().getFlatList({
         page: parseInt(page as string),
@@ -111,6 +228,9 @@ export function createFunctionalTestCaseRoutes(): Router {
         startDate: startDate as string,
         endDate: endDate as string,
         riskLevel: riskLevel as string,
+        projectVersion: projectVersion as string,  // 🆕 项目版本筛选
+        caseType: caseType as string,  // 🆕 用例类型筛选
+        executionStatus: executionStatus as string,  // 🆕 执行结果筛选
         userDepartment,
         isSuperAdmin
       });
@@ -144,12 +264,8 @@ export function createFunctionalTestCaseRoutes(): Router {
         });
       }
 
-      if (!aiSessionId) {
-        return res.status(400).json({
-          success: false,
-          error: '缺少会话ID'
-        });
-      }
+      // 如果没有会话ID，自动生成一个
+      const finalSessionId = aiSessionId || `session-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 
       if (!req.user) {
         return res.status(401).json({
@@ -158,11 +274,11 @@ export function createFunctionalTestCaseRoutes(): Router {
         });
       }
 
-      console.log(`💾 批量保存 ${testCases.length} 个功能测试用例`);
+      console.log(`💾 批量保存 ${testCases.length} 个功能测试用例, sessionId: ${finalSessionId}`);
 
       const result = await getService().batchSave({
         testCases,
-        aiSessionId,
+        aiSessionId: finalSessionId,
         userId: req.user.id
       });
 
@@ -227,6 +343,7 @@ export function createFunctionalTestCaseRoutes(): Router {
   router.post('/', async (req: Request, res: Response) => {
     try {
       const {
+        caseId,               // 用例编号
         name,
         description,
         system,
@@ -234,14 +351,19 @@ export function createFunctionalTestCaseRoutes(): Router {
         priority,
         status,
         testType,
+        caseType,            // 用例类型
         tags,
         preconditions,
         testData,
         sectionName,
         coverageAreas,
-        testScenario,        // 新增：测试场景
-        steps,                // 新增：用例级别测试步骤
-        assertions,           // 新增：用例级别预期结果
+        testScenario,        // 测试场景
+        scenarioName,        // 场景名称（兼容字段）
+        scenarioDescription, // 场景描述
+        steps,               // 用例级别测试步骤
+        assertions,          // 用例级别预期结果
+        expectedResult,      // 预期结果（兼容字段）
+        projectVersionId,    // 项目版本ID
         testPoints
       } = req.body;
 
@@ -302,6 +424,7 @@ export function createFunctionalTestCaseRoutes(): Router {
       }));
 
       const result = await getService().create({
+        caseId,              // 用例编号
         name,
         description,
         system,
@@ -309,14 +432,19 @@ export function createFunctionalTestCaseRoutes(): Router {
         priority,
         status,
         testType,
+        caseType,            // 用例类型
         tags,
         preconditions,
-        testData,
+        testData,            // 测试数据
         sectionName,
         coverageAreas,
-        testScenario: testScenario || '',      // 新增字段
-        steps: steps || '',                    // 新增字段
-        assertions: assertions || '',          // 新增字段
+        testScenario: testScenario || '',           // 测试场景
+        scenarioName: scenarioName || '',           // 场景名称
+        scenarioDescription: scenarioDescription || '', // 场景描述
+        steps: steps || '',                         // 用例级别测试步骤
+        assertions: assertions || '',               // 用例级别预期结果
+        expectedResult: expectedResult || '',       // 预期结果
+        projectVersionId,                           // 项目版本ID
         testPoints: normalizedTestPoints
       }, req.user.id);
 
@@ -567,7 +695,7 @@ export function createFunctionalTestCaseRoutes(): Router {
         }
       });
     } catch (error: any) {
-      console.error('❌ 测试场景拆分失败:', error);
+      console.error('❌ 测试场景拆分失败3:', error);
       res.status(500).json({
         success: false,
         error: error.message
@@ -722,16 +850,16 @@ export function createFunctionalTestCaseRoutes(): Router {
         sessionId
       } = req.body;
 
-      if (!testPoint || !scenarioId || !scenarioName || !systemName || !moduleName || !relatedSections) {
+      if (!testPoint || !scenarioId || !scenarioName) {
         return res.status(400).json({
           success: false,
-          error: '缺少必填参数'
+          error: '缺少必填参数: testPoint, scenarioId, scenarioName 为必填'
         });
       }
 
       console.log(`🎯 阶段3：为测试点 "${testPoint.testPoint}" 生成测试用例 - sessionId: ${sessionId}`);
 
-      const testCases = await getService().generateTestCaseForTestPoint(
+      const result = await getService().generateTestCaseForTestPoint(
         testPoint,
         scenarioId,
         scenarioName,
@@ -745,14 +873,18 @@ export function createFunctionalTestCaseRoutes(): Router {
       res.json({
         success: true,
         data: {
-          testCases,
+          testCases: result.validCases, // 有效用例（保持兼容）
+          filteredCases: result.filteredCases, // 🆕 被过滤的用例
+          totalGenerated: result.totalGenerated, // 🆕 AI生成总数
+          validCount: result.validCount, // 🆕 有效数量
+          filteredCount: result.filteredCount, // 🆕 被过滤数量
           testPointId: testPoint.id || testPoint.testPoint,
           scenarioId,
           sessionId
         }
       });
     } catch (error: any) {
-      console.error('❌ 生成测试用例失败:', error);
+      console.error('❌ 生成测试用例失败3:', error);
       res.status(500).json({
         success: false,
         error: error.message
@@ -808,7 +940,7 @@ export function createFunctionalTestCaseRoutes(): Router {
         }
       });
     } catch (error: any) {
-      console.error('❌ 生成测试用例失败:', error);
+      console.error('❌ 生成测试用例失败4:', error);
       res.status(500).json({
         success: false,
         error: error.message
@@ -863,6 +995,161 @@ export function createFunctionalTestCaseRoutes(): Router {
       });
     } catch (error: any) {
       console.error('❌ 生成测试点失败:', error);
+      res.status(500).json({
+        success: false,
+        error: error.message
+      });
+    }
+  });
+
+  /**
+   * 🆕 POST /api/v1/functional-test-cases/:id/execute
+   * 保存功能测试用例执行结果
+   */
+  router.post('/:id/execute', async (req: Request, res: Response) => {
+    try {
+      const testCaseId = parseInt(req.params.id);
+
+      if (isNaN(testCaseId)) {
+        return res.status(400).json({
+          success: false,
+          error: '无效的测试用例ID'
+        });
+      }
+
+      const {
+        testCaseName,
+        finalResult,
+        actualResult,
+        comments,
+        durationMs,
+        stepResults,
+        totalSteps,
+        completedSteps,
+        passedSteps,
+        failedSteps,
+        blockedSteps,
+        screenshots,
+        attachments,
+        metadata
+      } = req.body;
+
+      // 验证必填字段
+      if (!finalResult || !['pass', 'fail', 'block'].includes(finalResult)) {
+        return res.status(400).json({
+          success: false,
+          error: '最终结果必填，且必须为 pass、fail 或 block'
+        });
+      }
+
+      if (!actualResult || !actualResult.trim()) {
+        return res.status(400).json({
+          success: false,
+          error: '实际结果总结不能为空'
+        });
+      }
+
+      if (!req.user) {
+        return res.status(401).json({
+          success: false,
+          error: '未授权'
+        });
+      }
+
+      console.log(`💾 保存测试用例执行结果 - 用例ID: ${testCaseId}, 执行者: ${req.user.username}`);
+
+      const result = await getService().saveExecutionResult({
+        testCaseId,
+        testCaseName: testCaseName || `测试用例-${testCaseId}`,
+        finalResult,
+        actualResult,
+        comments,
+        durationMs: durationMs || 0,
+        executorId: req.user.id,
+        executorDepartment: req.user.project,
+        stepResults,
+        totalSteps,
+        completedSteps,
+        passedSteps,
+        failedSteps,
+        blockedSteps,
+        screenshots,
+        attachments,
+        metadata
+      });
+
+      res.json({
+        success: true,
+        data: result,
+        message: '测试结果已保存'
+      });
+    } catch (error: any) {
+      console.error('❌ 保存执行结果失败:', error);
+      res.status(500).json({
+        success: false,
+        error: error.message
+      });
+    }
+  });
+
+  /**
+   * 🆕 GET /api/v1/functional-test-cases/:id/executions
+   * 获取测试用例的执行历史
+   */
+  router.get('/:id/executions', async (req: Request, res: Response) => {
+    try {
+      const testCaseId = parseInt(req.params.id);
+      const limit = parseInt(req.query.limit as string || '10');
+
+      if (isNaN(testCaseId)) {
+        return res.status(400).json({
+          success: false,
+          error: '无效的测试用例ID'
+        });
+      }
+
+      console.log(`📋 获取测试用例执行历史 - 用例ID: ${testCaseId}`);
+
+      const executions = await getService().getExecutionHistory(testCaseId, limit);
+
+      res.json({
+        success: true,
+        data: executions
+      });
+    } catch (error: any) {
+      console.error('❌ 获取执行历史失败:', error);
+      res.status(500).json({
+        success: false,
+        error: error.message
+      });
+    }
+  });
+
+  /**
+   * 🆕 GET /api/v1/functional-test-cases/executions/:executionId
+   * 获取单个执行记录详情
+   */
+  router.get('/executions/:executionId', async (req: Request, res: Response) => {
+    try {
+      const executionId = req.params.executionId;
+
+      console.log(`📋 获取执行记录详情 - 执行ID: ${executionId}`);
+
+      const execution = await getService().getExecutionById(executionId);
+
+      if (!execution) {
+        return res.status(404).json({
+          success: false,
+          error: '执行记录不存在'
+        });
+      }
+
+      res.json({
+        success: true,
+        data: execution
+      });
+    } catch (error: any) {
+      console.error('❌ 获取执行记录详情失败:', error);
       res.status(500).json({
         success: false,
         error: error.message

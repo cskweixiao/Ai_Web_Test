@@ -6,8 +6,16 @@
 /**
  * 获取用户提示词(通用部分)
  */
-export function getUserPrompt(htmlContent: string): string {
-  return `请严格按照上述解析策略分析以下HTML文件,生成结构化的需求文档。
+export function getUserPrompt(content: string, sourceType: 'html' | 'text' = 'html'): string {
+  const isHtml = sourceType === 'html';
+  const contentLabel = isHtml ? 'HTML文件' : '原始文档内容';
+  const fencedType = isHtml ? 'html' : 'text';
+
+  const prelude = isHtml
+    ? `请严格按照上述解析策略分析以下HTML文件,生成结构化的需求文档。`
+    : `请基于以下文档内容提取真实的业务需求，生成结构化需求文档。不要依赖DOM标签，专注文本描述。`;
+
+  return `${prelude}
 
 ⚠️ **重要提醒**:
 1. 必须严格按照"页面类型识别"章节的优先级进行判断
@@ -18,9 +26,9 @@ export function getUserPrompt(htmlContent: string): string {
 6. 必须识别所有弹窗并为其创建独立章节
 7. 所有术语必须使用中文
 
-HTML内容:
-\`\`\`html
-${htmlContent}
+${contentLabel}:
+\`\`\`${fencedType}
+${content}
 \`\`\``;
 }
 
@@ -60,7 +68,7 @@ ${businessRules.map((rule, index) => `${index + 1}. ${rule}`).join('\n')}
 export function getMarkdownFormatInstructions(): string {
   return `
 
-# 📐 Markdown格式规范
+# 📐 Markdown格式规范（内部参考，禁止输出到需求文档！）
 
 ## 标题层级规范
 \`\`\`markdown
@@ -122,7 +130,9 @@ export function getMarkdownFormatInstructions(): string {
 
 ---
 
-# ✅ 质量检查清单
+# ✅ 质量检查清单（内部参考，禁止输出到需求文档！）
+
+**⚠️ 以下内容仅供你内部自检参考，绝对不要将"质量检查清单"章节输出到需求文档中！**
 
 生成需求文档后,请自检以下项目:
 
@@ -161,7 +171,9 @@ export function getMarkdownFormatInstructions(): string {
 
 ---
 
-# 🚨 常见错误及修正
+# 🚨 常见错误及修正（内部参考，禁止输出到需求文档！）
+
+**⚠️ 以下内容仅供你避免常见错误，绝对不要将"常见错误及修正"章节输出到需求文档中！**
 
 ## 错误1: 页面类型识别错误
 ❌ **错误**: 将有"保存"、"撤销"按钮的表单页识别为详情页
@@ -204,6 +216,8 @@ export function getMarkdownFormatInstructions(): string {
 ✅ **正确**: 必须识别所有隐藏元素,通过坐标判断同位置多状态画面
 
 ---
+
+**🚫 再次提醒：以上"质量检查清单"和"常见错误及修正"是给你的内部指导，不要输出到需求文档中！**
 
 请严格遵守以上规范,生成高质量的需求文档!
 `;

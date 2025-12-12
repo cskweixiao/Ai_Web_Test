@@ -356,13 +356,41 @@ export class TestService {
   // 创建测试用例
   async createTestCase(caseData: Partial<TestCase>): Promise<TestCase> {
     try {
+      // 🔥 调试日志：检查发送的数据
+      console.log('📤 [testService] 发送创建测试用例请求:', {
+        name: caseData.name,
+        author: caseData.author,
+        authorType: typeof caseData.author,
+        authorValue: caseData.author,
+        hasSteps: !!caseData.steps,
+        fullData: caseData
+      });
+
+      // 🔥 确保 author 字段存在
+      const requestData = { ...caseData };
+      if (!requestData.author) {
+        console.warn('⚠️ [testService] author 字段缺失，使用默认值');
+        requestData.author = '未知用户';
+      }
+
+      console.log('📤 [testService] 序列化前的数据:', requestData);
+      const requestBody = JSON.stringify(requestData);
+      console.log('📤 [testService] 序列化后的 JSON:', requestBody);
+
       const response = await fetch(`${API_BASE_URL}/tests/cases`, {
         method: 'POST',
         headers: this.getAuthHeaders(),
-        body: JSON.stringify(caseData)
+        body: requestBody
       });
       
       const data = await response.json();
+      
+      // 🔥 调试日志：检查返回的数据
+      console.log('📥 [testService] 收到创建测试用例响应:', {
+        success: data.success,
+        author: data.data?.author,
+        fullData: data.data
+      });
       
       if (!data.success) {
         throw new Error(data.error || '创建测试用例失败');
@@ -378,13 +406,42 @@ export class TestService {
   // 更新测试用例
   async updateTestCase(id: number, caseData: Partial<TestCase>): Promise<TestCase> {
     try {
+      // 🔥 调试日志：检查发送的数据
+      console.log('📤 [testService] 发送更新测试用例请求:', {
+        id,
+        name: caseData.name,
+        author: caseData.author,
+        authorType: typeof caseData.author,
+        authorValue: caseData.author,
+        hasSteps: !!caseData.steps,
+        fullData: caseData
+      });
+
+      // 🔥 确保 author 字段存在
+      const requestData = { ...caseData };
+      if (!requestData.author) {
+        console.warn('⚠️ [testService] author 字段缺失，使用默认值');
+        requestData.author = '未知用户';
+      }
+
+      console.log('📤 [testService] 序列化前的数据:', requestData);
+      const requestBody = JSON.stringify(requestData);
+      console.log('📤 [testService] 序列化后的 JSON:', requestBody);
+
       const response = await fetch(`${API_BASE_URL}/tests/cases/${id}`, {
         method: 'PUT',
         headers: this.getAuthHeaders(),
-        body: JSON.stringify(caseData)
+        body: requestBody
       });
 
       const data = await response.json();
+
+      // 🔥 调试日志：检查返回的数据
+      console.log('📥 [testService] 收到更新测试用例响应:', {
+        success: data.success,
+        author: data.author,
+        fullData: data
+      });
 
       if (!data.success) {
         throw new Error(data.error || '更新测试用例失败');
@@ -417,12 +474,26 @@ export class TestService {
   }
 
   // 运行单个测试用例
-  async runTestCase(caseId: number): Promise<{runId: string}> {
+  async runTestCase(
+    caseId: number, 
+    options?: {
+      executionEngine?: 'mcp' | 'playwright';
+      enableTrace?: boolean;
+      enableVideo?: boolean;
+      environment?: string;
+    }
+  ): Promise<{runId: string}> {
     try {
       const response = await fetch(`${API_BASE_URL}/tests/cases/execute`, {
         method: 'POST',
         headers: this.getAuthHeaders(),
-        body: JSON.stringify({ caseId })
+        body: JSON.stringify({ 
+          caseId,
+          executionEngine: options?.executionEngine || 'mcp',
+          enableTrace: options?.enableTrace || false,
+          enableVideo: options?.enableVideo || false,
+          environment: options?.environment || 'staging'
+        })
       });
 
       const data = await response.json();
@@ -520,6 +591,39 @@ export class TestService {
       return data.data;
     } catch (error) {
       console.error('获取测试运行详情失败:', error);
+      throw error;
+    }
+  }
+
+  // 🔥 更新测试运行的执行时长（由前端计算并发送，同时更新开始和结束时间）
+  async updateTestRunDuration(
+    runId: string, 
+    durationMs: number, 
+    startedAt?: string, 
+    finishedAt?: string
+  ): Promise<void> {
+    try {
+      const body: { durationMs: number; startedAt?: string; finishedAt?: string } = { durationMs };
+      if (startedAt) body.startedAt = startedAt;
+      if (finishedAt) body.finishedAt = finishedAt;
+
+      const response = await fetch(`${API_BASE_URL}/tests/runs/${runId}/duration`, {
+        method: 'PATCH',
+        headers: this.getAuthHeaders(),
+        body: JSON.stringify(body)
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || '更新执行时长失败');
+      }
+
+      console.log(`✅ [${runId}] 执行时长已更新: ${durationMs}ms`, {
+        startedAt: startedAt || '未提供',
+        finishedAt: finishedAt || '未提供'
+      });
+    } catch (error) {
+      console.error('更新执行时长失败:', error);
       throw error;
     }
   }

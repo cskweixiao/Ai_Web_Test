@@ -5,6 +5,7 @@ const prisma = new PrismaClient();
 export interface System {
   id: number;
   name: string;
+  short_name?: string | null;  // 🆕 项目简称
   description?: string | null;
   status: 'active' | 'inactive';
   sort_order: number;
@@ -14,6 +15,7 @@ export interface System {
 
 export interface CreateSystemInput {
   name: string;
+  short_name?: string;  // 🆕 项目简称
   description?: string;
   status?: 'active' | 'inactive';
   sort_order?: number;
@@ -21,6 +23,7 @@ export interface CreateSystemInput {
 
 export interface UpdateSystemInput {
   name?: string;
+  short_name?: string;  // 🆕 项目简称
   description?: string;
   status?: 'active' | 'inactive';
   sort_order?: number;
@@ -87,7 +90,7 @@ export async function getSystems(options: GetSystemsOptions = {}) {
  * 获取所有启用的系统（不分页，用于下拉选择）
  */
 export async function getActiveSystems() {
-  return prisma.systems.findMany({
+  const systems = await prisma.systems.findMany({
     where: { status: 'active' },
     orderBy: [
       { sort_order: 'asc' },
@@ -95,9 +98,30 @@ export async function getActiveSystems() {
     ],
     select: {
       id: true,
-      name: true
+      name: true,
+      short_name: true,  // 🆕 项目简称
+      // 🆕 包含版本信息（用于AI生成器选择项目版本）
+      versions: {
+        where: { status: 'active' },
+        orderBy: [
+          { is_main: 'desc' },  // 主线版本优先
+          { created_at: 'desc' }
+        ],
+        select: {
+          id: true,
+          version_name: true,
+          version_code: true,
+          is_main: true
+        }
+      }
     }
   });
+  
+  // 将 versions 字段名映射为 project_versions（前端期望的字段名）
+  return systems.map(sys => ({
+    ...sys,
+    project_versions: sys.versions
+  }));
 }
 
 /**
@@ -125,6 +149,7 @@ export async function createSystem(input: CreateSystemInput) {
   return prisma.systems.create({
     data: {
       name: input.name,
+      short_name: input.short_name,  // 🆕 项目简称
       description: input.description,
       status: input.status || 'active',
       sort_order: input.sort_order || 0
@@ -201,4 +226,217 @@ export async function updateSystemsOrder(orders: { id: number; sort_order: numbe
   );
 
   return Promise.all(updates);
+}
+
+// ==================== 项目版本相关 ====================
+
+export interface ProjectVersion {
+  id: number;
+  project_id: number;
+  version_name: string;
+  version_code: string;
+  description?: string | null;
+  is_main: boolean;
+  status: 'active' | 'inactive';
+  release_date?: Date | null;
+  created_at: Date;
+  updated_at: Date;
+}
+
+export interface CreateVersionInput {
+  project_id: number;
+  version_name: string;
+  version_code: string;
+  description?: string;
+  is_main?: boolean;
+  status?: 'active' | 'inactive';
+  release_date?: string;
+}
+
+export interface UpdateVersionInput {
+  version_name?: string;
+  version_code?: string;
+  description?: string;
+  status?: 'active' | 'inactive';
+  release_date?: string | null;
+}
+
+/**
+ * 获取项目的所有版本
+ */
+export async function getProjectVersions(projectId: number): Promise<ProjectVersion[]> {
+  const versions = await prisma.project_versions.findMany({
+    where: { project_id: projectId },
+    orderBy: [
+      { is_main: 'desc' },
+      { created_at: 'desc' }
+    ]
+  });
+
+  return versions as ProjectVersion[];
+}
+
+/**
+ * 创建项目版本
+ */
+export async function createProjectVersion(input: CreateVersionInput): Promise<ProjectVersion> {
+  // 检查项目是否存在
+  const project = await prisma.systems.findUnique({
+    where: { id: input.project_id }
+  });
+
+  if (!project) {
+    throw new Error('项目不存在');
+  }
+
+  // 检查版本号是否重复
+  const existingVersion = await prisma.project_versions.findFirst({
+    where: {
+      project_id: input.project_id,
+      version_code: input.version_code
+    }
+  });
+
+  if (existingVersion) {
+    throw new Error('该版本号已存在');
+  }
+
+  // 如果设置为主线版本，先取消其他主线版本
+  if (input.is_main) {
+    await prisma.project_versions.updateMany({
+      where: {
+        project_id: input.project_id,
+        is_main: true
+      },
+      data: { is_main: false }
+    });
+  }
+
+  const version = await prisma.project_versions.create({
+    data: {
+      project_id: input.project_id,
+      version_name: input.version_name,
+      version_code: input.version_code,
+      description: input.description,
+      is_main: input.is_main || false,
+      status: input.status || 'active',
+      release_date: input.release_date ? new Date(input.release_date) : null
+    }
+  });
+
+  return version as ProjectVersion;
+}
+
+/**
+ * 更新项目版本
+ */
+export async function updateProjectVersion(
+  projectId: number,
+  versionId: number,
+  input: UpdateVersionInput
+): Promise<ProjectVersion> {
+  // 检查版本是否存在
+  const existing = await prisma.project_versions.findFirst({
+    where: {
+      id: versionId,
+      project_id: projectId
+    }
+  });
+
+  if (!existing) {
+    throw new Error('版本不存在');
+  }
+
+  // 如果更新版本号，检查是否重复
+  if (input.version_code && input.version_code !== existing.version_code) {
+    const duplicate = await prisma.project_versions.findFirst({
+      where: {
+        project_id: projectId,
+        version_code: input.version_code,
+        NOT: { id: versionId }
+      }
+    });
+
+    if (duplicate) {
+      throw new Error('该版本号已存在');
+    }
+  }
+
+  const updateData: any = {};
+  if (input.version_name !== undefined) updateData.version_name = input.version_name;
+  if (input.version_code !== undefined) updateData.version_code = input.version_code;
+  if (input.description !== undefined) updateData.description = input.description;
+  if (input.status !== undefined) updateData.status = input.status;
+  if (input.release_date !== undefined) {
+    updateData.release_date = input.release_date ? new Date(input.release_date) : null;
+  }
+
+  const version = await prisma.project_versions.update({
+    where: { id: versionId },
+    data: updateData
+  });
+
+  return version as ProjectVersion;
+}
+
+/**
+ * 删除项目版本
+ */
+export async function deleteProjectVersion(projectId: number, versionId: number): Promise<void> {
+  const version = await prisma.project_versions.findFirst({
+    where: {
+      id: versionId,
+      project_id: projectId
+    }
+  });
+
+  if (!version) {
+    throw new Error('版本不存在');
+  }
+
+  if (version.is_main) {
+    throw new Error('不能删除主线版本，请先设置其他版本为主线');
+  }
+
+  await prisma.project_versions.delete({
+    where: { id: versionId }
+  });
+}
+
+/**
+ * 设置主线版本
+ */
+export async function setMainVersion(projectId: number, versionId: number): Promise<ProjectVersion> {
+  const version = await prisma.project_versions.findFirst({
+    where: {
+      id: versionId,
+      project_id: projectId
+    }
+  });
+
+  if (!version) {
+    throw new Error('版本不存在');
+  }
+
+  // 使用事务确保数据一致性
+  const result = await prisma.$transaction(async (tx) => {
+    // 取消当前主线版本
+    await tx.project_versions.updateMany({
+      where: {
+        project_id: projectId,
+        is_main: true
+      },
+      data: { is_main: false }
+    });
+
+    // 设置新的主线版本
+    const updated = await tx.project_versions.update({
+      where: { id: versionId },
+      data: { is_main: true }
+    });
+
+    return updated;
+  });
+
+  return result as ProjectVersion;
 }

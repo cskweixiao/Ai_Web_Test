@@ -53,7 +53,7 @@ export class StreamService {
     
     const timer = setInterval(async () => {
       try {
-        console.log(`📸 [StreamService] 开始截�? ${runId}`);
+        // console.log(`📸 [StreamService] 开始截图? ${runId}`);
         
         // 🔥 临时禁用mask避免黑屏
         const buffer = await page.screenshot({
@@ -62,9 +62,9 @@ export class StreamService {
           // mask: maskLocators.length > 0 ? maskLocators : undefined  // 🔥 临时注释
         });
         
-        console.log(`�?[StreamService] 截图成功: ${runId}, 大小: ${buffer.length}字节`);
+        // console.log(`�?[StreamService] 截图成功: ${runId}, 大小: ${buffer.length}字节`);
         await this.pushFrame(runId, buffer);
-        console.log(`📤 [StreamService] 推送帧完成: ${runId}`);
+        // console.log(`📤 [StreamService] 推送帧完成: ${runId}`);
       } catch (error) {
         console.error(`�?[StreamService] 截图失败: ${runId}`, error);
       }
@@ -168,6 +168,35 @@ export class StreamService {
     const isMcpConnectionClosed = message.includes('Connection closed') ||
                                   message.includes('-32000') ||
                                   message.includes('Target closed');
+
+    // 🔥 检测页面不可用错误（需要导航到初始页面）
+    const isPageUnavailable = message.toLowerCase().includes('no open pages available');
+
+    // 🔥 对于页面不可用错误，尝试导航到初始页面
+    if (isPageUnavailable) {
+      console.warn(`🌐 [StreamService] 检测到页面不可用，尝试导航到初始页面: ${shortId}`);
+      try {
+        const mcpClient = this.mcpClients.get(runId);
+        if (mcpClient) {
+          const navStep = {
+            id: 'recovery-nav-' + Date.now(),
+            action: 'navigate' as any,
+            url: 'about:blank',
+            description: '导航到初始页面',
+            order: 0
+          };
+          await mcpClient.executeMcpStep(navStep, runId);
+          console.log(`✅ [StreamService] 已导航到初始页面: ${shortId}`);
+          // 导航成功后稍等一下
+          await this.delay(500);
+        } else {
+          console.warn(`⚠️ [StreamService] 无法获取MCP客户端进行导航: ${shortId}`);
+        }
+      } catch (navError) {
+        console.error(`❌ [StreamService] 导航到初始页面失败: ${shortId}, ${this.describeError(navError)}`);
+      }
+      return;
+    }
 
     // 🔥 对于MCP连接关闭，不计入严重失败统计
     if (isMcpConnectionClosed) {
@@ -305,6 +334,27 @@ export class StreamService {
           if (!quiet) {
             console.warn(`[StreamService] page not ready for MCP screenshot (${runId}), attempt ${attempt}: ${message}`);
           }
+
+          // 🚀 修复：当页面不可用时，尝试导航到初始页面
+          if (message.toLowerCase().includes('no open pages available')) {
+            try {
+              console.log(`🌐 [StreamService] 尝试导航到初始页面 (${runId})...`);
+              const navStep = {
+                id: 'stream-nav-' + Date.now(),
+                action: 'navigate' as any,
+                url: 'about:blank',
+                description: '导航到初始页面',
+                order: 0
+              };
+              await mcpClient.executeMcpStep(navStep, runId);
+              console.log(`✅ [StreamService] 已导航到初始页面 (${runId})`);
+              // 导航成功后稍等一下再截图
+              await this.delay(500);
+            } catch (navError) {
+              console.warn(`⚠️ [StreamService] 导航失败 (${runId}): ${this.describeError(navError)}`);
+            }
+          }
+
           const waitMs = Math.min(1200, backoffMs * Math.max(1, attempt));
           await this.delay(waitMs);
           continue;
@@ -330,15 +380,24 @@ export class StreamService {
     return String(error ?? 'Unknown error');
   }
 
-  private isPageUnavailableError(message: string): boolean {
-    const normalised = message.toLowerCase();
-    return normalised.includes('no open pages available') ||
-      normalised.includes('target closed') ||
-      normalised.includes('page crashed') ||
-      normalised.includes('未找到截图文件') ||
-      (normalised.includes('mcp_screenshot_error') && message.includes('未找到截图文件'));
-  }
-
+  private isPageUnavailableError(message: string): boolean {
+
+    const normalised = message.toLowerCase();
+
+    return normalised.includes('no open pages available') ||
+
+      normalised.includes('target closed') ||
+
+      normalised.includes('page crashed') ||
+
+      normalised.includes('未找到截图文件') ||
+
+      (normalised.includes('mcp_screenshot_error') && message.includes('未找到截图文件'));
+
+  }
+
+
+
 
   private async delay(durationMs: number): Promise<void> {
     await new Promise(resolve => setTimeout(resolve, durationMs));

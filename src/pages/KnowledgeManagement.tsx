@@ -331,7 +331,7 @@ const KnowledgeManagement: React.FC = () => {
   ];
 
   return (
-    <div style={{ padding: 24 }}>
+    <div>
       <Card>
         <Space direction="vertical" size="large" style={{ width: '100%' }}>
           {/* 标题和系统选择 */}
@@ -498,7 +498,7 @@ const KnowledgeManagement: React.FC = () => {
         onOk={handleSave}
         onCancel={() => setModalVisible(false)}
         width={800}
-        destroyOnClose
+        destroyOnHidden={true}
       >
         <Form
           form={form}

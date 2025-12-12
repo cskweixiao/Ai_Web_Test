@@ -10,7 +10,7 @@ export interface AuthUser {
   email: string;
   username: string;
   accountName: string | null;
-  department: string | null;
+  project: string | null;
   isSuperAdmin: boolean;
 }
 
@@ -61,14 +61,14 @@ export class AuthService {
       email: user.email,
       isSuperAdmin: user.is_super_admin
     });
-
+    
     // 返回用户信息和token
     const authUser: AuthUser = {
       id: user.id,
       email: user.email,
       username: user.username,
       accountName: user.account_name,
-      department: user.department,
+      project: user.project,
       isSuperAdmin: user.is_super_admin
     };
 
@@ -116,7 +116,7 @@ export class AuthService {
       email: user.email,
       username: user.username,
       accountName: user.account_name,
-      department: user.department,
+      project: user.project,
       isSuperAdmin: user.is_super_admin
     };
   }
@@ -129,7 +129,7 @@ export class AuthService {
     username: string;
     password: string;
     accountName?: string;
-    department?: string;
+    project?: string;
     isSuperAdmin?: boolean;
   }): Promise<AuthUser> {
     // 检查用户名是否已存在
@@ -160,7 +160,7 @@ export class AuthService {
         username: userData.username,
         password_hash: hashedPassword,
         account_name: userData.accountName || null,
-        department: userData.department || null,
+        project: userData.project || null,
         is_super_admin: userData.isSuperAdmin || false
       }
     });
@@ -172,7 +172,7 @@ export class AuthService {
       email: user.email,
       username: user.username,
       accountName: user.account_name,
-      department: user.department,
+      project: user.project,
       isSuperAdmin: user.is_super_admin
     };
   }

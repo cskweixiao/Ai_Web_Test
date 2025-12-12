@@ -7,10 +7,12 @@ export const CardView: React.FC<ViewProps> = ({
     loading,
     selectedPoints,
     onToggleSelectPoint,
+    onViewDetail,
     onEditCase,
     onDeleteCase,
     onEditPoint,
     onDeletePoint,
+    onExecuteCase,
 }) => {
     if (loading) {
         return (

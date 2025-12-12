@@ -60,6 +60,7 @@ interface CreateTestSuiteForm {
   priority: 'high' | 'medium' | 'low';
   status: 'active' | 'draft' | 'disabled';
   tags: string;
+  project: string; // 🔥 新增：项目字段
 }
 
 export function TestCases() {
@@ -82,6 +83,16 @@ export function TestCases() {
   const [testCases, setTestCases] = useState<TestCase[]>([]);
   const [loading, setLoading] = useState(false);
   const [testCasesLoading, setTestCasesLoading] = useState(false);
+  
+  // 🔥 新增：执行配置状态
+  const [showExecutionConfig, setShowExecutionConfig] = useState(false);
+  const [pendingTestCase, setPendingTestCase] = useState<TestCase | null>(null);
+  const [executionConfig, setExecutionConfig] = useState({
+    executionEngine: 'mcp' as 'mcp' | 'playwright',
+    enableTrace: true,
+    enableVideo: true,
+    environment: 'staging'
+  });
 
   // 🔥 新增：分页状态管理
   const [pagination, setPagination] = useState({
@@ -125,7 +136,8 @@ export function TestCases() {
     testCases: [],
     priority: 'medium',
     status: 'draft',
-    tags: ''
+    tags: '',
+    project: '' // 🔥 新增：项目字段
   });
   const [formDirty, setFormDirty] = useState(false);
   const [suiteFormDirty, setSuiteFormDirty] = useState(false);
@@ -390,6 +402,17 @@ export function TestCases() {
       
       if (editingTestCase) {
         // 编辑模式
+        // 🔥 修复：编辑时也使用当前用户信息作为 author
+        const authorValue = user?.accountName || user?.username || user?.email || '未知用户';
+        console.log('🔍 [TestCases] 编辑模式 - 当前用户信息:', {
+          user,
+          accountName: user?.accountName,
+          username: user?.username,
+          email: user?.email,
+          author: authorValue
+        });
+
+        // 🔥 修复：确保 author 不会被覆盖，放在最后设置
         const updatedTestCase = {
           ...editingTestCase,
           name: formData.name.trim(),
@@ -399,8 +422,17 @@ export function TestCases() {
           status: formData.status,
           tags: formData.tags.split(',').map(tag => tag.trim()).filter(tag => tag.length > 0),
           system: formData.system.trim() || undefined,
-          module: formData.module.trim() || undefined
+          module: formData.module.trim() || undefined,
         };
+        
+        // 🔥 确保 author 字段被正确设置（放在最后，避免被覆盖）
+        updatedTestCase.author = authorValue;
+
+        console.log('📤 [TestCases] 编辑模式 - 发送到后端的测试用例数据:', {
+          id: editingTestCase.id,
+          name: updatedTestCase.name,
+          author: updatedTestCase.author
+        });
 
         try {
           await testService.updateTestCase(editingTestCase.id, updatedTestCase);
@@ -412,7 +444,17 @@ export function TestCases() {
         }
       } else {
         // 创建模式
-        const newTestCase = {
+        // 🔥 调试：检查用户信息
+        const authorValue = user?.accountName || user?.username || user?.email || '未知用户';
+        console.log('🔍 [TestCases] 当前用户信息:', {
+          user,
+          accountName: user?.accountName,
+          username: user?.username,
+          email: user?.email,
+          author: authorValue
+        });
+
+        const newTestCase: any = {
           name: formData.name.trim(),
           steps: formData.steps.trim(),
           assertions: formData.assertions.trim(),
@@ -421,12 +463,20 @@ export function TestCases() {
           tags: formData.tags.split(',').map(tag => tag.trim()).filter(tag => tag.length > 0),
           system: formData.system.trim() || undefined,
           module: formData.module.trim() || undefined,
-          department: user?.department || undefined, // 🔥 添加当前用户的部门
-          author: '当前用户',
+          department: user?.project || undefined, // 🔥 修复：使用 project 字段
           created: new Date().toISOString().split('T')[0],
           lastRun: '从未运行',
           success_rate: 0
         };
+        
+        // 🔥 确保 author 字段被正确设置（显式设置，避免被过滤）
+        newTestCase.author = authorValue;
+
+        console.log('📤 [TestCases] 发送到后端的测试用例数据:', {
+          name: newTestCase.name,
+          author: newTestCase.author,
+          hasSteps: !!newTestCase.steps
+        });
 
         try {
           await testService.createTestCase(newTestCase);
@@ -519,7 +569,8 @@ export function TestCases() {
       testCases: [],
       priority: 'medium',
       status: 'draft',
-      tags: ''
+      tags: '',
+      project: '' // 🔥 新增：重置项目字段
     });
     setShowCreateModal(false);
     setEditingTestSuite(null);
@@ -560,6 +611,11 @@ export function TestCases() {
       return;
     }
     
+    if (!suiteFormData.project) {
+      showToast.warning('请选择项目');
+      return;
+    }
+    
     if (suiteFormData.testCases.length === 0) {
       showToast.warning('请选择至少一个测试用例');
       return;
@@ -577,7 +633,8 @@ export function TestCases() {
           testCaseIds: suiteFormData.testCases, // 🔥 修复：使用正确的字段名
           priority: suiteFormData.priority,
           status: suiteFormData.status,
-          tags: suiteFormData.tags.split(',').map(tag => tag.trim()).filter(tag => tag.length > 0)
+          tags: suiteFormData.tags.split(',').map(tag => tag.trim()).filter(tag => tag.length > 0),
+          project: suiteFormData.project || undefined // 🔥 新增：传递项目字段
         };
 
         try {
@@ -597,8 +654,9 @@ export function TestCases() {
           priority: suiteFormData.priority,
           status: suiteFormData.status,
           tags: suiteFormData.tags.split(',').map(tag => tag.trim()).filter(tag => tag.length > 0),
-          department: user?.department || undefined, // 🔥 添加当前用户的部门
-          author: '当前用户',
+          project: suiteFormData.project || undefined, // 🔥 新增：传递项目字段
+          department: user?.project || undefined, // 🔥 修复：使用 project 字段
+          author: user?.accountName || user?.username || user?.email || '未知用户', // 🔥 使用当前登录用户信息
           created: new Date().toISOString().split('T')[0]
         };
 
@@ -612,14 +670,27 @@ export function TestCases() {
               testCases: [],
               priority: 'medium',
               status: 'draft',
-              tags: ''
+              tags: '',
+              project: '' // 🔥 新增：重置项目字段
             });
             setSuiteFormDirty(false);
             setEditingTestSuite(null);
             showToast.success('测试套件已创建，已为你保留表单，便于继续录入');
             setTimeout(() => suiteNameInputRef.current?.focus(), 0);
           } else {
-            resetSuiteForm();
+            // 🔥 修复：确保弹窗关闭
+            setSuiteFormDirty(false);
+            setEditingTestSuite(null);
+            setShowCreateModal(false);
+            setSuiteFormData({
+              name: '',
+              description: '',
+              testCases: [],
+              priority: 'medium',
+              status: 'draft',
+              tags: '',
+              project: ''
+            });
             showToast.success('测试套件创建成功！');
           }
         } catch (error: any) {
@@ -643,7 +714,8 @@ export function TestCases() {
       testCases: testSuite.testCaseIds,
       priority: testSuite.priority || 'medium',
       status: testSuite.status || 'active',
-      tags: testSuite.tags?.join(', ') || ''
+      tags: testSuite.tags?.join(', ') || '',
+      project: testSuite.project || '' // 🔥 新增：编辑时显示当前项目
     });
     setShowCreateModal(true);
   };
@@ -814,36 +886,42 @@ export function TestCases() {
     return matchesSearch && matchesTag && matchesPriority;
   });
 
-  // 🔥 运行测试用例 - 使用WebSocket监听而非模拟通知
+  // 🔥 运行测试用例 - 显示执行配置对话框
   const handleRunTest = async (testCase: TestCase) => {
     if (runningTestId) {
       showToast.warning('已有测试在运行中，请等待完成');
       return;
     }
 
-    setRunningTestId(testCase.id);
+    // 显示执行配置对话框
+    setPendingTestCase(testCase);
+    setShowExecutionConfig(true);
+  };
+
+  // 🔥 确认执行测试（带配置）
+  const handleConfirmRunTest = async () => {
+    if (!pendingTestCase) return;
+
+    setRunningTestId(pendingTestCase.id);
+    setShowExecutionConfig(false);
     
     try {
-      console.log(`🚀 开始执行测试: ${testCase.name}`);
+      console.log(`🚀 开始执行测试: ${pendingTestCase.name}`);
+      console.log(`   执行引擎: ${executionConfig.executionEngine}`);
+      console.log(`   Trace录制: ${executionConfig.enableTrace ? '启用' : '禁用'}`);
+      console.log(`   Video录制: ${executionConfig.enableVideo ? '启用' : '禁用'}`);
       
       try {
         // 启动WebSocket监听器来跟踪测试运行
-        const listenerId = `test-run-${testCase.id}`;
+        const listenerId = `test-run-${pendingTestCase.id}`;
         
         // 添加一次性监听器，用于接收测试完成通知
         testService.addMessageListener(listenerId, (message) => {
           console.log(`📣 [TestCase] 收到WebSocket消息:`, message);
           
-          // 立即重置loading状态，无论消息格式如何
-          // 任何测试相关的消息都应该重置loading状态
-          const shouldReset = 
-            message.type === 'test_complete' ||
-            message.type === 'test_update' ||
-            message.type === 'test_error' ||
-            message.type === 'suiteUpdate' ||
-            (message.data && (message.data.status === 'completed' || message.data.status === 'failed' || message.data.status === 'error' || message.data.status === 'cancelled'));
-          
-          if (shouldReset) {
+          // 🔥 修复：只在收到 test_complete 消息时才显示完成提示
+          // 避免在测试还在执行时（收到 test_update 但状态为 completed）就显示完成
+          if (message.type === 'test_complete') {
             console.log(`✅ 收到测试完成通知，重置状态:`, message);
             setRunningTestId(null);
             testService.removeMessageListener(listenerId);
@@ -851,22 +929,35 @@ export function TestCases() {
             // 根据状态显示不同消息
             const status = message.data?.status || 'completed';
             if (status === 'failed' || status === 'error') {
-              showToast.error(`❌ 测试执行失败: ${testCase.name}`);
+              showToast.error(`❌ 测试执行失败: ${pendingTestCase.name}`);
             } else if (status === 'cancelled') {
-              showToast.warning(`⚠️ 测试执行被取消: ${testCase.name}`);
+              showToast.warning(`⚠️ 测试执行被取消: ${pendingTestCase.name}`);
             } else {
-              showToast.success(`🎉 测试执行完成: ${testCase.name}`);
+              showToast.success(`🎉 测试执行完成: ${pendingTestCase.name}`);
             }
             
             // 导航到测试运行页面
-            navigate('/test-runs');
+            // navigate('/test-runs');
+          } else if (message.type === 'test_error') {
+            // 测试错误时也重置状态
+            console.log(`❌ 收到测试错误通知，重置状态:`, message);
+            setRunningTestId(null);
+            testService.removeMessageListener(listenerId);
+            showToast.error(`❌ 测试执行出错: ${pendingTestCase.name}`);
           }
+          // 🔥 注意：test_update 消息不触发完成提示，因为测试可能还在执行中
         });
         
-        // 启动测试
-        const response = await testService.runTestCase(testCase.id);
-        showToast.info(`✅ 测试开始执行: ${testCase.name}\n运行ID: ${response.runId}`);
+        // 启动测试（传递执行配置）
+        const response = await testService.runTestCase(pendingTestCase.id, {
+          executionEngine: executionConfig.executionEngine,
+          enableTrace: executionConfig.enableTrace,
+          enableVideo: executionConfig.enableVideo,
+          environment: executionConfig.environment
+        });
+        showToast.info(`✅ 测试开始执行: ${pendingTestCase.name}\n运行ID: ${response.runId}\n引擎: ${executionConfig.executionEngine === 'playwright' ? 'Playwright Test Runner' : 'MCP 客户端'}`);
         console.log('测试运行ID:', response.runId);
+        navigate(`/test-runs/${response.runId}/detail`);
       } catch (error: any) {
         setRunningTestId(null);
         throw new Error(error.message || '启动测试失败');
@@ -876,6 +967,8 @@ export function TestCases() {
       console.error('执行测试失败:', error);
       showToast.error(`❌ 执行测试失败: ${error.message}`);
       setRunningTestId(null);
+    } finally {
+      setPendingTestCase(null);
     }
   };
 
@@ -1066,7 +1159,7 @@ export function TestCases() {
               console.log(`🔄 手动刷新${activeTab === 'cases' ? '测试用例' : '测试套件'}`);
               if (activeTab === 'cases') {
                 loadTestCases();
-                showToast.info('正在刷新测试用例数据...');
+                // showToast.info('正在刷新测试用例数据...');
               } else {
                 loadTestSuites();
                 showToast.info('正在刷新测试套件数据...');
@@ -1165,6 +1258,18 @@ export function TestCases() {
             />
           </div>
 
+          {/* System Filter */}
+          <select
+            value={selectedSystem}
+            onChange={(e) => setSelectedSystem(e.target.value)}
+            className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          >
+            <option value="">所有项目</option>
+            {systemOptions.map(sys => (
+              <option key={sys.id} value={sys.name}>{sys.name}</option>
+            ))}
+          </select>
+
           {/* Tag Filter */}
           <select
             value={selectedTag}
@@ -1190,20 +1295,8 @@ export function TestCases() {
             <option value="low">低</option>
           </select>
 
-          {/* System Filter */}
-          <select
-            value={selectedSystem}
-            onChange={(e) => setSelectedSystem(e.target.value)}
-            className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-          >
-            <option value="">所有系统</option>
-            {systemOptions.map(sys => (
-              <option key={sys.id} value={sys.name}>{sys.name}</option>
-            ))}
-          </select>
-
           {/* 🔥 新增：搜索和重置按钮 */}
-          <div className="flex gap-2">
+          <div className="flex gap-3">
             <button
               type="button"
               onClick={handleSearch}
@@ -1224,7 +1317,7 @@ export function TestCases() {
         </div>
 
         {/* 🔥 新增：统计信息行 */}
-        <div className="flex items-center justify-between mt-4 pt-4 border-t border-gray-200">
+        {/* <div className="flex items-center justify-between mt-4 pt-4 border-t border-gray-200">
           <div className="text-sm text-gray-600">
             {activeTab === 'cases' && pagination.total > 0 && (
               `显示第 ${Math.min((pagination.page - 1) * pagination.pageSize + 1, pagination.total)} 到 ${Math.min(pagination.page * pagination.pageSize, pagination.total)} 条，共 ${pagination.total} 条用例`
@@ -1238,7 +1331,7 @@ export function TestCases() {
               `已应用 ${[searchTerm, selectedTag, selectedPriority, selectedSystem].filter(Boolean).length} 个筛选条件`
             )}
           </div>
-        </div>
+        </div> */}
       </div>
 
       {/* 🔥 Tab内容区域 */}
@@ -1516,16 +1609,16 @@ export function TestCases() {
               <Button
                 variant="outline"
                 onClick={() => handleCreateTestSuite(true)}
-                disabled={loading || !suiteFormData.name.trim() || suiteFormData.testCases.length === 0}
+                disabled={loading || !suiteFormData.name.trim() || !suiteFormData.project || suiteFormData.testCases.length === 0}
               >
                 保存并继续
               </Button>
             )}
             <Button
-              onClick={activeTab === 'cases' ? handleCreateTestCase : handleCreateTestSuite}
+              onClick={activeTab === 'cases' ? handleCreateTestCase : () => handleCreateTestSuite(false)}
               disabled={loading || (activeTab === 'cases' 
                 ? (!formData.name.trim() || !formData.steps.trim())
-                : (!suiteFormData.name.trim() || suiteFormData.testCases.length === 0)
+                : (!suiteFormData.name.trim() || !suiteFormData.project || suiteFormData.testCases.length === 0)
               )}
               isLoading={loading}
             >
@@ -1817,6 +1910,27 @@ export function TestCases() {
           <div className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
+                所属项目 *
+              </label>
+              <select
+                value={suiteFormData.project}
+                onChange={(e) => { setSuiteFormData(prev => ({ ...prev, project: e.target.value })); setSuiteFormDirty(true); }}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                required
+              >
+                <option value="">请选择项目</option>
+                {systemOptions.map((system) => (
+                  <option key={system.id} value={system.name}>
+                    {system.name}
+                  </option>
+                ))}
+              </select>
+              {!suiteFormData.project && (
+                <p className="mt-1 text-sm text-amber-600">请选择项目，以便正确关联测试报告数据</p>
+              )}
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
                 套件名称 *
               </label>
               <input
@@ -2027,6 +2141,127 @@ export function TestCases() {
         isLoading={loading}
         size="sm"
       />
+
+      {/* 🔥 执行配置对话框 */}
+      <Modal
+        isOpen={showExecutionConfig}
+        onClose={() => {
+          setShowExecutionConfig(false);
+          setPendingTestCase(null);
+        }}
+        title="执行配置"
+        size="lg"
+      >
+        <div className="space-y-4">
+          {pendingTestCase && (
+            <div className="mb-4 p-3 bg-blue-50 rounded-lg">
+              <p className="text-sm text-gray-600">测试用例</p>
+              <p className="font-medium text-gray-900">{pendingTestCase.name}</p>
+            </div>
+          )}
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              执行引擎
+            </label>
+            <select
+              value={executionConfig.executionEngine}
+              onChange={(e) => setExecutionConfig(prev => ({ 
+                ...prev, 
+                executionEngine: e.target.value as 'mcp' | 'playwright' 
+              }))}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            >
+              <option value="mcp">MCP 客户端（默认）</option>
+              <option value="playwright">Playwright Test Runner</option>
+            </select>
+            <p className="mt-1 text-xs text-gray-500">
+              {executionConfig.executionEngine === 'mcp' 
+                ? '使用 MCP 客户端执行，支持 AI 闭环流程'
+                : '使用 Playwright Test Runner，支持 Trace 和 Video 录制'}
+            </p>
+          </div>
+
+          {executionConfig.executionEngine === 'playwright' && (
+            <>
+              <div className="flex items-center space-x-3">
+                <input
+                  type="checkbox"
+                  id="enableTrace"
+                  checked={executionConfig.enableTrace}
+                  onChange={(e) => setExecutionConfig(prev => ({ 
+                    ...prev, 
+                    enableTrace: e.target.checked 
+                  }))}
+                  className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                />
+                <label htmlFor="enableTrace" className="text-sm font-medium text-gray-700">
+                  启用 Trace 录制
+                </label>
+              </div>
+              <p className="ml-7 text-xs text-gray-500">
+                录制测试执行过程，可在 trace.playwright.dev 查看
+              </p>
+
+              <div className="flex items-center space-x-3">
+                <input
+                  type="checkbox"
+                  id="enableVideo"
+                  checked={executionConfig.enableVideo}
+                  onChange={(e) => setExecutionConfig(prev => ({ 
+                    ...prev, 
+                    enableVideo: e.target.checked 
+                  }))}
+                  className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                />
+                <label htmlFor="enableVideo" className="text-sm font-medium text-gray-700">
+                  启用 Video 录制
+                </label>
+              </div>
+              <p className="ml-7 text-xs text-gray-500">
+                录制测试执行视频，用于调试和回放
+              </p>
+            </>
+          )}
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              执行环境
+            </label>
+            <select
+              value={executionConfig.environment}
+              onChange={(e) => setExecutionConfig(prev => ({ 
+                ...prev, 
+                environment: e.target.value 
+              }))}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            >
+              <option value="staging">Staging</option>
+              <option value="production">Production</option>
+              <option value="development">Development</option>
+            </select>
+          </div>
+
+          <div className="flex justify-end space-x-3 pt-4 border-t">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowExecutionConfig(false);
+                setPendingTestCase(null);
+              }}
+            >
+              取消
+            </Button>
+            <Button
+              variant="default"
+              onClick={handleConfirmRunTest}
+              isLoading={runningTestId === pendingTestCase?.id}
+            >
+              开始执行
+            </Button>
+          </div>
+        </div>
+      </Modal>
 
       {/* 未保存更改拦截确认 */}
       <ConfirmModal

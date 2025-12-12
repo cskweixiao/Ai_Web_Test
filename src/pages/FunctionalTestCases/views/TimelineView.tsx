@@ -6,8 +6,10 @@ import { ViewProps, TestCaseItem } from '../types';
 export const TimelineView: React.FC<ViewProps> = ({
     organizedData,
     loading,
+    onViewDetail,
     onEditCase,
     onDeleteCase,
+    onExecuteCase,
 }) => {
     // 按时间分组
     const groupedByTime = useMemo(() => {

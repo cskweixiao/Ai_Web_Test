@@ -3,6 +3,7 @@ import apiClient from '../utils/axios';
 // 🔥 使用统一的 API 配置
 import { getApiBaseUrl } from '../config/api';
 const API_BASE_URL = getApiBaseUrl('/api/reports');
+console.log('📊 [ReportService] API_BASE_URL:', API_BASE_URL);
 
 // 类型定义
 export interface BugStats {
@@ -71,16 +72,20 @@ class ReportService {
   async getBugStats(params: {
     startDate: string;
     endDate: string;
-    department?: string;
+    project?: string;
     suiteId?: number | string;
   }): Promise<BugStats> {
     try {
-      const response = await apiClient.get(`${API_BASE_URL}/bug-stats`, {
+      const url = `${API_BASE_URL}/bug-stats`;
+      console.log('📊 [ReportService] 请求URL:', url, '参数:', params);
+      const response = await apiClient.get(url, {
         params
       });
       return response.data.data;
-    } catch (error) {
-      console.error('获取BUG统计失败:', error);
+    } catch (error: any) {
+      console.error('❌ 获取BUG统计失败:', error);
+      console.error('   请求URL:', `${API_BASE_URL}/bug-stats`);
+      console.error('   错误详情:', error.response?.status, error.response?.statusText);
       throw error;
     }
   }
@@ -91,7 +96,7 @@ class ReportService {
   async getBugTrend(params: {
     startDate: string;
     endDate: string;
-    department?: string;
+    project?: string;
     suiteId?: number | string;
     granularity?: 'day' | 'week';
   }): Promise<TrendDataPoint[]> {
@@ -112,7 +117,7 @@ class ReportService {
   async getFailureReasons(params: {
     startDate: string;
     endDate: string;
-    department?: string;
+    project?: string;
     suiteId?: number | string;
   }): Promise<FailureReason[]> {
     try {
@@ -132,7 +137,7 @@ class ReportService {
   async getFlakyTests(params: {
     startDate: string;
     endDate: string;
-    department?: string;
+    project?: string;
     suiteId?: number | string;
     limit?: number;
   }): Promise<FlakyTest[]> {
@@ -153,7 +158,7 @@ class ReportService {
   async getFailedCases(params: {
     startDate: string;
     endDate: string;
-    department?: string;
+    project?: string;
     suiteId?: number | string;
     page?: number;
     pageSize?: number;
@@ -181,7 +186,7 @@ class ReportService {
   async getSuiteSummary(params: {
     startDate: string;
     endDate: string;
-    department?: string;
+    project?: string;
   }): Promise<SuiteSummary[]> {
     try {
       const response = await apiClient.get(`${API_BASE_URL}/suite-summary`, {
@@ -190,6 +195,19 @@ class ReportService {
       return response.data.data;
     } catch (error) {
       console.error('获取套件统计失败:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * 获取所有项目列表
+   */
+  async getProjects(): Promise<string[]> {
+    try {
+      const response = await apiClient.get(`${API_BASE_URL}/projects`);
+      return response.data.data || [];
+    } catch (error) {
+      console.error('获取项目列表失败:', error);
       throw error;
     }
   }
