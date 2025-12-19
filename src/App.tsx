@@ -25,6 +25,11 @@ import { FunctionalTestPointEdit } from './pages/FunctionalTestPointEdit';
 import SystemManagement from './pages/SystemManagement';
 import KnowledgeManagement from './pages/KnowledgeManagement';
 import RequirementDocs from './pages/RequirementDocs';
+import { TestPlans } from './pages/TestPlans';
+import { TestPlanForm } from './pages/TestPlanForm';
+import { TestPlanDetail } from './pages/TestPlanDetail';
+import { TestPlanAddCases } from './pages/TestPlanAddCases';
+import { TestPlanExecute } from './pages/TestPlanExecute';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { ToastProvider } from './components/ui/toast';
 import { NotFoundPage, ServerErrorPage, ForbiddenPage } from './pages/ErrorPage';
@@ -293,6 +298,14 @@ function AppContent() {
                         </ErrorBoundary>
                       } />
                       <Route path="/test-runs/:id/detail" element={<TestRunDetail />} />
+
+                      {/* 测试计划路由 */}
+                      <Route path="/test-plans" element={<TestPlans />} />
+                      <Route path="/test-plans/create" element={<TestPlanForm />} />
+                      <Route path="/test-plans/:id" element={<TestPlanDetail />} />
+                      <Route path="/test-plans/:id/edit" element={<TestPlanForm />} />
+                      <Route path="/test-plans/:id/add-cases" element={<TestPlanAddCases />} />
+                      <Route path="/test-plans/:id/execute" element={<TestPlanExecute />} />
 
                       <Route path="/reports" element={<TestReports />} />
                       <Route path="/llm-assistant" element={<LLMAssistant />} />

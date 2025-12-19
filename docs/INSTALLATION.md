@@ -60,7 +60,7 @@ npx playwright install chromium
 编辑 `.env` 文件:
 
 ```bash
-DATABASE_URL="mysql://username:password@localhost:3306/testflow"
+DATABASE_URL="mysql://username:password@localhost:3306/testflow?timezone=Asia/Shanghai"
 ```
 
 应用数据库迁移:
@@ -89,7 +89,7 @@ npm run dev:server    # 后端 (端口 3001)
 
 ```bash
 # ========== 数据库配置 ==========
-DATABASE_URL="mysql://username:password@localhost:3306/testflow"
+DATABASE_URL="mysql://username:password@localhost:3306/testflow?timezone=Asia/Shanghai"
 
 # ========== 应用配置 ==========
 NODE_ENV=development               # 环境: development / production

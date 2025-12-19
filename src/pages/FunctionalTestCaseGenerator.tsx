@@ -8,7 +8,9 @@ import {
   ArrowLeft, ArrowRight, Save, FileX, CheckCircle, Target,
   Upload, FileCheck, TestTube2, FolderOpen, FileCode, User, Calendar, Copy, Check,
   AlertTriangle,  // 🆕 用于显示过滤用例警告
-  Eye  // 🆕 用于预览需求文档
+  Eye,  // 🆕 用于预览需求文档
+  Edit3,  // 🆕 用于编辑模式切换
+  X
 } from 'lucide-react';
 import { functionalTestCaseService } from '../services/functionalTestCaseService';
 import * as systemService from '../services/systemService';
@@ -16,6 +18,7 @@ import { requirementDocService, RequirementDoc } from '../services/requirementDo
 import { showToast } from '../utils/toast';
 import { Button } from '../components/ui/button';
 import { ProgressIndicator } from '../components/ai-generator/ProgressIndicator';
+import { readFileContent, type FileReadResult } from '../utils/fileReader';
 import { StepCard } from '../components/ai-generator/StepCard';
 import { AIThinking } from '../components/ai-generator/AIThinking';
 import { DraftCaseCard } from '../components/ai-generator/DraftCaseCard';
@@ -125,6 +128,7 @@ export function FunctionalTestCaseGenerator() {
   // 🆕 保存需求文档的状态
   const [docSaving, setDocSaving] = useState(false);
   const [docTitle, setDocTitle] = useState('');
+  const [contentSourceType, setContentSourceType] = useState<'html' | 'pdf' | 'docx' | 'markdown' | 'text'>('html'); // 🆕 文件类型
 
   // 项目选项（包含版本列表）
   const [systemOptions, setSystemOptions] = useState<Array<{ 
@@ -143,6 +147,60 @@ export function FunctionalTestCaseGenerator() {
   const [pageName, setPageName] = useState(''); // 新增:页面名称
   const [pageMode, setPageMode] = useState<'new' | 'modify'>('new'); // 🆕 页面模式：新增/修改
   const [platformType, setPlatformType] = useState<'web' | 'mobile'>('web'); // 🆕 平台类型：Web端/移动端
+  const [inputMethod, setInputMethod] = useState<'upload' | 'paste'>('upload'); // 🆕 输入方式：上传文件/粘贴文本
+  const [pastedText, setPastedText] = useState(''); // 🆕 粘贴的文本内容
+  
+  // 🆕 文件预览状态
+  const [filePreviewResult, setFilePreviewResult] = useState<FileReadResult | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [showFilePreview, setShowFilePreview] = useState(false);
+  const [fileContentCopied, setFileContentCopied] = useState(false); // 🆕 文件内容复制状态
+  const [filePreviewMode, setFilePreviewMode] = useState<'preview' | 'edit'>('preview'); // 🆕 预览/编辑模式
+  
+  // 🆕 清空文件预览
+  const handleClearPreview = () => {
+    setShowFilePreview(false);
+    setFilePreviewResult(null);
+  };
+
+  // 🆕 复制文件内容
+  const handleCopyFileContent = async () => {
+    if (!filePreviewResult?.content) {
+      showToast.warning('没有可复制的内容');
+      return;
+    }
+    
+    try {
+      // 方法1：使用现代 Clipboard API
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(filePreviewResult.content);
+        setFileContentCopied(true);
+        showToast.success('已复制到剪贴板');
+        setTimeout(() => setFileContentCopied(false), 2000);
+      } else {
+        // 方法2：降级使用传统方法
+        const textarea = document.createElement('textarea');
+        textarea.value = filePreviewResult.content;
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        document.body.appendChild(textarea);
+        textarea.select();
+        const successful = document.execCommand('copy');
+        document.body.removeChild(textarea);
+        
+        if (successful) {
+          setFileContentCopied(true);
+          showToast.success('已复制到剪贴板');
+          setTimeout(() => setFileContentCopied(false), 2000);
+        } else {
+          showToast.error('复制失败，请手动选择并复制');
+        }
+      }
+    } catch (error) {
+      console.error('复制失败:', error);
+      showToast.error('复制失败，请手动选择并复制');
+    }
+  };
   const [projectInfo, setProjectInfo] = useState({
     systemName: '',      // 项目名称
     projectShortName: '', // 🆕 项目简称
@@ -277,32 +335,155 @@ export function FunctionalTestCaseGenerator() {
   const [requirementLoading, setRequirementLoading] = useState(false);
   const [copied, setCopied] = useState(false);
 
+  // 🆕 预览指定文件内容（文件上传模式）
+  const handlePreviewFile = async (file?: File) => {
+    // 如果没有传入文件，尝试自动选择第一个主文件
+    let targetFile = file;
+    
+    if (!targetFile) {
+      if (axureFiles.length === 0) {
+        AntModal.warning({
+          title: '请先上传文件',
+          content: '请上传至少一个支持的需求来源文件（HTML / PDF / DOCX / Markdown / TXT）',
+          centered: true,
+          okText: '知道了'
+        });
+        return;
+      }
+
+      // 验证至少有一个主文件
+      const supportedMainExt = ['.html', '.htm', '.pdf', '.docx', '.md', '.markdown', '.txt'];
+      targetFile = axureFiles.find(f => supportedMainExt.some(ext => f.name.toLowerCase().endsWith(ext)));
+      
+      if (!targetFile) {
+        AntModal.warning({
+          title: '文件格式不支持',
+          content: '请至少上传一个支持的需求来源文件（HTML / PDF / DOCX / Markdown / TXT）',
+          centered: true,
+          okText: '知道了'
+        });
+        return;
+      }
+    }
+
+    setPreviewLoading(true);
+    
+    try {
+      console.log('📄 开始读取文件内容:', targetFile.name);
+      const result = await readFileContent(targetFile);
+      
+      if (!result.success) {
+        AntModal.error({
+          title: '文件读取失败',
+          content: result.error || '无法读取文件内容',
+          centered: true,
+          okText: '知道了'
+        });
+        return;
+      }
+      
+      console.log('✅ 文件读取成功:', {
+        fileName: result.fileName,
+        fileType: result.fileType,
+        contentLength: result.content.length
+      });
+      
+      setFilePreviewResult(result);
+      setShowFilePreview(true);
+      showToast.success(`成功读取文件内容（${result.content.length} 字符）`);
+    } catch (error: any) {
+      console.error('❌ 文件读取错误:', error);
+      AntModal.error({
+        title: '文件读取失败',
+        content: error.message || '读取文件时发生未知错误',
+        centered: true,
+        okText: '知道了'
+      });
+    } finally {
+      setPreviewLoading(false);
+    }
+  };
+
   // 步骤1：上传和解析 - 🆕 直接生成需求文档（跳过解析和二次确认）
   const handleParse = async () => {
-    if (axureFiles.length === 0) {
-      showToast.error('请先上传Axure文件');
+    // 🆕 验证输入内容（文件或文本）
+    if (inputMethod === 'upload') {
+      if (axureFiles.length === 0) {
+        AntModal.warning({
+          title: '请先上传文件',
+          content: '请上传至少一个支持的需求来源文件（HTML / PDF / DOCX / Markdown / TXT）',
+          centered: true,
+          okText: '知道了'
+        });
+        return;
+      }
+
+      // 验证至少有一个主文件（HTML / PDF / DOCX / Markdown / TXT）
+      const supportedMainExt = ['.html', '.htm', '.pdf', '.docx', '.md', '.markdown', '.txt'];
+      const mainFile = axureFiles.find(f => supportedMainExt.some(ext => f.name.toLowerCase().endsWith(ext)));
+      if (!mainFile) {
+        AntModal.warning({
+          title: '文件格式不支持',
+          content: '请至少上传一个支持的需求来源文件（HTML / PDF / DOCX / Markdown / TXT）',
+          centered: true,
+          okText: '知道了'
+        });
+        return;
+      }
+    } else {
+      // 粘贴文本模式
+      if (!pastedText.trim()) {
+        AntModal.warning({
+          title: '请输入需求文档内容',
+          content: '粘贴文本模式下，需要输入至少 50 个字符的需求文档内容',
+          centered: true,
+          okText: '知道了'
+        });
+        return;
+      }
+      if (pastedText.trim().length < 50) {
+        AntModal.warning({
+          title: '文本内容过少',
+          content: `当前输入了 ${pastedText.trim().length} 个字符，请输入至少 50 个字符`,
+          centered: true,
+          okText: '知道了'
+        });
+        return;
+      }
+    }
+
+    // 🆕 验证页面名称（必填）- 保持页面内验证和UI提示
+    if (!pageName.trim()) {
+      showToast.error('请填写页面名称');
       return;
     }
 
-    // 验证至少有一个主文件（HTML / PDF / DOCX / Markdown / TXT）
-    const supportedMainExt = ['.html', '.htm', '.pdf', '.docx', '.md', '.markdown', '.txt'];
-    const mainFile = axureFiles.find(f => supportedMainExt.some(ext => f.name.toLowerCase().endsWith(ext)));
-    if (!mainFile) {
-      showToast.error('请至少上传一个支持的需求来源文件（HTML / PDF / DOCX / Markdown / TXT）');
-      return;
-    }
-
-    // 验证必填字段
+    // 🆕 验证必填字段 - 使用弹窗提示
     if (!projectInfo.projectId) {
-      showToast.error('请选择项目');
+      AntModal.warning({
+        title: '请选择项目',
+        content: '项目名称为必填项，请在右侧表单中选择项目',
+        centered: true,
+        okText: '知道了'
+      });
       return;
     }
     if (!projectInfo.projectVersionId) {
-      showToast.error('请选择项目版本');
+      AntModal.warning({
+        title: '请选择项目版本',
+        content: '项目版本为必填项，请在右侧表单中选择项目版本',
+        centered: true,
+        okText: '知道了'
+      });
       return;
     }
     if (!projectInfo.moduleName.trim()) {
-      showToast.error('请填写模块名称');
+      AntModal.warning({
+        title: '请填写模块名称',
+        content: '模块名称为必填项，请在右侧表单中填写模块名称',
+        centered: true,
+        okText: '知道了'
+      });
       return;
     }
 
@@ -314,19 +495,54 @@ export function FunctionalTestCaseGenerator() {
     try {
       console.log('🚀 使用新的直接生成模式（跳过解析和二次确认）');
 
-      // 🆕 直接调用新API，跳过解析和智能补全
-      const result = await functionalTestCaseService.generateFromHtmlDirect(
-        mainFile,
-        projectInfo.systemName,
-        projectInfo.moduleName,
-        pageMode, // 传递页面模式
-        projectInfo.businessRules, // 传递补充业务规则
-        platformType // 传递平台类型
-      );
+      let result;
+      
+      if (inputMethod === 'upload') {
+        // 文件上传模式 - 🔧 先在前端读取并转换文件内容
+        const supportedMainExt = ['.html', '.htm', '.pdf', '.docx', '.md', '.markdown', '.txt'];
+        const mainFile = axureFiles.find(f => supportedMainExt.some(ext => f.name.toLowerCase().endsWith(ext)))!;
+        
+        console.log('📄 开始读取并转换文件内容:', mainFile.name);
+        
+        // 🆕 先读取文件内容，确保转换成功
+        const fileReadResult = await readFileContent(mainFile);
+        
+        if (!fileReadResult.success) {
+          throw new Error(`文件读取失败: ${fileReadResult.error || '未知错误'}`);
+        }
+        
+        console.log('✅ 文件内容读取成功，长度:', fileReadResult.content.length);
+        
+        // 🆕 使用读取后的文本内容生成需求文档
+        result = await functionalTestCaseService.generateFromText(
+          fileReadResult.content,
+          projectInfo.systemName,
+          projectInfo.moduleName,
+          pageMode,
+          projectInfo.businessRules,
+          platformType
+        );
+        
+        // 🆕 保存文件类型信息
+        setContentSourceType(fileReadResult.fileType.toLowerCase() as any);
+      } else {
+        // 🆕 文本粘贴模式
+        result = await functionalTestCaseService.generateFromText(
+          pastedText,
+          projectInfo.systemName,
+          projectInfo.moduleName,
+          pageMode,
+          projectInfo.businessRules,
+          platformType
+        );
+      }
 
       // 设置会话ID和需求文档
       setSessionId(result.data.sessionId);
       setRequirementDoc(result.data.requirementDoc);
+      if (inputMethod !== 'upload') {
+        setContentSourceType(result.data.contentSourceType || 'text');
+      }
 
       showToast.success(`需求文档生成成功！识别到 ${result.data.sections.length} 个章节`);
     } catch (error: any) {
@@ -1507,18 +1723,18 @@ export function FunctionalTestCaseGenerator() {
       nextButtonDisabled={!selectedRequirementDoc}
       hideActions={false}
     >
-      <div className="space-y-6">
+      <div className="space-y-4">
         {/* 需求文档列表 */}
         {loadingDocs ? (
-          <div className="flex items-center justify-center py-20">
+          <div className="flex items-center justify-center py-12">
             <Spin size="large" />
           </div>
         ) : requirementDocs.length === 0 ? (
           <Empty
-            className="py-16"
+            className="py-10"
             description={
               <div className="text-center">
-                <p className="text-gray-500 mb-4">暂无可用的需求文档</p>
+                <p className="text-gray-500 mb-3 text-sm">暂无可用的需求文档</p>
                 <Button
                   variant="outline"
                   size="sm"
@@ -1540,29 +1756,29 @@ export function FunctionalTestCaseGenerator() {
                 key={doc.id}
                 onClick={() => handleSelectRequirementDoc(doc)}
                 className={clsx(
-                  "p-5 rounded-xl border-2 cursor-pointer transition-all",
+                  "p-4 rounded-lg border-2 cursor-pointer transition-all",
                   selectedRequirementDoc?.id === doc.id
-                    ? "border-purple-500 bg-purple-50/50 shadow-lg ring-4 ring-purple-500/20"
-                    : "border-gray-200 hover:border-purple-300 hover:shadow-md bg-white"
+                    ? "border-purple-500 bg-purple-50/50 shadow-md ring-2 ring-purple-500/20"
+                    : "border-gray-200 hover:border-purple-300 hover:shadow-sm bg-white"
                 )}
               >
-                <div className="flex items-start justify-between gap-4">
+                <div className="flex items-start justify-between gap-3">
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-3 mb-2">
+                    <div className="flex items-center gap-2.5 mb-1.5">
                       <FileText className={clsx(
-                        "w-5 h-5",
+                        "w-4 h-4",
                         selectedRequirementDoc?.id === doc.id ? "text-purple-600" : "text-gray-400"
                       )} />
                       {/* 🆕 显示文档ID */}
-                      <span className="text-xs text-gray-500 font-mono bg-gray-100 px-2 py-0.5 rounded">
+                      <span className="text-[12px] text-gray-500 font-mono bg-gray-100 px-1.5 py-0.5 rounded">
                         #{doc.id}
                       </span>
-                      <h3 className="text-lg font-semibold text-gray-900 truncate">
+                      <h3 className="text-base font-semibold text-gray-900 truncate">
                         {doc.title}
                       </h3>
                       {/* 🆕 显示文档状态 */}
                       <span className={clsx(
-                        "px-2 py-0.5 text-xs font-medium rounded-full flex-shrink-0",
+                        "px-1.5 py-0.5 text-[12px] font-medium rounded-full flex-shrink-0",
                         doc.status === 'ACTIVE' && "bg-green-100 text-green-700 border border-green-300",
                         doc.status === 'ARCHIVED' && "bg-orange-100 text-orange-700 border border-orange-300",
                         doc.status === 'DELETED' && "bg-red-100 text-red-700 border border-red-300"
@@ -1570,39 +1786,39 @@ export function FunctionalTestCaseGenerator() {
                         {doc.status === 'ACTIVE' ? '活跃' : doc.status === 'ARCHIVED' ? '已归档' : '已删除'}
                       </span>
                       {selectedRequirementDoc?.id === doc.id && (
-                        <span className="px-2 py-0.5 bg-purple-100 text-purple-700 text-xs font-medium rounded-full flex-shrink-0">
+                        <span className="px-1.5 py-0.5 bg-purple-100 text-purple-700 text-[12px] font-medium rounded-full flex-shrink-0">
                           已选择
                         </span>
                       )}
                     </div>
                     {doc.summary && (
-                      <p className="text-sm text-gray-600 line-clamp-2 mb-3 ml-8">
+                      <p className="text-xs text-gray-600 line-clamp-2 mb-2 ml-6">
                         {doc.summary}
                       </p>
                     )}
-                    <div className="flex items-center gap-4 text-xs text-gray-500 ml-8 flex-wrap">
+                    <div className="flex items-center gap-3 text-[12px] text-gray-500 ml-6 flex-wrap">
                       {doc.project && (
-                        <span className="flex items-center gap-1">
-                          <FolderOpen className="w-3.5 h-3.5" />
+                        <span className="flex items-center gap-0.5">
+                          <FolderOpen className="w-3 h-3" />
                           {doc.project.name}
                           {doc.project_version && ` / ${doc.project_version.version_name}`}
                           {doc.module && ` / ${doc.module}`}
                         </span>
                       )}
                       {doc.source_filename && (
-                        <span className="flex items-center gap-1">
-                          <FileCode className="w-3.5 h-3.5" />
+                        <span className="flex items-center gap-0.5">
+                          <FileCode className="w-3 h-3" />
                           {doc.source_filename}
                         </span>
                       )}
                       {doc.users && (
-                        <span className="flex items-center gap-1">
-                          <User className="w-3.5 h-3.5" />
+                        <span className="flex items-center gap-0.5">
+                          <User className="w-3 h-3" />
                           {doc.users.username}
                         </span>
                       )}
-                      <span className="flex items-center gap-1">
-                        <Calendar className="w-3.5 h-3.5" />
+                      <span className="flex items-center gap-0.5">
+                        <Calendar className="w-3 h-3" />
                         {new Date(doc.created_at).toLocaleDateString('zh-CN', {
                           year: 'numeric',
                           month: '2-digit',
@@ -1628,20 +1844,20 @@ export function FunctionalTestCaseGenerator() {
                         e.stopPropagation();
                         handleViewRequirementDoc(doc.id);
                       }}
-                      className="p-2 rounded-lg text-gray-400 hover:text-purple-600 hover:bg-purple-50 transition-all"
+                      className="p-1.5 rounded-md text-gray-400 hover:text-purple-600 hover:bg-purple-50 transition-all"
                       title="预览需求文档"
                     >
                       <Eye className="w-5 h-5" />
                     </button>
                     {/* 选中状态指示器 */}
                     <div className={clsx(
-                      "w-6 h-6 rounded-full border-2 flex items-center justify-center",
+                      "w-5 h-5 rounded-full border-2 flex items-center justify-center",
                       selectedRequirementDoc?.id === doc.id
                         ? "border-purple-500 bg-purple-500"
                         : "border-gray-300"
                     )}>
                       {selectedRequirementDoc?.id === doc.id && (
-                        <CheckCircle className="w-4 h-4 text-white" />
+                        <CheckCircle className="w-3 h-3 text-white" />
                       )}
                     </div>
                   </div>
@@ -1673,34 +1889,453 @@ export function FunctionalTestCaseGenerator() {
     <StepCard
       stepNumber={1}
       title="上传原型 / 需求文档"
-      description="AI 直接解析 HTML / PDF / DOCX / Markdown / TXT，无需二次确认"
+      description="AI 直接解析 HTML / PDF / DOCX / Markdown / TXT，或直接粘贴文本内容"
       onNext={handleParse}
-      nextButtonText={(parsing || generating) ? 'AI生成中...' : '开始生成需求文档'}
-      nextButtonDisabled={axureFiles.length === 0 || parsing || generating}
+      nextButtonText={
+        (parsing || generating) 
+          ? 'AI生成中...' 
+          : previewLoading 
+            ? '正在读取文件...' 
+            : showFilePreview
+              ? '确认并生成需求文档'
+              : '开始生成需求文档'
+      }
+      nextButtonDisabled={parsing || generating || previewLoading}
       hideActions={false}
     >
       {/* 左右分栏布局 */}
-      <div className="grid grid-cols-[1.2fr,0.8fr] gap-10">
+      <div className="grid grid-cols-[1.2fr,0.8fr] gap-6">
         {/* 左侧：文件上传区 + 解析结果 */}
-        <div className="space-y-6">
-          {/* 多文件上传组件 */}
-          <MultiFileUpload
-            onFilesChange={setAxureFiles}
-            onPageNameChange={setPageName}
-            pageMode={pageMode}
-            onPageModeChange={setPageMode}
-            maxFiles={20}
-            maxSize={50 * 1024 * 1024}
-          />
+        <div className="space-y-4">
+          {/* 🆕 输入方式切换 */}
+          <div className="bg-gradient-to-br from-blue-50 via-purple-50/50 to-pink-50/30 rounded-xl p-4 border border-purple-200/60 shadow-md">
+            <div className="flex items-center gap-2.5 mb-3">
+              <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center shadow-sm">
+                <FileText className="w-3.5 h-3.5 text-white" />
+              </div>
+              <h3 className="text-sm font-bold text-gray-900">选择输入方式</h3>
+            </div>
+            
+            <Radio.Group
+              value={inputMethod}
+              onChange={e => {
+                setInputMethod(e.target.value);
+                // 清空之前的输入
+                if (e.target.value === 'upload') {
+                  setPastedText('');
+                } else {
+                  setAxureFiles([]);
+                  setShowFilePreview(false);
+                  setFilePreviewResult(null);
+                }
+              }}
+              className="w-full radio-group-no-divider"
+              buttonStyle="solid"
+            >
+              <div className="grid grid-cols-2 gap-3">
+                <Radio.Button
+                  value="upload"
+                  className="text-center h-9 leading-[2.25rem] rounded-lg !font-semibold text-sm"
+                >
+                  <div className="flex items-center justify-center gap-1.5">
+                    <Upload className="w-3.5 h-3.5" />
+                    <span>上传文件</span>
+                  </div>
+                </Radio.Button>
+                <Radio.Button
+                  value="paste"
+                  className="text-center h-9 leading-[2.25rem] rounded-lg !font-semibold text-sm paste-radio-button"
+                >
+                  <div className="flex items-center justify-center gap-1.5">
+                    <FileText className="w-3.5 h-3.5" />
+                    <span>粘贴文本</span>
+                  </div>
+                </Radio.Button>
+              </div>
+            </Radio.Group>
+            <style>{`
+              .radio-group-no-divider .ant-radio-button-wrapper:not(:first-child)::before {
+                display: none !important;
+              }
+              .radio-group-no-divider .paste-radio-button::before {
+                display: none !important;
+              }
+              .radio-group-no-divider .ant-radio-button-wrapper {
+                border: 1px solid #d9d9d9 !important;
+              }
+              .radio-group-no-divider .ant-radio-button-wrapper:hover {
+                border-color: #4096ff !important;
+              }
+              .radio-group-no-divider .ant-radio-button-wrapper-checked {
+                border-color: #4096ff !important;
+              }
+            `}</style>
+
+            <p className="text-xs text-gray-600 mt-2.5 leading-relaxed">
+              {inputMethod === 'upload' ? 
+                '📂 支持上传 HTML / PDF / DOCX / Markdown / TXT 文件' : 
+                '📝 直接粘贴需求文档内容，无需上传文件（推荐用于文件损坏时）'}
+            </p>
+          </div>
+
+          {/* 根据输入方式显示不同的输入组件 */}
+          {inputMethod === 'upload' ? (
+            // 文件上传组件
+            <MultiFileUpload
+              onFilesChange={setAxureFiles}
+              onPageNameChange={setPageName}
+              pageMode={pageMode}
+              onPageModeChange={setPageMode}
+              onPreviewFile={handlePreviewFile}
+              onClearPreview={handleClearPreview}
+              maxFiles={20}
+              maxSize={50 * 1024 * 1024}
+            />
+          ) : (
+            // 🆕 文本输入框
+            <>
+              {/* 页面名称输入框 */}
+              {/* <div className="bg-white rounded-xl p-4 border-2 border-dashed border-blue-300 shadow-md">
+                <div className="flex items-center gap-2.5 mb-3">
+                  <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center shadow-sm">
+                    <FileText className="w-3.5 h-3.5 text-white" />
+                  </div>
+                  <div className="flex-1">
+                    <h3 className="text-sm font-bold text-gray-900">页面名称 <span className="text-red-500">*</span></h3>
+                    <p className="text-xs text-gray-600">为该需求文档命名</p>
+                  </div>
+                </div>
+                
+                <Input
+                  value={pageName}
+                  onChange={e => setPageName(e.target.value)}
+                  placeholder="例如：用户登录页"
+                  className="w-full "
+                  status={!pageName.trim() ? 'error' : ''}
+                />
+                {!pageName.trim() && (
+                  <p className="text-xs text-red-500 mt-1.5">⚠ 页面名称为必填项</p>
+                )}
+              </div> */}
+              <div className="bg-white rounded-lg p-4 border border-gray-200 shadow-sm">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <span className="text-red-500">*</span> 页面名称
+                  </label>
+                  <input
+                    type="text"
+                    value={pageName}
+                    onChange={e => setPageName(e.target.value)}
+                    placeholder="请输入页面名称，例如：登录页面（新增）"
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all text-sm"
+                  />
+                  <p className="mt-2 text-sm text-gray-700">
+                    提示：页面名称将用于标识产品需求文档页面，建议使用清晰明确的名称
+                  </p>
+                </div>
+              {/* 文本输入框 */}
+              {/* <div className="bg-white rounded-xl p-4 border-2 border-dashed border-purple-300 shadow-md"> */}
+              <div className="bg-white rounded-xl p-4 border">
+                <div className="flex items-center gap-2.5 mb-3">
+                  <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-purple-500 to-pink-600 flex items-center justify-center shadow-sm">
+                    <FileText className="w-3.5 h-3.5 text-white" />
+                  </div>
+                  <div className="flex-1">
+                    <h3 className="text-sm font-bold text-gray-900">输入需求文档内容 <span className="text-red-500">*</span></h3>
+                    <p className="text-xs text-gray-600">从 Word 中复制内容后粘贴到下方</p>
+                  </div>
+                  <div className="text-xs font-medium text-gray-500">
+                    {pastedText.length} / 至少50 字符
+                  </div>
+                </div>
+                
+                <Input.TextArea
+                  value={pastedText}
+                  onChange={e => setPastedText(e.target.value)}
+                  placeholder="请粘贴需求文档内容...&#10;&#10;💡 提示：&#10;1. 在 Word 中打开文档&#10;2. 全选 (Ctrl+A) → 复制 (Ctrl+C)&#10;3. 粘贴到此处 (Ctrl+V)&#10;4. 点击下方「开始生成需求文档」按钮"
+                  className="w-full font-mono text-xs"
+                  rows={12}
+                  style={{ 
+                    resize: 'vertical',
+                    minHeight: '250px'
+                  }}
+                  status={pastedText.length > 0 && pastedText.length < 50 ? 'error' : ''}
+                />
+                
+                {pastedText.length > 0 && (
+                  <div className="flex items-center justify-between mt-3 pt-3 border-t border-gray-200">
+                    <div className="text-xs text-gray-600">
+                      <span className="font-medium text-gray-900">{pastedText.length}</span> 字符
+                      {pastedText.length >= 50 ? (
+                        <span className="ml-2 text-green-600 font-medium">✓ 可以生成</span>
+                      ) : (
+                        <span className="ml-2 text-orange-600 font-medium">⚠ 内容过少</span>
+                      )}
+                    </div>
+                    <Button
+                      size="sm"
+                      onClick={() => setPastedText('')}
+                      className="text-gray-600"
+                    >
+                      清空
+                    </Button>
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+
+          {/* 🆕 文件读取中提示 */}
+          {previewLoading && (
+            <AIThinking
+              title="正在读取文件内容..."
+              subtitle="正在提取文件中的文本内容，请稍候"
+              progressItems={[
+                { label: '读取文件数据...', status: 'processing' },
+                { label: '解析文件格式', status: 'pending' },
+                { label: '提取文本内容', status: 'pending' }
+              ]}
+            />
+          )}
+
+          {/* 🆕 文件内容预览（文件上传模式） */}
+          {inputMethod === 'upload' && showFilePreview && filePreviewResult && !parsing && !generating && (
+            <motion.div
+              className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-2xl p-6 border-2 border-blue-200/60 shadow-lg"
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              transition={{ duration: 0.3 }}
+            >
+              <div className="flex items-start gap-4 mb-4">
+                <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center shadow-lg flex-shrink-0">
+                  {filePreviewResult.isScannedPdf ? (
+                    <AlertTriangle className="w-7 h-7 text-white" />
+                  ) : (
+                    <CheckCircle className="w-7 h-7 text-white" />
+                  )}
+                </div>
+                <div className="flex-1">
+                  <h4 className="text-xl font-bold text-blue-900 mb-2">
+                    {filePreviewResult.isScannedPdf ? '⚠️ 检测到扫描版PDF' : '文件读取成功！'}
+                  </h4>
+                  <div className="grid grid-cols-3 gap-4 mb-4">
+                    <div className="text-center bg-white/60 rounded-lg p-3 border border-blue-200/40">
+                      <div className="text-sm text-blue-600 font-medium mb-1">文件名</div>
+                      <div className="text-xs text-gray-700 font-semibold truncate">{filePreviewResult.fileName}</div>
+                    </div>
+                    <div className="text-center bg-white/60 rounded-lg p-3 border border-blue-200/40">
+                      <div className="text-sm text-blue-600 font-medium mb-1">文件类型</div>
+                      <div className="text-xs text-gray-900 font-bold">{filePreviewResult.fileType}</div>
+                    </div>
+                    <div className="text-center bg-white/60 rounded-lg p-3 border border-blue-200/40">
+                      <div className="text-sm text-blue-600 font-medium mb-1">内容长度</div>
+                      <div className="text-xs text-gray-900 font-bold">{filePreviewResult.content.length} 字符</div>
+                    </div>
+                  </div>
+                  
+                  {/* 🆕 格式警告信息 */}
+                  {filePreviewResult.formatWarnings && filePreviewResult.formatWarnings.length > 0 && (
+                    <div className={clsx(
+                      "rounded-lg p-4 mb-4 border-2",
+                      filePreviewResult.isScannedPdf 
+                        ? "bg-red-50 border-red-300"
+                        : "bg-orange-50 border-orange-300"
+                    )}>
+                      <h5 className={clsx(
+                        "text-sm font-bold mb-2 flex items-center gap-2",
+                        filePreviewResult.isScannedPdf ? "text-red-800" : "text-orange-800"
+                      )}>
+                        <AlertTriangle className="w-4 h-4" />
+                        {filePreviewResult.isScannedPdf ? '严重警告' : '格式提示'}
+                      </h5>
+                      <ul className={clsx(
+                        "text-xs space-y-1.5",
+                        filePreviewResult.isScannedPdf ? "text-red-700" : "text-orange-700"
+                      )}>
+                        {filePreviewResult.formatWarnings.map((warning, idx) => (
+                          <li key={idx} className="flex items-start gap-2">
+                            <span className="mt-0.5">•</span>
+                            <span>{warning}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  
+                  {/* 🆕 额外提示信息 */}
+                  {(filePreviewResult.hasImages || filePreviewResult.fileType === 'DOCX') && (
+                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
+                      <p className="text-xs text-blue-800 font-medium flex items-start gap-2">
+                        <span className="text-blue-500 mt-0.5">💡</span>
+                        <span>
+                          {filePreviewResult.fileType === 'DOCX' && '已尽可能保留表格、列表、标题等格式结构。'}
+                          {filePreviewResult.hasImages && '图片内容无法直接提取，AI将基于文本内容生成需求。如需包含图片描述，请在"补充业务规则"中手动添加。'}
+                        </span>
+                      </p>
+                    </div>
+                  )}
+                  
+                  {/* 文件内容预览 */}
+                  <div className="bg-white rounded-lg border border-blue-200 p-4 mb-4">
+                    <div className="flex items-center justify-between mb-3 flex-shrink-0">
+                      <h3 className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+                        <FileText className="w-4 h-4 text-blue-600" />
+                        文件内容
+                        <span className="text-xs text-gray-400 font-normal ml-2">
+                          {filePreviewResult.content?.length || 0} 字 · {filePreviewResult.content?.split('\n').length || 0} 行
+                        </span>
+                      </h3>
+                      <div className="flex items-center gap-2">
+                        {/* 🆕 预览/编辑模式切换 */}
+                        <div className="flex items-center gap-2 bg-gray-100 rounded-lg p-1">
+                          <button
+                            onClick={() => setFilePreviewMode('preview')}
+                            className={clsx(
+                              "flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all",
+                              filePreviewMode === 'preview'
+                                ? 'bg-white text-blue-600 shadow-sm'
+                                : 'text-gray-600 hover:text-gray-900'
+                            )}
+                          >
+                            <Eye className="w-3.5 h-3.5" />
+                            预览
+                          </button>
+                          <button
+                            onClick={() => setFilePreviewMode('edit')}
+                            className={clsx(
+                              "flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all",
+                              filePreviewMode === 'edit'
+                                ? 'bg-white text-blue-600 shadow-sm'
+                                : 'text-gray-600 hover:text-gray-900'
+                            )}
+                          >
+                            <Edit3 className="w-3.5 h-3.5" />
+                            编辑
+                          </button>
+                        </div>
+                        
+                        {/* 复制按钮 */}
+                        <button
+                          onClick={handleCopyFileContent}
+                          className={clsx(
+                            "flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-all",
+                            fileContentCopied
+                              ? "bg-green-50 text-green-700 border border-green-200"
+                              : "bg-gray-50 text-gray-700 border border-gray-200 hover:bg-gray-100"
+                          )}
+                        >
+                          {fileContentCopied ? (
+                            <>
+                              <Check className="w-3.5 h-3.5" />
+                              已复制
+                            </>
+                          ) : (
+                            <>
+                              <Copy className="w-3.5 h-3.5" />
+                              {/* 复制全部 */}
+                            </>
+                          )}
+                        </button>
+                        
+                        {/* 关闭按钮 */}
+                        <button
+                          onClick={() => {
+                            setShowFilePreview(false);
+                            setFileContentCopied(false);
+                            setFilePreviewMode('preview');
+                          }}
+                          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-all bg-gray-50 text-gray-700 border border-gray-200 hover:bg-gray-100"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                          {/* 关闭 */}
+                        </button>
+                      </div>
+                    </div>
+                    
+                    {/* 预览内容区域 */}
+                    <div 
+                      className="bg-gray-50 border border-gray-200 rounded-lg p-4 overflow-auto select-text"
+                      style={{ maxHeight: '400px' }}
+                    >
+                      {filePreviewMode === 'preview' ? (
+                        /* 预览模式：Markdown 渲染或纯文本 */
+                        (filePreviewResult.fileType === 'Markdown' || 
+                          filePreviewResult.fileType === 'DOCX' || 
+                          filePreviewResult.content.includes('# ') ||
+                          filePreviewResult.content.includes('## ')) ? (
+                          <div
+                            className="prose prose-slate max-w-none prose-sm select-text
+                              prose-headings:text-gray-900
+                              prose-h1:text-xl prose-h1:font-bold prose-h1:mb-3 prose-h1:border-b prose-h1:border-gray-200 prose-h1:pb-2
+                              prose-h2:text-lg prose-h2:font-semibold prose-h2:mt-4 prose-h2:mb-2 prose-h2:text-blue-700
+                              prose-h3:text-base prose-h3:font-semibold prose-h3:mt-3 prose-h3:mb-2
+                              prose-p:text-gray-700 prose-p:leading-relaxed prose-p:mb-2
+                              prose-ul:my-2 prose-ol:my-2
+                              prose-li:text-gray-700 prose-li:my-0.5
+                              prose-strong:text-gray-900
+                              prose-table:w-full prose-table:border-collapse prose-table:text-xs prose-table:my-3
+                              prose-thead:bg-blue-50
+                              prose-th:border prose-th:border-gray-300 prose-th:p-2 prose-th:text-left prose-th:font-semibold
+                              prose-td:border prose-td:border-gray-300 prose-td:p-2
+                              prose-img:max-w-full prose-img:h-auto prose-img:rounded-lg prose-img:shadow-sm
+                            "
+                            dangerouslySetInnerHTML={{ __html: marked.parse(filePreviewResult.content) as string }}
+                          />
+                        ) : (
+                          /* 纯文本预览 */
+                          <pre className="text-xs text-gray-700 whitespace-pre-wrap break-words font-mono max-w-full overflow-wrap-anywhere select-text">
+                            {filePreviewResult.content}
+                          </pre>
+                        )
+                      ) : (
+                        /* 编辑模式：可编辑的文本框 */
+                        <textarea
+                          value={filePreviewResult.content}
+                          onChange={(e) => {
+                            setFilePreviewResult(prev => prev ? {
+                              ...prev,
+                              content: e.target.value
+                            } : null);
+                          }}
+                          className="w-full h-full min-h-[350px] bg-white border border-gray-300 rounded-lg p-3 text-xs text-gray-700 font-mono resize-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                          placeholder="在此编辑文件内容..."
+                          spellCheck={false}
+                        />
+                      )}
+                    </div>
+                  </div>
+                  
+                  {/* 操作按钮 */}
+                  {/* <div className="flex items-center gap-3">
+                    <button
+                      onClick={() => {
+                        setShowFilePreview(false);
+                        setFilePreviewResult(null);
+                      }}
+                      className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-all"
+                    >
+                      重新选择文件
+                    </button>
+                    <button
+                      onClick={handleParse}
+                      disabled={parsing || generating}
+                      className="flex-1 px-6 py-2.5 text-sm font-semibold text-white bg-gradient-to-r from-blue-600 to-purple-600 rounded-lg hover:from-blue-700 hover:to-purple-700 shadow-lg hover:shadow-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      ✨ 确认并生成需求文档
+                    </button>
+                  </div> */}
+                </div>
+              </div>
+            </motion.div>
+          )}
 
           {/* 🆕 AI生成需求文档进度 */}
           {(parsing || generating) && (
             <AIThinking
               title="正在直接生成需求文档..."
-              subtitle="AI正在分析HTML并生成结构化需求，预计需要 1-3 分钟"
+              subtitle="AI正在分析文件并生成结构化需求，预计需要 1-3 分钟"
               progressItems={[
-                { label: '读取HTML文件内容...', status: parsing ? 'processing' : 'completed' },
-                { label: 'AI分析HTML结构和元素', status: generating ? 'processing' : 'pending' },
+                { label: '读取文件内容...', status: parsing ? 'processing' : 'completed' },
+                { label: 'AI分析文件结构和元素', status: generating ? 'processing' : 'pending' },
                 { label: '生成章节化需求文档', status: 'pending' }
               ]}
             />
@@ -1709,31 +2344,37 @@ export function FunctionalTestCaseGenerator() {
           {/* 🆕 生成成功提示 */}
           {requirementDoc && !parsing && !generating && (
             <motion.div
-              className="bg-gradient-to-br from-green-50 to-emerald-50 rounded-2xl p-8 border-2 border-green-200/60 shadow-lg shadow-green-500/10"
+              className="bg-gradient-to-br from-green-50 to-emerald-50 rounded-xl p-5 border-2 border-green-200/60 shadow-md shadow-green-500/10"
               initial={{ opacity: 0, scale: 0.95, y: 10 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               transition={{ duration: 0.3 }}
             >
-              <div className="flex items-start gap-4">
-                <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-green-400 to-green-600 flex items-center justify-center shadow-lg flex-shrink-0">
-                  <CheckCircle className="w-7 h-7 text-white" />
+              <div className="flex items-start gap-3">
+                <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-green-400 to-green-600 flex items-center justify-center shadow-md flex-shrink-0">
+                  <CheckCircle className="w-5 h-5 text-white" />
                 </div>
                 <div className="flex-1">
-                  <h4 className="text-xl font-bold text-green-900 mb-4">需求文档生成成功！</h4>
-                  <div className="grid grid-cols-2 gap-6 mb-5">
-                    <div className="text-center bg-white/60 rounded-xl p-4 border border-green-200/40">
-                      <div className="text-3xl font-bold text-green-700 mb-1">{requirementDoc.length}</div>
-                      <div className="text-sm font-medium text-green-600">文档字符数</div>
+                  <h4 className="text-base font-bold text-green-900 mb-3">需求文档生成成功！</h4>
+                  <div className="grid grid-cols-2 gap-4 mb-3">
+                    <div className="text-center bg-white/60 rounded-lg p-3 border border-green-200/40">
+                      <div className="text-2xl font-bold text-green-700 mb-0.5">{requirementDoc.length}</div>
+                      <div className="text-xs font-medium text-green-600">文档字符数</div>
                     </div>
-                    <div className="text-center bg-white/60 rounded-xl p-4 border border-green-200/40">
-                      <div className="text-3xl font-bold text-green-700 mb-1">
+                    <div className="text-center bg-white/60 rounded-lg p-3 border border-green-200/40">
+                      <div className="text-2xl font-bold text-green-700 mb-0.5">
                         {(requirementDoc.match(/###\s+[\d.]+/g) || []).length}
                       </div>
-                      <div className="text-sm font-medium text-green-600">识别章节数</div>
+                      <div className="text-xs font-medium text-green-600">识别章节数</div>
                     </div>
                   </div>
-                  <div className="text-sm font-medium text-green-700 bg-green-100/80 rounded-xl p-4 border border-green-200/50">
-                    💡 AI 已直接分析 HTML 并生成需求文档，无需二次确认！
+                  <div className="text-xs font-medium text-green-700 bg-green-100/80 rounded-lg p-3 border border-green-200/50">
+                    💡 AI 已直接分析 {
+                      contentSourceType === 'html' ? 'HTML' :
+                      contentSourceType === 'pdf' ? 'PDF' :
+                      contentSourceType === 'docx' ? 'DOCX' :
+                      contentSourceType === 'markdown' ? 'Markdown' :
+                      contentSourceType === 'text' ? 'TXT' : '文档'
+                    } 并生成需求文档，无需二次确认！
                   </div>
                 </div>
               </div>
@@ -1742,26 +2383,26 @@ export function FunctionalTestCaseGenerator() {
         </div>
 
         {/* 右侧：项目信息表单 */}
-        <div className="space-y-6">
+        <div className="space-y-4">
           {/* 表单卡片 */}
-          <div className="bg-gradient-to-br from-white via-purple-50/30 to-blue-50/30 rounded-2xl p-8 border border-purple-100/50 shadow-lg shadow-purple-500/5 sticky top-28">
-            <div className="flex items-center gap-4 mb-8">
-              <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500 via-purple-500 to-purple-600
-                              flex items-center justify-center shadow-lg shadow-purple-500/30">
-              <FileText className="w-6 h-6 text-white" />
+          <div className="bg-gradient-to-br from-white via-purple-50/30 to-blue-50/30 rounded-xl p-5 border border-purple-100/50 shadow-md shadow-purple-500/5 sticky top-24">
+            <div className="flex items-center gap-3 mb-5">
+              <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-blue-500 via-purple-500 to-purple-600
+                              flex items-center justify-center shadow-md shadow-purple-500/25">
+              <FileText className="w-4 h-4 text-white" />
               </div>
               <div>
-                <h3 className="text-xl font-bold text-gray-900 mb-1">
+                <h3 className="text-base font-bold text-gray-900 mb-0.5">
                   补充项目信息
                 </h3>
-                <p className="text-sm font-medium text-gray-600">可选，帮助 AI 更好理解业务</p>
+                <p className="text-xs font-medium text-gray-600">可选，帮助 AI 更好理解业务</p>
               </div>
             </div>
 
-            <div className="space-y-6">
+            <div className="space-y-4">
               {/* 平台类型 */}
               <div>
-                <label className="block text-sm font-semibold text-gray-900 mb-3">
+                <label className="block text-xs font-semibold text-gray-900 mb-2">
                   平台类型 <span className="text-red-500">*</span>
                 </label>
                 <Radio.Group
@@ -1773,19 +2414,19 @@ export function FunctionalTestCaseGenerator() {
                   <div className="grid grid-cols-2 gap-3">
                     <Radio.Button
                       value="web"
-                      className="text-center h-10 leading-10"
+                      className="text-center text-sm h-8 leading-8"
                     >
                       🖥️ Web端
                     </Radio.Button>
                     <Radio.Button
                       value="mobile"
-                      className="text-center h-10 leading-10"
+                      className="text-center text-sm h-8 leading-8"
                     >
                       📱 移动端
                     </Radio.Button>
                   </div>
                 </Radio.Group>
-                <p className="text-sm text-gray-600 mt-2 leading-relaxed">
+                <p className="text-xs text-gray-600 mt-2 leading-relaxed">
                   {platformType === 'web' ?
                     '识别 PC 端 Web 页面（列表页、表单页、详情页、弹窗等）' :
                     '识别移动端页面（TabBar 导航、卡片列表、长屏详情、多状态画面等）'}
@@ -1794,7 +2435,7 @@ export function FunctionalTestCaseGenerator() {
 
               {/* 页面模式 */}
               <div>
-                <label className="block text-sm font-semibold text-gray-900 mb-3">
+                <label className="block text-xs font-semibold text-gray-900 mb-2">
                   页面模式 <span className="text-red-500">*</span>
                 </label>
                 <Radio.Group
@@ -1806,19 +2447,19 @@ export function FunctionalTestCaseGenerator() {
                   <div className="grid grid-cols-2 gap-3">
                     <Radio.Button
                       value="new"
-                      className="text-center h-10 leading-10"
+                      className="text-center text-sm h-8 leading-8"
                     >
                       🆕 新增页面
                     </Radio.Button>
                     <Radio.Button
                       value="modify"
-                      className="text-center h-10 leading-10"
+                      className="text-center text-sm h-8 leading-8"
                     >
                       ✏️ 修改页面
                     </Radio.Button>
                   </div>
                 </Radio.Group>
-                <p className="text-sm text-gray-600 mt-2 leading-relaxed">
+                <p className="text-xs text-gray-600 mt-2 leading-relaxed">
                   {pageMode === 'new' ?
                     '完整解析页面所有元素和功能' :
                     '识别红色标记的变更点，生成变更摘要'}
@@ -1827,11 +2468,12 @@ export function FunctionalTestCaseGenerator() {
 
               {/* 项目名称 */}
               <div>
-                <label className="block text-sm font-semibold text-gray-900 mb-3">
+                <label className="block text-xs font-semibold text-gray-900 mb-2">
                   项目名称 <span className="text-red-500">*</span>
                 </label>
                 <Select
-                  className="w-full"
+                  className="w-full compact-select"
+                  size="middle"
                   placeholder="请选择项目"
                   value={projectInfo.projectId || undefined}
                   onChange={(value) => {
@@ -1855,17 +2497,18 @@ export function FunctionalTestCaseGenerator() {
                     value: sys.id
                   }))}
                 />
-                <p className="text-sm text-gray-600 mt-2">生成的测试用例会自动关联此项目</p>
+                <p className="text-xs text-gray-600 mt-1.5">生成的测试用例会自动关联此项目</p>
               </div>
 
               {/* 项目版本 */}
               {projectInfo.projectId && (
                 <div>
-                  <label className="block text-sm font-semibold text-gray-900 mb-3">
+                  <label className="block text-xs font-semibold text-gray-900 mb-2">
                     项目版本 <span className="text-red-500">*</span>
                   </label>
                   <Select
-                    className="w-full"
+                    className="w-full compact-select"
+                    size="middle"
                     placeholder="请选择版本"
                     value={projectInfo.projectVersionId || undefined}
                     onChange={(value) => setProjectInfo(prev => ({ ...prev, projectVersionId: value }))}
@@ -1877,30 +2520,31 @@ export function FunctionalTestCaseGenerator() {
                       }));
                     })()}
                   />
-                  <p className="text-sm text-gray-600 mt-2">生成的测试用例会关联此版本</p>
+                  <p className="text-xs text-gray-600 mt-2">生成的测试用例会关联此版本</p>
                 </div>
               )}
 
               {/* 模块名称 */}
               <div>
-                <label className="block text-sm font-semibold text-gray-900 mb-3">
+                <label className="block text-xs font-semibold text-gray-900 mb-2">
                   模块名称 <span className="text-red-500">*</span>
                 </label>
                 <Input
+                  className="text-sm h-8 leading-8"
                   placeholder="例如：登录模块"
                   value={projectInfo.moduleName}
                   onChange={e => setProjectInfo(prev => ({ ...prev, moduleName: e.target.value }))}
                 />
-                <p className="text-sm text-gray-600 mt-2">生成的测试用例会自动填充此模块名称</p>
+                <p className="text-xs text-gray-600 mt-2">生成的测试用例会自动填充此模块名称</p>
               </div>
 
               {/* 补充业务规则 */}
               <div>
-                <label className="block text-sm font-semibold text-gray-900 mb-3">
+                <label className="block text-xs font-semibold text-gray-900 mb-2">
                   补充业务规则 <span className="text-gray-500 font-normal">(选填，辅助 AI 理解)</span>
                 </label>
                 <TextArea
-                  rows={6}
+                  rows={5}
                   placeholder={`每行一条规则，例如：
 • 用户名和密码必须同时输入才能提交登录请求
 • 密码错误超过5次后账户将被临时锁定10分钟
@@ -1922,8 +2566,9 @@ export function FunctionalTestCaseGenerator() {
 • 账户被封禁后，任何登录尝试均返回"账户已被冻结"提示`}
                   value={projectInfo.businessRules}
                   onChange={e => setProjectInfo(prev => ({ ...prev, businessRules: e.target.value }))}
+                  className="text-sm"
                 />
-                <p className="text-sm text-gray-600 mt-2 leading-relaxed">
+                <p className="text-xs text-gray-600 mt-1.5 leading-relaxed">
                   💡 这些规则将作为 AI 提示词的一部分，帮助 AI 更准确地理解需求和生成测试点，不会直接出现在需求文档中
                 </p>
               </div>
@@ -1937,7 +2582,7 @@ export function FunctionalTestCaseGenerator() {
                 <ul className="text-sm text-blue-800 space-y-2 leading-relaxed">
                   <li className="flex items-start gap-2">
                     <span className="text-blue-500 mt-0.5">•</span>
-                    <span><strong className="font-semibold">项目名称</strong>、<strong className="font-semibold">项目版本</strong> 和 <strong className="font-semibold">模块名称</strong> 为必填项，会自动关联到生成的测试用例中</span>
+                    <span><strong className="font-semibold text-red-600">页面名称</strong>、<strong className="font-semibold">项目名称</strong>、<strong className="font-semibold">项目版本</strong> 和 <strong className="font-semibold">模块名称</strong> 为必填项，会自动关联到生成的测试用例中</span>
                   </li>
                   <li className="flex items-start gap-2">
                     <span className="text-blue-500 mt-0.5">•</span>
@@ -2993,22 +3638,22 @@ export function FunctionalTestCaseGenerator() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-purple-50/30 pb-40">
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-purple-50/30 pb-32">
       {/* 页面头部 */}
       <header className="sticky top-0 z-50 bg-white/95 backdrop-blur-xl border-b border-gray-200/80 shadow-sm">
-        <div className="max-w-7xl mx-auto px-8 py-6">
+        <div className="max-w-7xl mx-auto px-6 py-4">
           {/* 标题区 */}
-          <div className="flex items-center gap-5 mb-6">
+          <div className="flex items-center gap-3 mb-4">
             {/* AI 图标 */}
-            <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-purple-500 via-purple-600 to-blue-600 flex items-center justify-center shadow-xl shadow-purple-500/40 ring-4 ring-purple-500/10">
-              <Sparkles className="w-8 h-8 text-white" />
+            <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-purple-500 via-purple-600 to-blue-600 flex items-center justify-center shadow-lg shadow-purple-500/30 ring-2 ring-purple-500/10">
+              <Sparkles className="w-5 h-5 text-white" />
             </div>
 
             <div className="flex-1">
-              <h1 className="text-3xl font-bold bg-gradient-to-r from-purple-600 via-purple-700 to-blue-600 bg-clip-text text-transparent mb-1.5 tracking-tight">
+              <h1 className="text-xl font-bold bg-gradient-to-r from-purple-600 via-purple-700 to-blue-600 bg-clip-text text-transparent mb-0.5 tracking-tight">
                 AI 智能生成器
               </h1>
-              <p className="text-base text-gray-600 font-medium">
+              <p className="text-xs text-gray-600 font-medium">
                 {generatorMode === 'requirement' 
                   ? '从原型/业务文档生成结构化需求文档（HTML / PDF / DOCX / Markdown / TXT）'
                   : '基于需求文档批量生成测试用例'
@@ -3018,29 +3663,29 @@ export function FunctionalTestCaseGenerator() {
           </div>
 
           {/* 🆕 模式切换选项卡 */}
-          <div className="flex items-center gap-2 mb-6 p-1 bg-gray-100 rounded-xl w-fit">
+          <div className="flex items-center gap-1.5 mb-4 p-0.5 bg-gray-100 rounded-lg w-fit">
             <button
               onClick={() => handleModeChange('requirement')}
               className={clsx(
-                "flex items-center gap-2 px-5 py-2.5 rounded-lg font-medium transition-all",
+                "flex items-center gap-1.5 px-4 py-1.5 rounded-md font-medium text-sm transition-all",
                 generatorMode === 'requirement'
                   ? "bg-white text-purple-700 shadow-sm"
                   : "text-gray-600 hover:text-gray-900"
               )}
             >
-              <Sparkles className="w-4 h-4" />
+              <Sparkles className="w-3.5 h-3.5" />
               生成需求文档
             </button>
             <button
               onClick={() => handleModeChange('testcase')}
               className={clsx(
-                "flex items-center gap-2 px-5 py-2.5 rounded-lg font-medium transition-all",
+                "flex items-center gap-1.5 px-4 py-1.5 rounded-md font-medium text-sm transition-all",
                 generatorMode === 'testcase'
                   ? "bg-white text-purple-700 shadow-sm"
                   : "text-gray-600 hover:text-gray-900"
               )}
             >
-              <TestTube2 className="w-4 h-4" />
+              <TestTube2 className="w-3.5 h-3.5" />
               生成测试用例
             </button>
           </div>
@@ -3056,7 +3701,7 @@ export function FunctionalTestCaseGenerator() {
 
       {/* 内容区 */}
       <div className={clsx(
-        "mx-auto px-8 py-10",
+        "mx-auto px-6 py-6",
         currentStep === 0 && "max-w-7xl",
         currentStep === 1 && "max-w-7xl",
         currentStep === 2 && "max-w-7xl"
@@ -3202,21 +3847,21 @@ export function FunctionalTestCaseGenerator() {
 
       {/* 底部固定操作栏 */}
       <div className="fixed bottom-0 left-0 right-0 bg-white/98 backdrop-blur-xl
-                      border-t border-gray-200/80 shadow-[0_-4px_24px_rgba(0,0,0,0.08)] z-50">
-        <div className="max-w-7xl mx-auto px-8 py-5">
+                      border-t border-gray-200/80 shadow-[0_-4px_16px_rgba(0,0,0,0.06)] z-50">
+        <div className="max-w-7xl mx-auto px-6 py-3.5">
           <div className="flex items-center justify-between">
             {/* 左侧统计 - 根据模式显示不同内容 */}
-            <div className="flex items-center gap-10">
+            <div className="flex items-center gap-6">
               {generatorMode === 'requirement' ? (
                 // 需求文档模式：显示当前进度
                 <>
-                  <div className="flex items-center gap-4">
-                    <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-purple-50 to-purple-100 flex items-center justify-center shadow-sm ring-1 ring-purple-200/50">
-                      <FileText className="w-6 h-6 text-purple-600" />
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-purple-50 to-purple-100 flex items-center justify-center shadow-sm ring-1 ring-purple-200/50">
+                      <FileText className="w-4 h-4 text-purple-600" />
                     </div>
                     <div>
-                      <div className="text-lg font-bold text-gray-900 leading-none mb-1">需求文档生成</div>
-                      <div className="text-sm font-medium text-gray-500">
+                      <div className="text-sm font-bold text-gray-900 leading-none mb-0.5">需求文档生成</div>
+                      <div className="text-xs font-medium text-gray-500">
                         步骤 {currentStep + 1} / 3：{REQUIREMENT_STEPS[currentStep]?.name || ''}
                       </div>
                     </div>
@@ -3224,14 +3869,14 @@ export function FunctionalTestCaseGenerator() {
 
                   {requirementDoc && (
                     <>
-                      <div className="w-px h-12 bg-gray-200/60" />
-                      <div className="flex items-center gap-4">
-                        <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-green-50 to-green-100 flex items-center justify-center shadow-sm ring-1 ring-green-200/50">
-                          <CheckCircle className="w-6 h-6 text-green-600" />
+                      <div className="w-px h-10 bg-gray-200/60" />
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-green-50 to-green-100 flex items-center justify-center shadow-sm ring-1 ring-green-200/50">
+                          <CheckCircle className="w-4 h-4 text-green-600" />
                         </div>
                         <div>
-                          <div className="text-3xl font-bold text-gray-900 leading-none mb-1">{requirementDoc.length}</div>
-                          <div className="text-sm font-medium text-gray-600">文档字数</div>
+                          <div className="text-xl font-bold text-gray-900 leading-none mb-0.5">{requirementDoc.length}</div>
+                          <div className="text-xs font-medium text-gray-600">文档字数</div>
                         </div>
                       </div>
                     </>
@@ -3240,40 +3885,40 @@ export function FunctionalTestCaseGenerator() {
               ) : (
                 // 测试用例模式：显示用例统计
                 <>
-                  <div className="flex items-center gap-4">
-                    <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-blue-50 to-blue-100 flex items-center justify-center shadow-sm ring-1 ring-blue-200/50">
-                      <FileText className="w-6 h-6 text-blue-600" />
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-blue-50 to-blue-100 flex items-center justify-center shadow-sm ring-1 ring-blue-200/50">
+                      <FileText className="w-4 h-4 text-blue-600" />
                     </div>
                     <div>
-                      <div className="text-3xl font-bold text-gray-900 leading-none mb-1">{draftCases.length}</div>
-                      <div className="text-sm font-medium text-gray-600">总用例</div>
+                      <div className="text-xl font-bold text-gray-900 leading-none mb-0.5">{draftCases.length}</div>
+                      <div className="text-xs font-medium text-gray-600">总用例</div>
                     </div>
                   </div>
 
-                  <div className="w-px h-12 bg-gray-200/60" />
+                  <div className="w-px h-10 bg-gray-200/60" />
 
-                  <div className="flex items-center gap-4">
-                    <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-green-50 to-green-100 flex items-center justify-center shadow-sm ring-1 ring-green-200/50">
-                      <CheckCircle className="w-6 h-6 text-green-600" />
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-green-50 to-green-100 flex items-center justify-center shadow-sm ring-1 ring-green-200/50">
+                      <CheckCircle className="w-4 h-4 text-green-600" />
                     </div>
                     <div>
-                      <div className="text-3xl font-bold text-gray-900 leading-none mb-1">
+                      <div className="text-xl font-bold text-gray-900 leading-none mb-0.5">
                         {selectedCasesCount}
                       </div>
-                      <div className="text-sm font-medium text-gray-600">已选中（用例）</div>
+                      <div className="text-xs font-medium text-gray-600">已选中（用例）</div>
                     </div>
                   </div>
 
                   {draftCases.length > 0 && (
                     <>
-                      <div className="w-px h-12 bg-gray-200/60" />
-                      <div className="flex items-center gap-4">
-                        <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-amber-50 to-amber-100 flex items-center justify-center shadow-sm ring-1 ring-amber-200/50">
-                          <Sparkles className="w-6 h-6 text-amber-600" />
+                      <div className="w-px h-10 bg-gray-200/60" />
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-amber-50 to-amber-100 flex items-center justify-center shadow-sm ring-1 ring-amber-200/50">
+                          <Sparkles className="w-4 h-4 text-amber-600" />
                         </div>
                         <div>
-                          <div className="text-3xl font-bold text-gray-900 leading-none mb-1">{avgQuality}</div>
-                          <div className="text-sm font-medium text-gray-600">平均质量</div>
+                          <div className="text-xl font-bold text-gray-900 leading-none mb-0.5">{avgQuality}</div>
+                          <div className="text-xs font-medium text-gray-600">平均质量</div>
                         </div>
                       </div>
                     </>
@@ -3283,17 +3928,17 @@ export function FunctionalTestCaseGenerator() {
             </div>
 
             {/* 右侧操作 - 根据模式显示不同按钮 */}
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2.5">
               {generatorMode === 'requirement' ? (
                 // 需求文档模式的操作按钮
                 <>
                   {currentStep > 0 && currentStep < 2 && (
                     <Button
                       variant="outline"
-                      size="default"
-                      icon={<ArrowLeft className="w-4 h-4" />}
+                      size="sm"
+                      icon={<ArrowLeft className="w-3.5 h-3.5" />}
                       onClick={() => setCurrentStep(prev => prev - 1)}
-                      className="h-11 px-6 font-medium"
+                      className="h-9 px-4 font-medium text-sm"
                     >
                       上一步
                     </Button>
@@ -3305,10 +3950,10 @@ export function FunctionalTestCaseGenerator() {
                   {currentStep > 0 && currentStep < 2 && (
                     <Button
                       variant="outline"
-                      size="default"
-                      icon={<ArrowLeft className="w-4 h-4" />}
+                      size="sm"
+                      icon={<ArrowLeft className="w-3.5 h-3.5" />}
                       onClick={() => setCurrentStep(prev => prev - 1)}
-                      className="h-11 px-6 font-medium"
+                      className="h-9 px-4 font-medium text-sm"
                     >
                       上一步
                     </Button>
@@ -3318,31 +3963,31 @@ export function FunctionalTestCaseGenerator() {
                     <>
                       <Button
                         variant="outline"
-                        size="default"
+                        size="sm"
                         onClick={() => setCurrentStep(1)}
-                        className="h-11 px-6 font-medium"
+                        className="h-9 px-4 font-medium text-sm"
                       >
                         修改需求
                       </Button>
                       <Button
                         variant="outline"
-                        size="lg"
-                        icon={<Save className="w-5 h-5" />}
+                        size="default"
+                        icon={<Save className="w-4 h-4" />}
                         isLoading={saving}
                         disabled={selectedCasesCount === 0}
                         onClick={saveSelectedCases}
-                        className="h-12 px-7 font-semibold border-2"
+                        className="h-9 px-5 font-semibold text-sm border-2"
                       >
                         保存选中用例 ({selectedCasesCount})
                       </Button>
                       <Button
                         variant="default"
-                        size="lg"
-                        icon={<CheckCircle className="w-5 h-5" />}
+                        size="default"
+                        icon={<CheckCircle className="w-4 h-4" />}
                         isLoading={saving}
                         disabled={selectedCasesCount === 0}
                         onClick={saveToLibrary}
-                        className="h-12 px-8 font-semibold shadow-lg shadow-purple-500/25 hover:shadow-xl hover:shadow-purple-500/30 transition-all"
+                        className="h-9 px-6 font-semibold text-sm shadow-md shadow-purple-500/20 hover:shadow-lg hover:shadow-purple-500/25 transition-all"
                       >
                         保存并完成 ({selectedCasesCount})
                       </Button>
@@ -3528,6 +4173,60 @@ export function FunctionalTestCaseGenerator() {
           border-color: #8b5cf6;
           box-shadow: 0 0 0 4px rgba(139, 92, 246, 0.1), 0 4px 12px rgba(139, 92, 246, 0.05);
           outline: none;
+        }
+
+        /* Select 组件文字大小控制 */
+        .compact-select .ant-select-selection-item,
+        .compact-select .ant-select-selection-placeholder {
+          font-size: 0.8rem !important; /* 14px - text-xs */
+          line-height: 1.25rem !important;
+        }
+
+        .compact-select.ant-select .ant-select-selector {
+          font-size: 0.75rem !important;
+        }
+
+        /* 下拉选项的文字大小 */
+        .ant-select-dropdown .ant-select-item-option-content {
+          font-size: 0.75rem !important;
+        }
+
+        /* 🆕 防止长内容撑开页面 */
+        pre {
+          word-wrap: break-word;
+          word-break: break-word;
+          overflow-wrap: anywhere;
+          white-space: pre-wrap;
+          max-width: 100%;
+        }
+
+        /* 🆕 限制图片大小，防止撑开页面 */
+        img {
+          max-width: 100%;
+          height: auto;
+          display: block;
+          margin: 1rem 0;
+        }
+
+        /* 🆕 表格横向滚动 */
+        table {
+          max-width: 100%;
+          overflow-x: auto;
+          display: block;
+        }
+
+        /* 🆕 长文本自动换行 */
+        .prose {
+          word-wrap: break-word;
+          word-break: break-word;
+          overflow-wrap: anywhere;
+        }
+
+        /* 🆕 Base64图片优化 */
+        img[src^="data:image"] {
+          max-width: 100%;
+          max-height: 500px;
+          object-fit: contain;
         }
       `}</style>
     </div>

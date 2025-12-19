@@ -395,6 +395,60 @@ class FunctionalTestCaseService {
   }
 
   /**
+   * 🆕 从文本直接生成需求文档（不需要上传文件）
+   */
+  async generateFromText(
+    text: string,
+    systemName: string,
+    moduleName: string,
+    pageMode: 'new' | 'modify' = 'new',
+    businessRules?: string,
+    platformType?: 'web' | 'mobile'
+  ) {
+    const platform = platformType || 'web';
+    console.log('📤 从文本直接生成需求文档...');
+    console.log(`   平台类型: ${platform === 'web' ? 'Web端' : '移动端'}`);
+    console.log(`   页面模式: ${pageMode === 'new' ? '新增页面' : '修改页面'}`);
+    console.log(`   文本长度: ${text.length} 字符`);
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 300000); // 5分钟
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/axure/generate-from-text`, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: JSON.stringify({
+          text,
+          systemName,
+          moduleName,
+          pageMode,
+          businessRules,
+          platformType: platform
+        }),
+        signal: controller.signal
+      });
+
+      clearTimeout(timeoutId);
+      
+      console.log('✅ 收到需求文档响应');
+      const result = await handleResponse(response);
+      console.log('✅ 需求文档从文本生成成功');
+      console.log(`   - 会话ID: ${result.data.sessionId}`);
+      console.log(`   - 文档长度: ${result.data.requirementDoc.length} 字符`);
+      console.log(`   - 章节数量: ${result.data.sections.length}`);
+
+      return result;
+    } catch (error: any) {
+      clearTimeout(timeoutId);
+      if (error.name === 'AbortError') {
+        throw new Error('生成需求文档超时（超过5分钟），请重试或简化文本内容');
+      }
+      throw error;
+    }
+  }
+
+  /**
    * 规划分批策略
    */
   async planBatches(sessionId: string, requirementDoc: string) {

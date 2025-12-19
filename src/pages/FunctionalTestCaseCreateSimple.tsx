@@ -1353,7 +1353,7 @@ export function FunctionalTestCaseCreateSimple() {
                   <button
                     onClick={handleGenerateTestData}
                     disabled={generatingData}
-                    className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-gradient-to-r from-purple-500 to-indigo-600 text-white text-[11px] font-semibold rounded-[4px] hover:shadow-[0_3px_8px_rgba(159,122,234,0.4)] hover:-translate-y-px transition-all disabled:opacity-50"
+                    className="inline-flex items-center gap-1 px-2.5 py-1.5 h-[26px] bg-gradient-to-r from-purple-500 to-indigo-600 text-white text-[11px] font-semibold rounded-[4px] hover:shadow-[0_3px_8px_rgba(159,122,234,0.4)] hover:-translate-y-px transition-all disabled:opacity-50"
                   >
                     {generatingData ? (
                       <>
@@ -1373,7 +1373,7 @@ export function FunctionalTestCaseCreateSimple() {
                   onChange={(e) => handleFieldChange('testData', e.target.value)}
                   placeholder="请描述测试过程中使用的数据..."
                   rows={5}
-                  // className="!py-2 !px-2.5 !text-[13px] !leading-[1.5] !rounded-[5px]"
+                  className="!py-2 !px-2.5 !text-[13px] !leading-[1.5] !rounded-[5px]"
                 />
               </div>
             </div>

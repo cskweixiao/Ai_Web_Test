@@ -12,7 +12,7 @@ const DRAFT_CACHE_KEY_EXECUTE = 'test_case_execute_draft_';
 /**
  * 测试步骤执行结果
  */
-interface StepExecutionResult {
+export interface StepExecutionResult {
   stepIndex: number;
   status: 'pass' | 'fail' | 'block' | null;
   note: string;
@@ -32,14 +32,57 @@ interface DraftData {
 }
 
 /**
- * 功能测试用例执行页面 - 备选样式（与 Create/Edit/Detail 一致）
+ * 执行结果数据接口
  */
-export function FunctionalTestCaseExecuteAlt() {
-  const navigate = useNavigate();
-  const { id } = useParams<{ id: string }>();
-  const [loading, setLoading] = useState(true);
+export interface ExecutionResultData {
+  finalResult: 'pass' | 'fail' | 'block' | '';
+  actualResult: string;
+  comments: string;
+  stepResults: StepExecutionResult[];
+  screenshots: Array<{ file: File; preview: string; name: string }>;
+  executionTime: number;
+}
+
+/**
+ * 测试用例执行器 Props
+ */
+export interface TestCaseExecutorProps {
+  testCase: any;
+  onSubmit?: (result: ExecutionResultData) => Promise<void>;
+  onCancel?: () => void;
+  showBatchControls?: boolean;
+  onPrevious?: () => void;
+  onNext?: () => void;
+  onSkip?: () => void;
+  hasPrevious?: boolean;
+  hasNext?: boolean;
+  currentIndex?: number;
+  totalCount?: number;
+  hideBackButton?: boolean;
+  customTitle?: string;
+  inTestPlan?: boolean; // 是否在测试计划中使用（需要左边距）
+}
+
+/**
+ * 通用测试用例执行器组件
+ */
+export function TestCaseExecutor({
+  testCase,
+  onSubmit,
+  onCancel,
+  showBatchControls = false,
+  onPrevious,
+  onNext,
+  onSkip,
+  hasPrevious = false,
+  hasNext = false,
+  currentIndex,
+  totalCount,
+  hideBackButton = false,
+  customTitle,
+  inTestPlan = false,
+}: TestCaseExecutorProps) {
   const [saving, setSaving] = useState(false);
-  const [testCase, setTestCase] = useState<any>(null);
   const [executionTime, setExecutionTime] = useState(0);
   const [scrollY, setScrollY] = useState(0);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -64,14 +107,28 @@ export function FunctionalTestCaseExecuteAlt() {
     return () => clearInterval(timer);
   }, []);
   
-  // 监听滚动事件
+  // 监听内容区域滚动事件
   useEffect(() => {
-    const handleScroll = () => {
-      setScrollY(window.scrollY);
+    const handleScroll = (e: Event) => {
+      const target = e.target as HTMLElement;
+      setScrollY(target.scrollTop);
     };
     
-    window.addEventListener('scroll', handleScroll, { passive: true });
-    return () => window.removeEventListener('scroll', handleScroll);
+    // 延迟获取滚动容器，确保DOM已渲染
+    const timer = setTimeout(() => {
+      const contentScroll = document.querySelector('.flex-1.overflow-y-auto');
+      if (contentScroll) {
+        contentScroll.addEventListener('scroll', handleScroll as EventListener, { passive: true });
+      }
+    }, 100);
+    
+    return () => {
+      clearTimeout(timer);
+      const contentScroll = document.querySelector('.flex-1.overflow-y-auto');
+      if (contentScroll) {
+        contentScroll.removeEventListener('scroll', handleScroll as EventListener);
+      }
+    };
   }, []);
   
   // 监听全屏状态变化
@@ -92,46 +149,34 @@ export function FunctionalTestCaseExecuteAlt() {
     return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
   };
   
-  // 加载测试用例数据
+  // 初始化测试步骤
   useEffect(() => {
-    const loadTestCase = async () => {
-      if (!id) return;
-      
-      try {
-        setLoading(true);
-        const result = await functionalTestCaseService.getById(Number(id)) as { success: boolean; data?: any; error?: string };
-        
-        if (result.success && result.data) {
-          setTestCase(result.data);
-          
-          // 解析测试步骤并初始化执行结果
-          const stepsArray = result.data.steps?.split('\n').filter((s: string) => s.trim()) || [];
-          const initialResults = stepsArray.map((_step: string, index: number) => ({
-            stepIndex: index,
-            status: null,
-            note: ''
-          }));
-          setStepResults(initialResults);
-        } else {
-          showToast.error('加载测试用例失败');
-          navigate('/functional-test-cases');
-        }
-      } catch (error) {
-        console.error('加载测试用例失败:', error);
-        showToast.error('加载测试用例失败');
-        navigate('/functional-test-cases');
-      } finally {
-        setLoading(false);
-      }
-    };
+    if (!testCase) return;
     
-    loadTestCase();
-  }, [id, navigate]);
+    // 解析测试步骤并初始化执行结果
+    const stepsArray = testCase.steps?.split('\n').filter((s: string) => s.trim()) || [];
+    const initialResults = stepsArray.map((_step: string, index: number) => ({
+      stepIndex: index,
+      status: null,
+      note: ''
+    }));
+    setStepResults(initialResults);
+    
+    // 重置其他状态
+    setFinalResult('');
+    setActualResult('');
+    setComments('');
+    setScreenshots([]);
+    setExecutionTime(0);
+    setDraftLoaded(false);
+  }, [testCase?.id]);
   
   // 检查草稿（在数据加载完成后）
   useEffect(() => {
     const checkDraft = () => {
-      if (!id || draftLoaded || loading || !testCase) return;
+      if (!testCase || draftLoaded) return;
+      
+      const id = testCase.id?.toString();
       
       try {
         const draftKey = `${DRAFT_CACHE_KEY_EXECUTE}${id}`;
@@ -210,11 +255,8 @@ export function FunctionalTestCaseExecuteAlt() {
       }
     };
     
-    // 等待数据加载完成后再检查草稿
-    if (!loading && testCase) {
-      checkDraft();
-    }
-  }, [id, loading, draftLoaded, testCase]);
+    checkDraft();
+  }, [testCase, draftLoaded]);
   
   // 更新步骤执行结果
   const handleUpdateStepResult = (stepIndex: number, status: 'pass' | 'fail' | 'block') => {
@@ -225,10 +267,37 @@ export function FunctionalTestCaseExecuteAlt() {
     // 自动定位到下一步（如果当前步骤通过）
     if (stepIndex < steps.length - 1 && status === 'pass') {
       setTimeout(() => {
-        // 滚动到下一步
-        const nextStepElement = document.querySelector(`[data-step-index="${stepIndex + 1}"]`);
-        if (nextStepElement) {
-          nextStepElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        // 获取步骤列表容器和下一步元素
+        const stepsContainer = document.querySelector('.steps-list') as HTMLElement;
+        const nextStepElement = document.querySelector(`[data-step-index="${stepIndex + 1}"]`) as HTMLElement;
+        
+        console.log('滚动调试:', {
+          container: stepsContainer,
+          element: nextStepElement,
+          containerScrollTop: stepsContainer?.scrollTop,
+          containerClientHeight: stepsContainer?.clientHeight,
+          containerScrollHeight: stepsContainer?.scrollHeight
+        });
+        
+        if (stepsContainer && nextStepElement) {
+          // 使用原生scrollIntoView，但添加nearest选项只滚动最近的容器
+          try {
+            nextStepElement.scrollIntoView({ 
+              behavior: 'smooth', 
+              block: 'nearest',
+              inline: 'nearest'
+            });
+          } catch {
+            // 降级方案：直接计算滚动位置
+            const elementTop = nextStepElement.offsetTop;
+            const containerHeight = stepsContainer.clientHeight;
+            const elementHeight = nextStepElement.offsetHeight;
+            
+            const targetScroll = elementTop - (containerHeight / 2) + (elementHeight / 2);
+            stepsContainer.scrollTop = targetScroll;
+          }
+        } else {
+          console.log('未找到容器或元素');
         }
       }, 200);
     }
@@ -393,6 +462,7 @@ export function FunctionalTestCaseExecuteAlt() {
    * 保存草稿
    */
   const handleSaveDraft = useCallback((silent = false) => {
+    const id = testCase?.id?.toString();
     if (!id) return;
     
     try {
@@ -416,13 +486,13 @@ export function FunctionalTestCaseExecuteAlt() {
         showToast.error('保存草稿失败');
       }
     }
-  }, [id, finalResult, actualResult, comments, stepResults, screenshots.length]);
+  }, [testCase?.id, finalResult, actualResult, comments, stepResults, screenshots.length]);
   
   /**
    * 自动保存草稿（每3分钟）
    */
   useEffect(() => {
-    if (!id) return;
+    if (!testCase?.id) return;
     
     // 检查是否有内容需要保存
     const hasContent = () => {
@@ -443,7 +513,7 @@ export function FunctionalTestCaseExecuteAlt() {
     
     // 清除定时器
     return () => clearInterval(autoSaveInterval);
-  }, [id, finalResult, actualResult, comments, stepResults, screenshots.length, saving, handleSaveDraft]);
+  }, [testCase?.id, finalResult, actualResult, comments, stepResults, screenshots.length, saving, handleSaveDraft]);
   
   // 提交执行结果
   const handleSubmit = async () => {
@@ -466,67 +536,86 @@ export function FunctionalTestCaseExecuteAlt() {
       }
     }
     
+    setSaving(true);
+    
     try {
-      setSaving(true);
-      
-      // 计算步骤统计
-      const passedCount = stepResults.filter(r => r.status === 'pass').length;
-      const failedCount = stepResults.filter(r => r.status === 'fail').length;
-      const blockedCount = stepResults.filter(r => r.status === 'block').length;
-      
-      // 准备截图数据
-      const screenshotData = screenshots.map(screenshot => ({
-        fileName: screenshot.name,
-        fileSize: screenshot.file.size,
-        mimeType: screenshot.file.type,
-        base64Data: screenshot.preview.split(',')[1], // 移除 data URL 前缀
-        uploadedAt: new Date().toISOString()
-      }));
-
-      // 保存执行结果到数据库
-      const result = await functionalTestCaseService.saveExecutionResult(Number(id), {
-        testCaseName: testCase?.name || '未知测试用例',
-        finalResult: finalResult as 'pass' | 'fail' | 'block',
-        actualResult,
-        comments: comments || undefined,
-        durationMs: executionTime * 1000, // 转换为毫秒
-        stepResults: steps.map((step: any, index: number) => ({
-          stepIndex: index + 1,
-          action: step.step,
-          expected: step.expectedResult,
-          result: stepResults[index]?.status,
-          note: stepResults[index]?.note || ''
-        })),
-        totalSteps: steps.length,
-        completedSteps,
-        passedSteps: passedCount,
-        failedSteps: failedCount,
-        blockedSteps: blockedCount,
-        screenshots: screenshotData.length > 0 ? screenshotData : undefined,
-        metadata: {
-          system: testCase?.system,
-          module: testCase?.module,
-          scenario_name: testCase?.testScenario || testCase?.scenarioName || testCase?.scenario_name,
-          test_point_name: testCase?.testPoints?.[0]?.testPointName || testCase?.testPoints?.[0]?.testPoint || testCase?.test_point_name,
-          priority: testCase?.priority,
-          case_type: testCase?.testType || testCase?.caseType || testCase?.case_type,
-          submitted_at: new Date().toISOString()
-        }
-      }) as { success: boolean; data?: { executionId: string }; error?: string };
-      
-      if (result.success) {
+      if (onSubmit) {
+        // 如果提供了自定义提交函数，使用它
+        await onSubmit({
+          finalResult,
+          actualResult,
+          comments,
+          stepResults,
+          screenshots,
+          executionTime,
+        });
+        
         // 清除草稿
+        const id = testCase?.id?.toString();
         if (id) {
           localStorage.removeItem(`${DRAFT_CACHE_KEY_EXECUTE}${id}`);
         }
-        
-        const resultText = finalResult === 'pass' ? '✅ 通过' : finalResult === 'fail' ? '❌ 失败' : '🚫 阻塞';
-        showToast.success(`执行结果已提交！最终结果：${resultText}，执行时长：${formatTime(executionTime)}`);
-        setTimeout(() => {
-          navigate('/functional-test-cases');
-        }, 1000);
       } else {
-        throw new Error(result.error || '提交失败');
+        // 默认提交逻辑（用于独立页面）
+        const id = testCase?.id;
+        if (!id) {
+          throw new Error('测试用例 ID 不存在');
+        }
+        
+        // 计算步骤统计
+        const passedCount = stepResults.filter(r => r.status === 'pass').length;
+        const failedCount = stepResults.filter(r => r.status === 'fail').length;
+        const blockedCount = stepResults.filter(r => r.status === 'block').length;
+        
+        // 准备截图数据
+        const screenshotData = screenshots.map(screenshot => ({
+          fileName: screenshot.name,
+          fileSize: screenshot.file.size,
+          mimeType: screenshot.file.type,
+          base64Data: screenshot.preview.split(',')[1], // 移除 data URL 前缀
+          uploadedAt: new Date().toISOString()
+        }));
+
+        // 保存执行结果到数据库
+        const result = await functionalTestCaseService.saveExecutionResult(Number(id), {
+          testCaseName: testCase?.name || '未知测试用例',
+          finalResult: finalResult as 'pass' | 'fail' | 'block',
+          actualResult,
+          comments: comments || undefined,
+          durationMs: executionTime * 1000, // 转换为毫秒
+          stepResults: steps.map((step: any, index: number) => ({
+            stepIndex: index + 1,
+            action: step.step,
+            expected: step.expectedResult,
+            result: stepResults[index]?.status,
+            note: stepResults[index]?.note || ''
+          })),
+          totalSteps: steps.length,
+          completedSteps,
+          passedSteps: passedCount,
+          failedSteps: failedCount,
+          blockedSteps: blockedCount,
+          screenshots: screenshotData.length > 0 ? screenshotData : undefined,
+          metadata: {
+            system: testCase?.system,
+            module: testCase?.module,
+            scenario_name: testCase?.testScenario || testCase?.scenarioName || testCase?.scenario_name,
+            test_point_name: testCase?.testPoints?.[0]?.testPointName || testCase?.testPoints?.[0]?.testPoint || testCase?.test_point_name,
+            priority: testCase?.priority,
+            case_type: testCase?.testType || testCase?.caseType || testCase?.case_type,
+            submitted_at: new Date().toISOString()
+          }
+        }) as { success: boolean; data?: { executionId: string }; error?: string };
+        
+        if (result.success) {
+          // 清除草稿
+          localStorage.removeItem(`${DRAFT_CACHE_KEY_EXECUTE}${id}`);
+          
+          const resultText = finalResult === 'pass' ? '✅ 通过' : finalResult === 'fail' ? '❌ 失败' : '🚫 阻塞';
+          showToast.success(`执行结果已提交！最终结果：${resultText}，执行时长：${formatTime(executionTime)}`);
+        } else {
+          throw new Error(result.error || '提交失败');
+        }
       }
     } catch (error) {
       console.error('提交执行结果失败:', error);
@@ -539,47 +628,44 @@ export function FunctionalTestCaseExecuteAlt() {
   /**
    * 取消执行
    */
-  const handleCancel = () => {
-    // 检查是否有未保存的内容
-    const hasContent = 
-      finalResult || 
-      actualResult || 
-      comments || 
-      stepResults.some(r => r.status !== null || r.note) ||
-      screenshots.length > 0;
-    
-    if (hasContent) {
-      Modal.confirm({
-        title: '保存草稿？',
-        content: '当前有未保存的执行记录，是否保存为草稿？',
-        okText: '保存并离开',
-        cancelText: '直接离开',
-        onOk: () => {
-          handleSaveDraft();
-          navigate('/functional-test-cases');
-        },
-        onCancel: () => {
-          navigate('/functional-test-cases');
-        }
-      });
-    } else {
-      navigate('/functional-test-cases');
+  const handleCancelExecution = () => {
+    if (onCancel) {
+      // 检查是否有未保存的内容
+      const hasContent = 
+        finalResult || 
+        actualResult || 
+        comments || 
+        stepResults.some(r => r.status !== null || r.note) ||
+        screenshots.length > 0;
+      
+      if (hasContent) {
+        Modal.confirm({
+          title: '保存草稿？',
+          content: '当前有未保存的执行记录，是否保存为草稿？',
+          okText: '保存并离开',
+          cancelText: '直接离开',
+          onOk: () => {
+            handleSaveDraft();
+            onCancel();
+          },
+          onCancel: () => {
+            onCancel();
+          }
+        });
+      } else {
+        onCancel();
+      }
     }
   };
   
-  if (loading) {
+  if (!testCase) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
-          <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4 text-blue-600" />
-          <p className="text-gray-600">加载中...</p>
+          <p className="text-gray-600">没有找到测试用例</p>
         </div>
       </div>
     );
-  }
-  
-  if (!testCase) {
-    return null;
   }
   
   // 解析测试步骤 - 兼容多种字段名
@@ -602,7 +688,7 @@ export function FunctionalTestCaseExecuteAlt() {
   const progress = steps.length > 0 ? Math.round((completedSteps / steps.length) * 100) : 0;
   
   return (
-    <div className="min-h-screen bg-gray-50 p-0">
+    <div className="h-screen bg-gray-50 p-0 overflow-hidden">
       {/* 图片预览模态框 */}
       {previewImage && screenshots.length > 0 && (
         <div 
@@ -669,7 +755,7 @@ export function FunctionalTestCaseExecuteAlt() {
       )}
       
       {/* 悬浮状态窗口 */}
-      <div className="fixed top-4 right-3 z-[1000] bg-white/95 backdrop-blur-xl px-3.5 py-2 rounded-lg shadow-lg border border-gray-200 flex items-center gap-3 transition-all hover:shadow-xl hover:-translate-y-0.5" style={{ marginTop: `${Math.max(isFullscreen ? 1 : 5.3, (isFullscreen ? 0 : 9) - scrollY / 16)}rem`, marginLeft: '0.5rem' }}>
+      <div className="fixed top-0 right-3 z-[1000] bg-white/95 backdrop-blur-xl px-3.5 py-2 rounded-lg shadow-lg border border-gray-200 flex items-center gap-3 transition-all hover:shadow-xl hover:-translate-y-0.5" style={{ marginTop: `${Math.max(isFullscreen ? 1 : 5.3, (isFullscreen ? 0 : 9) - scrollY / 16)}rem`, marginLeft: '0.5rem' }}>
         <div className="flex flex-col gap-0.5">
           <div className="text-[9px] uppercase tracking-wider text-gray-500 font-bold">执行时长</div>
           <div className="text-[15px] font-bold font-mono text-gray-900 leading-none">{formatTime(executionTime)}</div>
@@ -686,13 +772,19 @@ export function FunctionalTestCaseExecuteAlt() {
         </div>
       </div>
 
-      <div className="max-w-[1200px] mx-auto">
+      <div className={`max-w-[1200px] mx-auto h-full flex flex-col pt-4 ${inTestPlan ? 'ml-[130px]' : ''}`}>
         {/* 用例信息卡片 */}
-        <div className="bg-white rounded-[10px] shadow-sm border border-gray-200 overflow-hidden">
+        <div className="bg-white rounded-[10px] shadow-sm border border-gray-200 overflow-hidden flex flex-col h-full">
           <div className="bg-gradient-to-r from-green-500 to-emerald-600 text-white px-8 py-6 flex items-start justify-between gap-5">
             <div className="flex-1">
-              {/* <div className="font-mono text-[15px] opacity-95 mb-2.5 tracking-wide font-medium">{ `TC_${String(testCase.id).padStart(5, '0')}`}</div> */}
-              <h1 className="text-2xl font-bold mb-3.5 leading-[1.4] tracking-tight">{testCase.name || '执行测试用例'}</h1>
+              {/* {showBatchControls && typeof currentIndex !== 'undefined' && typeof totalCount !== 'undefined' && (
+                <div className="font-mono text-[15px] opacity-95 mb-2.5 tracking-wide font-medium">
+                  用例 {currentIndex + 1} / {totalCount}
+                </div>
+              )} */}
+              <h1 className="text-2xl font-bold mb-3.5 leading-[1.4] tracking-tight">
+                {customTitle || testCase.name || '执行测试用例'}
+              </h1>
               <div className="flex gap-5 text-[13px] opacity-90">
                 <div className="flex items-center gap-1.5">
                   <span>👤</span>
@@ -713,15 +805,17 @@ export function FunctionalTestCaseExecuteAlt() {
                 </div>
               )}
             </div>
-            <button
-              onClick={handleCancel}
-              className="bg-white/20 hover:bg-white/30 border border-white/30 hover:border-white/50 text-white px-5 py-2.5 rounded-md text-sm font-medium transition-all"
-            >
-              返回列表
-            </button>
+            {!hideBackButton && (
+              <button
+                onClick={handleCancelExecution}
+                className="bg-white/20 hover:bg-white/30 border border-white/30 hover:border-white/50 text-white px-5 py-2.5 rounded-md text-sm font-medium transition-all"
+              >
+                返回列表
+              </button>
+            )}
           </div>
 
-          <div className="overflow-hidden">
+          <div className="flex-1 overflow-y-auto overflow-x-hidden">
           {/* 提示信息 */}
           <div className="px-6 py-5">
             
@@ -1050,43 +1144,141 @@ export function FunctionalTestCaseExecuteAlt() {
               </div>
             </div>
           </div>
+          </div>
           
           {/* 底部操作栏 */}
-          <div className="flex items-center justify-end gap-2 px-6 py-3.5 bg-gray-50 border-t border-gray-200">
-            <button
-              onClick={handleCancel}
-              className="inline-flex items-center gap-1.5 px-4 py-2 bg-white border border-gray-300 text-gray-700 rounded-[5px] text-xs font-semibold hover:border-green-500 hover:text-green-500 transition-all"
-            >
-              取消
-            </button>
-            <button
-              onClick={() => handleSaveDraft()}
-              className="inline-flex items-center gap-1.5 px-4 py-2 bg-white border border-gray-300 text-gray-700 rounded-[5px] text-xs font-semibold hover:border-green-500 hover:text-green-500 transition-all"
-            >
-              <Save className="w-3.5 h-3.5" />
-              保存草稿
-            </button>
-            <button
-              onClick={handleSubmit}
-              disabled={saving}
-              className="inline-flex items-center gap-1.5 px-4 py-2 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-[5px] text-xs font-semibold hover:shadow-[0_6px_20px_rgba(72,187,120,0.4)] hover:-translate-y-0.5 transition-all disabled:opacity-50"
-            >
-              {saving ? (
+          <div className="flex items-center justify-between gap-2 px-6 py-3.5 bg-gray-50 border-t border-gray-200">
+            <div className="flex items-center gap-2">
+              {showBatchControls && (
                 <>
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  提交中...
-                </>
-              ) : (
-                <>
-                  提交结果
+                  {onPrevious && (
+                    <button
+                      onClick={onPrevious}
+                      disabled={!hasPrevious}
+                      className="inline-flex items-center gap-1.5 px-4 py-2 bg-white border border-gray-300 text-gray-700 rounded-[5px] text-xs font-semibold hover:border-blue-500 hover:text-blue-500 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      ← 上一个
+                    </button>
+                  )}
+                  {onSkip && (
+                    <button
+                      onClick={onSkip}
+                      className="inline-flex items-center gap-1.5 px-4 py-2 bg-white border border-gray-300 text-gray-700 rounded-[5px] text-xs font-semibold hover:border-yellow-500 hover:text-yellow-500 transition-all"
+                    >
+                      跳过此用例
+                    </button>
+                  )}
                 </>
               )}
-            </button>
-          </div>
+            </div>
+            
+            <div className="flex items-center gap-2">
+              {!showBatchControls && (
+                <>
+                  <button
+                    onClick={handleCancelExecution}
+                    className="inline-flex items-center gap-1.5 px-4 py-2 bg-white border border-gray-300 text-gray-700 rounded-[5px] text-xs font-semibold hover:border-green-500 hover:text-green-500 transition-all"
+                  >
+                    取消
+                  </button>
+                  <button
+                    onClick={() => handleSaveDraft()}
+                    className="inline-flex items-center gap-1.5 px-4 py-2 bg-white border border-gray-300 text-gray-700 rounded-[5px] text-xs font-semibold hover:border-green-500 hover:text-green-500 transition-all"
+                  >
+                    <Save className="w-3.5 h-3.5" />
+                    保存草稿
+                  </button>
+                </>
+              )}
+              <button
+                onClick={handleSubmit}
+                disabled={saving}
+                className="inline-flex items-center gap-1.5 px-4 py-2 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-[5px] text-xs font-semibold hover:shadow-[0_6px_20px_rgba(72,187,120,0.4)] hover:-translate-y-0.5 transition-all disabled:opacity-50"
+              >
+                {saving ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    {showBatchControls ? '保存中...' : '提交中...'}
+                  </>
+                ) : (
+                  <>
+                    <Save className="w-3.5 h-3.5" />
+                    {showBatchControls ? '保存并继续' : '提交结果'}
+                  </>
+                )}
+              </button>
+              {showBatchControls && onNext && hasNext && (
+                <button
+                  onClick={onNext}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-[5px] text-xs font-semibold transition-all"
+                >
+                  下一个 →
+                </button>
+              )}
+            </div>
           </div>
         </div>
       </div>
     </div>
+  );
+}
+
+/**
+ * 功能测试用例执行页面 - 独立页面包装器
+ */
+export function FunctionalTestCaseExecuteAlt() {
+  const navigate = useNavigate();
+  const { id } = useParams<{ id: string }>();
+  const [loading, setLoading] = useState(true);
+  const [testCase, setTestCase] = useState<any>(null);
+
+  // 加载测试用例数据
+  useEffect(() => {
+    const loadTestCase = async () => {
+      if (!id) return;
+      
+      try {
+        setLoading(true);
+        const result = await functionalTestCaseService.getById(Number(id)) as { success: boolean; data?: any; error?: string };
+        
+        if (result.success && result.data) {
+          setTestCase(result.data);
+        } else {
+          showToast.error('加载测试用例失败');
+          navigate('/functional-test-cases');
+        }
+      } catch (error) {
+        console.error('加载测试用例失败:', error);
+        showToast.error('加载测试用例失败');
+        navigate('/functional-test-cases');
+      } finally {
+        setLoading(false);
+      }
+    };
+    
+    loadTestCase();
+  }, [id, navigate]);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4 text-blue-600" />
+          <p className="text-gray-600">加载中...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!testCase) {
+    return null;
+  }
+
+  return (
+    <TestCaseExecutor
+      testCase={testCase}
+      onCancel={() => navigate('/functional-test-cases')}
+    />
   );
 }
 

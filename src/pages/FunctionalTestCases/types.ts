@@ -95,13 +95,15 @@ export interface ViewProps {
     onBatchSelectPoints?: (pointIds: number[], selected: boolean) => void;  // 🆕 批量选择
     onViewDetail: (id: number) => void;  // 🆕 查看详情
     onEditCase: (id: number) => void;
-    onDeleteCase: (id: number, name: string) => void;
+    onDeleteCase: (id: number) => void;  // 🔧 移除name参数
     onEditPoint: (point: TestPointGroup) => void;
     onDeletePoint: (pointId: number, pointName: string) => void;
     onUpdateExecutionStatus: (caseId: number, status: ExecutionStatus) => void;
     onViewLogs: (caseId: number) => void;
-    onExecuteCase: (id: number, style?: 'default' | 'alt') => void;  // 🆕 执行用例，可选择样式
+    onExecuteCase: (id: number, style?: 'default' | 'alt' | 'ui-auto') => void;  // 🆕 执行用例，可选择样式（新增ui-auto）
     // 分页相关（可选，供表格视图使用）
     pagination?: PaginationInfo;
     onPageChange?: (page: number, pageSize: number) => void;
+    // 🆕 UI自动化测试执行状态
+    runningTestId?: number | null;
 }

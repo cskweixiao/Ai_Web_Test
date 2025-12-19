@@ -21,7 +21,7 @@ export interface ModalProps {
   showCloseButton?: boolean
   closeOnClickOutside?: boolean
   // 新增：更大尺寸和移动端表现
-  size?: "sm" | "md" | "lg" | "xl" | "2xl" | "3xl" | "wide" | "full"
+  size?: "sm" | "md" | "lg" | "xl" | "2xl" | "3xl" | "wide" | "full" | "custom"
   // 新增：内容内边距
   contentPadding?: "sm" | "md" | "lg"
 }
@@ -37,6 +37,7 @@ const sizeClasses: Record<NonNullable<ModalProps["size"]>, string> = {
   wide: "w-[98vw] sm:w-[95vw] lg:w-[90vw] max-w-[1600px] min-w-[1000px]",
   // full：桌面也铺满宽度（谨慎使用）
   full: "w-[95vw] h-[90vh] max-w-none max-h-none",
+  custom: "w-[1200px] min-w-[1500px] max-w-[1600px] ",
 }
 
 const paddingMap: Record<NonNullable<ModalProps["contentPadding"]>, string> = {

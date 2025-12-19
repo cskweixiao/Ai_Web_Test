@@ -18,7 +18,7 @@
 #### 必需的环境变量
 
 ```bash
-DATABASE_URL="mysql://username:password@host:port/database_name"
+DATABASE_URL="mysql://username:password@host:port/database_name?timezone=Asia/Shanghai"
 NODE_ENV="development|test|production"
 ```
 
@@ -49,7 +49,7 @@ FLUSH PRIVILEGES;
 
 ```bash
 # 设置环境变量
-export DATABASE_URL="mysql://username:password@host:port/database_name"
+export DATABASE_URL="mysql://username:password@host:port/database_name?timezone=Asia/Shanghai"
 export NODE_ENV="production"
 
 # 执行数据库部署
@@ -104,7 +104,7 @@ npx prisma studio
 ```bash
 # .env.development
 NODE_ENV=development
-DATABASE_URL="mysql://root:password@localhost:3306/automation_testing"
+DATABASE_URL="mysql://root:password@localhost:3306/automation_testing?timezone=Asia/Shanghai"
 SCREENSHOT_DIR=screenshots
 SCREENSHOT_RETENTION_DAYS=30
 ```
@@ -114,7 +114,7 @@ SCREENSHOT_RETENTION_DAYS=30
 ```bash
 # .env.test
 NODE_ENV=test
-DATABASE_URL="mysql://root:password@localhost:3306/automation_testing_test"
+DATABASE_URL="mysql://root:password@localhost:3306/automation_testing_test?timezone=Asia/Shanghai"
 SCREENSHOT_DIR=test-screenshots
 SCREENSHOT_RETENTION_DAYS=7
 ```
@@ -124,7 +124,7 @@ SCREENSHOT_RETENTION_DAYS=7
 ```bash
 # .env.production
 NODE_ENV=production
-DATABASE_URL="mysql://username:password@prod-host:3306/automation_testing"
+DATABASE_URL="mysql://username:password@prod-host:3306/automation_testing?timezone=Asia/Shanghai"
 SCREENSHOT_DIR=/var/app/screenshots
 SCREENSHOT_RETENTION_DAYS=90
 SCREENSHOT_MAX_FILE_SIZE=20971520

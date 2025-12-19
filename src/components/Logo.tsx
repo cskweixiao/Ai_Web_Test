@@ -33,7 +33,7 @@ export function Logo({ size = 'md', showText = true, className = '' }: LogoProps
       transition={{ duration: 0.2 }}
     >
       {/* Logo容器 - 现代化设计 */}
-      <motion.div 
+      {/* <motion.div 
         className={`
           ${sizeClasses[size]} 
           rounded-xl 
@@ -51,13 +51,19 @@ export function Logo({ size = 'md', showText = true, className = '' }: LogoProps
       >
         <div className="w-full h-full bg-white dark:bg-gray-800 rounded-lg p-1">
           <img 
-            src="/logo.png" 
-            alt="TestFlow Logo" 
+            src="/logo1.svg"
+             alt="Sakura Logo"
             className={`${sizeClasses[size]} object-contain`} 
           />
         </div>
-      </motion.div>
-      
+      </motion.div> */}
+      <img
+                  // src="/logo.png"
+                  src="/logo1.svg"
+                  alt="Sakura Logo"
+                  className="w-full h-full object-contain"
+                  style={{ width: '60px', height: '60px' }}
+                />
       {/* 系统名称 - 现代化排版 */}
       {showText && (
         <div className="flex flex-col">
@@ -73,7 +79,7 @@ export function Logo({ size = 'md', showText = true, className = '' }: LogoProps
             animate={{ opacity: 1, x: 0 }}
             transition={{ delay: 0.1 }}
           >
-            TestFlow
+            Sakura Ai
           </motion.span>
           {size !== 'sm' && (
             <motion.span 
@@ -82,7 +88,7 @@ export function Logo({ size = 'md', showText = true, className = '' }: LogoProps
               animate={{ opacity: 1, x: 0 }}
               transition={{ delay: 0.2 }}
             >
-              智能测试平台
+              企业级 · 智能自动化平台
             </motion.span>
           )}
         </div>

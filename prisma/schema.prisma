@@ -156,6 +156,7 @@ model test_cases {
   module               String?                @db.VarChar(100)
   project              String?                @db.VarChar(100)
   created_at           DateTime?              @default(now()) @db.Timestamp(0)
+  updated_at           DateTime?              @updatedAt @db.Timestamp(0)
   patch_proposals      case_patch_proposals[]
   case_versions        case_versions[]
   step_screenshots     step_screenshots[]
@@ -242,6 +243,7 @@ model users {
   test_suites                 test_suites[]
   user_roles                  user_roles[]
   functional_test_executions  functional_test_executions[]
+  test_plans                  test_plans[]
 }
 
 model run_artifacts {
@@ -646,4 +648,113 @@ model functional_test_executions {
 enum system_status {
   active
   inactive
+}
+
+// 🔥 测试计划模块
+
+enum test_plan_status {
+  draft        // 草稿
+  active       // 进行中
+  completed    // 已完成
+  cancelled    // 已取消
+  archived     // 已归档
+}
+
+enum test_plan_type {
+  functional   // 功能测试
+  ui_auto      // UI自动化测试
+  mixed        // 混合测试
+  regression   // 回归测试
+  smoke        // 冒烟测试
+  integration  // 集成测试
+}
+
+// 测试计划主表
+model test_plans {
+  id                  Int                      @id @default(autoincrement())
+  name                String                   @db.VarChar(255)
+  short_name          String?                  @db.VarChar(100)
+  description         String?                  @db.Text
+  project             String?                  @db.VarChar(100)
+  plan_type           test_plan_type           @default(functional)
+  status              test_plan_status         @default(draft)
+  members             Json?                    // 测试成员列表 [userId1, userId2, ...]
+  owner_id            Int                      // 主负责人
+  start_date          DateTime?                @db.Timestamp(0)
+  end_date            DateTime?                @db.Timestamp(0)
+  created_at          DateTime                 @default(now()) @db.Timestamp(0)
+  updated_at          DateTime                 @updatedAt @db.Timestamp(0)
+  deleted_at          DateTime?                @db.Timestamp(0)
+  
+  // 关联
+  owner               users                    @relation(fields: [owner_id], references: [id], onDelete: Cascade)
+  plan_cases          test_plan_cases[]
+  plan_executions     test_plan_executions[]
+  
+  @@index([owner_id])
+  @@index([project])
+  @@index([plan_type])
+  @@index([status])
+  @@index([created_at])
+  @@index([deleted_at])
+}
+
+// 测试计划与用例关联表
+model test_plan_cases {
+  id                  Int                      @id @default(autoincrement())
+  plan_id             Int
+  case_id             Int
+  case_type           String                   @db.VarChar(50) // 'functional' 或 'ui_auto'
+  case_name           String                   @db.VarChar(255)
+  sort_order          Int                      @default(0)
+  is_executed         Boolean                  @default(false)
+  execution_result    String?                  @db.VarChar(50) // 'pass', 'fail', 'block', 'skip'
+  created_at          DateTime                 @default(now()) @db.Timestamp(0)
+  
+  // 关联
+  plan                test_plans               @relation(fields: [plan_id], references: [id], onDelete: Cascade)
+  
+  @@unique([plan_id, case_id, case_type])
+  @@index([plan_id])
+  @@index([case_id])
+  @@index([case_type])
+}
+
+// 测试计划执行记录表
+model test_plan_executions {
+  id                  String                   @id @default(uuid()) @db.VarChar(100)
+  plan_id             Int
+  plan_name           String                   @db.VarChar(255)
+  executor_id         Int
+  executor_name       String                   @db.VarChar(100)
+  execution_type      String                   @db.VarChar(50) // 'functional' 或 'ui_auto'
+  status              String                   @db.VarChar(50) // 'running', 'completed', 'failed', 'cancelled'
+  progress            Int                      @default(0) @db.TinyInt
+  
+  // 统计信息
+  total_cases         Int                      @default(0)
+  completed_cases     Int                      @default(0)
+  passed_cases        Int                      @default(0)
+  failed_cases        Int                      @default(0)
+  blocked_cases       Int                      @default(0)
+  skipped_cases       Int                      @default(0)
+  
+  // 时间信息
+  started_at          DateTime                 @default(now()) @db.Timestamp(0)
+  finished_at         DateTime?                @db.Timestamp(0)
+  duration_ms         Int?
+  
+  // 执行详情和结果
+  execution_results   Json?                    // 每个用例的执行结果详情
+  error_message       String?                  @db.Text
+  metadata            Json?
+  
+  // 关联
+  plan                test_plans               @relation(fields: [plan_id], references: [id], onDelete: Cascade)
+  
+  @@index([plan_id])
+  @@index([executor_id])
+  @@index([status])
+  @@index([started_at])
+  @@index([finished_at])
 }

@@ -241,7 +241,8 @@ export class TestService {
         tag: '',
         priority: '',
         status: '',
-        system: ''
+        system: '',
+        module: '' // 🔥 新增：模块参数
       });
 
       console.log('✅ [testService] 返回测试用例数量:', result.data?.length || 0);
@@ -282,6 +283,8 @@ export class TestService {
     priority?: string;
     status?: string;
     system?: string;
+    module?: string; // 🔥 新增：模块参数
+    projectVersion?: string; // 🔥 新增：版本参数
   }): Promise<{
     data: TestCase[];
     pagination: {
@@ -315,6 +318,12 @@ export class TestService {
       }
       if (params.system && params.system.trim()) {
         queryParams.append('system', params.system);
+      }
+      if (params.module && params.module.trim()) {
+        queryParams.append('module', params.module); // 🔥 新增：模块参数
+      }
+      if (params.projectVersion && params.projectVersion.trim()) {
+        queryParams.append('projectVersion', params.projectVersion); // 🔥 新增：版本参数
       }
 
       // 添加时间戳防止缓存

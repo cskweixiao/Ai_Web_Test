@@ -14,7 +14,9 @@ export function testRoutes(testExecutionService: TestExecutionService): Router {
         tag = '',
         priority = '',
         status = '',
-        system = ''
+        system = '',
+        module = '', // 🔥 新增：模块参数
+        projectVersion = '' // 🔥 新增：版本参数
       } = req.query;
 
       const pageNum = parseInt(page as string);
@@ -35,6 +37,8 @@ export function testRoutes(testExecutionService: TestExecutionService): Router {
         priority: priority as string,
         status: status as string,
         system: system as string,
+        module: module as string, // 🔥 新增：模块参数
+        projectVersion: projectVersion as string, // 🔥 新增：版本参数
         userDepartment,
         isSuperAdmin
       });

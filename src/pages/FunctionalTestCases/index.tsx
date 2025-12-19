@@ -17,6 +17,11 @@ import { ExecutionLogModal } from './components/ExecutionLogModal';
 import { requirementDocService, RequirementDoc } from '../../services/requirementDocService';
 import { Modal as AntModal, Spin } from 'antd';
 import { marked } from 'marked';
+import { testService } from '../../services/testService';
+import { getCaseTypeLabel } from '../../utils/caseTypeHelper';
+import { Modal } from '../../components/ui/modal';
+import { Button } from '../../components/ui/button';
+import { useAuth } from '../../contexts/AuthContext';  // 🆕 导入用户认证上下文
 
 // LocalStorage key for view preference
 const VIEW_PREFERENCE_KEY = 'functional-test-cases-view-mode';
@@ -24,6 +29,9 @@ const VIEW_PREFERENCE_KEY = 'functional-test-cases-view-mode';
 export function FunctionalTestCases() {
     const navigate = useNavigate();
     const [searchParams, setSearchParams] = useSearchParams();
+    
+    // 🆕 获取当前用户信息
+    const { user } = useAuth();
 
     // View State - 从 localStorage 读取用户偏好，默认为表格视图
     const [currentView, setCurrentView] = useState<ViewMode>(() => {
@@ -39,7 +47,7 @@ export function FunctionalTestCases() {
     const [loading, setLoading] = useState(false);
     const [pagination, setPagination] = useState({
         page: 1,
-        pageSize: 20,
+        pageSize: 10,
         total: 0,
         totalPages: 0
     });
@@ -89,6 +97,17 @@ export function FunctionalTestCases() {
     const [currentRequirementDoc, setCurrentRequirementDoc] = useState<RequirementDoc | null>(null);
     const [requirementLoading, setRequirementLoading] = useState(false);
 
+    // 🆕 UI自动化测试执行配置状态
+    const [showExecutionConfig, setShowExecutionConfig] = useState(false);
+    const [pendingTestCase, setPendingTestCase] = useState<any | null>(null);
+    const [runningTestId, setRunningTestId] = useState<number | null>(null);
+    const [executionConfig, setExecutionConfig] = useState({
+        executionEngine: 'mcp' as 'mcp' | 'playwright',
+        enableTrace: true,
+        enableVideo: true,
+        environment: 'staging'
+    });
+
     // 保存视图偏好到 localStorage
     const handleViewChange = (view: ViewMode) => {
         setCurrentView(view);
@@ -132,6 +151,47 @@ export function FunctionalTestCases() {
         };
         loadSystems();
     }, []);
+
+    // 🆕 WebSocket初始化和清理
+    useEffect(() => {
+        // 初始化WebSocket连接
+        const initWebSocket = async () => {
+            try {
+                await testService.initializeWebSocket();
+                console.log('✅ WebSocket连接已初始化');
+            } catch (error) {
+                console.error('❌ WebSocket连接初始化失败:', error);
+            }
+        };
+        
+        initWebSocket();
+        
+        // 设置定期检查WebSocket连接状态
+        const wsCheckInterval = setInterval(() => {
+            if (!testService.isWebSocketConnected()) {
+                console.log('⚠️ WebSocket连接已断开，尝试重连...');
+                initWebSocket();
+            }
+        }, 10000); // 每10秒检查一次
+        
+        // 添加状态清理超时机制 - 防止状态永久卡住
+        const stateCleanupTimeouts: ReturnType<typeof setTimeout>[] = [];
+        
+        // 监听 runningTestId 变化，设置清理超时
+        if (runningTestId !== null) {
+            const timeout = setTimeout(() => {
+                console.warn('⚠️ 测试运行状态超时，强制清理');
+                setRunningTestId(null);
+            }, 10 * 60 * 1000); // 10分钟超时
+            stateCleanupTimeouts.push(timeout);
+        }
+        
+        // 清理函数
+        return () => {
+            clearInterval(wsCheckInterval);
+            stateCleanupTimeouts.forEach(timeout => clearTimeout(timeout));
+        };
+    }, [runningTestId]);
 
     // 🆕 检查URL参数，如果有docId则自动打开需求文档详情弹窗
     useEffect(() => {
@@ -372,7 +432,7 @@ export function FunctionalTestCases() {
         AntModal.confirm({
             title: '批量删除测试用例',
             content: `确定要删除选中的 ${selectedPoints.size} 个测试用例吗？此操作不可恢复。`,
-            okText: '确定删除',
+            okText: '确认删除',
             okButtonProps: { danger: true },
             cancelText: '取消',
             onOk: async () => {
@@ -419,11 +479,11 @@ export function FunctionalTestCases() {
         navigate(`/functional-test-cases/${id}/edit`);
     };
 
-    const handleDeleteCase = async (id: number, name: string) => {
+    const handleDeleteCase = async (id: number) => {
         AntModal.confirm({
             title: '删除测试用例',
-            content: `确定要删除 "${id}" 吗？此操作不可恢复。`,
-            okText: '确定删除',
+            content: `确定要删除测试用例 ID: ${id} 吗？此操作不可恢复。`,
+            okText: '确认删除',
             okButtonProps: { danger: true },
             cancelText: '取消',
             onOk: async () => {
@@ -452,7 +512,7 @@ export function FunctionalTestCases() {
         AntModal.confirm({
             title: '删除测试点',
             content: `确定要删除 "${pointName}" 吗？此操作不可恢复。`,
-            okText: '确定删除',
+            okText: '确认删除',
             okButtonProps: { danger: true },
             cancelText: '取消',
             onOk: async () => {
@@ -516,12 +576,293 @@ export function FunctionalTestCases() {
         setLogModalOpen(true);
     };
 
-    // 执行用例 - 跳转到执行页面
-    const handleExecuteCase = (id: number, style: 'default' | 'alt' = 'default') => {
-        if (style === 'alt') {
+    // 执行用例 - 跳转到执行页面或显示UI自动化执行配置
+    const handleExecuteCase = (id: number, style: 'default' | 'alt' | 'ui-auto' = 'default') => {
+        if (style === 'ui-auto') {
+            // UI自动化测试 - 显示执行配置对话框
+            handleRunUITest(id);
+        } else if (style === 'alt') {
             navigate(`/functional-test-cases/${id}/execute-alt`);
         } else {
             navigate(`/functional-test-cases/${id}/execute`);
+        }
+    };
+
+    // 🆕 运行UI自动化测试 - 显示执行配置对话框
+    const handleRunUITest = async (caseId: number) => {
+        if (runningTestId) {
+            showToast.warning('已有测试在运行中，请等待完成');
+            return;
+        }
+
+        // 查找测试用例详情
+        const testCase = testCases.find(tc => tc.id === caseId);
+        if (!testCase) {
+            showToast.error('未找到测试用例');
+            return;
+        }
+
+        // 显示执行配置对话框
+        setPendingTestCase(testCase);
+        setShowExecutionConfig(true);
+    };
+
+    // 🆕 确认执行UI自动化测试（带配置）
+    const handleConfirmRunUITest = async () => {
+        if (!pendingTestCase) return;
+
+        setRunningTestId(pendingTestCase.id);
+        setShowExecutionConfig(false);
+        
+        try {
+            console.log(`🚀 开始执行UI自动化测试: ${pendingTestCase.name}`);
+            console.log(`   执行引擎: ${executionConfig.executionEngine}`);
+            console.log(`   Trace录制: ${executionConfig.enableTrace ? '启用' : '禁用'}`);
+            console.log(`   Video录制: ${executionConfig.enableVideo ? '启用' : '禁用'}`);
+            
+            try {
+                // 🔥 步骤1: 将功能用例信息转换为标准测试用例格式（使用与导入功能用例相同的转换逻辑）
+                // 🔥 调试日志：查看功能用例的实际数据结构
+                console.log('🔍 [UI自动化测试] 原始数据:', pendingTestCase);
+                console.log('  - name:', pendingTestCase.name);
+                console.log('  - steps:', pendingTestCase.steps);
+                console.log('  - test_point_steps:', pendingTestCase.test_point_steps);
+                console.log('  - expected_result:', pendingTestCase.expected_result);
+                console.log('  - test_point_expected_result:', pendingTestCase.test_point_expected_result);
+                console.log('  - assertions:', pendingTestCase.assertions);
+                console.log('  - project_version:', pendingTestCase.project_version);
+                console.log('  - project_version_id:', pendingTestCase.project_version_id);
+
+                // 优先级映射
+                const priorityMap: { [key: string]: 'high' | 'medium' | 'low' } = {
+                    'HIGH': 'high',
+                    'CRITICAL': 'high',
+                    'MEDIUM': 'medium',
+                    'LOW': 'low',
+                    'high': 'high',
+                    'medium': 'medium',
+                    'low': 'low'
+                };
+
+                // 状态映射
+                const statusMap: { [key: string]: 'active' | 'draft' | 'disabled' } = {
+                    'PUBLISHED': 'active',
+                    'DRAFT': 'draft',
+                    'ARCHIVED': 'disabled',
+                    'active': 'active',
+                    'draft': 'draft',
+                    'disabled': 'disabled'
+                };
+
+                // 🔥 处理步骤和预期结果：将每个步骤与对应的预期结果配对
+                // 尝试多种可能的字段名
+                const rawSteps = pendingTestCase.test_point_steps || pendingTestCase.steps || '';
+                const rawExpectedResults = pendingTestCase.test_point_expected_result || pendingTestCase.expected_result || pendingTestCase.assertions || '';
+                
+                console.log('🔍 [UI自动化测试] 提取结果:', {
+                    rawSteps,
+                    rawExpectedResults
+                });
+                
+                let formattedSteps = '';
+                let lastExpectedResult = '';
+                
+                if (rawSteps && rawExpectedResults) {
+                    // 按行分割步骤和预期结果
+                    const stepLines = rawSteps.split('\n').map((s: string) => s.trim()).filter((s: string) => s.length > 0);
+                    const expectedLines = rawExpectedResults.split('\n').map((e: string) => e.trim()).filter((e: string) => e.length > 0);
+                    
+                    console.log('🔍 [UI自动化测试] 分割后:', {
+                        stepLines,
+                        expectedLines,
+                        stepCount: stepLines.length,
+                        expectedCount: expectedLines.length
+                    });
+                    
+                    // 将每个步骤与对应的预期结果配对
+                    const pairedLines: string[] = [];
+                    for (let i = 0; i < stepLines.length; i++) {
+                        const step = stepLines[i];
+                        // 移除步骤前面的序号（如 "1. ", "1、", "1）"等）
+                        const cleanStep = step.replace(/^\d+[.、)]\s*/, '');
+                        
+                        if (i < expectedLines.length) {
+                            const expected = expectedLines[i];
+                            // 移除预期结果前面的序号
+                            const cleanExpected = expected.replace(/^\d+[.、)]\s*/, '');
+                            pairedLines.push(`${i + 1}. ${cleanStep} -> ${cleanExpected}`);
+                            
+                            // 每次都更新，循环结束后 lastExpectedResult 就是最后一个
+                            lastExpectedResult = cleanExpected;
+                        } else {
+                            // 如果预期结果不够，只保留步骤
+                            pairedLines.push(`${i + 1}. ${cleanStep}`);
+                        }
+                    }
+                    
+                    formattedSteps = pairedLines.join('\n');
+                    
+                    console.log('🔍 [UI自动化测试] 配对结果:', {
+                        pairedLines,
+                        lastExpectedResult
+                    });
+                } else if (rawSteps) {
+                    // 只有步骤，没有预期结果
+                    formattedSteps = rawSteps;
+                }
+
+                // 🔥 断言预期使用最后一个步骤的预期结果
+                const assertions = lastExpectedResult || rawExpectedResults || pendingTestCase.assertions || '';
+                
+                console.log('🔍 [UI自动化测试] 最终结果:', {
+                    formattedSteps,
+                    assertions,
+                    lastExpectedResult
+                });
+
+                // 🔥 标签处理：添加用例类型的中文标签
+                const tagsList: string[] = [];
+                
+                // 先添加用例类型标签（中文）
+                if (pendingTestCase.case_type) {
+                    const caseTypeInfo = getCaseTypeLabel(pendingTestCase.case_type);
+                    tagsList.push(caseTypeInfo); // 使用中文标签（如"冒烟测试"、"全量测试"）
+                }
+
+                // 🔥 获取版本信息（与导入功能用例逻辑一致）
+                const projectVersion = pendingTestCase.project_version 
+                    ? (pendingTestCase.project_version.version_name || pendingTestCase.project_version.version_code || String(pendingTestCase.project_version_id))
+                    : undefined;
+
+                // 创建唯一标识符（用于name前缀）
+                const uniqueId = `TC_${String(pendingTestCase.id).padStart(5, '0')}`;
+                
+                const testCaseData: any = {
+                    name: `[${uniqueId}] ${pendingTestCase.name || pendingTestCase.test_point_name || '未命名测试'}`,
+                    preconditions: pendingTestCase.preconditions || '', // 🔥 前置条件
+                    testData: pendingTestCase.testData || pendingTestCase.test_data || '', // 🔥 测试数据
+                    steps: formattedSteps,
+                    assertions: assertions,
+                    priority: priorityMap[pendingTestCase.priority || pendingTestCase.test_point_risk_level || ''] || 'medium',
+                    status: statusMap[pendingTestCase.status || ''] || 'active',
+                    tags: tagsList,
+                    system: pendingTestCase.system || '',
+                    module: pendingTestCase.module || '',
+                    projectVersion: projectVersion, // 🔥 新增：所属版本（与导入功能用例逻辑一致）
+                    department: user?.project || undefined,
+                    author: user?.accountName || user?.username || user?.email || '未知用户',
+                    created: new Date().toISOString().split('T')[0],
+                    lastRun: '',
+                    success_rate: 0
+                };
+
+                console.log('📋 [UI自动化测试] 步骤1 - 转换功能用例数据:', {
+                    originalId: pendingTestCase.id,
+                    uniqueId,
+                    name: testCaseData.name,
+                    stepsLength: testCaseData.steps.length,
+                    assertionsLength: testCaseData.assertions.length,
+                    formattedSteps,
+                    assertions,
+                    projectVersion: testCaseData.projectVersion // 🔥 新增：记录版本信息
+                });
+
+                // 🔥 步骤2: 检查是否已存在对应的临时测试用例
+                console.log('📋 [UI自动化测试] 步骤2 - 检查是否存在临时测试用例...');
+                let temporaryTestCaseId: number;
+                
+                try {
+                    // 通过name前缀搜索已存在的临时测试用例
+                    const existingCases = await testService.getTestCasesPaginated({
+                        page: 1,
+                        pageSize: 10,
+                        search: `[${uniqueId}]`,  // 通过name前缀搜索（如：[TC_00002]）
+                        tag: '',
+                        priority: '',
+                        status: '',
+                        system: ''
+                    });
+
+                    if (existingCases.data && existingCases.data.length > 0) {
+                        // 找到已存在的临时测试用例，更新它
+                        const existingCase = existingCases.data[0];
+                        temporaryTestCaseId = existingCase.id;
+                        
+                        console.log(`♻️ [UI自动化测试] 发现已存在的临时测试用例 ID: ${temporaryTestCaseId}，将更新数据`);
+                        
+                        // 更新测试用例数据（保持最新）
+                        await testService.updateTestCase(temporaryTestCaseId, testCaseData);
+                        console.log(`✅ [UI自动化测试] 临时测试用例已更新`);
+                    } else {
+                        // 不存在，创建新的临时测试用例
+                        console.log('📋 [UI自动化测试] 未找到已存在的临时测试用例，创建新的...');
+                        const createdTestCase = await testService.createTestCase(testCaseData);
+                        temporaryTestCaseId = createdTestCase.id;
+                        console.log(`✅ [UI自动化测试] 临时测试用例已创建，ID: ${temporaryTestCaseId}`);
+                    }
+                } catch (error) {
+                    // 如果查询失败，直接创建新的
+                    console.warn('⚠️ [UI自动化测试] 查询失败，直接创建新的临时测试用例:', error);
+                    const createdTestCase = await testService.createTestCase(testCaseData);
+                    temporaryTestCaseId = createdTestCase.id;
+                    console.log(`✅ [UI自动化测试] 临时测试用例已创建，ID: ${temporaryTestCaseId}`);
+                }
+
+                // 🔥 步骤3: 启动WebSocket监听器
+                const listenerId = `test-run-${temporaryTestCaseId}`;
+                
+                testService.addMessageListener(listenerId, (message) => {
+                    console.log(`📣 [FunctionalTestCase] 收到WebSocket消息:`, message);
+                    
+                    if (message.type === 'test_complete') {
+                        console.log(`✅ 收到测试完成通知，重置状态:`, message);
+                        setRunningTestId(null);
+                        testService.removeMessageListener(listenerId);
+                        
+                        const status = message.data?.status || 'completed';
+                        if (status === 'failed' || status === 'error') {
+                            showToast.error(`❌ 测试执行失败: ${pendingTestCase.name}`);
+                        } else if (status === 'cancelled') {
+                            showToast.warning(`⚠️ 测试执行被取消: ${pendingTestCase.name}`);
+                        } else {
+                            showToast.success(`🎉 测试执行完成: ${pendingTestCase.name}`);
+                        }
+                        
+                        loadData();
+                    } else if (message.type === 'test_error') {
+                        console.log(`❌ 收到测试错误通知，重置状态:`, message);
+                        setRunningTestId(null);
+                        testService.removeMessageListener(listenerId);
+                        showToast.error(`❌ 测试执行出错: ${pendingTestCase.name}`);
+                        loadData();
+                    }
+                });
+                
+                // 🔥 步骤4: 执行临时测试用例
+                console.log(`📋 [UI自动化测试] 步骤3 - 执行测试用例 ID: ${temporaryTestCaseId}`);
+                const response = await testService.runTestCase(temporaryTestCaseId, {
+                    executionEngine: executionConfig.executionEngine,
+                    enableTrace: executionConfig.enableTrace,
+                    enableVideo: executionConfig.enableVideo,
+                    environment: executionConfig.environment
+                });
+                
+                showToast.info(`✅ 测试开始执行: ${pendingTestCase.name}\n运行ID: ${response.runId}\n引擎: ${executionConfig.executionEngine === 'playwright' ? 'Playwright Test Runner' : 'MCP 客户端'}`);
+                console.log('✅ [UI自动化测试] 测试运行ID:', response.runId);
+                console.log(`💡 [UI自动化测试] 提示: 临时测试用例ID ${temporaryTestCaseId} 已创建，执行完成后可在测试用例列表中查看或删除`);
+                
+                navigate(`/test-runs/${response.runId}/detail`);
+            } catch (error: any) {
+                setRunningTestId(null);
+                throw new Error(error.message || '启动测试失败');
+            }
+            
+        } catch (error: any) {
+            console.error('执行测试失败:', error);
+            showToast.error(`❌ 执行测试失败: ${error.message}`);
+            setRunningTestId(null);
+        } finally {
+            setPendingTestCase(null);
         }
     };
 
@@ -540,7 +881,8 @@ export function FunctionalTestCases() {
         onDeletePoint: handleDeletePoint,
         onUpdateExecutionStatus: handleUpdateExecutionStatus,
         onViewLogs: handleViewLogs,
-        onExecuteCase: handleExecuteCase  // 🆕 执行用例
+        onExecuteCase: handleExecuteCase,  // 🆕 执行用例
+        runningTestId  // 🆕 传递正在运行的测试ID
     };
 
     // 处理表格视图的分页变化
@@ -792,6 +1134,130 @@ export function FunctionalTestCases() {
                             caseId={currentLogCaseId}
                         />
                     )}
+
+                    {/* 🆕 UI自动化测试执行配置对话框 */}
+                    <Modal
+                        isOpen={showExecutionConfig}
+                        onClose={() => {
+                            setShowExecutionConfig(false);
+                            setPendingTestCase(null);
+                        }}
+                        title="UI自动化测试执行配置"
+                        size="lg"
+                    >
+                        <div className="space-y-4">
+                            {pendingTestCase && (
+                                <div className="mb-4 p-3 bg-blue-50 rounded-lg">
+                                    <p className="text-sm text-gray-600">测试用例</p>
+                                    <p className="font-medium text-gray-900">{pendingTestCase.name}</p>
+                                    {pendingTestCase.test_point_name && (
+                                        <p className="text-sm text-gray-500 mt-1">测试点: {pendingTestCase.test_point_name}</p>
+                                    )}
+                                </div>
+                            )}
+
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-2">
+                                    执行引擎
+                                </label>
+                                <select
+                                    value={executionConfig.executionEngine}
+                                    onChange={(e) => setExecutionConfig(prev => ({ 
+                                        ...prev, 
+                                        executionEngine: e.target.value as 'mcp' | 'playwright' 
+                                    }))}
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                >
+                                    <option value="mcp">MCP 客户端（默认）</option>
+                                    <option value="playwright">Playwright Test Runner</option>
+                                </select>
+                                <p className="mt-1 text-xs text-gray-500">
+                                    {executionConfig.executionEngine === 'mcp' 
+                                        ? '使用 MCP 客户端执行，支持 AI 闭环流程'
+                                        : '使用 Playwright Test Runner，支持 Trace 和 Video 录制'}
+                                </p>
+                            </div>
+
+                            {executionConfig.executionEngine === 'playwright' && (
+                                <>
+                                    <div className="flex items-center space-x-3">
+                                        <input
+                                            type="checkbox"
+                                            id="enableTrace"
+                                            checked={executionConfig.enableTrace}
+                                            onChange={(e) => setExecutionConfig(prev => ({ 
+                                                ...prev, 
+                                                enableTrace: e.target.checked 
+                                            }))}
+                                            className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                        />
+                                        <label htmlFor="enableTrace" className="text-sm font-medium text-gray-700">
+                                            启用 Trace 录制
+                                        </label>
+                                    </div>
+                                    <p className="ml-7 text-xs text-gray-500">
+                                        录制测试执行过程，可在 trace.playwright.dev 查看
+                                    </p>
+
+                                    <div className="flex items-center space-x-3">
+                                        <input
+                                            type="checkbox"
+                                            id="enableVideo"
+                                            checked={executionConfig.enableVideo}
+                                            onChange={(e) => setExecutionConfig(prev => ({ 
+                                                ...prev, 
+                                                enableVideo: e.target.checked 
+                                            }))}
+                                            className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                        />
+                                        <label htmlFor="enableVideo" className="text-sm font-medium text-gray-700">
+                                            启用 Video 录制
+                                        </label>
+                                    </div>
+                                    <p className="ml-7 text-xs text-gray-500">
+                                        录制测试执行视频，用于调试和回放
+                                    </p>
+                                </>
+                            )}
+
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-2">
+                                    执行环境
+                                </label>
+                                <select
+                                    value={executionConfig.environment}
+                                    onChange={(e) => setExecutionConfig(prev => ({ 
+                                        ...prev, 
+                                        environment: e.target.value 
+                                    }))}
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                >
+                                    <option value="staging">Staging</option>
+                                    <option value="production">Production</option>
+                                    <option value="development">Development</option>
+                                </select>
+                            </div>
+
+                            <div className="flex justify-end space-x-3 pt-4 border-t">
+                                <Button
+                                    variant="outline"
+                                    onClick={() => {
+                                        setShowExecutionConfig(false);
+                                        setPendingTestCase(null);
+                                    }}
+                                >
+                                    取消
+                                </Button>
+                                <Button
+                                    variant="default"
+                                    onClick={handleConfirmRunUITest}
+                                    isLoading={runningTestId === pendingTestCase?.id}
+                                >
+                                    开始执行
+                                </Button>
+                            </div>
+                        </div>
+                    </Modal>
 
                     {/* 🆕 需求文档详情弹窗 */}
                     <AntModal

@@ -16,6 +16,8 @@ export interface TestCase {
   id: number;
   name: string;
   description?: string;
+  preconditions?: string;        // 🔥 新增：前置条件
+  testData?: string;             // 🔥 新增：测试数据
   steps: string;                 // 保留原文本格式（兼容性）
   stepsData?: TestStepRow[];     // 新增：结构化步骤数据
   assertions?: string;
@@ -25,8 +27,10 @@ export interface TestCase {
   system?: string;    // 新增系统字段
   module?: string;    // 新增模块字段
   department?: string; // 🔥 新增：部门字段
+  projectVersion?: string; // 🔥 新增：所属版本字段
   author?: string;
   created?: string;
+  updated?: string; // 🔥 新增：更新时间字段
   lastRun?: string;
   success_rate?: number;
   suiteId?: number; // 🔥 新增：关联的测试套件ID

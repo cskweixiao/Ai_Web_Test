@@ -8,7 +8,8 @@ TestFlow 完整环境变量配置说明。
 
 ```bash
 # ========== 数据库配置 ==========
-DATABASE_URL="mysql://username:password@localhost:3306/testflow"
+# ⚠️ 重要：必须包含时区配置，确保时间存储正确
+DATABASE_URL="mysql://username:password@localhost:3306/testflow?timezone=Asia/Shanghai"
 
 # ========== 应用配置 ==========
 NODE_ENV=development               # 环境: development / production
@@ -70,9 +71,14 @@ LOG_FULL_PROMPT=false              # 是否记录完整 AI Prompt
 
 | 配置项 | 说明 | 默认值 | 示例 |
 |-------|------|--------|------|
-| `DATABASE_URL` | MySQL 连接字符串 | 无 | `mysql://user:pass@localhost:3306/testflow` |
+| `DATABASE_URL` | MySQL 连接字符串（**必须包含时区配置**） | 无 | `mysql://user:pass@localhost:3306/testflow?timezone=Asia/Shanghai` |
 
-**格式**：`mysql://用户名:密码@主机:端口/数据库名`
+**格式**：`mysql://用户名:密码@主机:端口/数据库名?timezone=时区`
+
+**⚠️ 时区配置说明：**
+- **必须添加** `?timezone=Asia/Shanghai` 参数，确保时间存储和显示正确
+- 如果不添加时区参数，会导致数据库存储的时间与实际时间相差8小时
+- 中国地区请使用 `Asia/Shanghai`（UTC+8）
 
 ### 应用配置
 

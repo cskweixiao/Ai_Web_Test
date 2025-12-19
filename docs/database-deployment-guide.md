@@ -11,7 +11,7 @@
 确保以下环境变量已正确配置：
 
 ```bash
-DATABASE_URL="mysql://username:password@host:port/database_name"
+DATABASE_URL="mysql://username:password@host:port/database_name?timezone=Asia/Shanghai"
 NODE_ENV=production
 ```
 

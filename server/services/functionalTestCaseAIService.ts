@@ -1193,8 +1193,9 @@ ${getCommonSystemInstructions()}`;
 
       console.log(`   ✅ 清理完成,文档长度: ${requirementDoc.length} 字符`);
 
-      // 提取章节列表
-      const sectionRegex = /###\s+([\d.]+)\s+(.+)/g;
+      // 提取章节列表 - 支持二级和三级标题
+      // 匹配格式：## 1. 功能概述 或 ### 1.1 子章节
+      const sectionRegex = /^#{2,3}\s+(\d+(?:\.\d+)*\.?)\s+(.+)$/gm;
       const sections: string[] = [];
       let match;
       while ((match = sectionRegex.exec(requirementDoc)) !== null) {
@@ -1203,7 +1204,8 @@ ${getCommonSystemInstructions()}`;
 
       console.log(`\n📋 提取到 ${sections.length} 个章节:`);
       sections.forEach((section, index) => {
-        console.log(`   ${index + 1}. ${section}`);
+        // console.log(`   ${index + 1}. ${section}`);
+        console.log(`   ${section}`);
       });
 
       console.log('\n✅ 需求文档生成成功\n');
@@ -1225,14 +1227,15 @@ ${getCommonSystemInstructions()}`;
   async planBatchStrategy(requirementDoc: string): Promise<Batch[]> {
     console.log('📋 开始规划分批策略（基于章节）...');
 
-    // 提取文档中的三级标题（### 1.1、### 1.2 等）
-    const chapterRegex = /###\s+([\d.]+)\s+(.+)/g;
+    // 提取文档中的二级和三级标题（## 1. 或 ### 1.1 等）
+    // 匹配格式：## 1. 功能概述 或 ### 1.1 子章节
+    const chapterRegex = /^#{2,3}\s+(\d+(?:\.\d+)*\.?)\s+(.+)$/gm;
     const chapters: Array<{ id: string; name: string }> = [];
     let match;
 
     while ((match = chapterRegex.exec(requirementDoc)) !== null) {
       chapters.push({
-        id: match[1].trim(), // "1.1", "1.2", "1.3"...
+        id: match[1].trim().replace(/\.$/, ''), // "1", "1.1", "1.2" (去除末尾的点)
         name: match[2].trim() // 页面名称
       });
     }
@@ -1297,8 +1300,10 @@ ${getCommonSystemInstructions()}`;
     
     console.log(`🤖 开始生成批次 ${batchId}（章节 ${relatedSection}），系统: ${systemName || '未指定'}, 模块: ${moduleName || '未指定'}`);
 
-    // 提取该章节的完整内容
-    const sectionRegex = new RegExp(`###\\s+${sectionId.replace(/\./g, '\\.')}\\s+(.+?)[\\s\\S]*?(?=###\\s+[\\d.]+\\s+|$)`);
+    // 提取该章节的完整内容 - 支持二级和三级标题
+    // 匹配格式：## 1. 标题 或 ### 1.1 标题，支持编号末尾有无点号
+    const escapedSectionId = sectionId.replace(/\./g, '\\.');
+    const sectionRegex = new RegExp(`^#{2,3}\\s+${escapedSectionId}\\.?\\s+(.+?)$[\\s\\S]*?(?=^#{2,3}\\s+\\d+(?:\\.\\d+)*\\.?\\s+|$)`, 'm');
     const contentMatch = requirementDoc.match(sectionRegex);
     const sectionContent = contentMatch ? contentMatch[0] : requirementDoc.substring(0, 3000);
     // 优先使用从需求文档中提取的标题，如果没有则使用AI返回的标题
@@ -2095,9 +2100,11 @@ ${isModifyMode ? `
 
     console.log(`   页面模式: ${isModifyMode ? '修改页面' : '新增页面'}`);
 
-    // 提取相关章节内容
+    // 提取相关章节内容 - 支持二级和三级标题
     const sectionContents = relatedSections.map(sectionId => {
-      const regex = new RegExp(`###\\s+${sectionId.replace('.', '\\.')}\\s+([\\s\\S]*?)(?=###\\s+[\\d.]+\\s+|$)`);
+      // 匹配格式：## 1. 标题 或 ### 1.1 标题，支持编号末尾有无点号
+      const escapedSectionId = sectionId.replace(/\./g, '\\.');
+      const regex = new RegExp(`^#{2,3}\\s+${escapedSectionId}\\.?\\s+([\\s\\S]*?)(?=^#{2,3}\\s+\\d+(?:\\.\\d+)*\\.?\\s+|$)`, 'm');
       const match = requirementDoc.match(regex);
       return match ? match[0] : '';
     }).join('\n\n');

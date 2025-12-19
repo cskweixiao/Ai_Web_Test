@@ -198,42 +198,65 @@ export class TestExecutionService {
   }
 
   // #region Test Case Management
-  private dbTestCaseToApp(dbCase: { id: number; title: string; steps: Prisma.JsonValue | null; tags: Prisma.JsonValue | null; system: string | null; module: string | null; project?: string | null; created_at: Date | null; }): TestCase {
-    let steps = '';
-    let assertions = '';
-    let author = 'System'; // 🔥 默认值
-    if (typeof dbCase.steps === 'string' && dbCase.steps) {
-      try {
-        const stepsObj = JSON.parse(dbCase.steps);
-        if (stepsObj && typeof stepsObj === 'object') {
-          assertions = stepsObj.assertions || '';
-          steps = stepsObj.steps || '';
-          // 🔥 修复：从 steps JSON 中读取 author，如果存在则使用，否则使用默认值
-          if (stepsObj.author !== undefined && stepsObj.author !== null && stepsObj.author !== '') {
-            author = stepsObj.author;
+  private dbTestCaseToApp(dbCase: { id: number; title: string; steps: Prisma.JsonValue | null; tags: Prisma.JsonValue | null; system: string | null; module: string | null; project?: string | null; created_at: Date | null; updated_at?: Date | null; }): TestCase {
+      let steps = '';
+      let assertions = '';
+      let author = 'System'; // 🔥 默认值
+      let priority: 'high' | 'medium' | 'low' = 'medium'; // 🔥 默认值
+      let status: 'active' | 'draft' | 'disabled' = 'active'; // 🔥 默认值
+      let projectVersion: string | undefined = undefined; // 🔥 新增：版本信息
+      let preconditions = ''; // 🔥 新增：前置条件
+      let testData = ''; // 🔥 新增：测试数据
+      if (typeof dbCase.steps === 'string' && dbCase.steps) {
+        try {
+          const stepsObj = JSON.parse(dbCase.steps);
+          if (stepsObj && typeof stepsObj === 'object') {
+            assertions = stepsObj.assertions || '';
+            steps = stepsObj.steps || '';
+            // 🔥 修复：从 steps JSON 中读取 author，如果存在则使用，否则使用默认值
+            if (stepsObj.author !== undefined && stepsObj.author !== null && stepsObj.author !== '') {
+              author = stepsObj.author;
+            } else {
+              author = 'System';
+            }
+            // 🔥 新增：从 steps JSON 中读取 priority 和 status
+            if (stepsObj.priority && ['high', 'medium', 'low'].includes(stepsObj.priority)) {
+              priority = stepsObj.priority;
+            }
+            if (stepsObj.status && ['active', 'draft', 'disabled'].includes(stepsObj.status)) {
+              status = stepsObj.status;
+            }
+            // 🔥 新增：从 steps JSON 中读取版本信息
+            if (stepsObj.projectVersion !== undefined && stepsObj.projectVersion !== null && stepsObj.projectVersion !== '') {
+              projectVersion = stepsObj.projectVersion;
+            }
+            // 🔥 新增：从 steps JSON 中读取前置条件和测试数据
+            preconditions = stepsObj.preconditions || '';
+            testData = stepsObj.testData || '';
           } else {
-            author = 'System';
+            steps = dbCase.steps;
           }
-        } else {
+        } catch (e) {
           steps = dbCase.steps;
         }
-      } catch (e) {
-        steps = dbCase.steps;
       }
-    }
 
     return {
       id: dbCase.id,
       name: dbCase.title,
+      preconditions: preconditions, // 🔥 新增：前置条件
+      testData: testData, // 🔥 新增：测试数据
       steps: steps,
       assertions: assertions,
       tags: (Array.isArray(dbCase.tags) ? dbCase.tags : []) as string[],
       system: dbCase.system || undefined,
       module: dbCase.module || undefined,
+      projectVersion: projectVersion, // 🔥 新增：版本信息
       department: dbCase.project || undefined, // 🔥 注意：TestCase 接口使用 department，但数据库字段是 project
       created: dbCase.created_at?.toISOString(),
-      priority: 'medium',
-      status: 'active',
+      updated: dbCase.updated_at?.toISOString(), // 🔥 新增：更新时间字段
+      priority: priority, // 🔥 修复：使用从 steps JSON 中读取的 priority
+      status: status, // 🔥 修复：使用从 steps JSON 中读取的 status
       author: author, // 🔥 使用从 steps JSON 中读取的 author
     };
   }
@@ -249,7 +272,8 @@ export class TestExecutionService {
         system: true,
         module: true,
         project: true,
-        created_at: true
+        created_at: true,
+        updated_at: true // 🔥 新增：更新时间字段
       }
     });
     return testCase ? this.dbTestCaseToApp(testCase) : null;
@@ -265,7 +289,8 @@ export class TestExecutionService {
         system: true,
         module: true,
         project: true,
-        created_at: true
+        created_at: true,
+        updated_at: true // 🔥 新增：更新时间字段
       }
     });
     return testCases.map(this.dbTestCaseToApp);
@@ -283,13 +308,165 @@ export class TestExecutionService {
         system: true,
         module: true,
         project: true,
-        created_at: true
+        created_at: true,
+        updated_at: true // 🔥 新增：更新时间字段
       }
     });
     return testCase ? this.dbTestCaseToApp(testCase) : null;
   }
 
   // 🔥 新增：支持分页和过滤的测试用例查询
+  /**
+   * 🔥 新增：增强测试用例数据，添加成功率、最后运行时间、执行状态和结果
+   */
+  private async enhanceTestCasesWithRunData(testCases: TestCase[]): Promise<TestCase[]> {
+    if (testCases.length === 0) return testCases;
+
+    // 批量获取测试用例的运行数据
+    const testCaseIds = testCases.map(tc => tc.id);
+    
+    // 🔥 修复：通过test_run_results表关联获取运行记录
+    // test_runs表没有test_case_id字段，需要通过test_run_results关联
+    const allRunResults = await this.prisma.test_run_results.findMany({
+      where: {
+        case_id: { in: testCaseIds }
+      },
+      include: {
+        test_runs: {
+          select: {
+            id: true,
+            status: true,
+            started_at: true,
+            finished_at: true
+          }
+        }
+      },
+      orderBy: {
+        executed_at: 'desc'
+      }
+    });
+
+    // 按测试用例ID分组运行记录
+    const runsByTestCase = new Map<number, any[]>();
+    for (const runResult of allRunResults) {
+      const tcId = runResult.case_id;
+      if (!runsByTestCase.has(tcId)) {
+        runsByTestCase.set(tcId, []);
+      }
+      // 组合test_run_results和test_runs的数据
+      runsByTestCase.get(tcId)!.push({
+        id: runResult.test_runs.id,
+        case_id: tcId,
+        status: runResult.test_runs.status,
+        result: runResult.status, // test_run_results的status就是结果
+        started_at: runResult.test_runs.started_at,
+        finished_at: runResult.test_runs.finished_at,
+        executed_at: runResult.executed_at
+      });
+    }
+
+    // 增强每个测试用例的数据
+    return testCases.map(testCase => {
+      const runs = runsByTestCase.get(testCase.id) || [];
+      
+      if (runs.length === 0) {
+        return {
+          ...testCase,
+          success_rate: 0,
+          lastRun: '',
+          executionStatus: undefined,
+          executionResult: undefined
+        };
+      }
+
+      // 计算成功率
+      // test_run_results的status: PASSED, FAILED, SKIPPED
+      const completedRuns = runs.filter(r => 
+        r.result === 'PASSED' || r.result === 'FAILED' || r.result === 'SKIPPED'
+      );
+      const passedRuns = runs.filter(r => r.result === 'PASSED');
+      const successRate = completedRuns.length > 0 
+        ? Math.round((passedRuns.length / completedRuns.length) * 100)
+        : 0;
+      
+      // 🔥 调试日志：记录成功率计算过程
+      if (testCase.id && runs.length > 0) {
+        console.log(`[成功率计算] 测试用例ID: ${testCase.id}, 总运行次数: ${runs.length}, 完成次数: ${completedRuns.length}, 通过次数: ${passedRuns.length}, 成功率: ${successRate}%`);
+      }
+
+      // 获取最新的运行记录（按executed_at排序）
+      const latestRun = runs.sort((a, b) => {
+        const aTime = a.executed_at ? new Date(a.executed_at).getTime() : 0;
+        const bTime = b.executed_at ? new Date(b.executed_at).getTime() : 0;
+        return bTime - aTime;
+      })[0];
+      
+      // 格式化最后运行时间
+      let lastRun = '-';
+      if (latestRun?.executed_at) {
+        try {
+          const date = new Date(latestRun.executed_at);
+          lastRun = date.toLocaleString('zh-CN', {
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit'
+          });
+        } catch {
+          lastRun = latestRun.executed_at.toString();
+        }
+      } else if (latestRun?.started_at) {
+        try {
+          const date = new Date(latestRun.started_at);
+          lastRun = date.toLocaleString('zh-CN', {
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit'
+          });
+        } catch {
+          lastRun = latestRun.started_at.toString();
+        }
+      }
+
+      // 映射执行状态（从test_runs的status）
+      let executionStatus: string | undefined;
+      if (latestRun?.status) {
+        const statusMap: Record<string, string> = {
+          'PENDING': 'pending',
+          'RUNNING': 'running',
+          'PASSED': 'completed',
+          'FAILED': 'failed',
+          'CANCELLED': 'cancelled'
+        };
+        executionStatus = statusMap[latestRun.status] || 'pending';
+      }
+
+      // 映射执行结果（从test_run_results的status）
+      let executionResult: string | undefined;
+      if (latestRun?.result) {
+        const resultMap: Record<string, string> = {
+          'PASSED': 'pass',
+          'FAILED': 'fail',
+          'SKIPPED': 'skip'
+        };
+        executionResult = resultMap[latestRun.result] || undefined;
+      }
+
+      return {
+        ...testCase,
+        success_rate: successRate,
+        lastRun,
+        executionStatus,
+        executionResult
+      };
+    });
+  }
+
   public async getTestCasesPaginated(params: {
     page: number;
     pageSize: number;
@@ -298,38 +475,58 @@ export class TestExecutionService {
     priority?: string;
     status?: string;
     system?: string;
+    module?: string; // 🔥 新增：模块参数
+    projectVersion?: string; // 🔥 新增：版本参数
     userDepartment?: string;
     isSuperAdmin?: boolean;
   }): Promise<{data: TestCase[], total: number}> {
-    const { page, pageSize, search, tag, priority, status, system, userDepartment, isSuperAdmin } = params;
+    const { page, pageSize, search, tag, priority, status, system, module, projectVersion, userDepartment, isSuperAdmin } = params;
 
-    // 构建查询条件
+    // 构建基础查询条件（用于 count，不支持 mode 参数）
+    const whereForCount: any = {};
+
+    // 构建查询条件（用于 findMany，支持 mode 参数）
     const where: any = {};
 
     // 🔥 部门权限过滤：非超级管理员只能看自己部门的数据
     if (!isSuperAdmin && userDepartment) {
+      whereForCount.project = userDepartment;
       where.project = userDepartment;
     }
 
-    // 搜索条件（标题和步骤）
+    // 搜索条件（标题、系统、模块）
+    // 🔥 修复：MySQL 不支持 mode 参数，移除所有 mode（MySQL 的 contains 默认已是不区分大小写）
     if (search && search.trim()) {
-      where.OR = [
-        { title: { contains: search, mode: 'insensitive' } },
-        { steps: { contains: search, mode: 'insensitive' } }
+      const searchConditions = [
+        { title: { contains: search } },
+        { system: { contains: search } },
+        { module: { contains: search } }
       ];
+      
+      // MySQL 中 contains 默认不区分大小写（取决于字段 collation）
+      whereForCount.OR = searchConditions;
+      where.OR = searchConditions;
     }
 
     // 系统过滤 - 🔥 修复：使用equals而非contains避免特殊字符问题
     if (system && system.trim()) {
+      whereForCount.system = { equals: system };
       where.system = { equals: system };
+    }
+
+    // 🔥 新增：模块过滤
+    if (module && module.trim()) {
+      whereForCount.module = { equals: module };
+      where.module = { equals: module };
     }
 
     // 标签过滤（Prisma JSON字段查询）
     if (tag && tag.trim()) {
-      where.tags = {
-        path: [],
+      const tagCondition = {
         array_contains: [tag]
       };
+      whereForCount.tags = tagCondition;
+      where.tags = tagCondition;
     }
 
     // 计算偏移量
@@ -337,7 +534,7 @@ export class TestExecutionService {
 
     // 获取总数和数据
     const [total, testCases] = await Promise.all([
-      this.prisma.test_cases.count({ where }),
+      this.prisma.test_cases.count({ where: whereForCount }),
       this.prisma.test_cases.findMany({
         where,
         select: {
@@ -348,7 +545,8 @@ export class TestExecutionService {
           system: true,
           module: true,
           project: true, // 🔥 修复：添加 project 字段
-          created_at: true
+          created_at: true,
+          updated_at: true // 🔥 新增：更新时间字段
         },
         skip,
         take: pageSize,
@@ -369,8 +567,13 @@ export class TestExecutionService {
       filteredData = filteredData.filter(testCase => testCase.status === status);
     }
 
+    // 🔥 新增：版本过滤（应用层，因为版本信息存储在 steps JSON 中）
+    if (projectVersion && projectVersion.trim()) {
+      filteredData = filteredData.filter(testCase => testCase.projectVersion === projectVersion);
+    }
+
     // 如果应用了应用层过滤，需要重新计算总数和分页
-    if ((priority && priority.trim()) || (status && status.trim())) {
+    if ((priority && priority.trim()) || (status && status.trim()) || (projectVersion && projectVersion.trim())) {
       // 重新获取所有数据进行应用层过滤统计
       const allTestCases = await this.prisma.test_cases.findMany({
         where,
@@ -396,20 +599,31 @@ export class TestExecutionService {
         allFilteredData = allFilteredData.filter(testCase => testCase.status === status);
       }
 
+      // 🔥 新增：版本过滤
+      if (projectVersion && projectVersion.trim()) {
+        allFilteredData = allFilteredData.filter(testCase => testCase.projectVersion === projectVersion);
+      }
+
       // 手动分页
       const newTotal = allFilteredData.length;
       const startIndex = skip;
       const endIndex = skip + pageSize;
       filteredData = allFilteredData.slice(startIndex, endIndex);
 
+      // 🔥 新增：增强测试用例数据（添加成功率、最后运行等）
+      const enhancedData = await this.enhanceTestCasesWithRunData(filteredData);
+
       return {
-        data: filteredData,
+        data: enhancedData,
         total: newTotal
       };
     }
 
+    // 🔥 新增：增强测试用例数据（添加成功率、最后运行等）
+    const enhancedData = await this.enhanceTestCasesWithRunData(filteredData);
+
     return {
-      data: filteredData,
+      data: enhancedData,
       total
     };
   }
@@ -423,10 +637,24 @@ export class TestExecutionService {
       ? testCaseData.author 
       : 'System'; // 如果没有提供 author，使用默认值
     
+    // 🔥 新增：获取 priority 和 status，使用默认值如果未提供
+    const priorityValue = testCaseData.priority || 'medium';
+    const statusValue = testCaseData.status || 'active';
+    // 🔥 新增：获取版本信息
+    const projectVersionValue = testCaseData.projectVersion || undefined;
+    // 🔥 新增：获取前置条件和测试数据
+    const preconditionsValue = testCaseData.preconditions || '';
+    const testDataValue = testCaseData.testData || '';
+    
     const stepsData = JSON.stringify({
       steps: testCaseData.steps || '',
       assertions: testCaseData.assertions || '',
-      author: authorValue // 🔥 将 author 存储在 steps JSON 中
+      author: authorValue, // 🔥 将 author 存储在 steps JSON 中
+      priority: priorityValue, // 🔥 新增：将 priority 存储在 steps JSON 中
+      status: statusValue, // 🔥 新增：将 status 存储在 steps JSON 中
+      projectVersion: projectVersionValue, // 🔥 新增：将版本信息存储在 steps JSON 中
+      preconditions: preconditionsValue, // 🔥 新增：将前置条件存储在 steps JSON 中
+      testData: testDataValue // 🔥 新增：将测试数据存储在 steps JSON 中
     });
 
     console.log('📝 [addTestCase] 保存的 steps JSON:', stepsData);
@@ -467,16 +695,54 @@ export class TestExecutionService {
         ? testCaseData.author
         : existingAuthor;
       
+      // 🔥 新增：如果传入了新的 priority 和 status，优先使用新的；否则保留原有的
+      const existingPriority = existingCase.priority || 'medium';
+      const newPriority = testCaseData.priority || existingPriority;
+      
+      const existingStatus = existingCase.status || 'active';
+      const newStatus = testCaseData.status || existingStatus;
+      
+      // 🔥 新增：处理版本信息
+      const existingVersion = existingCase.projectVersion || undefined;
+      const newVersion = testCaseData.projectVersion !== undefined 
+        ? testCaseData.projectVersion 
+        : existingVersion;
+      
+      // 🔥 新增：处理前置条件和测试数据
+      const existingPreconditions = existingCase.preconditions || '';
+      const newPreconditions = testCaseData.preconditions !== undefined 
+        ? testCaseData.preconditions 
+        : existingPreconditions;
+      
+      const existingTestData = existingCase.testData || '';
+      const newTestData = testCaseData.testData !== undefined 
+        ? testCaseData.testData 
+        : existingTestData;
+      
       console.log('📝 [updateTestCase] Author 处理:', {
         existingAuthor,
         receivedAuthor: testCaseData.author,
         finalAuthor: newAuthor
       });
+      
+      console.log('📝 [updateTestCase] Priority 和 Status 处理:', {
+        existingPriority,
+        receivedPriority: testCaseData.priority,
+        finalPriority: newPriority,
+        existingStatus,
+        receivedStatus: testCaseData.status,
+        finalStatus: newStatus
+      });
 
       const stepsData = JSON.stringify({ 
         steps: newSteps, 
         assertions: newAssertions,
-        author: newAuthor // 🔥 将 author 存储在 steps JSON 中
+        author: newAuthor, // 🔥 将 author 存储在 steps JSON 中
+        priority: newPriority, // 🔥 新增：将 priority 存储在 steps JSON 中
+        status: newStatus, // 🔥 新增：将 status 存储在 steps JSON 中
+        projectVersion: newVersion, // 🔥 新增：将版本信息存储在 steps JSON 中
+        preconditions: newPreconditions, // 🔥 新增：将前置条件存储在 steps JSON 中
+        testData: newTestData // 🔥 新增：将测试数据存储在 steps JSON 中
       });
 
       console.log('📝 [updateTestCase] 保存的 steps JSON:', stepsData);
@@ -587,7 +853,7 @@ export class TestExecutionService {
     // 🔥 立即广播测试创建事件（使用实际用户名）
     const placeholderName = `测试用例 #${testCaseId}`;
     this.wsManager.broadcast({
-      type: 'test_created',
+      type: 'test_update',
       runId,
       data: {
         id: runId,
@@ -1731,11 +1997,20 @@ ${elements.map((el, index) => `${index + 1}. ${el.ref}: ${el.role} "${el.text}"`
           runId,
           'AI正在解析步骤',
           async () => {
-            return await this.aiParser.parseNextStep(step.description, snapshot, runId);
+            // 🔥 修复：传递日志回调函数，将AI错误记录到前端日志
+            return await this.aiParser.parseNextStep(
+              step.description, 
+              snapshot, 
+              runId,
+              (message: string, level: 'info' | 'success' | 'warning' | 'error') => {
+                this.addLog(runId, message, level);
+              }
+            );
           }
         );
 
         if (!aiResult.success || !aiResult.step) {
+          // 🔥 修复：不再在这里记录错误，因为 callLLM 已经通过 logCallback 记录过了，避免重复打印
           throw new Error(`AI解析失败: ${aiResult.error}`);
         }
 
@@ -1747,7 +2022,7 @@ ${elements.map((el, index) => `${index + 1}. ${el.ref}: ${el.role} "${el.text}"`
         return await this.executeMcpCommand(aiStep, runId);
 
       } catch (aiError: any) {
-        console.error(`❌ [${runId}] AI解析失败: ${aiError.message}`);
+        // 🔥 修复：不再在这里记录错误，因为 callLLM 已经通过 logCallback 记录过了，避免重复打印
         return { success: false, error: `AI解析失败: ${aiError.message}` };
       }
     } catch (error: any) {
@@ -2974,7 +3249,14 @@ ${elements.map((el, index) => `${index + 1}. ${el.ref}: ${el.role} "${el.text}"`
       console.log(`🔄 [${runId}] 使用AI替代搜索策略重新解析步骤`);
 
       const snapshot = await this.mcpClient.getSnapshot();
-      const aiResult = await this.aiParser.parseNextStep(step.description, snapshot, runId);
+      const aiResult = await this.aiParser.parseNextStep(
+        step.description, 
+        snapshot, 
+        runId,
+        (message: string, level: 'info' | 'success' | 'warning' | 'error') => {
+          this.addLog(runId, message, level);
+        }
+      );
 
       if (aiResult.success && aiResult.step) {
         const aiStep = aiResult.step;
@@ -4771,7 +5053,14 @@ ${elements.map((el, index) => `${index + 1}. ${el.ref}: ${el.role} "${el.text}"`
 
       // AI 解析步骤
       this.addLog(runId, `🤖 AI正在解析下一个步骤...`, 'info');
-      const aiResult = await this.aiParser.parseNextStep(remainingSteps, snapshot, runId);
+      const aiResult = await this.aiParser.parseNextStep(
+        remainingSteps, 
+        snapshot, 
+        runId,
+        (message: string, level: 'info' | 'success' | 'warning' | 'error') => {
+          this.addLog(runId, message, level);
+        }
+      );
 
       if (!aiResult.success || !aiResult.step) {
         this.addLog(runId, `❌ AI解析失败: ${aiResult.error}`, 'error');
@@ -4856,7 +5145,10 @@ ${elements.map((el, index) => `${index + 1}. ${el.ref}: ${el.role} "${el.text}"`
       const aiAssertions = await this.aiParser.parseAssertions(
         testCase.assertions,
         assertionSnapshot,
-        runId
+        runId,
+        (message: string, level: 'info' | 'success' | 'warning' | 'error') => {
+          this.addLog(runId, message, level);
+        }
       );
 
       if (!aiAssertions.success) {
@@ -5003,7 +5295,10 @@ ${elements.map((el, index) => `${index + 1}. ${el.ref}: ${el.role} "${el.text}"`
                 const aiResult = await this.aiParser.parseNextStep(
                   step.description,
                   snapshotText,
-                  runId
+                  runId,
+                  (message: string, level: 'info' | 'success' | 'warning' | 'error') => {
+                    this.addLog(runId, message, level);
+                  }
                 );
                 
                 return { aiResult, refToElementMap };
@@ -5238,7 +5533,10 @@ ${elements.map((el, index) => `${index + 1}. ${el.ref}: ${el.role} "${el.text}"`
                 const aiResult = await this.aiParser.parseAssertions(
                   assertion.description,
                   snapshotText,
-                  runId
+                  runId,
+                  (message: string, level: 'info' | 'success' | 'warning' | 'error') => {
+                    this.addLog(runId, message, level);
+                  }
                 );
                 
                 return { aiResult, refToElementMap };

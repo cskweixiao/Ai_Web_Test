@@ -68,7 +68,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
                     className="px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-lg text-sm
                    focus:bg-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
                 >
-                    <option value="">所有系统</option>
+                    <option value="">所有项目</option>
                     {/* 🆕 优先使用动态选项，否则使用 systemOptions */}
                     {(filterOptions?.systems || systemOptions.map(s => s.name)).map(sys => (
                         <option key={sys} value={sys}>{sys}</option>
@@ -83,7 +83,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
                     className="px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-lg text-sm
                    focus:bg-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                    <option value="">{!filters.system ? '请先选择系统' : '所有版本'}</option>
+                    <option value="">{!filters.system ? '请先选择项目' : '所有版本'}</option>
                     {filterOptions?.projectVersions?.map(version => (
                         <option key={version} value={version}>{version}</option>
                     ))}

@@ -1,56 +1,55 @@
 /**
  * 时区处理工具
- * 解决数据库存储时间时区不一致问题
  * 
- * 问题说明：
- * - MySQL TIMESTAMP 字段存储的是 UTC 时间
- * - 当使用 new Date() 创建时间并存入数据库时，Prisma 会将本地时间转换为 UTC
- * - 但在某些情况下，时区处理不一致导致存储的时间比实际时间少8小时
+ * ✅ 修复说明（2025-12-17）：
+ * - 移除了所有手动的时区偏移处理
+ * - 直接使用系统本地时间
+ * - 依赖 MySQL 连接字符串中的时区配置来正确处理时区转换
  * 
- * 解决方案：
- * - 创建统一的时间获取函数，确保存储的时间是正确的中国时区时间
+ * 使用方法：
+ * 1. 确保 DATABASE_URL 包含时区配置：
+ *    mysql://user:pass@host:3306/db?timezone=Asia/Shanghai
+ * 
+ * 2. 在代码中使用 getNow() 获取当前时间：
+ *    created_at: getNow()
+ * 
+ * 3. 不需要手动添加或减少时区偏移
  */
 
 /**
  * 获取当前的中国时区时间（UTC+8）
- * 用于数据库存储，确保时间正确
+ * ⚠️ 已废弃：请直接使用 getNow() 或 new Date()
+ * @deprecated 使用 getNow() 代替
  */
 export function getChinaTime(): Date {
-  const now = new Date();
-  // 获取当前 UTC 时间的毫秒数
-  const utcTime = now.getTime() + (now.getTimezoneOffset() * 60000);
-  // 添加中国时区偏移（UTC+8 = 8小时 = 8 * 60 * 60 * 1000 毫秒）
-  const chinaOffset = 8 * 60 * 60 * 1000;
-  return new Date(utcTime + chinaOffset);
+  return new Date();
 }
 
 /**
  * 将 Date 对象转换为中国时区时间
+ * ⚠️ 已废弃：不需要手动转换时区
+ * @deprecated 直接使用原始 Date 对象
  * @param date - 需要转换的日期
  */
 export function toChinaTime(date: Date): Date {
-  const utcTime = date.getTime() + (date.getTimezoneOffset() * 60000);
-  const chinaOffset = 8 * 60 * 60 * 1000;
-  return new Date(utcTime + chinaOffset);
+  return date;
 }
 
 /**
  * 获取当前时间（用于数据库存储）
  * 
- * 问题分析：
- * - Prisma 在存储 DateTime 到 MySQL TIMESTAMP 字段时，会将时间转换为 UTC
- * - 但数据库读取时显示的是 UTC 时间，而不是本地时间
- * - 这导致显示的时间比实际时间少8小时
+ * ✅ 正确的实现：
+ * - 直接返回系统本地时间
+ * - MySQL 会根据连接字符串中的时区配置自动处理时区转换
+ * - 不需要手动添加时区偏移，否则会导致时间被重复处理
  * 
- * 解决方案：
- * - 在存储前手动添加8小时偏移
- * - 这样存储到数据库的时间经过 Prisma 转换后，显示的就是正确的中国时间
+ * 注意：
+ * - 确保数据库连接字符串中包含正确的时区配置
+ * - 例如：mysql://user:pass@host:3306/db?timezone=Asia/Shanghai
  */
 export function getNow(): Date {
-  const now = new Date();
-  // 手动添加8小时偏移量来补偿 Prisma/MySQL 的 UTC 转换
-  const chinaOffset = 8 * 60 * 60 * 1000; // 8小时的毫秒数
-  return new Date(now.getTime() + chinaOffset);
+  // 直接返回本地时间，不做任何偏移处理
+  return new Date();
 }
 
 /**

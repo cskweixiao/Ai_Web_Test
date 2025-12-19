@@ -126,12 +126,12 @@ export const Login: React.FC = () => {
         >
           {/* Logo 和标题 */}
           <motion.div
-            className="text-center mb-8"
+            className="flex flex-col items-center mb-8 py-10"
             initial={{ opacity: 0, y: -20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.2, duration: 0.8 }}
           >
-            <motion.div
+            {/* <motion.div
               className="inline-flex items-center justify-center w-24 h-24 rounded-2xl bg-gradient-to-br from-purple-500 to-blue-600 mb-6 shadow-2xl shadow-purple-500/50 p-2"
               animate={{
                 boxShadow: [
@@ -149,12 +149,19 @@ export const Login: React.FC = () => {
                   className="w-full h-full object-contain"
                 />
               </div>
-            </motion.div>
+            </motion.div> */}
 
-            <h1 className="text-4xl font-bold text-white mb-2 bg-clip-text text-transparent bg-gradient-to-r from-white to-purple-200">
-              TestFlow
+            <img
+                  // src="/logo.png"
+                  src="/logo1.svg"
+                  alt="Sakura Logo"
+                  className="w-full h-full object-contain"
+                  style={{ width: '110px', height: '110px' }}
+                />
+            <h1 className="text-4xl font-bold mb-2 bg-clip-text text-transparent bg-gradient-to-r from-purple-300 via-purple-200 to-purple-100 drop-shadow-[0_0_8px_rgba(168,85,247,0.5)]">
+              Sakura AI
             </h1>
-            <p className="text-purple-200/80 text-lg">企业级自动化测试平台</p>
+            <p className="text-purple-200/80 text-lg tracking-widest">企业级 · 智能自动化平台</p>
           </motion.div>
 
           {/* 登录卡片 */}
@@ -232,9 +239,9 @@ export const Login: React.FC = () => {
                     loading={loading}
                     block
                     className="login-button h-14 rounded-xl text-base font-semibold transition-all"
-                    icon={!loading && <ArrowRight className="w-5 h-5 ml-2" />}
+                    // icon={!loading && <ArrowRight className="w-5 h-5 ml-2" />}
                   >
-                    {loading ? '登录中...' : '登录'}
+                    {loading ? '登录中...' : '登 录'}
                   </Button>
                 </motion.div>
               </Form.Item>
@@ -273,7 +280,14 @@ export const Login: React.FC = () => {
             className="mt-8 text-center"
           >
             <p className="text-purple-300/50 text-sm">
-              © 2025 TestFlow. Powered by AI & Automation
+              {/* © 2025 Sakura AI. Powered by AI & Automation */}
+              <span className="text-purple-300/50 text-sm">
+                Sakura AI. Powered by AI & Automation
+              </span>
+              <br />
+              <span className="text-purple-300/50 text-sm">
+                Copyright © 2019-2025 SakuraTech. All rights reserved.
+              </span>
             </p>
           </motion.div>
         </motion.div>

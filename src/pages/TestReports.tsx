@@ -456,24 +456,8 @@ export function TestReports() {
               ))}
             </div>
           </div>
-          <div className="min-w-[150px]">
-            <label className="block text-sm font-medium text-gray-700 mb-1">测试套件</label>
-            <Select
-              value={suiteId}
-              onChange={setSuiteId}
-              className="w-full"
-              loading={loadingOptions}
-            >
-              <Option value="all">全部套件</Option>
-              {suites.map(suite => (
-                <Option key={suite.id} value={suite.id.toString()}>
-                  {suite.name}
-                </Option>
-              ))}
-            </Select>
-          </div>
-          <div className="min-w-[150px]">
-            <label className="block text-sm font-medium text-gray-700 mb-1">项目</label>
+          <div className="min-w-[200px]">
+            <label className="block text-sm font-medium text-gray-700 mb-1">所属项目</label>
             <Select
               value={project}
               onChange={setProject}
@@ -484,6 +468,22 @@ export function TestReports() {
               {projects.map(proj => (
                 <Option key={proj} value={proj}>
                   {proj}
+                </Option>
+              ))}
+            </Select>
+          </div>
+          <div className="min-w-[200px]">
+            <label className="block text-sm font-medium text-gray-700 mb-1">所属计划</label>
+            <Select
+              value={suiteId}
+              onChange={setSuiteId}
+              className="w-full"
+              loading={loadingOptions}
+            >
+              <Option value="all">全部套件</Option>
+              {suites.map(suite => (
+                <Option key={suite.id} value={suite.id.toString()}>
+                  {suite.name}
                 </Option>
               ))}
             </Select>

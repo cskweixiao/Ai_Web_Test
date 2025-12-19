@@ -770,17 +770,17 @@ export function TestRunDetail() {
           </div>
         </div> */}
         {/* 顶部导航栏 */}
-        <div className="mb-3 flex items-center justify-between">
+        <div className="mb-3 flex items-center justify-between gap-4">
           <div className="flex items-center gap-4">
             <button
               onClick={() => navigate('/test-runs')}
-              className="flex items-center gap-2 px-4 py-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
+              className="flex items-center gap-2 px-0 py-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
             >
               <ArrowLeft className="h-4 w-4" />
               返回列表
             </button>
             <div>
-              <h1 className="text-2xl font-bold text-gray-900">
+              <h1 className="text-2xl font-bold text-gray-900 max-w-[1000px]">
                 {testRun.name || `测试运行 ${testRun.id}`}
               </h1>
               <p className="text-sm text-gray-500 mt-1">ID: {testRun.id}</p>
@@ -835,11 +835,12 @@ export function TestRunDetail() {
               </div>
           </div> */}
           <div className="bg-white rounded-lg shadow p-4">
-            <div className="text-xs text-gray-500 mb-1">进度</div>
+            <div className="text-xs text-gray-500 mb-1">执行进度</div>
             <div className="text-xl font-bold text-gray-900">{testRun.progress ?? 0}%</div>
             <div className="flex flex-col gap-2 mt-2">
               <div className="flex items-center gap-3 text-xs text-gray-600">
                 步骤：{stats.completedOperationSteps} / {stats.totalOperationSteps}
+                {/* 步骤：{testRun.completedSteps ?? 0} / {testRun.totalSteps ?? 0} */}
               </div>
               <div className="flex items-center gap-3 text-xs text-gray-600">
                 断言：{stats.completedAssertions} / {stats.totalAssertions}
@@ -850,15 +851,15 @@ export function TestRunDetail() {
           <div className="bg-white rounded-lg shadow p-4">
             <div className="text-xs text-gray-500 mb-1">执行结果</div>
             <div className="flex items-center gap-3">
-              {stats.passedOperationSteps === stats.totalOperationSteps && stats.passedAssertions === stats.totalAssertions && (
+              {(stats.passedOperationSteps === stats.totalOperationSteps && stats.passedAssertions === stats.totalAssertions) && (
                 <>
-                  <CheckCircle className="h-4 w-4 text-green-600" />
-                  <span className="text-xl font-bold text-green-600">通过</span>
+                  {/* <CheckCircle className="h-4 w-4 text-green-600" /> */}
+                  <span className="text-xl font-bold text-green-600">全部通过</span>
                 </>
               )}
-              {stats.passedOperationSteps !== stats.totalOperationSteps || stats.passedAssertions !== stats.totalAssertions && (
+              {(stats.passedOperationSteps !== stats.totalOperationSteps || stats.passedAssertions !== stats.totalAssertions) && (
                 <>
-                  <XCircle className="h-4 w-4 text-red-600" />
+                  {/* <XCircle className="h-4 w-4 text-red-600" /> */}
                   <span className="text-xl font-bold text-red-600">失败</span>
                 </>
               )}
@@ -896,12 +897,28 @@ export function TestRunDetail() {
                 <span className="text-xs font-medium text-green-600">{stats.passedAssertions}</span> / 
                 <span className="text-xs font-medium text-red-600">{stats.failedAssertions}</span>
               </div> */}
-              <div className="flex items-center gap-3 text-xs text-gray-600">
+              {/* <div className="flex items-center gap-3 text-xs text-gray-600">
                 步骤：{stats.totalOperationSteps} / {stats.passedOperationSteps} / {stats.failedOperationSteps}
               </div>
               <div className="flex items-center gap-3 text-xs text-gray-600">
                 断言：{stats.totalAssertions} / {stats.passedAssertions} / {stats.failedAssertions}
+              </div> */}
+              <div className="flex items-center gap-2 text-xs text-gray-600">
+                <span className="text-green-600 font-medium">{stats.passedOperationSteps}</span>通过
+                <span className="text-red-600 font-medium">{stats.failedOperationSteps}</span>失败
+                <span className="text-orange-600 font-medium">{stats.totalOperationSteps - stats.passedOperationSteps - stats.failedOperationSteps}</span>阻塞
               </div>
+              <div className="flex items-center gap-2 text-xs text-gray-600">
+                <span className="text-green-600 font-medium">{stats.passedAssertions}</span>通过
+                <span className="text-red-600 font-medium">{stats.failedAssertions}</span>失败
+                <span className="text-orange-600 font-medium">{stats.totalAssertions - stats.passedAssertions - stats.failedAssertions > 0 ? stats.totalAssertions - stats.passedAssertions - stats.failedAssertions : 0}</span>阻塞
+              </div>
+              {/* <div className="flex items-center gap-3 text-xs text-gray-600">
+                步骤：{testRun.passedSteps ?? 0} / {testRun.failedSteps ?? 0} / {(testRun.totalSteps ?? 0) - (testRun.passedSteps ?? 0) - (testRun.failedSteps ?? 0)}
+              </div>
+              <div className="flex items-center gap-3 text-xs text-gray-600">
+                断言：{stats.totalAssertions} / {stats.passedAssertions} / {stats.failedAssertions}
+              </div> */}
             </div>
           </div>
 
@@ -1099,7 +1116,7 @@ export function TestRunDetail() {
                           {safeFormatDate(log.timestamp, 'yyyy-MM-dd HH:mm:ss.SSS')}
                         </span>
                         <span className="flex-shrink-0">{getLevelIcon(log.level)}</span>
-                        <span className="text-gray-300 break-all">{log.message}</span>
+                        <span className="text-gray-300 break-all whitespace-pre-wrap">{log.message}</span>
                       </div>
                     ))
                   )}

@@ -1,6 +1,6 @@
 import React, { useMemo, useState, useCallback, useRef, useEffect } from 'react';
-import { Table, Button, Space, Tooltip, Checkbox, Pagination, Tag } from 'antd';
-import { Edit3, Trash2, Eye, FileText, User, Bot, PlayCircle, RotateCcw } from 'lucide-react';
+import { Table, Button, Space, Tooltip, Checkbox, Pagination, Tag, Dropdown } from 'antd';
+import { Edit3, Trash2, Eye, FileText, User, Bot, PlayCircle, RotateCcw, Loader2 } from 'lucide-react';
 import type { ColumnsType } from 'antd/es/table';
 import { ViewProps } from '../types';
 import { getCaseTypeInfo } from '../../../utils/caseTypeHelper';
@@ -43,6 +43,7 @@ interface FlatRowData {
     last_executed_at?: string | null;  // 🆕 最后执行时间
     last_executor?: string | null;  // 🆕 最后执行人
     created_at: string;
+    updated_at: string;
     users?: {
         username: string;
     };
@@ -63,7 +64,8 @@ const defaultColumnWidths: Record<string, number> = {
     execution_status: 90,
     source: 90,
     creator: 90,
-    created_at: 140,
+    created_at: 160,
+    updated_at: 160,
     actions: 160,
 };
 
@@ -79,10 +81,12 @@ export const TableView: React.FC<ViewProps> = ({
     onViewLogs,
     onExecuteCase,
     pagination,
-    onPageChange
+    onPageChange,
+    runningTestId  // 🆕 接收正在运行的测试ID
 }) => {
-    // 列宽状态管理
-    const [columnWidths, setColumnWidths] = useState<Record<string, number>>({ ...defaultColumnWidths });
+    // 列宽状态管理 - 初始化为空对象，后续从列定义中获取
+    const [columnWidths, setColumnWidths] = useState<Record<string, number>>({});
+    const isInitializedRef = useRef(false);
     
     // 拖动状态
     const dragStateRef = useRef<{
@@ -97,7 +101,10 @@ export const TableView: React.FC<ViewProps> = ({
         e.preventDefault();
         e.stopPropagation();
         
-        const startWidth = columnWidths[columnKey] || defaultColumnWidths[columnKey] || 100;
+        // 获取当前宽度：优先使用 columnWidths，否则使用默认值
+        const startWidth = columnWidths[columnKey] !== undefined
+            ? columnWidths[columnKey]
+            : (defaultColumnWidths[columnKey] || 100);
         
         dragStateRef.current = {
             isDragging: true,
@@ -143,21 +150,6 @@ export const TableView: React.FC<ViewProps> = ({
         };
     }, []);
 
-    // 双击重置单列宽度
-    const handleDoubleClick = useCallback((key: string, e: React.MouseEvent) => {
-        e.stopPropagation();
-        e.preventDefault();
-        setColumnWidths((prev) => ({
-            ...prev,
-            [key]: defaultColumnWidths[key] || 100,
-        }));
-    }, []);
-
-    // 重置所有列宽
-    const handleResetAllWidths = useCallback(() => {
-        setColumnWidths({ ...defaultColumnWidths });
-    }, []);
-
     // 将测试用例数据转换为平铺的行数据
     const flatData: FlatRowData[] = useMemo(() => {
         if (!testCases || testCases.length === 0) return [];
@@ -195,6 +187,7 @@ export const TableView: React.FC<ViewProps> = ({
             last_executed_at: row.last_executed_at,  // 🆕 最后执行时间
             last_executor: row.last_executor,  // 🆕 最后执行人
             created_at: row.created_at,
+            updated_at: row.updated_at,
             users: row.users
         }));
     }, [testCases, pagination?.page, pagination?.pageSize, pagination?.total]);
@@ -232,12 +225,13 @@ export const TableView: React.FC<ViewProps> = ({
     const formatDate = (dateStr: string) => {
         if (!dateStr) return '-';
         const date = new Date(dateStr);
-        return date.toLocaleString('zh-CN', {
+        return date.toLocaleDateString('zh-CN', {
             year: 'numeric',
             month: '2-digit',
             day: '2-digit',
             hour: '2-digit',
-            minute: '2-digit'
+            minute: '2-digit',
+            second: '2-digit'
         });
     };
 
@@ -351,7 +345,7 @@ export const TableView: React.FC<ViewProps> = ({
             title: '测试场景',
             dataIndex: 'scenario_name',  // 🔧 改为显示测试场景名称
             key: 'scenario_name',
-            width: 200,
+            width: 150,
             ellipsis: { showTitle: false },
             render: (text: string, record) => (
                 <Tooltip 
@@ -381,7 +375,7 @@ export const TableView: React.FC<ViewProps> = ({
             title: '测试点',
             dataIndex: 'test_point_name',
             key: 'test_point_name',
-            width: 200,
+            width: 150,
             ellipsis: { showTitle: false },
             render: (text: string, record) => (
                 <Tooltip 
@@ -425,7 +419,7 @@ export const TableView: React.FC<ViewProps> = ({
             title: '用例标题',
             dataIndex: 'name',
             key: 'name',
-            width: 320,
+            width: 370,
             ellipsis: { showTitle: false },
             render: (text: string, record) => (
                 <Tooltip 
@@ -457,9 +451,9 @@ export const TableView: React.FC<ViewProps> = ({
             title: '用例版本',
             dataIndex: 'project_version',
             key: 'project_version',
-            width: 100,
+            width: 120,
             align: 'center',
-            sorter: (a, b) => a.project_version?.version_code.localeCompare(b.project_version?.version_code || ''),
+            sorter: (a, b) => (a.project_version?.version_code || '').localeCompare(b.project_version?.version_code || ''),
             sortDirections: ['ascend', 'descend'],
             defaultSortOrder: 'ascend',
             render: (version: FlatRowData['project_version']) => {
@@ -476,7 +470,7 @@ export const TableView: React.FC<ViewProps> = ({
                             }}
                         >
                             {version.is_main && <span>⭐</span>}
-                            <span className="truncate max-w-[60px]">{version.version_code}</span>
+                            <span className="truncate max-w-[100px]">{version.version_name}</span>
                         </span>
                     </Tooltip>
                 );
@@ -573,9 +567,7 @@ export const TableView: React.FC<ViewProps> = ({
                             return { color: 'default', text: '未执行', icon: '-' };
                     }
                 };
-                
                 const config = getStatusConfig(execution_status);
-                
                 return (
                     <Tooltip 
                         placement="top"
@@ -659,8 +651,20 @@ export const TableView: React.FC<ViewProps> = ({
             title: '创建时间',
             dataIndex: 'created_at',
             key: 'created_at',
-            width: 140,
-            align: 'center',
+            width: 150,
+            // align: 'center',
+            render: (date: string) => (
+                <span className="text-gray-500 text-sm whitespace-nowrap">
+                    {formatDate(date)}
+                </span>
+            ),
+        },
+        {
+            title: '更新时间',
+            dataIndex: 'updated_at',
+            key: 'updated_at',
+            width: 150,
+            // align: 'center',
             render: (date: string) => (
                 <span className="text-gray-500 text-sm whitespace-nowrap">
                     {formatDate(date)}
@@ -693,36 +697,50 @@ export const TableView: React.FC<ViewProps> = ({
                             onClick={() => onEditCase(record.id)}
                         />
                     </Tooltip>
-                    {/* <Dropdown
+                    <Dropdown
                         menu={{
                             items: [
                                 {
                                     key: 'default',
-                                    label: '执行测试（原型样式）',
-                                    icon: <PlayCircle className="w-3.5 h-3.5" />,
-                                    onClick: () => onExecuteCase(record.id, 'default'),
-                                },
-                                {
-                                    key: 'alt',
-                                    label: '执行测试（备选样式）',
+                                    label: '功能测试',
                                     icon: <PlayCircle className="w-3.5 h-3.5" />,
                                     onClick: () => onExecuteCase(record.id, 'alt'),
+                                    disabled: runningTestId === record.id,
+                                },
+                                {
+                                    key: 'ui-auto',
+                                    label: runningTestId === record.id ? (
+                                        <span className="flex items-center gap-1">
+                                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                            执行中...
+                                        </span>
+                                    ) : (
+                                        'UI自动化测试'
+                                    ),
+                                    icon: runningTestId === record.id ? null : <PlayCircle className="w-3.5 h-3.5" />,
+                                    onClick: () => onExecuteCase(record.id, 'ui-auto'),
+                                    disabled: runningTestId === record.id,
                                 },
                             ],
                         }}
                         trigger={['click']}
+                        placement="bottomCenter"
                     >
                         <Tooltip title="执行用例">
                             <Button
                                 type="text"
                                 size="small"
                                 className="!px-1.5 hover:!bg-emerald-50 hover:!text-emerald-600 transition-all"
-                                icon={<PlayCircle className="w-4 h-4" />}
+                                icon={runningTestId === record.id ? (
+                                    <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
+                                ) : (
+                                    <PlayCircle className="w-4 h-4" />
+                                )}
                                 onClick={(e) => e.stopPropagation()}
                             />
                         </Tooltip>
-                    </Dropdown> */}
-                    <Tooltip title="执行用例">
+                    </Dropdown>
+                    {/* <Tooltip title="执行用例">
                         <Button
                             type="text"
                             size="small"
@@ -730,7 +748,7 @@ export const TableView: React.FC<ViewProps> = ({
                             icon={<PlayCircle className="w-4 h-4" />}
                             onClick={() => onExecuteCase(record.id, 'alt')}
                         />
-                    </Tooltip>
+                    </Tooltip> */}
                     <Tooltip title="执行日志">
                         <Button
                             type="text"
@@ -747,7 +765,7 @@ export const TableView: React.FC<ViewProps> = ({
                             danger
                             className="!px-1.5 hover:!bg-red-50 transition-all"
                             icon={<Trash2 className="w-4 h-4" />}
-                            onClick={() => onDeleteCase(record.id, record.name)}
+                            onClick={() => onDeleteCase(record.id)}
                         />
                     </Tooltip>
                 </Space>
@@ -765,13 +783,59 @@ export const TableView: React.FC<ViewProps> = ({
         onDeleteCase,
         onViewLogs,
         onExecuteCase,
+        runningTestId,
     ]);
+
+    // 初始化列宽：从列定义中获取宽度，如果没有则使用默认值
+    useEffect(() => {
+        if (!isInitializedRef.current && columns.length > 0) {
+            const initialWidths: Record<string, number> = {};
+            columns.forEach((col) => {
+                const columnKey = col.key as string;
+                if (columnKey) {
+                    // 优先使用列定义中的 width，否则使用 defaultColumnWidths，最后使用 100
+                    initialWidths[columnKey] = (col.width as number) || defaultColumnWidths[columnKey] || 100;
+                }
+            });
+            setColumnWidths(initialWidths);
+            isInitializedRef.current = true;
+        }
+    }, [columns]);
+
+    // 双击重置单列宽度
+    const handleDoubleClick = useCallback((key: string, e: React.MouseEvent) => {
+        e.stopPropagation();
+        e.preventDefault();
+        // 重置时，优先使用列定义中的宽度，否则使用默认值
+        const col = columns.find(c => c.key === key);
+        const resetWidth = (col?.width as number) || defaultColumnWidths[key] || 100;
+        setColumnWidths((prev) => ({
+            ...prev,
+            [key]: resetWidth,
+        }));
+    }, [columns]);
+
+    // 重置所有列宽
+    const handleResetAllWidths = useCallback(() => {
+        const resetWidths: Record<string, number> = {};
+        columns.forEach((col) => {
+            const columnKey = col.key as string;
+            if (columnKey) {
+                // 重置时，优先使用列定义中的宽度，否则使用默认值
+                resetWidths[columnKey] = (col.width as number) || defaultColumnWidths[columnKey] || 100;
+            }
+        });
+        setColumnWidths(resetWidths);
+    }, [columns]);
 
     // 将列配置转换为可调整宽度的列配置
     const resizableColumns: ColumnsType<FlatRowData> = useMemo(() => {
         return columns.map((col) => {
             const columnKey = col.key as string;
-            const currentWidth = columnWidths[columnKey] || (col.width as number) || 100;
+            // 宽度优先级：1. columnWidths（用户调整后的值） 2. col.width（列定义中的值） 3. defaultColumnWidths 4. 100
+            const currentWidth = columnWidths[columnKey] !== undefined 
+                ? columnWidths[columnKey] 
+                : ((col.width as number) || defaultColumnWidths[columnKey] || 100);
             const originalTitle = col.title;
             
             // 为标题添加拖动区域（覆盖在原有分割线位置）

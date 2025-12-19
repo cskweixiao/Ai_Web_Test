@@ -166,6 +166,14 @@ export class FunctionalTestCaseService {
                 project: true, // 🔥 修复：使用 project 字段
                 account_name: true
               }
+            },
+            project_version: {
+              select: {
+                id: true,
+                version_name: true,
+                version_code: true,
+                is_main: true
+              }
             }
           }
         }),
@@ -392,6 +400,7 @@ export class FunctionalTestCaseService {
           scenario_description: tc.scenario_description,  // 🆕 测试场景描述
           tags: tc.tags,
           created_at: tc.created_at,
+          updated_at: tc.updated_at,
           users: tc.users,
           source: tc.source,
           case_type: tc.case_type || 'FULL',
@@ -399,6 +408,11 @@ export class FunctionalTestCaseService {
           project_version: tc.project_version,
           requirement_source: tc.requirement_source,
           requirement_doc_id: tc.requirement_doc_id,  // 🆕 需求文档ID
+
+          // 🔥 前置条件和测试数据
+          preconditions: tc.preconditions || '',
+          testData: tc.test_data || '',
+          // test_data: tc.test_data || '',
 
           // 🆕 执行状态信息
           execution_status,  // pass, fail, block, null
@@ -686,7 +700,7 @@ export class FunctionalTestCaseService {
               module: tc.module,
               priority: tc.priority || 'medium',
               tags: Array.isArray(tc.tags) ? tc.tags.join(',') : tc.tags || '',
-              status: 'PUBLISHED',
+              status: 'ACTIVE',
               source: 'AI_GENERATED',
               ai_session_id: aiSessionId,
               creator_id: userId,
@@ -860,6 +874,13 @@ export class FunctionalTestCaseService {
       if (data.batchNumber !== undefined) updateData.batch_number = data.batchNumber;
       if (data.coverageAreas !== undefined) updateData.coverage_areas = data.coverageAreas;
       if (data.caseType !== undefined) updateData.case_type = data.caseType;
+      
+      // 🔧 更新项目版本ID
+      if (data.projectVersionId !== undefined) {
+        updateData.project_version_id = data.projectVersionId !== null && data.projectVersionId !== '' 
+          ? Number(data.projectVersionId) 
+          : null;
+      }
 
       console.log(`✅ 最终更新数据:`, updateData);
 

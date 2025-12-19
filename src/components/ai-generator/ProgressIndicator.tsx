@@ -20,11 +20,11 @@ export function ProgressIndicator({ currentStep, totalSteps, steps }: ProgressIn
   return (
     <div className="relative">
       {/* 背景连线 */}
-      <div className="absolute top-4 left-0 right-0 h-0.5 bg-gray-200" />
+      <div className="absolute top-3 left-0 right-0 h-0.5 bg-gray-200" />
 
       {/* 进度连线 - 渐变动画 */}
       <motion.div
-        className="absolute top-4 left-0 h-0.5 bg-gradient-to-r from-purple-500 to-blue-500"
+        className="absolute top-3 left-0 h-0.5 bg-gradient-to-r from-purple-500 to-blue-500"
         initial={{ width: 0 }}
         animate={{ width: `${progress}%` }}
         transition={{ duration: 0.5, ease: "easeOut" }}
@@ -33,24 +33,24 @@ export function ProgressIndicator({ currentStep, totalSteps, steps }: ProgressIn
       {/* 步骤点 */}
       <div className="relative flex justify-between">
         {steps.map((step, index) => (
-          <div key={index} className="flex flex-col items-center gap-2">
+          <div key={index} className="flex flex-col items-center gap-1.5">
             {/* 圆点 */}
             <motion.div
               className={clsx(
-                "w-8 h-8 rounded-full flex items-center justify-center z-10",
+                "w-6 h-6 rounded-full flex items-center justify-center z-10",
                 "transition-all duration-300",
-                index < currentStep && "bg-gradient-to-br from-green-400 to-green-600 shadow-lg",
-                index === currentStep && "bg-gradient-to-br from-purple-500 to-blue-500 shadow-lg shadow-purple-500/50 animate-pulse",
+                index < currentStep && "bg-gradient-to-br from-green-400 to-green-600 shadow-md",
+                index === currentStep && "bg-gradient-to-br from-purple-500 to-blue-500 shadow-md shadow-purple-500/40 animate-pulse",
                 index > currentStep && "bg-gray-200"
               )}
               whileHover={{ scale: 1.1 }}
               transition={{ duration: 0.2 }}
             >
               {index < currentStep ? (
-                <CheckCircle className="w-4 h-4 text-white" />
+                <CheckCircle className="w-3.5 h-3.5 text-white" />
               ) : (
                 <span className={clsx(
-                  "text-sm font-semibold",
+                  "text-xs font-semibold",
                   index === currentStep ? "text-white" : "text-gray-500"
                 )}>
                   {index + 1}
@@ -60,7 +60,7 @@ export function ProgressIndicator({ currentStep, totalSteps, steps }: ProgressIn
 
             {/* 步骤名称 */}
             <span className={clsx(
-              "text-sm font-medium transition-colors text-center",
+              "text-xs font-medium transition-colors text-center",
               index <= currentStep ? "text-gray-900" : "text-gray-600"
             )}>
               {step.name}

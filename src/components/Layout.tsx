@@ -21,6 +21,7 @@ import {
   ChevronRight,
   Factory,
   Bot,
+  Target,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { clsx } from 'clsx';
@@ -50,6 +51,7 @@ const navigationItems: NavigationItem[] = [
   { name: '知识库', href: '/knowledge', icon: BookOpen },
   { name: '功能用例', href: '/functional-test-cases', icon: ClipboardList },
   { name: 'UI自动化', href: '/test-cases', icon: FileCode },
+  { name: '测试计划', href: '/test-plans', icon: Target },
   { name: '测试执行', href: '/test-runs', icon: Play },
   { name: '测试报告', href: '/reports', icon: BarChart3 },
   { name: '测试工厂', href: '/test-factory', icon: Factory },
@@ -58,7 +60,7 @@ const navigationItems: NavigationItem[] = [
 ];
 
 // 侧边栏宽度常量
-const SIDEBAR_WIDTH_EXPANDED = 230;
+const SIDEBAR_WIDTH_EXPANDED = 280;
 const SIDEBAR_WIDTH_COLLAPSED = 80;
 
 export function Layout({ children }: LayoutProps) {

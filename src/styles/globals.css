@@ -555,7 +555,7 @@ select:disabled {
   bottom: 10px;
   width: 5px;
   cursor: col-resize;
-  z-index: 10;
+  z-index: 999;
   background: transparent;
 }
 

@@ -60,6 +60,8 @@ import { createRequirementDocRoutes } from './routes/requirementDoc.js';
 import systemsRouter from './routes/systems.js';
 // 🔥 新增：知识库管理路由
 import knowledgeRouter from './routes/knowledge.js';
+// 🔥 新增：测试计划管理路由
+import testPlanRouter from './routes/testPlan.js';
 // 🔥 新增：初始化功能开关和权限
 import { initializeAllFeatureFlags } from './middleware/featureFlag.js';
 import { PermissionService } from './middleware/auth.js';
@@ -730,6 +732,10 @@ async function startServer() {
     // 🔥 新增：知识库管理路由（移除认证，允许公开搜索）
     console.log('🔧 注册知识库管理路由...');
     app.use('/api/v1/knowledge', knowledgeRouter);
+
+    // 🔥 新增：测试计划管理路由
+    console.log('🔧 注册测试计划管理路由...');
+    app.use('/api/v1/test-plans', authenticate, testPlanRouter);
 
     console.log('✅ API路由注册完成');
 

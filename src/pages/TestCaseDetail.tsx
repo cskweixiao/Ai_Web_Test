@@ -14,6 +14,7 @@ import {
 import { clsx } from 'clsx';
 import { testService } from '../services/testService';
 import * as systemService from '../services/systemService';
+import { functionalTestCaseService } from '../services/functionalTestCaseService';
 import type { TestCase, TestStepRow } from '../types/test';
 import { showToast } from '../utils/toast';
 import { Button } from '../components/ui/button';
@@ -23,6 +24,8 @@ import { parseStepsText, serializeStepsToText } from '../utils/stepConverter';
 
 interface TestCaseForm {
   name: string;
+  preconditions: string;
+  testData: string;
   steps: string;
   assertions: string;
   priority: 'high' | 'medium' | 'low';
@@ -43,12 +46,15 @@ export function TestCaseDetail() {
   const [saving, setSaving] = useState(false);
   const [testCase, setTestCase] = useState<TestCase | null>(null);
   const [systemOptions, setSystemOptions] = useState<Array<{ id: number; name: string }>>([]);
+  const [moduleOptions, setModuleOptions] = useState<Array<{ value: string; label: string }>>([]);
   const [formData, setFormData] = useState<TestCaseForm>({
     name: '',
+    preconditions: '',
+    testData: '',
     steps: '',
     assertions: '',
     priority: 'medium',
-    status: 'draft',
+    status: 'active',
     tags: '',
     system: '',
     module: ''
@@ -90,6 +96,26 @@ export function TestCaseDetail() {
     loadSystems();
   }, []);
 
+  // 根据选择的项目加载对应的模块列表
+  useEffect(() => {
+    const loadModules = async () => {
+      if (!formData.system) {
+        setModuleOptions([]);
+        return;
+      }
+
+      try {
+        const modules = await functionalTestCaseService.getModulesBySystem(formData.system);
+        setModuleOptions(modules);
+      } catch (error) {
+        console.error('加载模块列表失败:', error);
+        showToast.error('加载模块列表失败');
+        setModuleOptions([]);
+      }
+    };
+    loadModules();
+  }, [formData.system]);
+
   // 加载测试用例数据（编辑模式）
   useEffect(() => {
     if (isEditMode) {
@@ -125,10 +151,12 @@ export function TestCaseDetail() {
 
       setFormData({
         name: response.name || response.title || '',
+        preconditions: (response as any).preconditions || '',
+        testData: (response as any).testData || '',
         steps: stepsText,
         assertions: response.assertions || '',
         priority: (response.priority as any) || 'medium',
-        status: (response.status as any) || 'draft',
+        status: (response.status as any) || 'active',
         tags: Array.isArray(response.tags) ? response.tags.join(', ') : '',
         system: response.system || '',
         module: response.module || ''
@@ -219,6 +247,8 @@ export function TestCaseDetail() {
 
       const payload = {
         name: formData.name.trim(),
+        preconditions: formData.preconditions.trim(),
+        testData: formData.testData.trim(),
         steps: stepsText.trim(),
         assertions: formData.assertions.trim(),
         priority: formData.priority,
@@ -253,6 +283,8 @@ export function TestCaseDetail() {
       // 编辑模式：重置为原始数据
       setFormData({
         name: testCase.name,
+        preconditions: (testCase as any).preconditions || '',
+        testData: (testCase as any).testData || '',
         steps: testCase.steps,
         assertions: testCase.assertions || '',
         priority: testCase.priority,
@@ -270,10 +302,12 @@ export function TestCaseDetail() {
       // 新建模式：清空表单
       setFormData({
         name: '',
+        preconditions: '',
+        testData: '',
         steps: '',
         assertions: '',
         priority: 'medium',
-        status: 'draft',
+        status: 'active',
         tags: '',
         system: '',
         module: ''
@@ -310,7 +344,7 @@ export function TestCaseDetail() {
               返回列表
             </button>
             <h1 className="text-2xl font-bold text-gray-900">
-              {isEditMode ? '编辑测试用例' : '新建测试用例'}
+              {isEditMode ? '编辑测试用例' : '创建测试用例'}
             </h1>
           </div>
 
@@ -386,7 +420,7 @@ export function TestCaseDetail() {
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  所属系统
+                  所属项目
                 </label>
                 <select
                   name="system"
@@ -394,7 +428,7 @@ export function TestCaseDetail() {
                   onChange={handleInputChange}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 >
-                  <option value="">请选择系统</option>
+                  <option value="">请选择项目</option>
                   {systemOptions.map(sys => (
                     <option key={sys.id} value={sys.name}>{sys.name}</option>
                   ))}
@@ -405,14 +439,18 @@ export function TestCaseDetail() {
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   所属模块
                 </label>
-                <input
-                  type="text"
+                <select
                   name="module"
                   value={formData.module}
                   onChange={handleInputChange}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="请输入所属模块"
-                />
+                  disabled={!formData.system}
+                >
+                  <option value="">{formData.system ? '请选择模块' : '请先选择项目'}</option>
+                  {moduleOptions.map(mod => (
+                    <option key={mod.value} value={mod.value}>{mod.label}</option>
+                  ))}
+                </select>
               </div>
 
               <div>
@@ -455,6 +493,37 @@ export function TestCaseDetail() {
                   value={(formData.tags || '').split(',').map(t => t.trim()).filter(Boolean)}
                   onChange={handleTagsChange}
                   placeholder="输入标签并按回车添加"
+                />
+              </div>
+            </div>
+
+            {/* 前置条件和测试数据 */}
+            <div className="grid grid-cols-2 gap-6">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  前置条件
+                </label>
+                <textarea
+                  name="preconditions"
+                  value={formData.preconditions}
+                  onChange={handleInputChange}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  rows={3}
+                  placeholder="请描述执行测试前需要满足的条件"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  测试数据
+                </label>
+                <textarea
+                  name="testData"
+                  value={formData.testData}
+                  onChange={handleInputChange}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  rows={3}
+                  placeholder="请输入测试过程中使用的数据"
                 />
               </div>
             </div>

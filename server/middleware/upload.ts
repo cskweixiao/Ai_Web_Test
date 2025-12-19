@@ -26,10 +26,10 @@ const storage = multer.diskStorage({
 const fileFilter = (req: any, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
   const ext = path.extname(file.originalname).toLowerCase();
 
-  if (ext === '.html' || ext === '.htm' || ext === '.pdf' || ext === '.docx' || ext === '.md' || ext === '.markdown' || ext === '.txt') {
+  if (ext === '.html' || ext === '.htm' || ext === '.pdf' || ext === '.docx' || ext === '.doc' || ext === '.md' || ext === '.markdown' || ext === '.txt') {
     cb(null, true);
   } else {
-    cb(new Error('只支持 HTML / PDF / DOCX / Markdown / TXT 文件'));
+    cb(new Error('只支持 HTML / PDF / DOCX / DOC / Markdown / TXT 文件'));
   }
 };
 
@@ -37,10 +37,10 @@ const fileFilter = (req: any, file: Express.Multer.File, cb: multer.FileFilterCa
 const multiFileFilter = (req: any, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
   const ext = path.extname(file.originalname).toLowerCase();
 
-  if (ext === '.html' || ext === '.htm' || ext === '.js' || ext === '.pdf' || ext === '.docx' || ext === '.md' || ext === '.markdown' || ext === '.txt') {
+  if (ext === '.html' || ext === '.htm' || ext === '.js' || ext === '.pdf' || ext === '.docx' || ext === '.doc' || ext === '.md' || ext === '.markdown' || ext === '.txt') {
     cb(null, true);
   } else {
-    cb(new Error('只支持 HTML / JS / PDF / DOCX / Markdown / TXT'));
+    cb(new Error('只支持 HTML / JS / PDF / DOCX / DOC / Markdown / TXT'));
   }
 };
 

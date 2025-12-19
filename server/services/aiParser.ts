@@ -324,7 +324,12 @@ export class AITestParser {
   /**
    * AI根据当前快照和下一条指令生成MCP命令
    */
-  async parseNextStep(remainingStepsText: string, snapshot: any | null, runId: string): Promise<AINextStepParseResult> {
+  async parseNextStep(
+    remainingStepsText: string, 
+    snapshot: any | null, 
+    runId: string,
+    logCallback?: (message: string, level: 'info' | 'success' | 'warning' | 'error') => void
+  ): Promise<AINextStepParseResult> {
     try {
       // 🔥 增强日志：打印完整的剩余步骤
       console.log(`\n🔍 [${runId}] ===== AI解析步骤开始 =====`);
@@ -398,8 +403,8 @@ export class AITestParser {
         console.log(`⚠️ [${runId}] 无页面快照可用，将使用默认解析策略`);
       }
 
-      // AI模拟：基于当前步骤文本和快照生成MCP命令
-      const mcpCommand = await this.generateMCPCommand(nextStepText, snapshot);
+      // AI模拟：基于当前步骤文本和快照生成MCP命令，传递 runId 和日志回调
+      const mcpCommand = await this.generateMCPCommand(nextStepText, snapshot, runId, logCallback);
 
       // 🔥 增强日志：打印解析结果
       console.log(`🤖 [${runId}] AI解析结果:`);
@@ -421,15 +426,25 @@ export class AITestParser {
       // 🔥 关键修复：确保返回正确的剩余步骤
       return { success: true, step, remaining: remaining || '' };
     } catch (error) {
-      console.error(`❌ [${runId}] AI解析步骤失败: ${error}`);
+      // 🔥 修复：不再在这里记录错误，因为 callLLM 已经记录过了，避免重复打印
+      // 直接返回错误，让上层处理
       return { success: false, error: `解析下一步骤失败: ${error}` };
     }
   }
 
   /**
    * AI根据快照和断言描述生成断言命令
+   * @param assertionsText 断言文本
+   * @param snapshot 页面快照
+   * @param runId 运行ID
+   * @param logCallback 可选的日志回调函数，用于记录到前端日志
    */
-  async parseAssertions(assertionsText: string, snapshot: any, runId: string): Promise<AIParseResult> {
+  async parseAssertions(
+    assertionsText: string, 
+    snapshot: any, 
+    runId: string,
+    logCallback?: (message: string, level: 'info' | 'success' | 'warning' | 'error') => void
+  ): Promise<AIParseResult> {
     try {
       if (!assertionsText?.trim()) {
         return { success: true, steps: [] };
@@ -440,7 +455,7 @@ export class AITestParser {
 
       for (let i = 0; i < assertionLines.length; i++) {
         const assertionText = assertionLines[i].trim();
-        const mcpCommand = await this.generateAssertionCommand(assertionText, snapshot);
+        const mcpCommand = await this.generateAssertionCommand(assertionText, snapshot, runId, logCallback);
 
         // 🔥 构建步骤，包含结构化断言信息
         const step: TestStep = {
@@ -592,8 +607,17 @@ export class AITestParser {
 
   /**
    * 🔥 真正的AI解析：根据步骤描述和快照生成MCP命令
+   * @param stepDescription 步骤描述
+   * @param snapshot 页面快照
+   * @param runId 可选的运行ID，用于日志记录
+   * @param logCallback 可选的日志回调函数，用于记录到前端日志
    */
-  private async generateMCPCommand(stepDescription: string, snapshot: any): Promise<MCPCommand> {
+  private async generateMCPCommand(
+    stepDescription: string, 
+    snapshot: any,
+    runId?: string,
+    logCallback?: (message: string, level: 'info' | 'success' | 'warning' | 'error') => void
+  ): Promise<MCPCommand> {
     console.log(`🤖 使用AI解析操作: "${stepDescription}"`);
 
     try {
@@ -610,8 +634,8 @@ export class AITestParser {
       // 2. 构建操作专用的用户提示词
       const userPrompt = this.buildOperationUserPrompt(stepDescription, pageElements);
 
-      // 3. 调用AI模型（操作模式）
-      const aiResponse = await this.callLLM(userPrompt, 'operation');
+      // 3. 调用AI模型（操作模式），传递 runId 和日志回调
+      const aiResponse = await this.callLLM(userPrompt, 'operation', runId, logCallback);
 
       // 4. 解析AI响应
       const mcpCommand = this.parseAIResponse(aiResponse);
@@ -620,7 +644,8 @@ export class AITestParser {
       return mcpCommand;
 
     } catch (error: any) {
-      console.error(`❌ AI操作解析失败: ${error.message}`);
+      // 🔥 修复：不再在这里记录错误，因为 callLLM 已经记录过了，避免重复打印
+      // 直接抛出错误，让上层处理
       throw new Error(`AI操作解析失败: ${error.message}`);
     }
   }
@@ -674,8 +699,17 @@ export class AITestParser {
 
   /**
    * 🔥 真正的AI解析：根据断言描述和快照生成断言命令
+   * @param assertionDescription 断言描述
+   * @param snapshot 页面快照
+   * @param runId 可选的运行ID，用于日志记录
+   * @param logCallback 可选的日志回调函数，用于记录到前端日志
    */
-  private async generateAssertionCommand(assertionDescription: string, snapshot: any): Promise<MCPCommand & { assertion?: any }> {
+  private async generateAssertionCommand(
+    assertionDescription: string, 
+    snapshot: any,
+    runId?: string,
+    logCallback?: (message: string, level: 'info' | 'success' | 'warning' | 'error') => void
+  ): Promise<MCPCommand & { assertion?: any }> {
     console.log(`🤖 使用AI解析断言: "${assertionDescription}"`);
 
     try {
@@ -688,8 +722,8 @@ export class AITestParser {
       // 3. 构建断言专用的用户提示词
       const userPrompt = this.buildAssertionUserPrompt(assertionDescription, pageElements);
 
-      // 4. 调用AI模型（断言模式）
-      const aiResponse = await this.callLLM(userPrompt, 'assertion');
+      // 4. 调用AI模型（断言模式），传递 runId 和日志回调
+      const aiResponse = await this.callLLM(userPrompt, 'assertion', runId, logCallback);
 
       // 5. 解析AI响应（包含结构化断言信息）
       const mcpCommand = this.parseAIResponse(aiResponse);
@@ -701,7 +735,8 @@ export class AITestParser {
       return mcpCommand;
 
     } catch (error: any) {
-      console.error(`❌ AI断言解析失败: ${error.message}`);
+      // 🔥 修复：不再在这里记录错误，因为 callLLM 已经记录过了，避免重复打印
+      // 直接抛出错误，让上层处理
       throw new Error(`AI断言解析失败: ${error.message}`);
     }
   }
@@ -1391,8 +1426,17 @@ ${elementsContext}
 
   /**
    * 🔥 调用AI模型（支持多种模式）
+   * @param userPrompt 用户提示词
+   * @param mode 调用模式
+   * @param runId 可选的运行ID，用于日志记录
+   * @param logCallback 可选的日志回调函数，用于记录到前端日志
    */
-  private async callLLM(userPrompt: string, mode: 'operation' | 'assertion' | 'relevance_check' | 'update_generation' = 'operation'): Promise<string> {
+  private async callLLM(
+    userPrompt: string, 
+    mode: 'operation' | 'assertion' | 'relevance_check' | 'update_generation' = 'operation',
+    runId?: string,
+    logCallback?: (message: string, level: 'info' | 'success' | 'warning' | 'error') => void
+  ): Promise<string> {
     // 获取当前配置
     const currentConfig = await this.getCurrentConfig();
     const modelInfo = this.getCurrentModelInfo();
@@ -1462,18 +1506,58 @@ ${elementsContext}
 
     } catch (error: any) {
       const modelInfo = this.getCurrentModelInfo();
-      console.error(`❌ AI调用失败: ${modelInfo.modelName} (${mode}模式)`);
-      console.error(`   错误详情: ${error.message}`);
-      console.error(`   模型标识: ${currentConfig.model}`);
-      console.error(`   运行模式: ${modelInfo.mode}`);
-
+      // 🔥 修复：只在最底层打印一次详细错误，避免重复
+      const errorMessage = `AI调用失败: ${modelInfo.modelName} (${mode}模式)`;
+      const errorDetails = `错误详情: ${error.message}`;
+      const modelInfoStr = `模型标识: ${currentConfig.model}`;
+      const modeStr = `运行模式: ${modelInfo.mode}`;
+      
+      // 构建完整的错误信息
+      let fullErrorMessage = `${errorMessage}\n   ${errorDetails}\n   ${modelInfoStr}\n   ${modeStr}`;
+      
       // 增强错误信息
       if (error.message.includes('401')) {
-        console.error(`   💡 建议: 请检查API密钥是否有效`);
+        fullErrorMessage += `\n   💡 建议: 请检查API密钥是否有效`;
       } else if (error.message.includes('429')) {
-        console.error(`   💡 建议: API调用频率超限，请稍后重试`);
+        fullErrorMessage += `\n   💡 建议: API调用频率超限，请稍后重试`;
       } else if (error.message.includes('fetch')) {
-        console.error(`   💡 建议: 请检查网络连接`);
+        fullErrorMessage += `\n   💡 建议: 请检查网络连接`;
+      } else if (error.message.includes('Arrearage') || error.message.includes('overdue-payment')) {
+        fullErrorMessage += `\n   💡 建议: 账户欠费，请检查账户状态`;
+      }
+
+      // 🔥 修复：如果提供了日志回调，将错误信息拆分成多条日志记录，便于前端显示
+      if (logCallback && runId) {
+        // 记录主要错误信息
+        logCallback(errorMessage, 'error');
+        // 记录错误详情
+        logCallback(errorDetails, 'error');
+        // 记录建议（作为警告级别，更醒目）
+        if (error.message.includes('Arrearage') || error.message.includes('overdue-payment')) {
+          logCallback('💡 建议: 账户欠费，请检查账户状态', 'warning');
+        } else if (error.message.includes('401')) {
+          logCallback('💡 建议: 请检查API密钥是否有效', 'warning');
+        } else if (error.message.includes('429')) {
+          logCallback('💡 建议: API调用频率超限，请稍后重试', 'warning');
+        } else if (error.message.includes('fetch')) {
+          logCallback('💡 建议: 请检查网络连接', 'warning');
+        }
+        // 🔥 关键：不再在控制台打印，因为 addLog 已经会打印了
+      } else {
+        // 如果没有日志回调，只在控制台打印（用于非测试执行场景）
+        console.error(`❌ ${errorMessage}`);
+        console.error(`   ${errorDetails}`);
+        console.error(`   ${modelInfoStr}`);
+        console.error(`   ${modeStr}`);
+        if (error.message.includes('401')) {
+          console.error(`   💡 建议: 请检查API密钥是否有效`);
+        } else if (error.message.includes('429')) {
+          console.error(`   💡 建议: API调用频率超限，请稍后重试`);
+        } else if (error.message.includes('fetch')) {
+          console.error(`   💡 建议: 请检查网络连接`);
+        } else if (error.message.includes('Arrearage') || error.message.includes('overdue-payment')) {
+          console.error(`   💡 建议: 账户欠费，请检查账户状态`);
+        }
       }
 
       throw error;

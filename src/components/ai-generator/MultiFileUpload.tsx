@@ -2,7 +2,7 @@ import React, { useCallback, useState } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Radio } from 'antd';
-import { Upload, FileText, FileCode, Folder, X, CheckCircle, AlertCircle } from 'lucide-react';
+import { Upload, FileText, FileCode, Folder, X, CheckCircle, AlertCircle, Eye } from 'lucide-react';
 import { clsx } from 'clsx';
 
 interface UploadedFile {
@@ -17,6 +17,8 @@ interface MultiFileUploadProps {
   onPageNameChange?: (pageName: string) => void; // 新增:页面名称回调
   pageMode?: 'new' | 'modify'; // 🆕 页面模式
   onPageModeChange?: (mode: 'new' | 'modify') => void; // 🆕 页面模式回调
+  onPreviewFile?: (file: File) => void; // 🆕 预览文件回调
+  onClearPreview?: () => void; // 🆕 清空预览回调
   maxFiles?: number;
   maxSize?: number; // in bytes
 }
@@ -30,6 +32,8 @@ export function MultiFileUpload({
   onPageNameChange,
   pageMode = 'new',
   onPageModeChange,
+  onPreviewFile,
+  onClearPreview,
   maxFiles = 20,
   maxSize = 50 * 1024 * 1024 // 50MB
 }: MultiFileUploadProps) {
@@ -115,12 +119,18 @@ export function MultiFileUpload({
       .filter(f => f.status === 'valid')
       .map(f => f.file);
     onFilesChange(validFiles);
+    
+    // 🆕 删除文件后清空预览
+    onClearPreview?.();
   };
 
   // 清空所有文件
   const clearAll = () => {
     setUploadedFiles([]);
     onFilesChange([]);
+    
+    // 🆕 清空所有文件后清空预览
+    onClearPreview?.();
   };
 
   const validFileCount = uploadedFiles.filter(f => f.status === 'valid').length;
@@ -149,10 +159,10 @@ export function MultiFileUpload({
           value={pageName}
           onChange={handlePageNameChange}
           placeholder="请输入页面名称，例如：登录页面（新增）"
-          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all text-sm"
         />
         <p className="mt-2 text-sm text-gray-700">
-          提示：页面名称将用于标识Axure原型页面，建议使用清晰明确的名称
+          提示：页面名称将用于标识产品需求文档页面，建议使用清晰明确的名称
         </p>
       </div>
 
@@ -192,7 +202,7 @@ export function MultiFileUpload({
           </motion.div>
 
           {/* 主文案 */}
-          <p className="text-2xl font-semibold text-gray-900 mb-3">
+          <p className="text-xl font-semibold text-gray-900 mb-3">
             {isDragActive
               ? '松开以上传文件'
               : uploadedFiles.length > 0
@@ -267,7 +277,7 @@ export function MultiFileUpload({
                     item.status === 'invalid' && "bg-red-50"
                   )}
                 >
-                  <div className="flex items-center gap-3 flex-1 min-w-0">
+                  <div className="flex items-center justify-between gap-3 flex-1 min-w-0">
                     {/* 文件图标 */}
                     {item.type === 'html' ? (
                       <FileText className="w-5 h-5 text-orange-500 flex-shrink-0" />
@@ -296,23 +306,51 @@ export function MultiFileUpload({
                         {item.error && ` • ${item.error}`}
                       </p>
                     </div>
-
-                    {/* 状态图标 */}
-                    {item.status === 'valid' && (
-                      <CheckCircle className="w-5 h-5 text-green-500 flex-shrink-0" />
+                  </div>
+                  <div className="flex items-center gap-3">
+                  {/* 状态图标 */}
+                  {item.status === 'valid' && (
+                      <CheckCircle className="w-4 h-4 text-green-500 flex-shrink-0" />
                     )}
                     {item.status === 'invalid' && (
-                      <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0" />
+                      <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0" />
                     )}
-                  </div>
-
+                  {/* 🆕 预览按钮（仅对主文件显示） */}
+                  {item.status === 'valid' && 
+                   (item.type === 'html' || item.type === 'pdf' || item.type === 'docx' || item.type === 'md' || item.type === 'txt') && 
+                   onPreviewFile && (
+                    // <button
+                    //   onClick={(e) => {
+                    //     e.stopPropagation();
+                    //     onPreviewFile(item.file);
+                    //   }}
+                    //   className="ml-3 px-3 py-1 text-xs font-medium text-blue-600 bg-blue-50 
+                    //              hover:bg-blue-100 border border-blue-200 rounded-lg transition-colors flex items-center gap-1"
+                    //   title="预览文件内容"
+                    // >
+                    //   <FileText className="w-3.5 h-3.5" />
+                    //   预览
+                    // </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onPreviewFile(item.file);
+                      }}
+                      className="p-1.5 rounded-md text-gray-400 hover:text-purple-600 hover:bg-purple-50 transition-all"
+                      title="预览文件内容"
+                    >
+                      <Eye className="w-5 h-5" />
+                    </button>
+                  )}
                   {/* 删除按钮 */}
                   <button
                     onClick={() => removeFile(index)}
-                    className="ml-3 p-1 rounded-lg hover:bg-gray-200 text-gray-600 hover:text-red-600 transition-colors"
+                    className="rounded-lg hover:bg-gray-200 text-gray-600 hover:text-red-600 transition-colors"
+                    title="删除文件"
                   >
                     <X className="w-4 h-4" />
                   </button>
+                  </div>
                 </motion.div>
               ))}
             </div>

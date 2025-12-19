@@ -14,7 +14,8 @@ import {
   FileText,
   ClipboardList,
   FolderKanban,
-  BookOpen
+  BookOpen,
+  Target
 } from 'lucide-react';
 
 export interface Tab {
@@ -46,6 +47,7 @@ const routeConfig: Record<string, { title: string; icon: React.ReactNode }> = {
   '/': { title: '仪表板', icon: <Home className="h-4 w-4" /> },
   '/functional-test-cases': { title: '功能用例', icon: <ClipboardList className="h-4 w-4" /> },
   '/test-cases': { title: 'UI自动化', icon: <FileCode className="h-4 w-4" /> },
+  '/test-plans': { title: '测试计划', icon: <Target className="h-4 w-4" /> },
   '/test-runs': { title: '测试执行', icon: <Play className="h-4 w-4" /> },
   '/reports': { title: '测试报告', icon: <BarChart3 className="h-4 w-4" /> },
   '/test-factory': { title: '测试工厂', icon: <Factory className="h-4 w-4" /> },
@@ -88,6 +90,28 @@ const getRouteConfig = (pathname: string): { title: string; icon: React.ReactNod
 
   if (pathname.match(/^\/functional-test-cases\/test-points\/.+\/edit$/)) {
     return { title: '编辑测试点', icon: <Edit3 className="h-4 w-4" /> };
+  }
+
+  // 🔥 所有测试计划相关路由（包括详情页及其子路由）都不创建新tab，都使用 /test-plans 的tab
+  // 这些路由会在上面的useEffect中特殊处理，激活列表页的tab
+  if (pathname === '/test-plans/create') {
+    return null;
+  }
+
+  if (pathname.match(/^\/test-plans\/\d+$/)) {
+    return null;
+  }
+
+  if (pathname.match(/^\/test-plans\/\d+\/edit$/)) {
+    return null;
+  }
+
+  if (pathname.match(/^\/test-plans\/\d+\/add-cases$/)) {
+    return null;
+  }
+
+  if (pathname.match(/^\/test-plans\/\d+\/execute$/)) {
+    return null;
   }
 
   return null;
@@ -179,6 +203,40 @@ export const TabProvider: React.FC<TabProviderProps> = ({ children }) => {
         setActiveTabId(existingTab.id);
       }
       return;
+    }
+
+    // 🔥 特殊处理：所有测试计划相关路由（包括详情页）都使用 /test-plans 的tab，不创建新tab
+    // 检查是否是测试计划相关路由
+    const isTestPlanRoute = 
+      currentPath === '/test-plans/create' ||
+      currentPath.match(/^\/test-plans\/\d+/) !== null;
+
+    if (isTestPlanRoute) {
+      const parentPath = '/test-plans';
+      const parentTab = tabs.find(tab => tab.path === parentPath);
+      
+      if (parentTab) {
+        // 如果列表页tab存在，激活它，不创建新tab
+        setActiveTabId(parentTab.id);
+        // 注意：这里不改变路由，只是激活tab，路由仍然保持为当前路由
+        return;
+      } else {
+        // 如果列表页tab不存在，创建列表页tab
+        const parentConfig = getRouteConfig(parentPath);
+        if (parentConfig && tabs.length < MAX_TABS) {
+          const newParentTab: Tab = {
+            path: parentPath,
+            title: parentConfig.title,
+            icon: parentConfig.icon,
+            id: generateTabId(parentPath),
+            closable: true,
+          };
+          setTabs(prev => [...prev, newParentTab]);
+          setActiveTabId(newParentTab.id);
+          // 注意：这里不改变路由，只是创建并激活列表页tab，路由仍然保持为当前路由
+          return;
+        }
+      }
     }
 
     // 创建新Tab

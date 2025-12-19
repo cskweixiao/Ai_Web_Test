@@ -749,6 +749,23 @@ export function FunctionalTestCaseEdit() {
       const scenarioLabel = formData.scenario;
       const testPointLabel = formData.testPoint;
       
+      // 根据版本名称找到对应的版本ID
+      let projectVersionId: number | null = null;
+      if (formData.caseVersion) {
+        const selectedVersion = projectVersions.find(
+          v => v.version_name === formData.caseVersion || v.version_code === formData.caseVersion
+        );
+        if (selectedVersion) {
+          projectVersionId = selectedVersion.id;
+        } else {
+          // 如果找不到对应的版本，尝试将 caseVersion 作为数字ID使用（向后兼容）
+          const versionId = Number(formData.caseVersion);
+          if (!isNaN(versionId)) {
+            projectVersionId = versionId;
+          }
+        }
+      }
+      
       // 构建更新数据（与创建页面保持一致的数据结构）
       const updateData = {
         // 用例基本信息
@@ -756,6 +773,7 @@ export function FunctionalTestCaseEdit() {
         name: formData.title,
         description: formData.remarks,
         system: formData.project,
+        projectVersionId: projectVersionId,
         module: formData.module,
         priority: formData.priority,
         
@@ -1176,7 +1194,7 @@ export function FunctionalTestCaseEdit() {
                   <button
                     onClick={handleGenerateTestData}
                     disabled={generatingData}
-                    className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-gradient-to-r from-orange-500 to-orange-600 text-white text-[11px] font-semibold rounded-[4px] hover:shadow-[0_4px_12px_rgba(237,137,54,0.4)] hover:-translate-y-px transition-all disabled:opacity-50"
+                    className="inline-flex items-center gap-1 px-2.5 py-1.5 h-[26px] bg-gradient-to-r from-orange-500 to-orange-600 text-white text-[11px] font-semibold rounded-[4px] hover:shadow-[0_4px_12px_rgba(237,137,54,0.4)] hover:-translate-y-px transition-all disabled:opacity-50"
                   >
                     {generatingData ? (
                       <>

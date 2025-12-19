@@ -3,7 +3,6 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plus,
   Search,
-  Filter,
   Play,
   Edit3,
   Trash2,
@@ -14,23 +13,23 @@ import {
   Code,
   Loader2,
   CheckCircle,
-  XCircle,
   AlertTriangle,
-  FolderOpen,
   Package,
   HelpCircle,
   Bot,
   RotateCcw,
   Table,
-  AlignLeft
+  AlignLeft,
+  Download
 } from 'lucide-react';
 import { clsx } from 'clsx';
-import { Layout } from '../components/Layout';
 import { testService } from '../services/testService';
 import * as systemService from '../services/systemService';
+import { functionalTestCaseService } from '../services/functionalTestCaseService';
 import type { TestCase, TestSuite as TestSuiteType, TestStepRow, SystemOption } from '../types/test';
 import { useNavigate } from 'react-router-dom';
 import { Modal, ConfirmModal } from '../components/ui/modal';
+import { Modal as AntModal } from 'antd';
 import { Button } from '../components/ui/button';
 import { showToast } from '../utils/toast';
 import { aiBulkUpdateService } from '../services/aiBulkUpdateService';
@@ -39,10 +38,14 @@ import { TestCaseTable } from '../components/TestCaseTable';
 import { StepTableEditor } from '../components/StepTableEditor';
 import { parseStepsText, serializeStepsToText } from '../utils/stepConverter';
 import { useAuth } from '../contexts/AuthContext';
+import { getCaseTypeInfo, getCaseTypeLabel } from '../utils/caseTypeHelper';
+import { FunctionalCaseSelectModal } from '../components/FunctionalCaseSelectModal';
 
 // 表单数据接口
 interface CreateTestCaseForm {
   name: string;
+  preconditions: string;
+  testData: string;
   steps: string;
   assertions: string;
   priority: 'high' | 'medium' | 'low';
@@ -102,13 +105,10 @@ export function TestCases() {
     totalPages: 0
   });
   const [editingTestCase, setEditingTestCase] = useState<TestCase | null>(null);
-  const [showDeleteModal, setShowDeleteModal] = useState(false);
-  const [deletingTestCase, setDeletingTestCase] = useState<TestCase | null>(null);
   
   // 🔥 新增：测试套件状态管理
   const [testSuites, setTestSuites] = useState<TestSuiteType[]>([]);
   const [editingTestSuite, setEditingTestSuite] = useState<TestSuiteType | null>(null);
-  const [deletingTestSuite, setDeletingTestSuite] = useState<TestSuiteType | null>(null);
   const [runningSuiteId, setRunningSuiteId] = useState<number | null>(null);
   
   // 🔥 新增：AI批量更新状态管理
@@ -120,10 +120,12 @@ export function TestCases() {
 
   const [formData, setFormData] = useState<CreateTestCaseForm>({
     name: '',
+    preconditions: '',
+    testData: '',
     steps: '',
     assertions: '',
     priority: 'medium',
-    status: 'draft',
+    status: 'active', // 🔥 修改默认状态为启用
     tags: '',
     system: '',
     module: ''
@@ -135,7 +137,7 @@ export function TestCases() {
     description: '',
     testCases: [],
     priority: 'medium',
-    status: 'draft',
+    status: 'active', // 🔥 修改默认状态为启用
     tags: '',
     project: '' // 🔥 新增：项目字段
   });
@@ -157,6 +159,29 @@ export function TestCases() {
   const [stepsEditorMode, setStepsEditorMode] = useState<'text' | 'table'>('table'); // 默认表格模式
   const [stepsData, setStepsData] = useState<TestStepRow[]>([]);
 
+  // 🔥 新增：导入功能用例相关状态
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [functionalCases, setFunctionalCases] = useState<any[]>([]);
+  const [importLoading, setImportLoading] = useState(false);
+  const [selectedFunctionalCases, setSelectedFunctionalCases] = useState<number[]>([]);
+  const [importSearchTerm, setImportSearchTerm] = useState('');
+  const [importPagination, setImportPagination] = useState({
+    page: 1,
+    pageSize: 10,
+    total: 0,
+    totalPages: 0
+  });
+  // 🔥 新增：已导入的功能用例ID集合
+  const [importedFunctionalCaseIds, setImportedFunctionalCaseIds] = useState<Set<number>>(new Set());
+
+  // 筛选器状态
+  const [filterSystem, setFilterSystem] = useState('');
+  const [filterProjectVersion, setFilterProjectVersion] = useState('');
+  const [filterModule, setFilterModule] = useState('');
+  const [filterScenario, setFilterScenario] = useState('');
+  const [filterCaseType, setFilterCaseType] = useState('');
+  const [filterPriority, setFilterPriority] = useState('');
+  
   // 🔥 新增：加载系统字典列表
   useEffect(() => {
     const loadSystems = async () => {
@@ -165,7 +190,7 @@ export function TestCases() {
         setSystemOptions(systems);
       } catch (error) {
         console.error('加载系统列表失败:', error);
-        showToast('加载系统列表失败', 'error');
+        showToast.error('加载系统列表失败');
       }
     };
     loadSystems();
@@ -219,6 +244,7 @@ export function TestCases() {
     setPagination({ page: 1, pageSize: 10, total: 0, totalPages: 0 });
     loadTestCases({ page: 1, pageSize: 10, resetPagination: true });
     loadTestSuites();
+    loadFilterOptions(); // 🔥 加载筛选选项
     checkAIBulkUpdateAvailability();
     
     // 🔥 添加WebSocket连接状态检查
@@ -270,6 +296,21 @@ export function TestCases() {
     };
   }, []);
 
+  // 🔥 新增：标签页切换时同步搜索状态
+  useEffect(() => {
+    if (activeTab === 'suites' && searchTerm !== searchQuery) {
+      // 切换到套件标签页时，将 searchTerm 同步到 searchQuery
+      setSearchQuery(searchTerm);
+    }
+  }, [activeTab, searchTerm, searchQuery]);
+
+  // 🔥 新增：当测试用例列表变化时，更新已导入的功能用例ID集合
+  useEffect(() => {
+    if (testCases.length > 0) {
+      updateImportedFunctionalCaseIds();
+    }
+  }, [testCases]);
+
   // 🔥 新增：分页加载测试用例
   const loadTestCases = async (params?: {
     page?: number;
@@ -279,6 +320,9 @@ export function TestCases() {
     try {
       console.log('🔄 [TestCases] 开始重新加载测试用例...');
       setTestCasesLoading(true);
+      
+      // 🔥 新增：重新加载时清空选择
+      setSelectedTestCaseIds([]);
 
       const currentPage = params?.page ?? pagination.page;
       const currentPageSize = params?.pageSize ?? pagination.pageSize;
@@ -290,7 +334,9 @@ export function TestCases() {
         tag: selectedTag,
         priority: selectedPriority,
         status: '',
-        system: selectedSystem
+        system: selectedSystem,
+        module: selectedModule, // 🔥 新增：模块筛选参数
+        projectVersion: selectedVersion // 🔥 新增：版本筛选参数
       });
 
       console.log('📊 [TestCases] 获取到分页数据:', {
@@ -298,6 +344,18 @@ export function TestCases() {
         total: result.pagination.total,
         page: result.pagination.page
       });
+
+      // 🔥 调试日志：检查成功率数据
+      if (result.data && result.data.length > 0) {
+        const sampleCase = result.data[0];
+        console.log('📈 [TestCases] 示例测试用例数据:', {
+          id: sampleCase.id,
+          name: sampleCase.name,
+          success_rate: sampleCase.success_rate,
+          lastRun: sampleCase.lastRun,
+          hasSuccessRate: sampleCase.success_rate !== undefined && sampleCase.success_rate !== null
+        });
+      }
 
       setTestCases(result.data || []);
 
@@ -336,13 +394,98 @@ export function TestCases() {
       const suites = await testService.getTestSuites();
       console.log('📊 [TestCases] 获取到测试套件数量:', suites?.length || 0);
       setTestSuites(suites || []);
+      
+      // 🔥 提取所有套件标签
+      const suiteTags = Array.from(new Set(suites?.flatMap(suite => suite.tags || []).filter((tag): tag is string => tag !== undefined) || []));
+      setAllSuiteTags(suiteTags);
+      
       console.log('✅ [TestCases] 测试套件状态已更新');
     } catch (error) {
       console.error('❌ [TestCases] 加载测试套件失败:', error);
       setTestSuites([]);
+      setAllSuiteTags([]);
     } finally {
       setLoading(false);
     }
+  };
+
+  // 可选：创建专用组件
+  const CaseTypeBadge: React.FC<{ caseType: string }> = ({ caseType }) => {
+    const config = getCaseTypeConfig(caseType);
+
+    return (
+      <span
+        className="inline-block px-2 py-0.5 rounded-full text-xs font-medium whitespace-nowrap"
+        style={{
+          backgroundColor: config.bg,
+          color: config.color
+        }}
+      >
+        {config.text}
+      </span>
+    );
+  };
+
+  // 🔥 新增：加载所有标签和模块选项（独立于分页数据）
+  const loadFilterOptions = async () => {
+    try {
+      // 获取所有用例（不分页）来提取标签和模块
+      const result = await testService.getTestCasesPaginated({
+        page: 1,
+        pageSize: 10000, // 获取所有数据用于提取选项
+        search: '',
+        tag: '',
+        priority: '',
+        status: '',
+        system: ''
+      });
+      
+      const allCases = result.data || [];
+      const tags = Array.from(new Set(allCases.flatMap(tc => tc.tags).filter((tag): tag is string => tag !== undefined)));
+      const modules = Array.from(new Set(allCases.map(tc => tc.module).filter((m): m is string => Boolean(m))));
+      // 🔥 注意：版本选项不再从所有用例中提取，而是根据选择的项目动态加载（参考功能用例逻辑）
+      
+      setAllTags(tags);
+      setModuleOptions(modules);
+      // 版本选项通过 useEffect 根据选择的项目动态加载，不在这里处理
+      
+      console.log('✅ [TestCases] 筛选选项已加载:', { tags: tags.length, modules: modules.length });
+    } catch (error) {
+      console.error('❌ [TestCases] 加载筛选选项失败:', error);
+      showToast.error('加载筛选选项失败');
+    }
+  };
+
+  // 🔥 新增：从UI测试用例名称中提取功能用例ID
+  const extractFunctionalCaseId = (testCaseName: string): number | null => {
+    // 匹配格式：[TC_00002] 或 [TC_2]
+    const match = testCaseName.match(/\[TC_(\d+)\]/);
+    if (match && match[1]) {
+      return parseInt(match[1], 10);
+    }
+    return null;
+  };
+
+  // 🔥 新增：根据功能用例ID查找对应的UI测试用例ID
+  const findUITestCaseIdByFunctionalId = (functionalCaseId: number): number | null => {
+    const uiTestCase = testCases.find(tc => {
+      const funcId = extractFunctionalCaseId(tc.name);
+      return funcId === functionalCaseId;
+    });
+    return uiTestCase ? uiTestCase.id : null;
+  };
+
+  // 🔥 新增：更新已导入的功能用例ID集合
+  const updateImportedFunctionalCaseIds = () => {
+    const importedIds = new Set<number>();
+    testCases.forEach(tc => {
+      const funcCaseId = extractFunctionalCaseId(tc.name);
+      if (funcCaseId !== null) {
+        importedIds.add(funcCaseId);
+      }
+    });
+    setImportedFunctionalCaseIds(importedIds);
+    console.log('🔍 [已导入用例] 更新已导入ID集合:', Array.from(importedIds));
   };
 
   // 🔥 新增：切换编辑器模式（文本 ↔ 表格）
@@ -371,6 +514,313 @@ export function TestCases() {
     const serialized = serializeStepsToText(newStepsData);
     setFormData(prev => ({ ...prev, steps: serialized }));
     setFormDirty(true);
+  };
+
+  // 🔥 新增：加载功能测试用例列表
+  const loadFunctionalCases = async (params?: {
+    page?: number;
+    pageSize?: number;
+    search?: string;
+  }) => {
+    try {
+      setImportLoading(true);
+      const currentPage = params?.page ?? importPagination.page;
+      const currentPageSize = params?.pageSize ?? importPagination.pageSize;
+      const searchTerm = params?.search ?? importSearchTerm;
+
+      // 调用API获取功能用例列表
+      const token = localStorage.getItem('authToken');
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json'
+      };
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      const queryParams = new URLSearchParams({
+        page: currentPage.toString(),
+        pageSize: currentPageSize.toString(),
+        ...(searchTerm && { search: searchTerm })
+      });
+
+      // 🔥 修复：使用 flat 接口获取包含步骤和预期结果的平铺列表
+      const response = await fetch(`/api/v1/functional-test-cases/flat?${queryParams}`, {
+        headers
+      });
+
+      if (!response.ok) {
+        throw new Error('获取功能用例失败');
+      }
+
+      const result = await response.json();
+      
+      console.log('🔥 [加载功能用例] API响应:', {
+        success: result.success,
+        dataCount: result.data?.length,
+        firstItem: result.data?.[0]
+      });
+      
+      if (result.data && result.data.length > 0) {
+        console.log('🔥 [加载功能用例] 第一条数据完整结构:', JSON.stringify(result.data[0], null, 2));
+      }
+      
+      if (result.success) {
+        // 🔥 修改：不过滤，显示所有功能用例（包括已导入的）
+        const allFunctionalCases = result.data || [];
+        const importedCount = allFunctionalCases.filter((fc: any) => 
+          importedFunctionalCaseIds.has(fc.id)
+        ).length;
+        
+        console.log('🔥 [加载功能用例] 统计结果:', {
+          total: allFunctionalCases.length,
+          imported: importedCount,
+          unimported: allFunctionalCases.length - importedCount
+        });
+        
+        setFunctionalCases(allFunctionalCases);
+        setImportPagination({
+          page: result.pagination.page,
+          pageSize: result.pagination.pageSize,
+          total: result.pagination.total,
+          totalPages: result.pagination.totalPages
+        });
+      } else {
+        throw new Error(result.error || '获取功能用例失败');
+      }
+    } catch (error: any) {
+      console.error('加载功能测试用例失败:', error);
+      showToast.error(`加载功能用例失败: ${error.message}`);
+      setFunctionalCases([]);
+    } finally {
+      setImportLoading(false);
+    }
+  };
+
+  // 🔥 新增：转化功能用例为UI测试用例
+  const convertFunctionalToUICase = (functionalCase: any): any => {
+    // 🔥 调试日志：查看功能用例的实际数据结构
+    console.log('🔍 [导入功能用例] 原始数据:', functionalCase);
+    console.log('  - name:', functionalCase.name);
+    console.log('  - preconditions:', functionalCase.preconditions);
+    console.log('  - testData:', functionalCase.testData);
+    // console.log('  - test_data:', functionalCase.test_data);
+    console.log('  - steps:', functionalCase.steps);
+    console.log('  - test_point_steps:', functionalCase.test_point_steps);
+    console.log('  - expected_result:', functionalCase.expected_result);
+    console.log('  - test_point_expected_result:', functionalCase.test_point_expected_result);
+    console.log('  - assertions:', functionalCase.assertions);
+
+    // 优先级映射
+    const priorityMap: { [key: string]: 'high' | 'medium' | 'low' } = {
+      'HIGH': 'high',
+      'CRITICAL': 'high',
+      'MEDIUM': 'medium',
+      'LOW': 'low',
+      'high': 'high',
+      'medium': 'medium',
+      'low': 'low'
+    };
+
+    // 状态映射
+    const statusMap: { [key: string]: 'active' | 'draft' | 'disabled' } = {
+      'PUBLISHED': 'active',
+      'DRAFT': 'draft',
+      'ARCHIVED': 'disabled',
+      'active': 'active',
+      'draft': 'draft',
+      'disabled': 'disabled'
+    };
+
+    // 🔥 处理步骤和预期结果：将每个步骤与对应的预期结果配对
+    // 尝试多种可能的字段名
+    const rawSteps = functionalCase.test_point_steps || functionalCase.steps || '';
+    const rawExpectedResults = functionalCase.test_point_expected_result || functionalCase.expected_result || functionalCase.assertions || '';
+    
+    console.log('🔍 [导入功能用例] 提取结果:', {
+      rawSteps,
+      rawExpectedResults
+    });
+    
+    let formattedSteps = '';
+    let lastExpectedResult = '';
+    
+    if (rawSteps && rawExpectedResults) {
+      // 按行分割步骤和预期结果
+      const stepLines = rawSteps.split('\n').map((s: string) => s.trim()).filter((s: string) => s.length > 0);
+      const expectedLines = rawExpectedResults.split('\n').map((e: string) => e.trim()).filter((e: string) => e.length > 0);
+      
+      console.log('🔍 [导入功能用例] 分割后:', {
+        stepLines,
+        expectedLines,
+        stepCount: stepLines.length,
+        expectedCount: expectedLines.length
+      });
+      
+      // 将每个步骤与对应的预期结果配对
+      const pairedLines: string[] = [];
+      for (let i = 0; i < stepLines.length; i++) {
+        const step = stepLines[i];
+        // 移除步骤前面的序号（如 "1. ", "1、", "1）"等）
+        const cleanStep = step.replace(/^\d+[.、)]\s*/, '');
+        
+        if (i < expectedLines.length) {
+          const expected = expectedLines[i];
+          // 移除预期结果前面的序号
+          const cleanExpected = expected.replace(/^\d+[.、)]\s*/, '');
+          pairedLines.push(`${i + 1}. ${cleanStep} -> ${cleanExpected}`);
+          
+          // 每次都更新，循环结束后 lastExpectedResult 就是最后一个
+          lastExpectedResult = cleanExpected;
+        } else {
+          // 如果预期结果不够，只保留步骤
+          pairedLines.push(`${i + 1}. ${cleanStep}`);
+        }
+      }
+      
+      formattedSteps = pairedLines.join('\n');
+      
+      console.log('🔍 [导入功能用例] 配对结果:', {
+        pairedLines,
+        lastExpectedResult
+      });
+    } else if (rawSteps) {
+      // 只有步骤，没有预期结果
+      formattedSteps = rawSteps;
+    }
+
+    // 🔥 断言预期使用最后一个步骤的预期结果
+    const assertions = lastExpectedResult || rawExpectedResults || functionalCase.assertions || '';
+    
+    console.log('🔍 [导入功能用例] 最终结果:', {
+      formattedSteps,
+      assertions,
+      lastExpectedResult
+    });
+
+      // 🔥 标签处理：添加用例类型的中文标签
+      const tagsList = [];
+      
+      // 先添加用例类型标签（中文）
+      if (functionalCase.case_type) {
+        const caseTypeInfo = getCaseTypeLabel(functionalCase.case_type);
+        tagsList.push(caseTypeInfo); // 使用中文标签（如"冒烟测试"、"全量测试"）
+      }
+    
+    // 再添加原有标签
+    // if (functionalCase.tags) {
+    //   const originalTags = Array.isArray(functionalCase.tags)
+    //     ? functionalCase.tags
+    //     : functionalCase.tags.split(',').map((t: string) => t.trim());
+    //   tagsList = [...tagsList, ...originalTags];
+    // }
+
+    // 🔥 获取版本信息
+    const projectVersion = functionalCase.project_version 
+      ? (functionalCase.project_version.version_name || functionalCase.project_version.version_code || String(functionalCase.project_version_id))
+      : undefined;
+
+    return {
+      name: `[TC_${String(functionalCase.id).padStart(5, '0')}] ${functionalCase.name}`,
+      preconditions: functionalCase.preconditions || '', // 🔥 前置条件
+      testData: functionalCase.testData || functionalCase.test_data || '', // 🔥 测试数据
+      steps: formattedSteps,
+      assertions: assertions,
+      priority: priorityMap[functionalCase.priority] || 'medium',
+      status: statusMap[functionalCase.status] || 'active',
+      tags: tagsList,
+      system: functionalCase.system || '',
+      module: functionalCase.module || '',
+      projectVersion: projectVersion, // 🔥 新增：所属版本
+      department: user?.project || undefined,
+      author: user?.accountName || user?.username || user?.email || '未知用户',
+      created: new Date().toISOString().split('T')[0],
+      lastRun: '',
+      success_rate: 0
+    };
+  };
+
+  // 🔥 新增：批量导入功能用例
+  const handleImportFunctionalCases = async () => {
+    if (selectedFunctionalCases.length === 0) {
+      showToast.warning('请至少选择一个功能用例');
+      return;
+    }
+
+    try {
+      setLoading(true);
+      const selectedCases = functionalCases.filter(fc => 
+        selectedFunctionalCases.includes(fc.id)
+      );
+
+      let createdCount = 0; // 🔥 修改：新建的数量
+      let updatedCount = 0; // 🔥 修改：更新的数量
+      let failCount = 0;
+
+      for (const functionalCase of selectedCases) {
+        try {
+          console.log('🔥 [批量导入] 开始转换功能用例:', functionalCase.name);
+          console.log('🔥 [批量导入] 功能用例完整数据:', JSON.stringify(functionalCase, null, 2));
+          
+          const uiCase = convertFunctionalToUICase(functionalCase);
+          console.log('🔥 [批量导入] 转换后的UI测试用例:', JSON.stringify(uiCase, null, 2));
+          
+          // 🔥 修改：检查是否已导入，已导入则更新，未导入则创建
+          const existingUITestCaseId = findUITestCaseIdByFunctionalId(functionalCase.id);
+          
+          if (existingUITestCaseId) {
+            // 已导入，执行更新操作
+            console.log(`🔄 [批量导入] 功能用例 ${functionalCase.id} 已导入，执行更新操作，UI测试用例ID: ${existingUITestCaseId}`);
+            await testService.updateTestCase(existingUITestCaseId, uiCase);
+            updatedCount++;
+          } else {
+            // 未导入，执行创建操作
+            console.log(`✨ [批量导入] 功能用例 ${functionalCase.id} 未导入，执行创建操作`);
+            await testService.createTestCase(uiCase);
+            createdCount++;
+            
+            // 🔥 新增：创建成功后，将该功能用例ID添加到已导入集合
+            importedFunctionalCaseIds.add(functionalCase.id);
+          }
+        } catch (error) {
+          console.error(`导入用例 ${functionalCase.name} 失败:`, error);
+          failCount++;
+        }
+      }
+
+      // 刷新测试用例列表
+      await loadTestCases();
+
+      // 关闭弹窗并重置状态
+      setShowImportModal(false);
+      setSelectedFunctionalCases([]);
+      setImportSearchTerm('');
+
+      // 🔥 修改：显示创建、更新、失败的数量
+      if (failCount === 0) {
+        if (updatedCount === 0) {
+          showToast.success(`成功创建 ${createdCount} 个测试用例！`);
+        } else if (createdCount === 0) {
+          showToast.success(`成功更新 ${updatedCount} 个测试用例！`);
+        } else {
+          showToast.success(`导入完成：创建 ${createdCount} 个，更新 ${updatedCount} 个`);
+        }
+      } else {
+        if (updatedCount === 0 && createdCount === 0) {
+          showToast.error(`导入失败：失败 ${failCount} 个`);
+        } else if (updatedCount === 0) {
+          showToast.warning(`导入完成：创建 ${createdCount} 个，失败 ${failCount} 个`);
+        } else if (createdCount === 0) {
+          showToast.warning(`导入完成：更新 ${updatedCount} 个，失败 ${failCount} 个`);
+        } else {
+          showToast.warning(`导入完成：创建 ${createdCount} 个，更新 ${updatedCount} 个，失败 ${failCount} 个`);
+        }
+      }
+    } catch (error: any) {
+      console.error('批量导入失败:', error);
+      showToast.error(`批量导入失败: ${error.message}`);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleCreateTestCase = async (keepOpen = false) => {
@@ -416,6 +866,8 @@ export function TestCases() {
         const updatedTestCase = {
           ...editingTestCase,
           name: formData.name.trim(),
+          preconditions: formData.preconditions.trim(),
+          testData: formData.testData.trim(),
           steps: formData.steps.trim(),
           assertions: formData.assertions.trim(),
           priority: formData.priority,
@@ -456,6 +908,8 @@ export function TestCases() {
 
         const newTestCase: any = {
           name: formData.name.trim(),
+          preconditions: formData.preconditions.trim(),
+          testData: formData.testData.trim(),
           steps: formData.steps.trim(),
           assertions: formData.assertions.trim(),
           priority: formData.priority,
@@ -465,7 +919,7 @@ export function TestCases() {
           module: formData.module.trim() || undefined,
           department: user?.project || undefined, // 🔥 修复：使用 project 字段
           created: new Date().toISOString().split('T')[0],
-          lastRun: '从未运行',
+          lastRun: '',
           success_rate: 0
         };
         
@@ -484,10 +938,12 @@ export function TestCases() {
           if (keepOpen) {
             setFormData({
               name: '',
+              preconditions: '',
+              testData: '',
               steps: '',
               assertions: '',
               priority: 'medium',
-              status: 'draft',
+              status: 'active', // 🔥 修改默认状态为启用
               tags: '',
               system: '',
               module: ''
@@ -518,40 +974,108 @@ export function TestCases() {
   };
 
   const handleDeleteTestCase = (testCase: TestCase) => {
-    setDeletingTestCase(testCase);
-    setShowDeleteModal(true);
+    AntModal.confirm({
+      title: '确认删除',
+      content: (
+        <div className="space-y-2">
+          <p>
+            您确定要删除测试用例 "
+            <span className="font-medium">{testCase.name}</span>" 吗？
+            此操作无法撤销。
+          </p>
+        </div>
+      ),
+      okText: '确认删除',
+      cancelText: '取消',
+      // okType: 'danger',
+      okButtonProps: { danger: true },
+      onOk: async () => {
+        try {
+          setLoading(true);
+          await testService.deleteTestCase(testCase.id);
+          await loadTestCases();
+          showToast.success('测试用例删除成功！');
+        } catch (error: any) {
+          console.error('删除测试用例失败:', error);
+          showToast.error(`删除失败: ${error.message}`);
+          throw error; // 阻止 Modal 关闭
+        } finally {
+          setLoading(false);
+        }
+      },
+    });
   };
 
-  const confirmDelete = async () => {
-    if (!deletingTestCase) return;
-
-    try {
-      setLoading(true);
-      
-      try {
-        await testService.deleteTestCase(deletingTestCase.id);
-        await loadTestCases();
-        setShowDeleteModal(false);
-        setDeletingTestCase(null);
-        showToast.success('测试用例删除成功！');
-      } catch (error: any) {
-        throw new Error(error.message || '删除失败');
-      }
-    } catch (error: any) {
-      console.error('删除测试用例失败:', error);
-      showToast.error(`删除失败: ${error.message}`);
-    } finally {
-      setLoading(false);
+  // 🔥 新增：批量删除测试用例
+  const handleBatchDelete = () => {
+    if (selectedTestCaseIds.length === 0) {
+      showToast.warning('请先选择要删除的测试用例');
+      return;
     }
+
+    AntModal.confirm({
+      title: '批量删除确认',
+      content: (
+        <div className="space-y-2">
+          <p>
+            您确定要删除选中的 <span className="font-medium text-red-600">{selectedTestCaseIds.length}</span> 个测试用例吗？
+          </p>
+          <p className="text-sm text-amber-600">
+            此操作无法撤销，请谨慎操作。
+          </p>
+        </div>
+      ),
+      okText: '确认删除',
+      cancelText: '取消',
+      // okType: 'danger',
+      okButtonProps: { danger: true },
+      onOk: async () => {
+        try {
+          setLoading(true);
+          let successCount = 0;
+          let failCount = 0;
+
+          // 逐个删除选中的测试用例
+          for (const id of selectedTestCaseIds) {
+            try {
+              await testService.deleteTestCase(id);
+              successCount++;
+            } catch (error) {
+              console.error(`删除测试用例 ${id} 失败:`, error);
+              failCount++;
+            }
+          }
+
+          // 刷新列表并清空选择
+          await loadTestCases();
+          setSelectedTestCaseIds([]);
+
+          // 显示结果
+          if (failCount === 0) {
+            showToast.success(`成功删除 ${successCount} 个测试用例！`);
+          } else {
+            showToast.warning(`删除完成：成功 ${successCount} 个，失败 ${failCount} 个`);
+          }
+        } catch (error: any) {
+          console.error('批量删除失败:', error);
+          showToast.error(`批量删除失败: ${error.message}`);
+          throw error; // 阻止 Modal 关闭
+        } finally {
+          setLoading(false);
+        }
+      },
+    });
   };
 
   const resetForm = () => {
     setFormData({
       name: '',
+      preconditions: '',
+      testData: '',
       steps: '',
       assertions: '',
       priority: 'medium',
-      status: 'draft',
+      status: 'active', // 🔥 修改默认状态为启用
       tags: '',
       system: '',
       module: ''
@@ -568,7 +1092,7 @@ export function TestCases() {
       description: '',
       testCases: [],
       priority: 'medium',
-      status: 'draft',
+      status: 'active', // 🔥 修改默认状态为启用
       tags: '',
       project: '' // 🔥 新增：重置项目字段
     });
@@ -669,7 +1193,7 @@ export function TestCases() {
               description: '',
               testCases: [],
               priority: 'medium',
-              status: 'draft',
+              status: 'active', // 🔥 修改默认状态为启用
               tags: '',
               project: '' // 🔥 新增：重置项目字段
             });
@@ -687,7 +1211,7 @@ export function TestCases() {
               description: '',
               testCases: [],
               priority: 'medium',
-              status: 'draft',
+              status: 'active', // 🔥 修改默认状态为启用
               tags: '',
               project: ''
             });
@@ -722,33 +1246,38 @@ export function TestCases() {
 
   // 🔥 新增：删除测试套件
   const handleDeleteTestSuite = (testSuite: TestSuiteType) => {
-    setDeletingTestSuite(testSuite);
-    setShowDeleteModal(true);
-  };
-
-  // 🔥 新增：确认删除套件
-  const confirmDeleteSuite = async () => {
-    if (!deletingTestSuite) return;
-
-    try {
-      setLoading(true);
-      
-      try {
-        await testService.deleteTestSuite(deletingTestSuite.id);
-        await loadTestSuites();
-        setShowDeleteModal(false);
-        setDeletingTestSuite(null);
-        showToast.success('测试套件删除成功！');
-      } catch (error: any) {
-        throw new Error(error.message || '删除失败');
-      }
-      
-    } catch (error: any) {
-      console.error('删除测试套件失败:', error);
-      showToast.error(`删除失败: ${error.message}`);
-    } finally {
-      setLoading(false);
-    }
+    AntModal.confirm({
+      title: '确认删除',
+      content: (
+        <div className="space-y-2">
+          <p>
+            您确定要删除测试套件 "
+            <span className="font-medium">{testSuite.name}</span>" 吗？
+            此操作无法撤销。
+          </p>
+          <p className="text-sm text-amber-600">
+            注意：删除套件不会删除其中的测试用例，但会移除套件与用例的关联。
+          </p>
+        </div>
+      ),
+      okText: '确认删除',
+      cancelText: '取消',
+      okType: 'danger',
+      onOk: async () => {
+        try {
+          setLoading(true);
+          await testService.deleteTestSuite(testSuite.id);
+          await loadTestSuites();
+          showToast.success('测试套件删除成功！');
+        } catch (error: any) {
+          console.error('删除测试套件失败:', error);
+          showToast.error(`删除失败: ${error.message}`);
+          throw error; // 阻止 Modal 关闭
+        } finally {
+          setLoading(false);
+        }
+      },
+    });
   };
 
   // 🔥 新增：运行测试套件 - 使用WebSocket监听而非模拟通知
@@ -870,16 +1399,104 @@ export function TestCases() {
     }
   };
 
-  const allTags = Array.from(new Set(testCases.flatMap(tc => tc.tags)));
-  const allSuiteTags = Array.from(new Set(testSuites.flatMap(suite => suite.tags || [])));
-  const moduleOptions = Array.from(new Set(testCases.map(tc => tc.module).filter(Boolean)));
+  // 🔥 修复：独立维护所有标签和模块选项，不受当前页testCases影响
+  const [allTags, setAllTags] = useState<string[]>([]);
+  const [allSuiteTags, setAllSuiteTags] = useState<string[]>([]);
+  const [moduleOptions, setModuleOptions] = useState<string[]>([]);
+  const [selectedModule, setSelectedModule] = useState('');
+  // 🔥 新增：版本筛选器状态
+  const [versionOptions, setVersionOptions] = useState<string[]>([]);
+  const [selectedVersion, setSelectedVersion] = useState('');
+
+  // 🔥 新增：批量选择状态
+  const [selectedTestCaseIds, setSelectedTestCaseIds] = useState<number[]>([]);
 
   // 🔥 移除前端过滤逻辑：现在由后端分页API处理所有过滤
 
+  // 🔥 新增：自动触发搜索 - 监听过滤条件变化（下拉选择框）
+  const isInitialMount = useRef(true);
+  useEffect(() => {
+    // 跳过首次加载，避免初始化时触发搜索
+    if (isInitialMount.current) {
+      isInitialMount.current = false;
+      return;
+    }
+    
+    // 当过滤条件变化时，自动触发搜索
+    if (activeTab === 'cases') {
+      loadTestCases({ page: 1, resetPagination: true });
+    } else {
+      // 测试套件：前端过滤，同步 searchQuery
+      setSearchQuery(searchTerm);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedSystem, selectedModule, selectedTag, selectedPriority, selectedVersion, activeTab, searchTerm]);
+
+  // 🔥 新增：自动触发搜索 - 监听搜索关键词变化（带防抖）
+  // useEffect(() => {
+  //   // 跳过首次加载
+  //   if (isInitialMount.current) {
+  //     return;
+  //   }
+    
+  //   // 设置防抖定时器
+  //   const debounceTimer = setTimeout(() => {
+  //     if (activeTab === 'cases') {
+  //       loadTestCases({ page: 1, resetPagination: true });
+  //     } else {
+  //       // 测试套件：前端过滤，同步 searchQuery
+  //       setSearchQuery(searchTerm);
+  //     }
+  //   }, 500); // 500ms 防抖延迟
+
+  //   return () => clearTimeout(debounceTimer);
+  //   // eslint-disable-next-line react-hooks/exhaustive-deps
+  // }, [searchTerm, activeTab]);
+
+  // 🔥 新增：根据选择的项目动态加载版本选项（参考功能用例逻辑）
+  useEffect(() => {
+    const loadProjectVersions = async () => {
+      if (selectedSystem && activeTab === 'cases') {
+        try {
+          console.log('📋 [TestCases] 加载系统版本列表:', selectedSystem);
+          const versions = await functionalTestCaseService.getProjectVersionsBySystem(selectedSystem);
+          setVersionOptions(versions.map(v => v.version_name || v.version_code));
+          console.log('✅ [TestCases] 版本列表已加载:', versions.length);
+        } catch (error) {
+          console.error('❌ [TestCases] 加载系统版本列表失败:', error);
+          setVersionOptions([]);
+        }
+      } else {
+        // 清空项目时，清空版本列表和版本筛选
+        setVersionOptions([]);
+        setSelectedVersion('');
+      }
+    };
+    loadProjectVersions();
+  }, [selectedSystem, activeTab]); // 仅监听项目变化和tab切换
+
+  // 🔥 新增：自动触发导入功能用例搜索（带防抖）
+  useEffect(() => {
+    // 只有在导入模态框打开时才自动搜索
+    if (!showImportModal) {
+      return;
+    }
+    
+    // 设置防抖定时器
+    // const debounceTimer = setTimeout(() => {
+    //   void loadFunctionalCases({ page: 1, search: importSearchTerm });
+    // }, 500); // 500ms 防抖延迟
+
+    // return () => clearTimeout(debounceTimer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [importSearchTerm, showImportModal]);
+
   // 🔥 新增：过滤测试套件
   const filteredTestSuites = testSuites.filter(testSuite => {
-    const matchesSearch = testSuite.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                         (testSuite.description && testSuite.description.toLowerCase().includes(searchQuery.toLowerCase()));
+    // 🔥 修复：统一使用 searchQuery（在 handleSearch 中会从 searchTerm 同步）
+    const matchesSearch = searchQuery === '' || 
+      testSuite.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (testSuite.description && testSuite.description.toLowerCase().includes(searchQuery.toLowerCase()));
     const matchesTag = selectedTag === '' || (testSuite.tags && testSuite.tags.includes(selectedTag));
     const matchesPriority = selectedPriority === '' || testSuite.priority === selectedPriority;
     
@@ -1070,19 +1687,71 @@ export function TestCases() {
 
   // 🔥 新增：手动搜索功能
   const handleSearch = () => {
-    console.log('🔍 [TestCases] 执行手动搜索:', { searchTerm, selectedTag, selectedPriority, selectedSystem });
-    loadTestCases({ page: 1, resetPagination: true });
+    console.log('🔍 [TestCases] 执行手动搜索:', { 
+      activeTab, 
+      searchTerm, 
+      selectedTag, 
+      selectedPriority, 
+      selectedSystem,
+      selectedVersion
+    });
+    
+    if (activeTab === 'cases') {
+      // 测试用例搜索：调用后端API
+      loadTestCases({ page: 1, resetPagination: true });
+    } else {
+      // 测试套件搜索：前端过滤，同步 searchQuery 状态
+      setSearchQuery(searchTerm);
+      // 套件搜索是前端过滤，不需要调用API，状态更新会自动触发重新渲染
+    }
   };
 
   // 🔥 新增：重置功能
-  const handleReset = () => {
+  const handleReset = async () => {
     console.log('🔄 [TestCases] 重置搜索条件');
+    
+    // 先重置所有状态
     setSearchTerm('');
+    setSearchQuery('');
     setSelectedTag('');
     setSelectedPriority('');
     setSelectedSystem('');
-    // 延时执行以确保状态更新完成
-    setTimeout(() => loadTestCases({ page: 1, resetPagination: true }), 10);
+    setSelectedModule('');
+    setSelectedVersion(''); // 🔥 新增：重置版本筛选器
+    
+    if (activeTab === 'cases') {
+      // 🔥 彻底修复：直接用空参数调用API，不依赖state
+      try {
+        setTestCasesLoading(true);
+        const result = await testService.getTestCasesPaginated({
+          page: 1,
+          pageSize: pagination.pageSize,
+          search: '',
+          tag: '',
+          priority: '',
+          status: '',
+          system: '',
+          module: '',
+          projectVersion: '' // 🔥 新增：重置版本筛选参数
+        });
+        
+        setTestCases(result.data || []);
+        setPagination({
+          page: 1,
+          pageSize: pagination.pageSize,
+          total: result.pagination.total,
+          totalPages: result.pagination.totalPages
+        });
+        
+        console.log('✅ [TestCases] 重置完成，已加载数据');
+      } catch (error) {
+        console.error('❌ [TestCases] 重置加载失败:', error);
+        showToast.error('重置失败');
+      } finally {
+        setTestCasesLoading(false);
+      }
+    }
+    // 套件搜索是前端过滤，状态更新会自动触发重新渲染
   };
 
   // 🔥 移除自动搜索逻辑，改为手动搜索
@@ -1107,12 +1776,22 @@ export function TestCases() {
     }
   };
 
+  // 🆕 用例类型配置
+  const getCaseTypeConfig = (caseType: string) => {
+    const typeInfo = getCaseTypeInfo(caseType);
+    return { 
+        color: typeInfo.color, 
+        bg: typeInfo.bgColor, 
+        text: `${typeInfo.emoji} ${typeInfo.label}` 
+    };
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h2 className="text-2xl font-bold text-gray-900">测试管理</h2>
+          <h2 className="text-2xl font-bold text-gray-900">UI自动化</h2>
           <p className="text-gray-600">创建、编辑和管理您的自动化测试用例和测试套件</p>
         </div>
         <div className="flex space-x-2">
@@ -1152,7 +1831,7 @@ export function TestCases() {
           )}
           
           {/* 🔥 新增: 手动刷新按钮 */}
-          <motion.button
+          {/* <motion.button
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
             onClick={() => {
@@ -1170,7 +1849,42 @@ export function TestCases() {
           >
             <Clock className="h-5 w-5 mr-2" />
             刷新
-          </motion.button>
+          </motion.button> */}
+          
+          {/* 🔥 新增：批量删除按钮 - 只在有选中项时显示 */}
+          {activeTab === 'cases' && selectedTestCaseIds.length > 0 && (
+            <motion.button
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+              onClick={handleBatchDelete}
+              disabled={loading}
+              className="inline-flex items-center px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <Trash2 className="h-5 w-5 mr-2" />
+              批量删除 ({selectedTestCaseIds.length})
+            </motion.button>
+          )}
+          
+          {/* 🔥 新增：导入功能用例按钮 */}
+          {activeTab === 'cases' && (
+            <motion.button
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+              onClick={() => {
+                // 🔥 修改：先更新已导入ID集合，再打开弹窗和加载数据
+                updateImportedFunctionalCaseIds();
+                setShowImportModal(true);
+                // 延迟加载，确保已导入ID集合已更新
+                setTimeout(() => {
+                  loadFunctionalCases();
+                }, 100);
+              }}
+              className="inline-flex items-center px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+            >
+              <Download className="h-5 w-5 mr-2" />
+              导入功能用例
+            </motion.button>
+          )}
           
           <motion.button
             whileHover={{ scale: 1.02 }}
@@ -1239,36 +1953,68 @@ export function TestCases() {
       </div>
 
       {/* Filters */}
-      <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-200">
-        <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
-          {/* Search */}
-          <div className="relative md:col-span-2">
-            <Search className="absolute left-3 top-3 h-5 w-5 text-gray-600" />
-            <input
-              type="text"
-              placeholder={activeTab === 'cases' ? '搜索测试用例...' : '搜索测试套件...'}
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              onKeyPress={(e) => {
-                if (e.key === 'Enter') {
-                  handleSearch();
-                }
-              }}
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            />
-          </div>
-
+      <div className="flex flex-row gap-4 items-center justify-center bg-white rounded-xl p-4 shadow-sm border border-gray-200">
+        {/* Search */}
+        <div className="flex flex-row gap-4 items-center relative md:col-span-2">
+          <Search className="absolute left-3 top-3 h-5 w-5 text-gray-600" />
+          <input
+            type="text"
+            placeholder={activeTab === 'cases' ? '搜索测试用例...' : '搜索测试套件...'}
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            onKeyPress={(e) => {
+              if (e.key === 'Enter') {
+                handleSearch();
+              }
+            }}
+            className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            style={{ width: '480px' }}
+          />
           {/* System Filter */}
           <select
             value={selectedSystem}
             onChange={(e) => setSelectedSystem(e.target.value)}
             className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            style={{ width: '250px' }}
           >
             <option value="">所有项目</option>
             {systemOptions.map(sys => (
               <option key={sys.id} value={sys.name}>{sys.name}</option>
             ))}
           </select>
+        </div>
+
+        <div className={clsx("grid grid-cols-1 gap-4 items-center", activeTab === 'cases' ? "md:grid-cols-4" : "md:grid-cols-4")}>
+          {/* 🔥 新增：Version Filter - 仅在测试用例tab显示，放在项目后面 */}
+          {(
+            <select
+              value={selectedVersion}
+              onChange={(e) => setSelectedVersion(e.target.value)}
+              className="px-3 py-2 h-11 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              disabled={!selectedSystem || versionOptions.length === 0}
+              title={!selectedSystem ? '请先选择项目' : versionOptions.length === 0 ? '该项目暂无版本' : ''}
+            >
+              <option value="">{!selectedSystem ? '请先选择项目' : '所有版本'}</option>
+              {versionOptions?.map(version => (
+                <option key={version} value={version}>{version}</option>
+              ))}
+            </select>
+          )}
+
+          {/* 🔥 新增：Module Filter - 仅在测试用例tab显示 */}
+          {(
+            <select
+              value={selectedModule}
+              onChange={(e) => setSelectedModule(e.target.value)}
+              className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              disabled={moduleOptions.length === 0}
+            >
+              <option value="">所有模块</option>
+              {moduleOptions.map(module => (
+                <option key={module} value={module}>{module}</option>
+              ))}
+            </select>
+          )}
 
           {/* Tag Filter */}
           <select
@@ -1296,25 +2042,28 @@ export function TestCases() {
           </select>
 
           {/* 🔥 新增：搜索和重置按钮 */}
-          <div className="flex gap-3">
-            <button
-              type="button"
-              onClick={handleSearch}
-              className="flex items-center px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors"
-            >
-              <Search className="h-4 w-4 mr-2" />
-              搜索
-            </button>
-            <button
-              type="button"
-              onClick={handleReset}
-              className="flex items-center px-4 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 transition-colors"
-            >
-              <RotateCcw className="h-4 w-4 mr-2" />
-              重置
-            </button>
-          </div>
+          {/* <div className="flex items-center justify-center gap-4"> */}
+
         </div>
+        <button
+          type="button"
+          onClick={activeTab === 'cases' ? handleSearch : () => loadTestSuites()}
+          // onClick={() => loadTestCases()}
+          className="flex items-center px-3 h-10 w-20 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 focus:outline-none transition-colors"
+        >
+          <Search className="h-4 w-4 mr-2" />
+          刷新
+        </button>
+        <button
+          type="button"
+          // onClick={handleReset}
+          onClick={activeTab === 'cases' ? handleReset : () => loadTestSuites()}
+          className="flex items-center px-3 h-10 w-20 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200 focus:outline-none transition-colors"
+        >
+          <RotateCcw className="h-4 w-4 mr-2" />
+          重置
+        </button>
+        {/* </div> */}
 
         {/* 🔥 新增：统计信息行 */}
         {/* <div className="flex items-center justify-between mt-4 pt-4 border-t border-gray-200">
@@ -1403,6 +2152,8 @@ export function TestCases() {
               pagination={pagination}
               onPageChange={handlePageChange}
               onPageSizeChange={handlePageSizeChange}
+              selectedIds={selectedTestCaseIds}
+              onSelectionChange={setSelectedTestCaseIds}
             />
           )}
         </>
@@ -1411,7 +2162,7 @@ export function TestCases() {
           {/* 测试套件列表 */}
           {activeTab === 'suites' && (
             <>
-              <div className="flex justify-between items-center mb-4">
+              {/* <div className="flex justify-between items-center mb-4">
                 <h2 className="text-2xl font-semibold">测试套件列表</h2>
                 <div className="flex gap-2">
                   <button
@@ -1429,7 +2180,7 @@ export function TestCases() {
                     <span>刷新列表</span>
                   </button>
                 </div>
-              </div>
+              </div> */}
               {/* Empty State - Test Suites */}
               {testSuites.length === 0 && !loading && (
                 <div className="text-center py-16">
@@ -1561,7 +2312,7 @@ export function TestCases() {
                             'inline-flex px-2 py-1 rounded-full text-xs font-medium',
                             getStatusColor(testSuite.status)
                           )}>
-                            {testSuite.status === 'active' ? '活跃' : testSuite.status === 'draft' ? '草稿' : '禁用'}
+                            {testSuite.status === 'active' ? '启用' : testSuite.status === 'draft' ? '草稿' : '禁用'}
                           </span>
                         </div>
                       </motion.div>
@@ -1597,25 +2348,25 @@ export function TestCases() {
               取消
             </Button>
             {activeTab === 'cases' && !editingTestCase && (
-              <Button
-                variant="outline"
-                onClick={() => handleCreateTestCase(true)}
-                disabled={loading || !formData.name.trim() || !formData.steps.trim()}
-              >
-                保存并继续
-              </Button>
+            <Button
+              variant="outline"
+              onClick={() => { void handleCreateTestCase(true); }}
+              disabled={loading || !formData.name.trim() || !formData.steps.trim()}
+            >
+              保存并继续
+            </Button>
             )}
             {activeTab === 'suites' && !editingTestSuite && (
               <Button
                 variant="outline"
-                onClick={() => handleCreateTestSuite(true)}
+                onClick={() => { void handleCreateTestSuite(true); }}
                 disabled={loading || !suiteFormData.name.trim() || !suiteFormData.project || suiteFormData.testCases.length === 0}
               >
                 保存并继续
               </Button>
             )}
             <Button
-              onClick={activeTab === 'cases' ? handleCreateTestCase : () => handleCreateTestSuite(false)}
+              onClick={activeTab === 'cases' ? () => { void handleCreateTestCase(); } : () => { void handleCreateTestSuite(false); }}
               disabled={loading || (activeTab === 'cases' 
                 ? (!formData.name.trim() || !formData.steps.trim())
                 : (!suiteFormData.name.trim() || !suiteFormData.project || suiteFormData.testCases.length === 0)
@@ -1646,7 +2397,7 @@ export function TestCases() {
                   value={formData.name}
                   onChange={(e) => { setFormData(prev => ({ ...prev, name: e.target.value })); setFormDirty(true); }}
                   onBlur={() => setNameTouched(true)}
-                  aria-invalid={nameTouched && !formData.name.trim() ? 'true' : 'false'}
+                  aria-invalid={nameTouched && !formData.name.trim()}
                   aria-describedby="caseName-error"
                   className={clsx(
                     "w-full px-3 py-2 border rounded-lg focus:ring-2",
@@ -1659,6 +2410,34 @@ export function TestCases() {
                 {nameTouched && !formData.name.trim() && (
                   <p id="caseName-error" className="mt-1 text-sm text-red-600 font-medium">请输入测试用例名称</p>
                 )}
+              </div>
+
+              {/* 前置条件和测试数据 */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    前置条件
+                  </label>
+                  <textarea
+                    value={formData.preconditions}
+                    onChange={(e) => { setFormData(prev => ({ ...prev, preconditions: e.target.value })); setFormDirty(true); }}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+                    rows={3}
+                    placeholder="请描述执行测试前需要满足的条件"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    测试数据
+                  </label>
+                  <textarea
+                    value={formData.testData}
+                    onChange={(e) => { setFormData(prev => ({ ...prev, testData: e.target.value })); setFormDirty(true); }}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+                    rows={3}
+                    placeholder="请输入测试过程中使用的数据"
+                  />
+                </div>
               </div>
 
               <div>
@@ -1706,7 +2485,7 @@ export function TestCases() {
                         <button
                           type="button"
                           onClick={() => setStepsSoftWrap(v => !v)}
-                          aria-pressed={stepsSoftWrap}
+                          aria-pressed={stepsSoftWrap ? 'true' : 'false'}
                           className="text-xs px-2 py-1 rounded border border-gray-300 text-gray-600 hover:bg-gray-50"
                           title={stepsSoftWrap ? '软换行：开（Alt+W）' : '软换行：关（Alt+W）'}
                         >
@@ -1728,7 +2507,7 @@ export function TestCases() {
                               return next;
                             });
                           }}
-                          aria-pressed={stepsExpanded}
+                          aria-pressed={stepsExpanded ? 'true' : 'false'}
                           aria-controls="caseSteps"
                           className="text-xs px-2 py-1 rounded border border-gray-300 text-gray-600 hover:bg-gray-50"
                           title={stepsExpanded ? '收起编辑区域（Alt+E）' : '展开为更大编辑区域（Alt+E）'}
@@ -1738,7 +2517,7 @@ export function TestCases() {
                         <button
                           type="button"
                           onClick={() => setStepsHelpOpen(v => !v)}
-                          aria-expanded={stepsHelpOpen}
+                          aria-expanded={stepsHelpOpen ? 'true' : 'false'}
                           className="inline-flex items-center text-xs px-2 py-1 rounded border border-gray-300 text-gray-600 hover:bg-gray-50"
                           title="查看步骤输入帮助与快捷键"
                         >
@@ -1785,7 +2564,7 @@ export function TestCases() {
                       onBlur={() => setStepsTouched(true)}
                       onPaste={handleStepsPaste}
                       wrap={stepsSoftWrap ? "soft" : "off"}
-                      aria-invalid={stepsTouched && !formData.steps.trim() ? 'true' : 'false'}
+                      aria-invalid={stepsTouched && !formData.steps.trim()}
                       aria-describedby="caseSteps-error"
                       className={clsx(
                         "w-full px-3 py-2 font-mono border rounded-lg focus:ring-2 leading-6 resize-y",
@@ -1837,7 +2616,7 @@ export function TestCases() {
                   onChange={(e) => setFormData(prev => ({ ...prev, system: e.target.value }))}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 >
-                  <option value="">请选择系统</option>
+                  <option value="">请选择项目</option>
                   {systemOptions.map((sys) => (
                     <option key={sys.id} value={sys.name}>{sys.name}</option>
                   ))}
@@ -1887,8 +2666,8 @@ export function TestCases() {
                   onChange={(e) => setFormData(prev => ({ ...prev, status: e.target.value as 'active' | 'draft' | 'disabled' }))}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 >
+                  <option value="active">启用</option>
                   <option value="draft">草稿</option>
-                  <option value="active">活跃</option>
                   <option value="disabled">禁用</option>
                 </select>
               </div>
@@ -1939,7 +2718,7 @@ export function TestCases() {
                 value={suiteFormData.name}
                 onChange={(e) => { setSuiteFormData(prev => ({ ...prev, name: e.target.value })); setSuiteFormDirty(true); }}
                 onBlur={() => setSuiteNameTouched(true)}
-                aria-invalid={suiteNameTouched && !suiteFormData.name.trim() ? 'true' : 'false'}
+                aria-invalid={suiteNameTouched && !suiteFormData.name.trim()}
                 aria-describedby="suiteName-error"
                 className={clsx(
                   "w-full px-3 py-2 border rounded-lg focus:ring-2",
@@ -2089,8 +2868,8 @@ export function TestCases() {
                   onChange={(e) => setSuiteFormData(prev => ({ ...prev, status: e.target.value as 'active' | 'draft' | 'disabled' }))}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 >
+                  <option value="active">启用</option>
                   <option value="draft">草稿</option>
-                  <option value="active">活跃</option>
                   <option value="disabled">禁用</option>
                 </select>
               </div>
@@ -2109,39 +2888,7 @@ export function TestCases() {
         )}
       </Modal>
 
-      {/* Delete Confirmation Modal */}
-      <ConfirmModal
-        isOpen={showDeleteModal && (deletingTestCase !== null || deletingTestSuite !== null)}
-        onClose={() => {
-          setShowDeleteModal(false);
-          setDeletingTestCase(null);
-          setDeletingTestSuite(null);
-        }}
-        title="确认删除"
-        description={
-          <div className="space-y-2">
-            <p>
-              您确定要删除{deletingTestCase ? '测试用例' : '测试套件'} "
-              <span className="font-medium">
-                {deletingTestCase ? deletingTestCase?.name : deletingTestSuite?.name}
-              </span>" 吗？
-              此操作无法撤销。
-            </p>
-            {deletingTestSuite && (
-              <p className="text-sm text-amber-600">
-                注意：删除套件不会删除其中的测试用例，但会移除套件与用例的关联。
-              </p>
-            )}
-          </div>
-        }
-        onConfirm={deletingTestCase ? confirmDelete : confirmDeleteSuite}
-        confirmText="确认删除"
-        cancelText="取消"
-        variant="destructive"
-        isLoading={loading}
-        size="sm"
-      />
-
+      
       {/* 🔥 执行配置对话框 */}
       <Modal
         isOpen={showExecutionConfig}
@@ -2282,6 +3029,100 @@ export function TestCases() {
         confirmText="确认关闭"
         cancelText="继续编辑"
         size="sm"
+      />
+
+      {/* 🔥 新增：导入功能用例Modal - 使用统一组件 */}
+      <FunctionalCaseSelectModal
+        isOpen={showImportModal}
+        onClose={() => {
+          setShowImportModal(false);
+          setSelectedFunctionalCases([]);
+          setImportSearchTerm('');
+          setFilterSystem('');
+          setFilterProjectVersion('');
+          setFilterModule('');
+          setFilterScenario('');
+          setFilterCaseType('');
+          setFilterPriority('');
+        }}
+        title="从功能用例导入"
+        cases={functionalCases}
+        selectedCaseIds={selectedFunctionalCases}
+        onSelectedCasesChange={(ids) => setSelectedFunctionalCases(ids as number[])}
+        importedCaseIds={importedFunctionalCaseIds}
+        loading={importLoading}
+        searchTerm={importSearchTerm}
+        onSearchChange={setImportSearchTerm}
+        onSearch={() => loadFunctionalCases({ page: 1, search: importSearchTerm })}
+        pagination={importPagination}
+        onPageChange={(page) => loadFunctionalCases({ page })}
+        onPageSizeChange={(pageSize) => loadFunctionalCases({ page: 1, pageSize })}
+        onConfirm={handleImportFunctionalCases}
+        confirmText="导入选中用例"
+        confirmDisabled={loading}
+        confirmLoading={loading}
+        showViewToggle={true}
+        defaultViewMode="list"
+        CaseTypeBadge={CaseTypeBadge}
+        filters={[
+          {
+            key: 'system',
+            label: '所属系统',
+            value: filterSystem,
+            onChange: setFilterSystem,
+            placeholder: '所有系统'
+          },
+          {
+            key: 'project_version_id',
+            label: '所属版本',
+            value: filterProjectVersion,
+            onChange: setFilterProjectVersion,
+            placeholder: '所有版本'
+          },
+          {
+            key: 'module',
+            label: '所属模块',
+            value: filterModule,
+            onChange: setFilterModule,
+            placeholder: '所有模块'
+          },
+          {
+            key: 'scenario_name',
+            label: '所属场景',
+            value: filterScenario,
+            onChange: setFilterScenario,
+            placeholder: '所有场景'
+          },
+          {
+            key: 'case_type',
+            label: '用例类型',
+            value: filterCaseType,
+            onChange: setFilterCaseType,
+            options: ['SMOKE', 'FULL', 'ABNORMAL', 'BOUNDARY', 'PERFORMANCE', 'SECURITY', 'USABILITY', 'COMPATIBILITY', 'RELIABILITY'],
+            optionLabels: {
+              SMOKE: '🔥 冒烟',
+              FULL: '📋 全量',
+              ABNORMAL: '⚠️ 异常',
+              BOUNDARY: '📏 边界',
+              PERFORMANCE: '⚡ 性能',
+              SECURITY: '🔒 安全',
+              USABILITY: '👤 可用性',
+              COMPATIBILITY: '🔄 兼容性',
+              RELIABILITY: '💪 可靠性'
+            },
+            placeholder: '所有类型'
+          },
+          {
+            key: 'priority',
+            label: '优先级',
+            value: filterPriority,
+            onChange: setFilterPriority,
+            options: ['high', 'medium', 'low'],
+            optionLabels: { high: '高', medium: '中', low: '低' },
+            placeholder: '所有优先级'
+          },
+        ]}
+        useSet={false}
       />
 
     </div>

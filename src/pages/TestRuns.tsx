@@ -2,23 +2,19 @@ import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  Play,
-  Pause,
-  RotateCcw,
-  Download,
   Clock,
   CheckCircle,
   XCircle,
   AlertCircle,
   Activity,
-  Calendar,
-  User,
   Terminal,
   RefreshCw,
   Square,
   AlertTriangle,
   StopCircle,
-  Trash2
+  Trash2,
+  LayoutGrid,
+  Table2
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { clsx } from 'clsx';
@@ -29,6 +25,8 @@ import { showToast } from '../utils/toast';
 import { LiveView } from '../components/LiveView';
 import { EvidenceViewer } from '../components/EvidenceViewer';
 import { QueueStatus } from '../components/QueueStatus';
+import { TestRunsTable } from '../components/TestRunsTable';
+import { TestRunsDetailedTable } from '../components/TestRunsDetailedTable';
 
 // 🔥 使用真实的测试运行接口
 interface TestRun {
@@ -71,6 +69,11 @@ export function TestRuns() {
   // 🔥 新增：批量选择状态
   const [selectedRunIds, setSelectedRunIds] = useState<Set<string>>(new Set());
   const [selectAll, setSelectAll] = useState(false);
+  // 🔥 新增：视图模式状态（卡片视图、简单表格视图、详细表格视图）
+  const [viewMode, setViewMode] = useState<'card' | 'table' | 'detailed'>(() => {
+    const saved = localStorage.getItem('tr-viewMode');
+    return saved === 'card' || saved === 'table' || saved === 'detailed' ? saved : 'card';
+  });
   const [activeTab, setActiveTab] = useState<'logs' | 'live' | 'evidence' | 'queue'>(() => {
     const saved = localStorage.getItem('tr-activeTab');
     return saved === 'logs' || saved === 'live' || saved === 'evidence' || saved === 'queue' ? saved : 'logs';
@@ -78,6 +81,10 @@ export function TestRuns() {
   useEffect(() => {
     localStorage.setItem('tr-activeTab', activeTab);
   }, [activeTab]);
+  // 🔥 保存视图模式偏好
+  useEffect(() => {
+    localStorage.setItem('tr-viewMode', viewMode);
+  }, [viewMode]);
   // 🔥 核心修复3：简化 selectedRun 同步逻辑，直接复用 testRuns 中的对象
   useEffect(() => {
     if (!selectedRun) return;
@@ -975,7 +982,7 @@ export function TestRuns() {
   const safeFormat = (date: Date | null | undefined, formatStr: string): string => {
     try {
       if (!date) {
-        return '日期未知';
+        return '-';
       }
       
       // 确保是Date对象
@@ -1288,32 +1295,53 @@ export function TestRuns() {
 
         {/* 测试运行列表 */}
         {testRuns.length > 0 && !loading && (
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200">
-            {/* 🔥 列表头部 - 包含全选和批量删除 */}
-            <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                {/* 🔥 全选复选框 */}
-                <input
-                  type="checkbox"
-                  checked={selectAll}
-                  onChange={handleSelectAll}
-                  className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 focus:ring-offset-0 cursor-pointer transition-none"
-                  title={selectAll ? "取消全选" : "全选"}
-                />
-                <div>
-                  <h3 className="text-lg font-semibold text-gray-900">测试执行记录</h3>
-                  <p className="text-sm text-gray-600 mt-1">
-                    包含测试步骤和断言预期的详细结果
-                    {selectedRunIds.size > 0 && (
-                      <span className="ml-2 text-blue-600 font-medium">
-                        (已选择 {selectedRunIds.size} 项)
-                      </span>
-                    )}
-                  </p>
-                </div>
+          <div className="space-y-4">
+            {/* 🔥 视图切换和操作栏 */}
+            <div className="flex items-center justify-between">
+              {/* 视图切换器 */}
+              <div className="inline-flex items-center bg-white rounded-lg border border-gray-200 shadow-sm p-1">
+                <button
+                  onClick={() => setViewMode('table')}
+                  className={clsx(
+                    'inline-flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-all',
+                    viewMode === 'table'
+                      ? 'bg-blue-600 text-white shadow-sm'
+                      : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                  )}
+                  title="表格视图"
+                >
+                  <Table2 className="w-4 h-4" />
+                  <span className="hidden sm:inline">表格视图</span>
+                </button>
+                <button
+                  onClick={() => setViewMode('detailed')}
+                  className={clsx(
+                    'inline-flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-all',
+                    viewMode === 'detailed'
+                      ? 'bg-blue-600 text-white shadow-sm'
+                      : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                  )}
+                  title="详细表格"
+                >
+                  <Table2 className="w-4 h-4" />
+                  <span className="hidden sm:inline">详细表格</span>
+                </button>
+                <button
+                  onClick={() => setViewMode('card')}
+                  className={clsx(
+                    'inline-flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-all',
+                    viewMode === 'card'
+                      ? 'bg-blue-600 text-white shadow-sm'
+                      : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                  )}
+                  title="卡片视图"
+                >
+                  <LayoutGrid className="w-4 h-4" />
+                  <span className="hidden sm:inline">卡片视图</span>
+                </button>
               </div>
 
-              {/* 🔥 批量删除按钮 - 仅在有选中项时显示 */}
+              {/* 批量删除按钮 - 仅在有选中项时显示 */}
               {selectedRunIds.size > 0 && (
                 <motion.button
                   initial={{ opacity: 0, scale: 0.9 }}
@@ -1331,21 +1359,74 @@ export function TestRuns() {
               )}
             </div>
 
-            {/* 🔥 测试运行项列表 */}
-            <div className="divide-y divide-gray-200">
-              {testRuns.map((run, index) => (
-                <TestRunItem
-                  key={run.id || index}
-                  run={run}
-                  index={index}
-                  onStopTest={handleStopTest}
-                  onViewLogs={handleViewLogs}
-                  isStoppingTest={stoppingTests.has(run.id)}
-                  isSelected={selectedRunIds.has(run.id)}
-                  onSelect={handleSelectRun}
-                />
-              ))}
-            </div>
+            {/* 🔥 根据视图模式渲染不同的组件 */}
+            {viewMode === 'detailed' ? (
+              // 详细表格视图（功能用例样式）
+              <TestRunsDetailedTable
+                testRuns={testRuns}
+                selectedRunIds={selectedRunIds}
+                stoppingTests={stoppingTests}
+                onStopTest={handleStopTest}
+                onViewLogs={handleViewLogs}
+                onSelectRun={handleSelectRun}
+                onSelectAll={handleSelectAll}
+                selectAll={selectAll}
+              />
+            ) : viewMode === 'table' ? (
+              // 简单表格视图
+              <TestRunsTable
+                testRuns={testRuns}
+                selectedRunIds={selectedRunIds}
+                stoppingTests={stoppingTests}
+                onStopTest={handleStopTest}
+                onViewLogs={handleViewLogs}
+                onSelectRun={handleSelectRun}
+                onSelectAll={handleSelectAll}
+                selectAll={selectAll}
+              />
+            ) : (
+              // 卡片视图（原有样式）
+              <div className="bg-white rounded-xl shadow-sm border border-gray-200">
+                {/* 🔥 列表头部 - 包含全选和标题 */}
+                <div className="px-6 py-4 border-b border-gray-200 flex items-center gap-3">
+                  {/* 🔥 全选复选框 */}
+                  <input
+                    type="checkbox"
+                    checked={selectAll}
+                    onChange={handleSelectAll}
+                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 focus:ring-offset-0 cursor-pointer transition-none"
+                    title={selectAll ? "取消全选" : "全选"}
+                  />
+                  <div>
+                    <h3 className="text-lg font-semibold text-gray-900">测试执行记录</h3>
+                    <p className="text-sm text-gray-600 mt-1">
+                      包含测试步骤和断言预期的详细结果
+                      {selectedRunIds.size > 0 && (
+                        <span className="ml-2 text-blue-600 font-medium">
+                          (已选择 {selectedRunIds.size} 项)
+                        </span>
+                      )}
+                    </p>
+                  </div>
+                </div>
+
+                {/* 🔥 测试运行项列表 */}
+                <div className="divide-y divide-gray-200">
+                  {testRuns.map((run, index) => (
+                    <TestRunItem
+                      key={run.id || index}
+                      run={run}
+                      index={index}
+                      onStopTest={handleStopTest}
+                      onViewLogs={handleViewLogs}
+                      isStoppingTest={stoppingTests.has(run.id)}
+                      isSelected={selectedRunIds.has(run.id)}
+                      onSelect={handleSelectRun}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
 
