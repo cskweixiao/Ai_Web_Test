@@ -6,8 +6,7 @@ import {
   ChevronLeft, 
   ChevronRight, 
   ZoomIn, 
-  ZoomOut, 
-  RefreshCw,
+  ZoomOut,
   FileText,
   Video,
   FileCode,
@@ -41,6 +40,8 @@ export const EvidenceViewerNew: React.FC<EvidenceViewerProps> = ({ runId }) => {
   const [zoom, setZoom] = useState(1);
   const previewImageRef = useRef<HTMLImageElement>(null);
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+  const [videoPreviewUrl, setVideoPreviewUrl] = useState<string | null>(null);
+  const [videoFilename, setVideoFilename] = useState<string | null>(null);
 
   const extractStep = (filename: string) => {
     // 支持多种格式：-step-数字- 或 step-数字- 或 step-数字.
@@ -60,15 +61,31 @@ export const EvidenceViewerNew: React.FC<EvidenceViewerProps> = ({ runId }) => {
     return null;
   };
 
+  const extractAssertion = (filename: string) => {
+    // 提取断言序号：assertion-1-success-xxx.png
+    const match = filename.match(/^assertion-(\d+)-/);
+    return match ? parseInt(match[1], 10) : null;
+  };
+
   const isFinalScreenshot = (filename: string) => {
     return filename.includes('-step-final-') || filename.includes('final-completed');
   };
 
+  const isAssertionScreenshot = (filename: string) => {
+    return filename.startsWith('assertion-');
+  };
+
   const screenshotsAll = useMemo(() => artifacts.filter(a => a.type === 'screenshot'), [artifacts]);
   
-  // 分离步骤截图和最终截图
+  // 🔥 分离步骤截图、断言截图和最终截图
   const stepScreenshots = useMemo(() => {
-    return screenshotsAll.filter(s => !isFinalScreenshot(s.filename));
+    return screenshotsAll.filter(s => 
+      !isFinalScreenshot(s.filename) && !isAssertionScreenshot(s.filename)
+    );
+  }, [screenshotsAll]);
+
+  const assertionScreenshots = useMemo(() => {
+    return screenshotsAll.filter(s => isAssertionScreenshot(s.filename));
   }, [screenshotsAll]);
 
   const finalScreenshots = useMemo(() => {
@@ -86,6 +103,17 @@ export const EvidenceViewerNew: React.FC<EvidenceViewerProps> = ({ runId }) => {
     return Array.from(set).sort((a, b) => a - b);
   }, [stepScreenshots]);
 
+  const assertions = useMemo(() => {
+    const set = new Set<number>();
+    assertionScreenshots.forEach(s => {
+      const assertionNum = extractAssertion(s.filename);
+      if (assertionNum != null) {
+        set.add(assertionNum);
+      }
+    });
+    return Array.from(set).sort((a, b) => a - b);
+  }, [assertionScreenshots]);
+
   const stepScreenshotsFiltered = useMemo(() => {
     let filtered = stepScreenshots;
     if (stepFilter !== 'all') {
@@ -102,6 +130,26 @@ export const EvidenceViewerNew: React.FC<EvidenceViewerProps> = ({ runId }) => {
       return stepA - stepB; // 正序排列
     });
   }, [stepScreenshots, stepFilter]);
+
+  // 🔥 断言截图筛选（使用相同的 stepFilter，但只筛选断言）
+  const [assertionFilter, setAssertionFilter] = useState<'all' | string>('all');
+  
+  const assertionScreenshotsFiltered = useMemo(() => {
+    let filtered = assertionScreenshots;
+    if (assertionFilter !== 'all') {
+      const assertionNum = parseInt(assertionFilter, 10);
+      filtered = assertionScreenshots.filter(s => extractAssertion(s.filename) === assertionNum);
+    }
+    // 🔥 按断言号正序排列（1->2->3）
+    return filtered.sort((a, b) => {
+      const assertionA = extractAssertion(a.filename);
+      const assertionB = extractAssertion(b.filename);
+      if (assertionA === null && assertionB === null) return 0;
+      if (assertionA === null) return 1;
+      if (assertionB === null) return -1;
+      return assertionA - assertionB;
+    });
+  }, [assertionScreenshots, assertionFilter]);
 
   const nonScreenshots = useMemo(() => artifacts.filter(a => a.type !== 'screenshot'), [artifacts]);
 
@@ -132,17 +180,17 @@ export const EvidenceViewerNew: React.FC<EvidenceViewerProps> = ({ runId }) => {
     });
   }, [imageUrls, loadingImages, getSignedUrl]);
 
-  // 预加载前几张截图（包括步骤截图和最终截图）
+  // 🔥 预加载前几张截图（包括步骤截图、断言截图和最终截图）
   useEffect(() => {
-    const allScreenshots = [...stepScreenshotsFiltered, ...finalScreenshots];
+    const allScreenshots = [...stepScreenshotsFiltered, ...assertionScreenshotsFiltered, ...finalScreenshots];
     allScreenshots.slice(0, 6).forEach(screenshot => {
       loadImage(screenshot.filename);
     });
-  }, [stepScreenshotsFiltered, finalScreenshots, loadImage]);
+  }, [stepScreenshotsFiltered, assertionScreenshotsFiltered, finalScreenshots, loadImage]);
 
   const openPreview = async (index: number) => {
-    // 合并步骤截图和最终截图用于预览
-    const allScreenshots = [...stepScreenshotsFiltered, ...finalScreenshots];
+    // 🔥 合并步骤截图、断言截图和最终截图用于预览
+    const allScreenshots = [...stepScreenshotsFiltered, ...assertionScreenshotsFiltered, ...finalScreenshots];
     const file = allScreenshots[index];
     if (!file) return;
     
@@ -385,6 +433,124 @@ export const EvidenceViewerNew: React.FC<EvidenceViewerProps> = ({ runId }) => {
     }
   };
 
+  const handleViewVideo = async (filename: string) => {
+    try {
+      // 获取签名URL
+      const response = await fetch(`/api/evidence/${runId}/sign/${filename}`);
+      const data = await response.json();
+      
+      if (!data.success) {
+        console.error('获取签名URL失败:', data.error);
+        alert('无法获取视频文件URL，请稍后重试');
+        return;
+      }
+      
+      const signedUrl = data.data.signedUrl;
+      
+      // 设置视频预览
+      setVideoPreviewUrl(signedUrl);
+      setVideoFilename(filename);
+    } catch (error) {
+      console.error('打开视频查看器失败:', error);
+      alert('打开视频查看器失败：' + (error instanceof Error ? error.message : '未知错误'));
+    }
+  };
+
+  const handleViewLog = async (filename: string) => {
+    try {
+      // 获取签名URL
+      const response = await fetch(`/api/evidence/${runId}/sign/${filename}`);
+      const data = await response.json();
+      
+      if (!data.success) {
+        console.error('获取签名URL失败:', data.error);
+        alert('无法获取日志文件URL，请稍后重试');
+        return;
+      }
+      
+      const signedUrl = data.data.signedUrl;
+      
+      // 获取日志内容
+      const logResponse = await fetch(signedUrl);
+      const logContent = await logResponse.text();
+      
+      // 在新窗口中显示日志内容
+      const newWindow = window.open('', '_blank');
+      if (newWindow) {
+        newWindow.document.write(`
+          <!DOCTYPE html>
+          <html>
+          <head>
+            <title>${filename} - 日志查看</title>
+            <style>
+              body {
+                margin: 0;
+                padding: 20px;
+                background: #1e1e1e;
+                color: #d4d4d4;
+                font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+                font-size: 14px;
+                line-height: 1.6;
+              }
+              .header {
+                background: #2d2d30;
+                padding: 15px 20px;
+                margin: -20px -20px 20px -20px;
+                border-bottom: 2px solid #007acc;
+                position: sticky;
+                top: 0;
+                z-index: 100;
+              }
+              .header h1 {
+                margin: 0;
+                font-size: 18px;
+                color: #ffffff;
+              }
+              .content {
+                background: #252526;
+                padding: 20px;
+                border-radius: 4px;
+                white-space: pre-wrap;
+                word-wrap: break-word;
+                overflow-x: auto;
+              }
+              .error {
+                color: #f48771;
+              }
+              .warning {
+                color: #dcdcaa;
+              }
+              .info {
+                color: #4ec9b0;
+              }
+              .success {
+                color: #4ec9b0;
+              }
+            </style>
+          </head>
+          <body>
+            <div class="header">
+              <h1>📄 ${filename}</h1>
+            </div>
+            <div class="content">${logContent.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</div>
+          </body>
+          </html>
+        `);
+        newWindow.document.close();
+      } else {
+        alert('无法打开新窗口，请检查浏览器弹窗设置');
+      }
+    } catch (error) {
+      console.error('打开日志查看器失败:', error);
+      alert('打开日志查看器失败：' + (error instanceof Error ? error.message : '未知错误'));
+    }
+  };
+
+  const closeVideoPreview = () => {
+    setVideoPreviewUrl(null);
+    setVideoFilename(null);
+  };
+
   const formatFileSize = (bytes: number) => {
     if (bytes === 0) return '0 B';
     const k = 1024;
@@ -427,11 +593,11 @@ export const EvidenceViewerNew: React.FC<EvidenceViewerProps> = ({ runId }) => {
   }
 
   return (
-    <div className="evidence-viewer p-6 bg-gray-50 min-h-full">
+    <div className="evidence-viewer p-0 min-h-full">
       {/* 头部控制栏 */}
-      <div className="flex items-center justify-between mb-6">
+      {/* <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-4">
-          {/* <h3 className="text-xl font-bold text-gray-900">测试证据</h3> */}
+          <h3 className="text-xl font-bold text-gray-900">测试证据</h3>
           <div className="flex items-center gap-2 px-3 py-1.5 bg-white rounded-lg border border-gray-200 shadow-sm">
             <Filter className="w-4 h-4 text-gray-500" />
             <label className="text-sm text-gray-600">步骤筛选</label>
@@ -459,7 +625,7 @@ export const EvidenceViewerNew: React.FC<EvidenceViewerProps> = ({ runId }) => {
             刷新
           </Button>
         </div>
-      </div>
+      </div> */}
       
       {artifacts.length === 0 ? (
         <div className="text-center py-16 bg-white rounded-xl border border-gray-200">
@@ -467,7 +633,7 @@ export const EvidenceViewerNew: React.FC<EvidenceViewerProps> = ({ runId }) => {
           <p className="text-gray-500 text-lg">暂无证据文件</p>
         </div>
       ) : (
-        <div className="space-y-8">
+        <div className="space-y-4">
           {/* 步骤截图区域 */}
           {stepScreenshotsFiltered.length > 0 && (
             <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
@@ -479,6 +645,21 @@ export const EvidenceViewerNew: React.FC<EvidenceViewerProps> = ({ runId }) => {
                   </h4>
                 </div>
                 <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 px-3 py-1.5 bg-gray-50 rounded-lg border border-gray-200">
+                    <Filter className="w-4 h-4 text-gray-500" />
+                    <label className="text-sm text-gray-600">步骤筛选</label>
+                    <select
+                      value={stepFilter}
+                      onChange={(e) => setStepFilter(e.target.value)}
+                      className="ml-2 px-2 py-1 text-sm border-0 bg-transparent focus:outline-none focus:ring-0 cursor-pointer"
+                      title="选择要筛选的步骤"
+                    >
+                      <option value="all">全部</option>
+                      {steps.map((s) => (
+                        <option key={s} value={String(s)}>{`第 ${s} 步`}</option>
+                      ))}
+                    </select>
+                  </div>
                   <Button
                     variant={viewMode === 'grid' ? 'default' : 'outline'}
                     size="sm"
@@ -617,6 +798,214 @@ export const EvidenceViewerNew: React.FC<EvidenceViewerProps> = ({ runId }) => {
                             {step !== null && (
                               <span className="px-2 py-0.5 bg-blue-100 text-blue-700 text-xs font-medium rounded">
                                 步骤 {step}
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-xs text-gray-500">
+                            {formatFileSize(item.size)} · {new Date(item.createdAt).toLocaleString()}
+                          </div>
+                        </div>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDownload(item.filename);
+                          }}
+                          disabled={downloading === item.filename}
+                          className="opacity-0 group-hover:opacity-100 transition-opacity"
+                        >
+                          {downloading === item.filename ? (
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                          ) : (
+                            <Download className="w-4 h-4" />
+                          )}
+                        </Button>
+                      </motion.div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* 断言截图区域 */}
+          {assertionScreenshotsFiltered.length > 0 && (
+            <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <ImageIcon className="w-5 h-5 text-orange-500" />
+                  <h4 className="text-lg font-semibold text-gray-900">
+                    断言截图 ({assertionScreenshotsFiltered.length})
+                  </h4>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 px-3 py-1.5 bg-gray-50 rounded-lg border border-gray-200">
+                    <Filter className="w-4 h-4 text-gray-500" />
+                    <label className="text-sm text-gray-600">断言筛选</label>
+                    <select
+                      value={assertionFilter}
+                      onChange={(e) => setAssertionFilter(e.target.value)}
+                      className="ml-2 px-2 py-1 text-sm border-0 bg-transparent focus:outline-none focus:ring-0 cursor-pointer"
+                      title="选择要筛选的断言"
+                    >
+                      <option value="all">全部</option>
+                      {assertions.map((a) => (
+                        <option key={a} value={String(a)}>{`断言 ${a}`}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <Button
+                    variant={viewMode === 'grid' ? 'default' : 'outline'}
+                    size="sm"
+                    onClick={() => setViewMode('grid')}
+                  >
+                    网格
+                  </Button>
+                  <Button
+                    variant={viewMode === 'list' ? 'default' : 'outline'}
+                    size="sm"
+                    onClick={() => setViewMode('list')}
+                  >
+                    列表
+                  </Button>
+                </div>
+              </div>
+              
+              {viewMode === 'grid' ? (
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+                  {assertionScreenshotsFiltered.map((item, idx) => {
+                    const imageUrl = imageUrls.get(item.filename);
+                    const isLoading = loadingImages.has(item.filename);
+                    const assertion = extractAssertion(item.filename);
+                    
+                    return (
+                      <motion.div
+                        key={idx}
+                        initial={{ opacity: 0, scale: 0.9 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        transition={{ duration: 0.2, delay: idx * 0.03 }}
+                        className="group relative bg-gray-50 rounded-lg overflow-hidden border border-gray-200 hover:border-orange-400 hover:shadow-lg transition-all duration-200 cursor-pointer"
+                        onClick={() => {
+                          // 🔥 计算在合并列表中的索引（步骤截图在前，断言截图在后）
+                          const mergedScreenshots = [...stepScreenshotsFiltered, ...assertionScreenshotsFiltered, ...finalScreenshots];
+                          const actualIndex = mergedScreenshots.findIndex(s => s.filename === item.filename);
+                          if (actualIndex >= 0) {
+                            openPreview(actualIndex);
+                          }
+                        }}
+                      >
+                        {/* 图片容器 */}
+                        <div className="relative aspect-video bg-gray-100 overflow-hidden">
+                          {isLoading ? (
+                            <div className="flex items-center justify-center w-full h-full">
+                              <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
+                            </div>
+                          ) : imageUrl ? (
+                            <img
+                              src={imageUrl}
+                              alt={item.filename}
+                              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                              loading="lazy"
+                              onError={(e) => {
+                                const target = e.target as HTMLImageElement;
+                                target.style.display = 'none';
+                              }}
+                            />
+                          ) : (
+                            <div className="flex items-center justify-center w-full h-full text-gray-400">
+                              <ImageIcon className="w-8 h-8" />
+                            </div>
+                          )}
+                          
+                          {/* 悬停遮罩 */}
+                          <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors duration-200 flex items-center justify-center">
+                            <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                              <ZoomIn className="w-8 h-8 text-white drop-shadow-lg" />
+                            </div>
+                          </div>
+                          
+                          {/* 断言标签 - 左上角 */}
+                          {assertion !== null && (
+                            <div className="absolute top-2 left-2 bg-orange-500 text-white text-xs font-medium px-2 py-1 rounded-md shadow-sm z-10">
+                              断言 {assertion}
+                            </div>
+                          )}
+                        </div>
+                        
+                        {/* 文件名和操作 */}
+                        <div className="p-3 bg-white">
+                          <div className="text-xs text-gray-600 truncate mb-2" title={item.filename}>
+                            {item.filename}
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs text-gray-500">
+                              {formatFileSize(item.size)}
+                            </span>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDownload(item.filename);
+                              }}
+                              disabled={downloading === item.filename}
+                              className="h-6 px-2 text-xs"
+                            >
+                              {downloading === item.filename ? (
+                                <Loader2 className="w-3 h-3 animate-spin" />
+                              ) : (
+                                <Download className="w-3 h-3" />
+                              )}
+                            </Button>
+                          </div>
+                        </div>
+                      </motion.div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {assertionScreenshotsFiltered.map((item, idx) => {
+                    const imageUrl = imageUrls.get(item.filename);
+                    const assertion = extractAssertion(item.filename);
+                    
+                    return (
+                      <motion.div
+                        key={idx}
+                        initial={{ opacity: 0, x: -20 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ duration: 0.2, delay: idx * 0.03 }}
+                        className="flex items-center gap-4 p-4 bg-gray-50 rounded-lg border border-gray-200 hover:border-orange-400 hover:shadow-md transition-all duration-200 cursor-pointer group"
+                        onClick={() => {
+                          const mergedScreenshots = [...stepScreenshotsFiltered, ...assertionScreenshotsFiltered, ...finalScreenshots];
+                          const actualIndex = mergedScreenshots.findIndex(s => s.filename === item.filename);
+                          if (actualIndex >= 0) {
+                            openPreview(actualIndex);
+                          }
+                        }}
+                      >
+                        <div className="relative w-24 h-16 bg-gray-200 rounded overflow-hidden flex-shrink-0">
+                          {imageUrl ? (
+                            <img
+                              src={imageUrl}
+                              alt={item.filename}
+                              className="w-full h-full object-cover"
+                            />
+                          ) : (
+                            <div className="flex items-center justify-center w-full h-full text-gray-400">
+                              <ImageIcon className="w-6 h-6" />
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="text-sm font-medium text-gray-900 truncate">
+                              {item.filename}
+                            </span>
+                            {assertion !== null && (
+                              <span className="px-2 py-0.5 bg-orange-100 text-orange-700 text-xs font-medium rounded">
+                                断言 {assertion}
                               </span>
                             )}
                           </div>
@@ -798,6 +1187,24 @@ export const EvidenceViewerNew: React.FC<EvidenceViewerProps> = ({ runId }) => {
                           在线查看
                         </Button>
                       )}
+                      {item.type === 'video' && (
+                        <Button
+                          onClick={() => handleViewVideo(item.filename)}
+                          size="sm"
+                          variant="outline"
+                        >
+                          在线查看
+                        </Button>
+                      )}
+                      {item.type === 'log' && (
+                        <Button
+                          onClick={() => handleViewLog(item.filename)}
+                          size="sm"
+                          variant="outline"
+                        >
+                          在线查看
+                        </Button>
+                      )}
                       <Button
                         onClick={() => handleDownload(item.filename)}
                         disabled={downloading === item.filename}
@@ -914,6 +1321,57 @@ export const EvidenceViewerNew: React.FC<EvidenceViewerProps> = ({ runId }) => {
                   </button>
                 </>
               )}
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* 视频预览模态框 */}
+      <AnimatePresence>
+        {videoPreviewUrl && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 bg-black/90 backdrop-blur-sm flex items-center justify-center p-4"
+            onClick={closeVideoPreview}
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="relative max-w-[90vw] max-h-[90vh] w-full flex flex-col"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* 顶部工具栏 */}
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2 px-4 py-2 bg-black/50 backdrop-blur-md rounded-lg">
+                  <Video className="w-5 h-5 text-green-400" />
+                  <span className="text-white text-sm font-medium">
+                    {videoFilename}
+                  </span>
+                </div>
+                <button
+                  onClick={closeVideoPreview}
+                  className="inline-flex items-center justify-center h-9 px-3 rounded-lg bg-black/50 backdrop-blur-md border-2 border-white/20 text-white hover:bg-black/70 hover:border-white/30 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-white/50"
+                  title="关闭"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* 视频播放器 */}
+              <div className="flex-1 flex items-center justify-center bg-black rounded-lg overflow-hidden">
+                <video
+                  src={videoPreviewUrl}
+                  controls
+                  autoPlay
+                  className="max-w-full max-h-full"
+                  style={{ maxHeight: '80vh' }}
+                >
+                  您的浏览器不支持视频播放。
+                </video>
+              </div>
             </motion.div>
           </motion.div>
         )}

@@ -4,8 +4,6 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plus,
   Search,
-  Filter,
-  Calendar,
   Users,
   Play,
   Edit,
@@ -13,13 +11,15 @@ import {
   Eye,
   Clock,
   CheckCircle,
-  XCircle,
-  Archive,
   FileText,
   Target,
   Activity,
   BarChart3,
   RotateCcw,
+  ChevronLeft,
+  ChevronsLeft,
+  ChevronRight as ChevronRightIcon,
+  ChevronsRight,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
@@ -27,13 +27,11 @@ import { clsx } from 'clsx';
 import { testPlanService } from '../services/testPlanService';
 import type { TestPlan, TestPlanStatus, TestPlanType } from '../types/testPlan';
 import { showToast } from '../utils/toast';
-import { useAuth } from '../contexts/AuthContext';
 import { Modal } from '../components/ui/modal';
 import { SystemOption } from '../types/test';
 import * as systemService from '../services/systemService';
 export function TestPlans() {
   const navigate = useNavigate();
-  const { user } = useAuth();
   
   const [testPlans, setTestPlans] = useState<TestPlan[]>([]);
   const [loading, setLoading] = useState(false);
@@ -41,13 +39,12 @@ export function TestPlans() {
   const [selectedProject, setSelectedProject] = useState('');
   const [selectedPlanType, setSelectedPlanType] = useState<TestPlanType | ''>('');
   const [selectedStatus, setSelectedStatus] = useState<TestPlanStatus | ''>('');
-  const [showCreateModal, setShowCreateModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [selectedPlan, setSelectedPlan] = useState<TestPlan | null>(null);
   const [systemOptions, setSystemOptions] = useState<SystemOption[]>([]);
   // 分页
   const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize] = useState(20);
+  const [pageSize, setPageSize] = useState(10);
   const [total, setTotal] = useState(0);
 
   // 加载测试计划列表
@@ -89,7 +86,13 @@ export function TestPlans() {
   
   useEffect(() => {
     loadTestPlans();
-  }, [currentPage, searchTerm, selectedProject, selectedPlanType, selectedStatus]);
+  }, [currentPage, pageSize, searchTerm, selectedProject, selectedPlanType, selectedStatus]);
+
+  // 处理每页条数变化
+  const handlePageSizeChange = (newPageSize: number) => {
+    setPageSize(newPageSize);
+    setCurrentPage(1); // 重置到第一页
+  };
 
   // 创建测试计划
   const handleCreatePlan = () => {
@@ -143,20 +146,67 @@ export function TestPlans() {
     showToast.success('已重置筛选条件');
   };
 
+  // 计算测试计划的实际状态（基于执行情况和时间）
+  const getComputedStatus = (plan: TestPlan): string => {
+    // 如果已归档，状态优先显示为归档
+    if (plan.status === 'archived') {
+      return 'archived';
+    }
+    
+    // 检查计划结束时间是否已过
+    const now = new Date();
+    const endDate = plan.end_date ? new Date(plan.end_date) : null;
+    const isExpired = endDate && now > endDate;
+    
+    // 获取执行情况
+    const totalCases = plan.total_cases || 0;
+    const hasExecutions = (plan.completed_executions || 0) > 0;
+    
+    // 如果没有用例，状态为未开始
+    if (totalCases === 0) {
+      return 'not_started';
+    }
+    
+    // 判断状态优先级：
+    // 1. 已归档 (archived) - 已处理
+    // 2. 已结束 (expired) - 计划时间已过期
+    // 3. 进行中 (active) - 有执行记录
+    // 4. 未开始 (not_started) - 没有执行记录
+    
+    if (isExpired && !hasExecutions) {
+      return 'expired'; // 计划时间已到但从未执行
+    }
+    
+    if (isExpired && hasExecutions) {
+      return 'completed'; // 计划时间已到且有执行记录，视为已完成
+    }
+    
+    if (hasExecutions) {
+      return 'active'; // 进行中（有执行记录）
+    }
+    
+    return 'not_started'; // 未开始
+  };
+
   // 获取状态标签
-  const getStatusBadge = (status: TestPlanStatus) => {
+  const getStatusBadge = (plan: TestPlan) => {
+    const computedStatus = getComputedStatus(plan);
+    
     const statusConfig = {
-      draft: { label: '草稿', color: 'bg-gray-100 text-gray-700' },
-      active: { label: '进行中', color: 'bg-blue-100 text-blue-700' },
-      completed: { label: '已完成', color: 'bg-green-100 text-green-700' },
-      cancelled: { label: '已取消', color: 'bg-red-100 text-red-700' },
-      archived: { label: '已归档', color: 'bg-gray-100 text-gray-500' },
+      not_started: { label: '未开始', color: 'bg-gray-100 text-gray-700', icon: Clock },
+      active: { label: '进行中', color: 'bg-blue-100 text-blue-700', icon: Activity },
+      completed: { label: '已完成', color: 'bg-green-100 text-green-700', icon: CheckCircle },
+      expired: { label: '已结束', color: 'bg-orange-100 text-orange-700', icon: Clock },
+      cancelled: { label: '已取消', color: 'bg-red-100 text-red-700', icon: null },
+      archived: { label: '已归档', color: 'bg-gray-100 text-gray-500', icon: null },
     };
 
-    const config = statusConfig[status] || statusConfig.draft;
+    const config = statusConfig[computedStatus as keyof typeof statusConfig] || statusConfig.not_started;
+    const Icon = config.icon;
     
     return (
-      <span className={clsx('px-2 py-1 rounded-full text-xs font-medium', config.color)}>
+      <span className={clsx('inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium', config.color)}>
+        {Icon && <Icon className="w-3 h-3" />}
         {config.label}
       </span>
     );
@@ -260,9 +310,10 @@ export function TestPlans() {
                 className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               >
                 <option value="">所有状态</option>
-                <option value="draft">草稿</option>
+                <option value="not_started">未开始</option>
                 <option value="active">进行中</option>
                 <option value="completed">已完成</option>
+                <option value="expired">已结束</option>
                 <option value="cancelled">已取消</option>
                 <option value="archived">已归档</option>
               </select>
@@ -325,7 +376,7 @@ export function TestPlans() {
                     用例总数
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    执行进度
+                    执行次数
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     负责人
@@ -341,10 +392,10 @@ export function TestPlans() {
               <tbody className="bg-white divide-y divide-gray-200">
                 {testPlans.map((plan) => (
                   <tr key={plan.id} className="hover:bg-gray-50 transition-colors">
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    <td className="px-6 py-3 whitespace-nowrap text-sm text-gray-500">
                       {plan.project || '-'}
                     </td>
-                    <td className="px-6 py-4">
+                    <td className="px-6 py-3">
                       <div className="flex flex-col">
                         <button
                           onClick={() => handleViewPlan(plan)}
@@ -358,13 +409,13 @@ export function TestPlans() {
                         )} */}
                       </div>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
+                    <td className="px-6 py-3 whitespace-nowrap">
                       {getPlanTypeBadge(plan.plan_type)}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      {getStatusBadge(plan.status)}
+                    <td className="px-6 py-3 whitespace-nowrap">
+                      {getStatusBadge(plan)}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    <td className="px-6 py-3 whitespace-nowrap text-sm text-gray-500">
                       <div className="flex items-center gap-2">
                         <span className="font-medium">{plan.total_cases || 0}</span>
                         {plan.functional_cases !== undefined && plan.ui_auto_cases !== undefined && (
@@ -374,7 +425,7 @@ export function TestPlans() {
                         )}
                       </div>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
+                    <td className="px-6 py-3 whitespace-nowrap">
                       <div className="w-full">
                         {plan.completed_executions && plan.completed_executions > 0 ? (
                           <div>
@@ -387,17 +438,17 @@ export function TestPlans() {
                         )}
                       </div>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    <td className="px-6 py-3 whitespace-nowrap text-sm text-gray-500">
                       {plan.owner_name || '-'}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    <td className="px-6 py-3 whitespace-nowrap text-sm text-gray-500">
                       <div className="flex items-center gap-1">
                         <Clock className="w-4 h-4" />
                         {formatDate(plan.start_date)} ~ {formatDate(plan.end_date)}
                       </div>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                      <div className="flex items-center gap-4">
+                    <td className="px-6 py-3 whitespace-nowrap text-sm font-medium">
+                      <div className="flex items-center gap-5">
                         <button
                           onClick={() => handleViewPlan(plan)}
                           className="text-blue-600 hover:text-blue-800"
@@ -439,25 +490,112 @@ export function TestPlans() {
 
           {/* 分页 */}
           {!loading && testPlans.length > 0 && (
-            <div className="px-6 py-4 border-t border-gray-200 flex items-center justify-between">
+            <div className="flex justify-between items-center px-6 py-4 border-t border-gray-200 bg-gray-50">
+              {/* 中间：页码信息 */}
               <div className="text-sm text-gray-500">
-                共 {total} 条记录，第 {currentPage} / {Math.ceil(total / pageSize)} 页
+                共 <span className="font-semibold text-gray-700">{total}</span> 条记录，
+                第 <span className="font-semibold text-gray-700">{currentPage}</span> / <span className="font-semibold text-gray-700">{Math.ceil(total / pageSize)}</span> 页
               </div>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                  disabled={currentPage === 1}
-                  className="px-3 py-1 border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  上一页
-                </button>
-                <button
-                  onClick={() => setCurrentPage((p) => Math.min(Math.ceil(total / pageSize), p + 1))}
-                  disabled={currentPage >= Math.ceil(total / pageSize)}
-                  className="px-3 py-1 border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  下一页
-                </button>
+              <div className="flex space-x-4">
+                {/* 右侧：分页按钮 */}
+                <div className="flex items-center space-x-1">
+                  {/* 第一页 */}
+                  <button
+                    onClick={() => setCurrentPage(1)}
+                    disabled={currentPage === 1}
+                    className={clsx(
+                      'p-2 rounded',
+                      currentPage === 1
+                        ? 'text-gray-600 cursor-not-allowed'
+                        : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
+                    )}
+                    title="第一页"
+                  >
+                    <ChevronsLeft className="h-4 w-4" />
+                  </button>
+
+                  {/* 上一页 */}
+                  <button
+                    onClick={() => setCurrentPage(currentPage - 1)}
+                    disabled={currentPage === 1}
+                    className={clsx(
+                      'p-2 rounded',
+                      currentPage === 1
+                        ? 'text-gray-600 cursor-not-allowed'
+                        : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
+                    )}
+                    title="上一页"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </button>
+
+                  {/* 页码输入框 */}
+                  <div className="flex items-center space-x-2 px-2">
+                    <input
+                      type="number"
+                      min={1}
+                      max={Math.ceil(total / pageSize)}
+                      value={currentPage}
+                      onChange={(e) => {
+                        const page = parseInt(e.target.value);
+                        const totalPages = Math.ceil(total / pageSize);
+                        if (page >= 1 && page <= totalPages) {
+                          setCurrentPage(page);
+                        }
+                      }}
+                      className="w-16 px-2 py-1 text-sm text-center border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                    <span className="text-sm text-gray-500">/ {Math.ceil(total / pageSize)}</span>
+                  </div>
+
+                  {/* 下一页 */}
+                  <button
+                    onClick={() => setCurrentPage(currentPage + 1)}
+                    disabled={currentPage >= Math.ceil(total / pageSize)}
+                    className={clsx(
+                      'p-2 rounded',
+                      currentPage >= Math.ceil(total / pageSize)
+                        ? 'text-gray-600 cursor-not-allowed'
+                        : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
+                    )}
+                    title="下一页"
+                  >
+                    <ChevronRightIcon className="h-4 w-4" />
+                  </button>
+
+                  {/* 最后一页 */}
+                  <button
+                    onClick={() => setCurrentPage(Math.ceil(total / pageSize))}
+                    disabled={currentPage >= Math.ceil(total / pageSize)}
+                    className={clsx(
+                      'p-2 rounded',
+                      currentPage >= Math.ceil(total / pageSize)
+                        ? 'text-gray-600 cursor-not-allowed'
+                        : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
+                    )}
+                    title="最后一页"
+                  >
+                    <ChevronsRight className="h-4 w-4" />
+                  </button>
+                </div>
+
+                {/* 左侧：每页条数选择器 */}
+                <div className="flex items-center space-x-2">
+                  <span className="text-sm text-gray-700">每页显示</span>
+                  <select
+                    value={pageSize}
+                    onChange={(e) => handlePageSizeChange(parseInt(e.target.value))}
+                    className="px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    style={{ width: '80px' }}
+                    title="选择每页显示的记录数"
+                  >
+                    <option value={10}>10</option>
+                    <option value={20}>20</option>
+                    <option value={50}>50</option>
+                    <option value={100}>100</option>
+                  </select>
+                  <span className="text-sm text-gray-700">条</span>
+                </div>
               </div>
             </div>
           )}

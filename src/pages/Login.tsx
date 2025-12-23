@@ -98,7 +98,7 @@ export const Login: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen relative overflow-hidden">
+    <div className="h-screen relative overflow-hidden">
       {/* VANTA.js 3D 网络背景 */}
       <div
         ref={vantaRef}
@@ -117,16 +117,16 @@ export const Login: React.FC = () => {
       <div className="absolute inset-0 bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900" style={{ zIndex: -1 }} />
 
       {/* 内容层 */}
-      <div className="relative z-10 min-h-screen flex items-center justify-center px-4 py-12">
+      <div className="relative z-10 h-screen flex items-center justify-center px-4 py-6">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.8 }}
-          className="w-full max-w-md"
+          className="w-full max-w-md mx-auto"
         >
           {/* Logo 和标题 */}
           <motion.div
-            className="flex flex-col items-center mb-8 py-10"
+            className="flex flex-col items-center mb-10 py-4"
             initial={{ opacity: 0, y: -20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.2, duration: 0.8 }}
@@ -151,17 +151,19 @@ export const Login: React.FC = () => {
               </div>
             </motion.div> */}
 
-            <img
-                  // src="/logo.png"
-                  src="/logo1.svg"
-                  alt="Sakura Logo"
-                  className="w-full h-full object-contain"
-                  style={{ width: '110px', height: '110px' }}
-                />
+            <div className="w-[110px] h-[110px] mb-0 flex items-center justify-center">
+              <img
+                src="/logo1.svg"
+                alt="Sakura Logo"
+                className="w-full h-full object-contain"
+              />
+            </div>
             <h1 className="text-4xl font-bold mb-2 bg-clip-text text-transparent bg-gradient-to-r from-purple-300 via-purple-200 to-purple-100 drop-shadow-[0_0_8px_rgba(168,85,247,0.5)]">
               Sakura AI
             </h1>
-            <p className="text-purple-200/80 text-lg tracking-widest">企业级 · 智能自动化平台</p>
+            <p className="text-sm font-light tracking-[0.15em] bg-clip-text text-transparent bg-gradient-to-r from-purple-300/90 via-purple-200/80 to-purple-100/90 drop-shadow-[0_0_4px_rgba(168,85,247,0.4)]">
+              企业级 · 智能自动化平台
+            </p>
           </motion.div>
 
           {/* 登录卡片 */}
@@ -252,7 +254,7 @@ export const Login: React.FC = () => {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               transition={{ delay: 0.5, duration: 0.5 }}
-              className="mt-8 pt-6 border-t border-white/10"
+              className="mt-6 pt-4 border-t border-white/10"
             >
               <div className="bg-purple-500/10 rounded-xl p-4 border border-purple-400/20">
                 <p className="text-purple-200/70 text-sm text-center mb-2">
@@ -277,7 +279,7 @@ export const Login: React.FC = () => {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ delay: 0.6, duration: 0.5 }}
-            className="mt-8 text-center"
+            className="mt-4 text-center"
           >
             <p className="text-purple-300/50 text-sm">
               {/* © 2025 Sakura AI. Powered by AI & Automation */}

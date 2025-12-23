@@ -2,8 +2,15 @@
 
 /**
  * 测试计划状态
+ * - draft: 草稿
+ * - not_started: 未开始（一个用例都没执行）
+ * - active: 进行中（还有用例未执行完成）
+ * - completed: 已完成（所有用例都已执行）
+ * - expired: 已结束（计划时间已到期但未完成）
+ * - cancelled: 已取消
+ * - archived: 已归档（手动归档）
  */
-export type TestPlanStatus = 'draft' | 'active' | 'completed' | 'cancelled' | 'archived';
+export type TestPlanStatus = 'draft' | 'not_started' | 'active' | 'completed' | 'expired' | 'cancelled' | 'archived';
 
 /**
  * 测试计划类型
@@ -98,12 +105,13 @@ export interface TestPlanCase {
   case_type: TestCaseType;
   case_name: string;
   sort_order: number;
+  created_by: string;
   is_executed: boolean;
   execution_result?: ExecutionResult;
   created_at: string;
   
   // 扩展信息（查询时可能包含）
-  case_detail?: any; // 用例详细信息
+  case_detail?: unknown; // 用例详细信息
 }
 
 /**
@@ -147,7 +155,7 @@ export interface TestPlanExecution {
   // 执行详情
   execution_results?: TestPlanCaseResult[];
   error_message?: string;
-  metadata?: any;
+  metadata?: unknown;
 }
 
 /**
@@ -162,6 +170,14 @@ export interface TestPlanCaseResult {
   error_message?: string;
   execution_id?: string; // 关联的具体执行记录ID
   executed_at?: string;
+  
+  // 执行人信息
+  executor_id?: number;
+  executor_name?: string;
+  
+  // 时间信息
+  started_at?: string;
+  finished_at?: string;
   
   // 详细执行日志（从功能测试执行记录中获取）
   actualResult?: string;

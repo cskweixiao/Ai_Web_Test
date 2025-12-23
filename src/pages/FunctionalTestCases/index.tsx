@@ -847,7 +847,8 @@ export function FunctionalTestCases() {
                     environment: executionConfig.environment
                 });
                 
-                showToast.info(`✅ 测试开始执行: ${pendingTestCase.name}\n运行ID: ${response.runId}\n引擎: ${executionConfig.executionEngine === 'playwright' ? 'Playwright Test Runner' : 'MCP 客户端'}`);
+                // showToast.info(`✅ 测试开始执行: ${pendingTestCase.name}\n运行ID: ${response.runId}\n引擎: ${executionConfig.executionEngine === 'playwright' ? 'Playwright Test Runner' : 'MCP 客户端'}`);
+                showToast.info(`✅ 开始执行: ${pendingTestCase.name}`);
                 console.log('✅ [UI自动化测试] 测试运行ID:', response.runId);
                 console.log(`💡 [UI自动化测试] 提示: 临时测试用例ID ${temporaryTestCaseId} 已创建，执行完成后可在测试用例列表中查看或删除`);
                 

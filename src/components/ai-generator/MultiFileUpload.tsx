@@ -1,13 +1,14 @@
 import React, { useCallback, useState } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Radio } from 'antd';
+import { Modal } from 'antd';
 import { Upload, FileText, FileCode, Folder, X, CheckCircle, AlertCircle, Eye } from 'lucide-react';
 import { clsx } from 'clsx';
+import { MAX_FILE_SIZE, MAX_FILES } from '../../config/upload';
 
 interface UploadedFile {
   file: File;
-  type: 'html' | 'js' | 'pdf' | 'docx' | 'md' | 'txt' | 'unknown';
+  type: 'html' | 'js' | 'pdf' | 'docx' | 'doc' | 'md' | 'txt' | 'unknown';
   status: 'pending' | 'valid' | 'invalid';
   error?: string;
 }
@@ -30,18 +31,44 @@ interface MultiFileUploadProps {
 export function MultiFileUpload({
   onFilesChange,
   onPageNameChange,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   pageMode = 'new',
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   onPageModeChange,
   onPreviewFile,
   onClearPreview,
-  maxFiles = 20,
-  maxSize = 50 * 1024 * 1024 // 50MB
+  maxFiles = MAX_FILES, // 使用统一配置
+  maxSize = MAX_FILE_SIZE // 使用统一配置 (AI模型最佳处理大小)
 }: MultiFileUploadProps) {
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
   const [pageName, setPageName] = useState<string>(''); // 新增:页面名称状态
+  const [oversizedFiles, setOversizedFiles] = useState<File[]>([]); // 超大文件列表
+  const [exceededFiles, setExceededFiles] = useState<File[]>([]); // 超出数量限制的文件列表
+
+  // 调试：监控 oversizedFiles 状态变化
+  React.useEffect(() => {
+    console.log('📊 oversizedFiles 状态更新:', {
+      length: oversizedFiles.length,
+      files: oversizedFiles.map(f => ({
+        name: f.name,
+        size: (f.size / 1024 / 1024).toFixed(2) + 'MB'
+      })),
+      shouldShowModal: oversizedFiles.length > 0
+    });
+  }, [oversizedFiles]);
+
+  // 调试：监控 exceededFiles 状态变化
+  React.useEffect(() => {
+    console.log('📊 exceededFiles 状态更新:', {
+      length: exceededFiles.length,
+      files: exceededFiles.map(f => f.name),
+      shouldShowModal: exceededFiles.length > 0
+    });
+  }, [exceededFiles]);
 
   // 验证文件类型和大小
-  const validateFile = (file: File): UploadedFile => {
+  const validateFile = useCallback((file: File): UploadedFile => {
+    console.log('--- validateFile 验证文件:', file.name);
     const fileName = file.name.toLowerCase();
     let type: UploadedFile['type'] = 'unknown';
     let status: 'pending' | 'valid' | 'invalid' = 'pending';
@@ -60,6 +87,9 @@ export function MultiFileUpload({
     } else if (fileName.endsWith('.docx')) {
       type = 'docx';
       status = 'valid';
+    } else if (fileName.endsWith('.doc')) {
+      type = 'doc';
+      status = 'valid';
     } else if (fileName.endsWith('.md') || fileName.endsWith('.markdown')) {
       type = 'md';
       status = 'valid';
@@ -68,33 +98,95 @@ export function MultiFileUpload({
       status = 'valid';
     } else {
       status = 'invalid';
-      error = '仅支持 HTML / JS / PDF / DOCX / Markdown / TXT';
+      error = '仅支持 HTML / JS / PDF / DOC / DOCX / Markdown / TXT';
     }
 
     // 检测文件大小
     if (file.size > maxSize) {
       status = 'invalid';
       error = `文件过大 (最大 ${Math.round(maxSize / 1024 / 1024)}MB)`;
+      console.log('    文件大小超限:', {
+        size: file.size,
+        maxSize: maxSize,
+        sizeInMB: (file.size / 1024 / 1024).toFixed(2) + 'MB'
+      });
     }
 
+    console.log('    验证结果:', { type, status, error });
     return { file, type, status, error };
-  };
+  }, [maxSize]);
 
   // 处理文件拖拽
   const onDrop = useCallback((acceptedFiles: File[]) => {
+    console.log('=== MultiFileUpload onDrop 调试 ===');
+    console.log('接收到的文件数量:', acceptedFiles.length);
+    console.log('maxSize 限制:', maxSize, `(${Math.round(maxSize / 1024 / 1024)}MB)`);
+    
+    // 打印每个文件的详细信息
+    acceptedFiles.forEach((file, index) => {
+      console.log(`文件 ${index + 1}:`, {
+        name: file.name,
+        size: file.size,
+        sizeInMB: (file.size / 1024 / 1024).toFixed(2) + 'MB',
+        type: file.type,
+        isOversized: file.size > maxSize
+      });
+    });
+    
+    // 检测超大文件
+    const oversized = acceptedFiles.filter(file => file.size > maxSize);
+    console.log('超大文件数量:', oversized.length);
+    
+    if (oversized.length > 0) {
+      console.log('触发超大文件弹窗，文件列表:', oversized.map(f => ({
+        name: f.name,
+        size: (f.size / 1024 / 1024).toFixed(2) + 'MB'
+      })));
+      setOversizedFiles(oversized);
+      return; // 阻止上传超大文件
+    }
+    
+    console.log('文件大小检查通过，继续处理');
+
     const newFiles = acceptedFiles.map(validateFile);
-    const allFiles = [...uploadedFiles, ...newFiles].slice(0, maxFiles);
+    const currentCount = uploadedFiles.length;
+    const totalCount = currentCount + newFiles.length;
+    
+    // 检测文件数量是否超限
+    if (totalCount > maxFiles) {
+      const allowedCount = maxFiles - currentCount;
+      const allowedFiles = newFiles.slice(0, allowedCount);
+      const rejectedFiles = newFiles.slice(allowedCount).map(f => f.file);
+      
+      // 显示超出数量限制的弹窗
+      if (rejectedFiles.length > 0) {
+        setExceededFiles(rejectedFiles);
+      }
+      
+      // 只添加允许的文件
+      const allFiles = [...uploadedFiles, ...allowedFiles];
+      setUploadedFiles(allFiles);
+      
+      // 只传递有效的文件给父组件
+      const validFiles = allFiles
+        .filter(f => f.status === 'valid')
+        .map(f => f.file);
+      onFilesChange(validFiles);
+    } else {
+      // 文件数量未超限，正常处理
+      const allFiles = [...uploadedFiles, ...newFiles];
+      setUploadedFiles(allFiles);
 
-    setUploadedFiles(allFiles);
-
-    // 只传递有效的文件给父组件
-    const validFiles = allFiles
-      .filter(f => f.status === 'valid')
-      .map(f => f.file);
-    onFilesChange(validFiles);
-  }, [uploadedFiles, maxFiles, onFilesChange]);
+      // 只传递有效的文件给父组件
+      const validFiles = allFiles
+        .filter(f => f.status === 'valid')
+        .map(f => f.file);
+      onFilesChange(validFiles);
+    }
+  }, [uploadedFiles, maxFiles, maxSize, onFilesChange, validateFile]);
 
   // 配置 react-dropzone
+  // 注意：不在这里设置 maxFiles 和 maxSize，由 onDrop 中的自定义逻辑处理，以便显示友好的提示
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
     accept: {
@@ -103,11 +195,10 @@ export function MultiFileUpload({
       'text/javascript': ['.js'],
       'application/pdf': ['.pdf'],
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['.docx'],
+      'application/msword': ['.doc'],
       'text/markdown': ['.md', '.markdown'],
       'text/plain': ['.txt']
-    },
-    maxFiles,
-    maxSize
+    }
   });
 
   // 移除文件
@@ -137,7 +228,7 @@ export function MultiFileUpload({
   const htmlCount = uploadedFiles.filter(f => f.type === 'html' && f.status === 'valid').length;
   const jsCount = uploadedFiles.filter(f => f.type === 'js' && f.status === 'valid').length;
   const mainCount = uploadedFiles.filter(
-    f => f.status === 'valid' && (f.type === 'html' || f.type === 'pdf' || f.type === 'docx' || f.type === 'md' || f.type === 'txt')
+    f => f.status === 'valid' && (f.type === 'html' || f.type === 'pdf' || f.type === 'docx' || f.type === 'doc' || f.type === 'md' || f.type === 'txt')
   ).length;
 
   // 页面名称变化处理
@@ -147,8 +238,116 @@ export function MultiFileUpload({
     onPageNameChange?.(value);
   };
 
+  // 调试：检查弹窗显示状态
+  const shouldShowOversizedModal = oversizedFiles.length > 0;
+  const shouldShowExceededModal = exceededFiles.length > 0;
+  
+  console.log('🎨 组件渲染状态:', {
+    shouldShowOversizedModal,
+    shouldShowExceededModal,
+    oversizedFilesCount: oversizedFiles.length,
+    exceededFilesCount: exceededFiles.length
+  });
+
   return (
     <div className="space-y-4">
+      {/* 文件大小超限弹窗 */}
+      <Modal
+        title={
+          <div className="flex items-center gap-2">
+            <AlertCircle className="w-5 h-5 text-red-500" />
+            <span className="text-lg font-semibold">文件大小超出限制</span>
+          </div>
+        }
+        open={shouldShowOversizedModal}
+        onOk={() => {
+          console.log('🚪 关闭文件大小超限弹窗');
+          setOversizedFiles([]);
+        }}
+        onCancel={() => setOversizedFiles([])}
+        cancelButtonProps={{ style: { display: 'none' } }}
+        okText="我知道了"
+        centered
+        width={600}
+      >
+        <div className="space-y-4">
+          <p className="text-gray-700">
+            以下文件超出 <span className="font-semibold text-red-600">{Math.round(maxSize / 1024 / 1024)}MB</span> 的大小限制，无法上传：
+          </p>
+          <div className="bg-red-50 border border-red-200 rounded-lg p-4 max-h-60 overflow-y-auto">
+            {oversizedFiles.map((file, index) => (
+              <div key={index} className="flex items-center justify-between py-2 border-b border-red-100 last:border-0">
+                <div className="flex items-center gap-2 flex-1 min-w-0">
+                  <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0" />
+                  <span className="text-sm text-gray-900 truncate">{file.name}</span>
+                </div>
+                <span className="text-sm text-red-600 font-medium ml-3">
+                  {(file.size / 1024 / 1024).toFixed(2)} MB
+                </span>
+              </div>
+            ))}
+          </div>
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+            <p className="text-sm text-blue-700">
+              <strong>💡 建议：</strong>
+            </p>
+            <ul className="text-sm text-blue-700 mt-2 ml-4 list-disc space-y-1">
+              <li>将大文件拆分为多个小文件</li>
+              <li>压缩或优化文件内容</li>
+              <li>单个文件大小建议控制在 {Math.round(maxSize / 1024 / 1024)}MB 以内，以确保 AI 模型最佳处理效果</li>
+            </ul>
+          </div>
+        </div>
+      </Modal>
+
+      {/* 文件数量超限弹窗 */}
+      <Modal
+        title={
+          <div className="flex items-center gap-2">
+            <AlertCircle className="w-5 h-5 text-orange-500" />
+            <span className="text-lg font-semibold">文件数量超出限制</span>
+          </div>
+        }
+        open={shouldShowExceededModal}
+        onOk={() => setExceededFiles([])}
+        onCancel={() => setExceededFiles([])}
+        cancelButtonProps={{ style: { display: 'none' } }}
+        okText="我知道了"
+        centered
+        width={600}
+      >
+        <div className="space-y-4">
+          <p className="text-gray-700">
+            当前已选择 <span className="font-semibold text-gray-900">{uploadedFiles.length}</span> 个文件，
+            最多支持 <span className="font-semibold text-orange-600">{maxFiles}</span> 个文件。
+            以下 <span className="font-semibold text-orange-600">{exceededFiles.length}</span> 个文件无法添加：
+          </p>
+          <div className="bg-orange-50 border border-orange-200 rounded-lg p-4 max-h-60 overflow-y-auto">
+            {exceededFiles.map((file, index) => (
+              <div key={index} className="flex items-center justify-between py-2 border-b border-orange-100 last:border-0">
+                <div className="flex items-center gap-2 flex-1 min-w-0">
+                  <AlertCircle className="w-4 h-4 text-orange-500 flex-shrink-0" />
+                  <span className="text-sm text-gray-900 truncate">{file.name}</span>
+                </div>
+                <span className="text-sm text-gray-600 font-medium ml-3">
+                  {(file.size / 1024).toFixed(1)} KB
+                </span>
+              </div>
+            ))}
+          </div>
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+            <p className="text-sm text-blue-700">
+              <strong>💡 建议：</strong>
+            </p>
+            <ul className="text-sm text-blue-700 mt-2 ml-4 list-disc space-y-1">
+              <li>删除部分已选择的文件后再添加新文件</li>
+              <li>分批上传文件，每次不超过 {maxFiles} 个</li>
+              <li>当前限制为最多 {maxFiles} 个文件，以确保系统性能和 AI 处理效果</li>
+            </ul>
+          </div>
+        </div>
+      </Modal>
+
       {/* 页面名称输入框 */}
       <div className="bg-white rounded-lg p-4 border border-gray-200 shadow-sm">
         <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -214,14 +413,14 @@ export function MultiFileUpload({
           <p className="text-sm text-gray-500 mb-6">
             {isDragActive
               ? '支持批量拖拽上传'
-              : '支持 HTML / JS / PDF / DOCX / Markdown / TXT | 最多 ' + maxFiles + ' 个文件'}
+              : '支持 HTML / JS / PDF / DOC / DOCX / Markdown / TXT | 最多 ' + maxFiles + ' 个文件'}
           </p>
 
           {/* 特性标签 */}
           <div className="flex items-center justify-center gap-8 text-sm">
             <div className="flex items-center gap-2 text-gray-500">
               <FileText className="w-5 h-5 text-orange-500" />
-              <span>HTML / DOCX / PDF / TXT / MD</span>
+              <span>HTML / DOC / DOCX / PDF / TXT / MD</span>
             </div>
             <div className="flex items-center gap-2 text-gray-500">
               <FileCode className="w-5 h-5 text-blue-500" />
@@ -285,7 +484,7 @@ export function MultiFileUpload({
                       <FileCode className="w-5 h-5 text-blue-500 flex-shrink-0" />
                     ) : item.type === 'pdf' ? (
                       <FileText className="w-5 h-5 text-rose-500 flex-shrink-0" />
-                    ) : item.type === 'docx' ? (
+                    ) : item.type === 'docx' || item.type === 'doc' ? (
                       <FileText className="w-5 h-5 text-blue-600 flex-shrink-0" />
                     ) : item.type === 'md' || item.type === 'txt' ? (
                       <FileText className="w-5 h-5 text-green-600 flex-shrink-0" />
@@ -317,7 +516,7 @@ export function MultiFileUpload({
                     )}
                   {/* 🆕 预览按钮（仅对主文件显示） */}
                   {item.status === 'valid' && 
-                   (item.type === 'html' || item.type === 'pdf' || item.type === 'docx' || item.type === 'md' || item.type === 'txt') && 
+                   (item.type === 'html' || item.type === 'pdf' || item.type === 'docx' || item.type === 'doc' || item.type === 'md' || item.type === 'txt') && 
                    onPreviewFile && (
                     // <button
                     //   onClick={(e) => {
@@ -362,7 +561,7 @@ export function MultiFileUpload({
       {uploadedFiles.length === 0 && (
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
           <p className="text-sm text-blue-700 leading-relaxed">
-            💡 <strong>提示：</strong>您可以直接拖拽整个 Axure 导出文件夹（自动识别 HTML/JS），也可以上传 PDF / DOCX / Markdown / TXT 等需求文档。
+            💡 <strong>提示：</strong>您可以直接拖拽整个 Axure 导出文件夹（自动识别 HTML/JS），也可以上传 PDF / DOC / DOCX / Markdown / TXT 等需求文档。
             支持手动选择或批量拖拽上传。
           </p>
         </div>
@@ -372,7 +571,7 @@ export function MultiFileUpload({
       {uploadedFiles.length > 0 && mainCount === 0 && (
         <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
           <p className="text-sm text-yellow-700 leading-relaxed">
-            ⚠️ <strong>提示：</strong>建议至少包含一个主文件（HTML / PDF / DOCX / Markdown / TXT），JS 文件仅作为辅助。
+            ⚠️ <strong>提示：</strong>建议至少包含一个主文件（HTML / PDF / DOC / DOCX / Markdown / TXT），JS 文件仅作为辅助。
           </p>
         </div>
       )}

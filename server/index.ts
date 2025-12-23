@@ -575,6 +575,10 @@ async function startServer() {
       streamService,
       evidenceService
     );
+    
+    // 🔥 将服务挂载到 global，以便 API 路由访问缓存统计
+    (global as any).testExecutionService = testExecutionService;
+    
     console.log('✅ 测试执行服务初始化完成');
 
     // 🔥 初始化套件执行服务（使用数据库服务）

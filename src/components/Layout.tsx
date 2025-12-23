@@ -22,6 +22,7 @@ import {
   Factory,
   Bot,
   Target,
+  Database,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { clsx } from 'clsx';
@@ -56,11 +57,12 @@ const navigationItems: NavigationItem[] = [
   { name: '测试报告', href: '/reports', icon: BarChart3 },
   { name: '测试工厂', href: '/test-factory', icon: Factory },
   { name: 'AI 助手', href: '/llm-assistant', icon: Bot },
+  { name: '缓存统计', href: '/cache-stats', icon: Database },
   { name: '设置', href: '/settings', icon: Settings },
 ];
 
 // 侧边栏宽度常量
-const SIDEBAR_WIDTH_EXPANDED = 280;
+const SIDEBAR_WIDTH_EXPANDED = 260;
 const SIDEBAR_WIDTH_COLLAPSED = 80;
 
 export function Layout({ children }: LayoutProps) {

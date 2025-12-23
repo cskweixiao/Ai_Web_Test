@@ -52,15 +52,14 @@ export interface TestCaseExecutorProps {
   onCancel?: () => void;
   showBatchControls?: boolean;
   onPrevious?: () => void;
-  onNext?: () => void;
   onSkip?: () => void;
   hasPrevious?: boolean;
   hasNext?: boolean;
-  currentIndex?: number;
-  totalCount?: number;
   hideBackButton?: boolean;
   customTitle?: string;
   inTestPlan?: boolean; // 是否在测试计划中使用（需要左边距）
+  // 🔥 新增：用于恢复已提交用例的执行结果
+  initialData?: Partial<ExecutionResultData>;
 }
 
 /**
@@ -72,15 +71,13 @@ export function TestCaseExecutor({
   onCancel,
   showBatchControls = false,
   onPrevious,
-  onNext,
   onSkip,
   hasPrevious = false,
   hasNext = false,
-  currentIndex,
-  totalCount,
   hideBackButton = false,
   customTitle,
   inTestPlan = false,
+  initialData,
 }: TestCaseExecutorProps) {
   const [saving, setSaving] = useState(false);
   const [executionTime, setExecutionTime] = useState(0);
@@ -160,16 +157,85 @@ export function TestCaseExecutor({
       status: null,
       note: ''
     }));
-    setStepResults(initialResults);
     
-    // 重置其他状态
-    setFinalResult('');
-    setActualResult('');
-    setComments('');
-    setScreenshots([]);
-    setExecutionTime(0);
+    // 🔥 如果有 initialData，使用它来恢复之前的执行结果
+    if (initialData) {
+      console.log('🔄 [恢复执行结果] 从 initialData 恢复:', {
+        finalResult: initialData.finalResult,
+        actualResult长度: initialData.actualResult?.length || 0,
+        comments长度: initialData.comments?.length || 0,
+        stepResults数量: initialData.stepResults?.length || 0,
+        stepResults详情: initialData.stepResults?.map((s, i) => ({
+          index: i,
+          stepIndex: s.stepIndex,
+          status: s.status,
+          note: s.note?.substring(0, 20),
+        })),
+      });
+      
+      setFinalResult(initialData.finalResult || '');
+      setActualResult(initialData.actualResult || '');
+      setComments(initialData.comments || '');
+      setExecutionTime(initialData.executionTime || 0);
+      
+      // 恢复步骤结果
+      if (initialData.stepResults && initialData.stepResults.length > 0) {
+        console.log('✅ [恢复步骤结果] 恢复了', initialData.stepResults.length, '个步骤的状态');
+        setStepResults(initialData.stepResults);
+      } else {
+        console.log('⚠️ [恢复步骤结果] 没有步骤数据，使用初始状态');
+        setStepResults(initialResults);
+      }
+      
+      // 恢复截图（通过 preview 和 name，虽然 File 对象无法完全恢复）
+      if (initialData.screenshots && initialData.screenshots.length > 0) {
+        console.log('📷 [恢复截图] 恢复了', initialData.screenshots.length, '张截图');
+        // 将 base64 preview 转换为 Blob，再创建 File 对象用于显示
+        const restoredScreenshots = initialData.screenshots.map((screenshot, index) => {
+          try {
+            // 如果有 preview（base64），尝试恢复
+            if (screenshot.preview) {
+              // 从 base64 创建 Blob
+              const arr = screenshot.preview.split(',');
+              const mime = arr[0].match(/:(.*?);/)?.[1] || 'image/png';
+              const bstr = atob(arr[1]);
+              let n = bstr.length;
+              const u8arr = new Uint8Array(n);
+              while (n--) {
+                u8arr[n] = bstr.charCodeAt(n);
+              }
+              const blob = new Blob([u8arr], { type: mime });
+              // 创建 File 对象（用于显示，不是原始文件）
+              const file = new File([blob], screenshot.name || `screenshot_${index + 1}.png`, { type: mime });
+              
+              return {
+                file,
+                preview: screenshot.preview,
+                name: screenshot.name || `screenshot_${index + 1}.png`
+              };
+            }
+          } catch (error) {
+            console.error('恢复截图失败:', error);
+          }
+          return null;
+        }).filter(Boolean) as Array<{ file: File; preview: string; name: string }>;
+        
+        setScreenshots(restoredScreenshots);
+      } else {
+        setScreenshots([]);
+      }
+    } else {
+      // 没有 initialData，重置为空白状态
+      setStepResults(initialResults);
+      setFinalResult('');
+      setActualResult('');
+      setComments('');
+      setScreenshots([]);
+      setExecutionTime(0);
+    }
+    
     setDraftLoaded(false);
-  }, [testCase?.id]);
+  }, [testCase?.id, initialData]);
   
   // 检查草稿（在数据加载完成后）
   useEffect(() => {
@@ -260,9 +326,19 @@ export function TestCaseExecutor({
   
   // 更新步骤执行结果
   const handleUpdateStepResult = (stepIndex: number, status: 'pass' | 'fail' | 'block') => {
-    setStepResults(prev => prev.map(r => 
-      r.stepIndex === stepIndex ? { ...r, status } : r
-    ));
+    console.log('🔘 [更新步骤状态] 步骤', stepIndex, '更新为', status);
+    
+    setStepResults(prev => {
+      console.log('📝 [更新前] stepResults:', prev.map(r => ({ stepIndex: r.stepIndex, status: r.status })));
+      
+      const updated = prev.map(r => 
+        r.stepIndex === stepIndex ? { ...r, status } : r
+      );
+      
+      console.log('📝 [更新后] stepResults:', updated.map(r => ({ stepIndex: r.stepIndex, status: r.status })));
+      
+      return updated;
+    });
     
     // 自动定位到下一步（如果当前步骤通过）
     if (stepIndex < steps.length - 1 && status === 'pass') {
@@ -1000,7 +1076,7 @@ export function TestCaseExecutor({
             </div>
             
             {/* 记录测试结果 */}
-            <div className="mb-4">
+            <div className="mb-0">
               <div className="flex items-center gap-1.5 mb-2.5 text-[13px] font-semibold text-gray-700">
                 <span>📝</span>
                 <span>记录测试结果</span>
@@ -1198,23 +1274,15 @@ export function TestCaseExecutor({
                 {saving ? (
                   <>
                     <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    {showBatchControls ? '保存中...' : '提交中...'}
+                    提交中...
                   </>
                 ) : (
                   <>
                     <Save className="w-3.5 h-3.5" />
-                    {showBatchControls ? '保存并继续' : '提交结果'}
+                    {showBatchControls && hasNext ? '提交并继续 →' : '提交结果'}
                   </>
                 )}
               </button>
-              {showBatchControls && onNext && hasNext && (
-                <button
-                  onClick={onNext}
-                  className="inline-flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-[5px] text-xs font-semibold transition-all"
-                >
-                  下一个 →
-                </button>
-              )}
             </div>
           </div>
         </div>

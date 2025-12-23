@@ -227,5 +227,20 @@ router.get('/executions/:executionId/detail', async (req: Request, res: Response
   }
 });
 
+/**
+ * 删除测试计划执行记录
+ * DELETE /api/test-plans/executions/:executionId
+ */
+router.delete('/executions/:executionId', async (req: Request, res: Response) => {
+  try {
+    const executionId = req.params.executionId;
+    await testPlanService.deleteTestPlanExecution(executionId);
+    res.json({ success: true });
+  } catch (error: any) {
+    console.error('删除测试计划执行记录失败:', error);
+    res.status(500).json({ error: error.message || '删除测试计划执行记录失败' });
+  }
+});
+
 export default router;
 

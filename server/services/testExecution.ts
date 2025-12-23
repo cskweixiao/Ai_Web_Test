@@ -17,6 +17,7 @@ import { StreamService } from './streamService.js';
 import { EvidenceService } from './evidenceService.js';
 import { TestCaseExecutionService } from './testCaseExecutionService.js';
 import { PlaywrightTestRunner } from './playwrightTestRunner.js';
+import sharp from 'sharp';
 
 // 重构后的测试执行服务：支持 MCP 和 Playwright Test Runner 两种执行引擎
 export class TestExecutionService {
@@ -1114,47 +1115,95 @@ export class TestExecutionService {
       let selector: string | undefined;
       let value: string | undefined;
       
+      // 🔥 优先识别观察/验证类操作（不是主动操作）
+      if (lowerDesc.includes('观察') || lowerDesc.includes('等待页面') || 
+          lowerDesc.includes('页面应该') || lowerDesc.includes('页面自动')) {
+        // 观察页面跳转 -> 等待操作，而不是主动导航
+        action = 'wait';
+        // 尝试提取等待时间，如果没有则默认等待条件
+        const waitMatch = description.match(/(\d+)\s*(?:秒|s|second)/i);
+        if (waitMatch) {
+          value = waitMatch[1];
+        } else {
+          // 如果描述中有URL/路径，作为等待条件的提示
+          const pathMatch = description.match(/[(（]?\s*(\/[^\s)）]+)\s*[)）]?/);
+          if (pathMatch) {
+            // 等待URL变化到指定路径
+            selector = `url:${pathMatch[1]}`;
+          } else {
+            // 默认等待3秒
+            value = '3';
+          }
+        }
+      }
       // 识别导航操作（打开、访问、进入、导航到等）
-      if (lowerDesc.includes('打开') || lowerDesc.includes('访问') || 
+      else if (lowerDesc.includes('打开') || lowerDesc.includes('访问') || 
           lowerDesc.includes('进入') || lowerDesc.includes('导航') ||
-          lowerDesc.includes('goto') || lowerDesc.includes('navigate')) {
+          lowerDesc.includes('goto') || lowerDesc.includes('navigate') ||
+          (lowerDesc.includes('跳转至') && !lowerDesc.includes('观察') && !lowerDesc.includes('自动跳转')) || 
+          (lowerDesc.includes('跳转到') && !lowerDesc.includes('观察') && !lowerDesc.includes('自动跳转'))) {
         action = 'navigate';
-        // 尝试提取 URL
-        const urlMatch = description.match(/(https?:\/\/[^\s]+|www\.[^\s]+|[a-zA-Z0-9-]+\.[a-zA-Z]{2,}[^\s]*)/);
+        // 尝试提取 URL - 支持多种格式
+        // 1. 完整 URL: http://example.com 或 https://example.com
+        let urlMatch = description.match(/(https?:\/\/[^\s\)]+)/);
         if (urlMatch) {
           url = urlMatch[1];
-          if (!url.startsWith('http')) {
-            url = `https://${url}`;
-          }
         } else {
-          // 如果没有明确的 URL，尝试从描述中推断
-          if (lowerDesc.includes('百度')) {
-            url = 'https://www.baidu.com';
-          } else if (lowerDesc.includes('google')) {
-            url = 'https://www.google.com';
-          } else {
-            // 默认使用描述作为 URL（可能需要在执行时进一步处理）
-            url = description.replace(/^(打开|访问|进入|导航到)\s*/i, '').trim();
+          // 2. 域名格式: www.example.com 或 example.com
+          urlMatch = description.match(/(www\.[^\s\)]+|[a-zA-Z0-9-]+\.[a-zA-Z]{2,}[^\s\)]*)/);
+          if (urlMatch) {
+            url = urlMatch[1];
             if (!url.startsWith('http')) {
               url = `https://${url}`;
+            }
+          } else {
+            // 3. 路径格式: /sys-monitor 或 (/sys-monitor) 或 (路径)
+            urlMatch = description.match(/[(（]?\s*(\/[^\s)）]+)\s*[)）]?/);
+            if (urlMatch) {
+              url = urlMatch[1];
+              // 路径格式不需要添加 https://，保持原样
+            } else {
+              // 4. 从"跳转至"或"跳转到"后面提取路径
+              urlMatch = description.match(/(?:跳转至|跳转到|自动跳转至|自动跳转到)[：:]\s*[(（]?\s*(\/[^\s)）]+)\s*[)）]?/i);
+              if (urlMatch) {
+                url = urlMatch[1];
+              } else {
+                // 5. 如果没有明确的 URL，尝试从描述中推断
+                if (lowerDesc.includes('百度')) {
+                  url = 'https://www.baidu.com';
+                } else if (lowerDesc.includes('google')) {
+                  url = 'https://www.google.com';
+                } else {
+                  // 默认使用描述作为 URL（可能需要在执行时进一步处理）
+                  url = description.replace(/^(打开|访问|进入|导航到|跳转至|跳转到|自动跳转至|自动跳转到)\s*/i, '').trim();
+                  // 移除可能的括号和箭头后的描述
+                  url = url.replace(/^[(（]/, '').replace(/[)）].*$/, '').split('->')[0].trim();
+                  if (url && !url.startsWith('http') && !url.startsWith('/')) {
+                    url = `https://${url}`;
+                  }
+                }
+              }
             }
           }
         }
       }
-      // 识别点击操作
+      // 识别点击操作（包括勾选、选中等）
       else if (lowerDesc.includes('点击') || lowerDesc.includes('选择') || 
-               lowerDesc.includes('click')) {
+               lowerDesc.includes('click') || lowerDesc.includes('勾选') || 
+               lowerDesc.includes('选中') || lowerDesc.includes('取消勾选') ||
+               lowerDesc.includes('check') || lowerDesc.includes('uncheck')) {
         action = 'click';
         // 尝试提取选择器（支持多种格式）
         // 格式1: "点击搜索按钮" -> "搜索按钮"
         // 格式2: "点击：搜索按钮" -> "搜索按钮"
         // 格式3: "点击搜索按钮 -> 其他描述" -> "搜索按钮"
-        let elementMatch = description.match(/(?:点击|选择|click)\s*[：:]\s*(.+?)(?:\s*->|$)/i) || 
-                          description.match(/(?:点击|选择|click)\s+(.+?)(?:\s*->|$)/i);
+        // 格式4: "勾选《协议》" -> "《协议》"
+        let elementMatch = description.match(/(?:点击|选择|click|勾选|选中|取消勾选|check|uncheck)\s*[：:]\s*(.+?)(?:\s*->|$)/i) || 
+                          description.match(/(?:点击|选择|click|勾选|选中|取消勾选|check|uncheck)\s+(.+?)(?:\s*->|$)/i);
         
         if (!elementMatch) {
           // 如果上面没匹配到，尝试更宽松的匹配
-          elementMatch = description.match(/(?:点击|选择|click)\s+(.+)/i);
+          elementMatch = description.match(/(?:点击|选择|click|勾选|选中|取消勾选|check|uncheck)\s+(.+)/i);
         }
         
         if (elementMatch) {
@@ -1163,25 +1212,55 @@ export class TestExecutionService {
           selector = selector.split('->')[0].trim();
           selector = selector.split('，')[0].trim();
           selector = selector.split(',')[0].trim();
+          // 移除可能的书名号、引号等（前后分别处理）
+          selector = selector.replace(/^[《『"'「]/, '').replace(/[》』"'」]$/, '');
         } else {
           // 如果还是没匹配到，尝试从描述中提取（移除编号和操作词）
           selector = description
             .replace(/^\d+[\.、\)]\s*/, '') // 移除编号
-            .replace(/(?:点击|选择|click)\s*/i, '') // 移除操作词
+            .replace(/(?:点击|选择|click|勾选|选中|取消勾选|check|uncheck)\s*/i, '') // 移除操作词
             .split('->')[0] // 移除箭头后的描述
             .trim();
+          // 移除可能的书名号、引号等（前后分别处理）
+          selector = selector.replace(/^[《『"'「]/, '').replace(/[》』"'」]$/, '');
         }
       }
       // 识别输入操作
       else if (lowerDesc.includes('输入') || lowerDesc.includes('填写') || 
                lowerDesc.includes('type') || lowerDesc.includes('fill')) {
         action = 'fill';
-        // 尝试提取选择器和值
-        const fillMatch = description.match(/(?:输入|填写|fill|type)\s*(?:到|到|in|into)?\s*[：:]\s*(.+?)(?:\s*，|,|\s*值为|值为|value\s*[:：]\s*)(.+)/i) ||
-                        description.match(/(?:输入|填写|fill|type)\s+(.+?)\s+(.+)/i);
+        // 尝试提取选择器和值（支持多种格式）
+        // 格式1: "输入：用户名：admin" 或 "输入到用户名，值为admin"
+        let fillMatch = description.match(/(?:输入|填写|fill|type)\s*(?:到|到|in|into)?\s*[：:]\s*(.+?)(?:\s*，|,|\s*值为|值为|value\s*[:：]\s*)(.+)/i);
+        
+        // 格式2: "在用户名输入框输入'admin'" 或 "在用户名输入'admin'"
+        if (!fillMatch) {
+          fillMatch = description.match(/(?:在|向)\s*(.+?)(?:输入框|输入区|文本框)?\s*(?:输入|填写|fill|type)\s*['"'](.+?)['"']/i);
+        }
+        
+        // 格式3: "输入 用户名 admin" （空格分隔）
+        if (!fillMatch) {
+          fillMatch = description.match(/(?:输入|填写|fill|type)\s+(.+?)\s+(.+)/i);
+        }
+        
+        // 格式4: "在用户名输入admin" （没有引号）
+        if (!fillMatch) {
+          fillMatch = description.match(/(?:在|向)\s*(.+?)(?:输入框|输入区|文本框)?\s*(?:输入|填写|fill|type)\s+(.+)/i);
+        }
+        
         if (fillMatch) {
           selector = fillMatch[1].trim();
-          value = fillMatch[2].trim();
+          value = fillMatch[2]?.trim();
+          // 清理选择器：移除可能的箭头后描述
+          if (selector) {
+            selector = selector.split('->')[0].trim();
+          }
+          // 清理值：移除可能的箭头后描述
+          if (value) {
+            value = value.split('->')[0].trim();
+            // 移除可能的引号
+            value = value.replace(/^['"]|['"]$/g, '');
+          }
         }
       }
       // 识别等待操作
@@ -3098,6 +3177,30 @@ ${elements.map((el, index) => `${index + 1}. ${el.ref}: ${el.role} "${el.text}"`
     return new Promise(resolve => setTimeout(resolve, ms));
   }
 
+  /**
+   * 清理文件名，将不安全字符转换为安全字符
+   * 处理中文字符，确保文件名在不同操作系统中都能正常使用
+   */
+  private sanitizeFilename(name: string): string {
+    if (!name) return 'unnamed';
+    
+    // 🔥 移除或替换不安全的文件名字符
+    const sanitized = name
+      // 替换 Windows 不允许的字符: \ / : * ? " < > |
+      .replace(/[\\/:*?"<>|]/g, '-')
+      // 替换连续的空格为单个短横线
+      .replace(/\s+/g, '-')
+      // 替换连续的短横线为单个短横线
+      .replace(/-+/g, '-')
+      // 移除开头和结尾的短横线
+      .replace(/^-+|-+$/g, '')
+      // 限制文件名长度（保留足够空间给前缀和后缀）
+      .substring(0, 100);
+    
+    // 如果清理后为空，使用默认名称
+    return sanitized || 'unnamed';
+  }
+
   // 🔥 新增：确保页面稳定性 - 增强版
   private async ensurePageStability(runId: string): Promise<void> {
     try {
@@ -4397,6 +4500,43 @@ ${elements.map((el, index) => `${index + 1}. ${el.ref}: ${el.role} "${el.text}"`
   }
 
   /**
+   * 在截图上添加文字标识（步骤/断言）
+   */
+  private async addScreenshotLabel(
+    imageBuffer: Buffer,
+    label: string,
+    type: 'step' | 'assertion'
+  ): Promise<Buffer> {
+    try {
+      // 使用 sharp 在图片左上角添加文字标识
+      const labelBg = type === 'assertion' ? 'rgba(255,107,53,0.9)' : 'rgba(78,205,196,0.9)';
+      
+      // 创建 SVG 文本标签
+      const svgLabel = `
+        <svg width="200" height="40">
+          <rect x="0" y="0" width="200" height="40" fill="${labelBg}" rx="5"/>
+          <text x="10" y="28" font-family="Arial, sans-serif" font-size="18" font-weight="bold" fill="white">${label}</text>
+        </svg>
+      `;
+      
+      // 将标签叠加到图片上
+      const labelBuffer = Buffer.from(svgLabel);
+      const labeledImage = await sharp(imageBuffer)
+        .composite([{
+          input: labelBuffer,
+          top: 10,
+          left: 10
+        }])
+        .toBuffer();
+      
+      return labeledImage;
+    } catch (error: any) {
+      console.warn(`⚠️ 添加截图标识失败，使用原图: ${error.message}`);
+      return imageBuffer;
+    }
+  }
+
+  /**
    * 保存截图证据
    */
   private async saveScreenshotEvidence(runId: string): Promise<void> {
@@ -4415,6 +4555,21 @@ ${elements.map((el, index) => `${index + 1}. ${el.ref}: ${el.role} "${el.text}"`
         orderDirection: 'asc'
       });
 
+      // 🔥 获取测试用例信息，以确定操作步骤和断言步骤的分界
+      const testRun = testRunStore.get(runId);
+      let stepsCount = 0;
+      if (testRun && testRun.testCaseId) {
+        try {
+          const testCase = await this.getTestCaseById(testRun.testCaseId);
+          if (testCase) {
+            const stepsText = testCase.steps || '';
+            stepsCount = this.parseTestSteps(stepsText).length;
+          }
+        } catch {
+          console.warn(`⚠️ [${runId}] 无法获取测试用例信息，使用默认分界`);
+        }
+      }
+
       // 🔥 修复：检查 artifacts 目录中已存在的文件，避免重复保存
       const artifactsDir = this.evidenceService.getArtifactsDir();
       const runArtifactsDir = path.join(artifactsDir, runId);
@@ -4426,9 +4581,28 @@ ${elements.map((el, index) => `${index + 1}. ${el.ref}: ${el.role} "${el.text}"`
         // 目录不存在，继续处理
       }
 
+      // 🔥 分离操作步骤截图和断言截图
+      const stepScreenshots: typeof screenshots = [];
+      const assertionScreenshots: typeof screenshots = [];
+
+      for (const screenshot of screenshots) {
+        // 判断是断言截图还是操作步骤截图
+        const assertionMatch = screenshot.fileName.match(/^assertion-(\d+)-/);
+        if (assertionMatch) {
+          // 断言截图：assertion-1-success-xxx.png
+          assertionScreenshots.push(screenshot);
+        } else {
+          // 操作步骤截图：step-X-xxx.png 或其他格式
+          stepScreenshots.push(screenshot);
+        }
+      }
+
       let savedCount = 0;
       let skippedCount = 0;
-      for (const screenshot of screenshots) {
+
+      // 🔥 先保存操作步骤截图
+      console.log(`📸 [${runId}] 开始保存操作步骤截图 (${stepScreenshots.length}张)`);
+      for (const screenshot of stepScreenshots) {
         try {
           // 🔥 修复：检查文件是否已在 artifacts 中存在
           if (existingFiles.has(screenshot.fileName)) {
@@ -4448,7 +4622,19 @@ ${elements.map((el, index) => `${index + 1}. ${el.ref}: ${el.role} "${el.text}"`
 
           // 检查截图文件是否存在
           if (await this.fileExists(screenshotPath)) {
-            const screenshotBuffer = await fsPromises.readFile(screenshotPath);
+            let screenshotBuffer = await fsPromises.readFile(screenshotPath);
+            
+            // 🔥 在截图上添加"步骤"标识
+            const stepMatch = screenshot.fileName.match(/^step-(\d+)-/);
+            if (stepMatch) {
+              const stepIndex = stepMatch[1];
+              screenshotBuffer = await this.addScreenshotLabel(
+                screenshotBuffer,
+                `步骤 ${stepIndex}`,
+                'step'
+              );
+            }
+            
             await this.evidenceService.saveBufferArtifact(
               runId,
               'screenshot',
@@ -4461,6 +4647,54 @@ ${elements.map((el, index) => `${index + 1}. ${el.ref}: ${el.role} "${el.text}"`
           }
         } catch (error: any) {
           console.warn(`⚠️ [${runId}] 保存截图证据失败: ${screenshot.fileName} (ID: ${screenshot.id})`, error.message);
+        }
+      }
+
+      // 🔥 再保存断言截图
+      if (assertionScreenshots.length > 0) {
+        console.log(`📸 [${runId}] 开始保存断言截图 (${assertionScreenshots.length}张)`);
+        for (const screenshot of assertionScreenshots) {
+          try {
+            if (existingFiles.has(screenshot.fileName)) {
+              console.log(`⚠️ [${runId}] 截图已存在于 artifacts，跳过: ${screenshot.fileName}`);
+              skippedCount++;
+              continue;
+            }
+
+            const screenshotPath = screenshot.filePath;
+
+            if (!screenshotPath) {
+              console.warn(`⚠️ [${runId}] 截图记录缺少文件路径: ${screenshot.fileName} (ID: ${screenshot.id})`);
+              continue;
+            }
+
+            if (await this.fileExists(screenshotPath)) {
+              let screenshotBuffer = await fsPromises.readFile(screenshotPath);
+              
+              // 🔥 在截图上添加"断言"标识
+              const assertionMatch = screenshot.fileName.match(/^assertion-(\d+)-/);
+              if (assertionMatch) {
+                const assertionIndex = assertionMatch[1];
+                screenshotBuffer = await this.addScreenshotLabel(
+                  screenshotBuffer,
+                  `断言 ${assertionIndex}`,
+                  'assertion'
+                );
+              }
+              
+              await this.evidenceService.saveBufferArtifact(
+                runId,
+                'screenshot',
+                screenshotBuffer,
+                screenshot.fileName
+              );
+              savedCount++;
+            } else {
+              console.warn(`⚠️ [${runId}] 截图文件不存在: ${screenshotPath} (ID: ${screenshot.id})`);
+            }
+          } catch (error: any) {
+            console.warn(`⚠️ [${runId}] 保存截图证据失败: ${screenshot.fileName} (ID: ${screenshot.id})`, error.message);
+          }
         }
       }
 
@@ -5209,7 +5443,7 @@ ${elements.map((el, index) => `${index + 1}. ${el.ref}: ${el.role} "${el.text}"`
     }
 
     console.log(`📊 [${runId}] 总步骤数: ${totalSteps} (操作: ${steps.length}, 断言: ${assertions.length})`);
-    this.addLog(runId, `📊 总步骤数: ${totalSteps}`, 'info');
+    this.addLog(runId, `📊 总步骤数: ${totalSteps} (操作: ${steps.length}, 断言: ${assertions.length})`, 'info');
 
     // 执行操作步骤
     for (let i = 0; i < steps.length; i++) {
@@ -5227,13 +5461,18 @@ ${elements.map((el, index) => `${index + 1}. ${el.ref}: ${el.role} "${el.text}"`
       // this.addLog(runId, `🔧 执行步骤 ${stepIndex}: ${step.description}`, 'info');
       this.updateTestRunStatus(runId, 'running', `🔧 执行步骤 ${stepIndex}/${totalSteps}: ${step.description}`);
 
-      // 🔥 如果选择器是文本描述（不是 CSS 选择器），使用 AI 解析器智能匹配元素
+      // 🔥 如果选择器缺失或是文本描述（不是 CSS 选择器），使用 AI 解析器智能匹配元素
       let enhancedStep = step;
-      if (step.selector && !step.selector.startsWith('#') && !step.selector.startsWith('.') && 
-          !step.selector.startsWith('[') && !step.selector.includes(' ') && 
-          (step.action === 'click' || step.action === 'fill')) {
+      // 对于click和fill操作，如果没有selector或selector不是CSS选择器，都需要AI解析
+      const needsAiParsing = (step.action === 'click' || step.action === 'fill') && 
+        (!step.selector || 
+         (!step.selector.startsWith('#') && !step.selector.startsWith('.') && 
+          !step.selector.startsWith('[') && !step.selector.includes(' ')));
+      
+      if (needsAiParsing) {
         try {
-          this.addLog(runId, `🤖 使用 AI 解析器智能匹配元素: ${step.selector}`, 'info');
+          const elementDesc = step.selector || '从步骤描述中提取';
+          this.addLog(runId, `🤖 使用 AI 解析器智能匹配元素: ${elementDesc}`, 'info');
           
           // 🔥 使用等待日志包装长时间操作
           const result = await this.executeWithWaitingLog(
@@ -5255,6 +5494,7 @@ ${elements.map((el, index) => `${index + 1}. ${el.ref}: ${el.role} "${el.text}"`
                 let snapshotText = `Page URL: ${pageUrl}\nPage Title: ${pageTitle}\n\n`;
                 
                 // 递归提取可交互元素（使用 MCP 快照格式）
+                let elementCounter = 0; // 🔥 修复：使用外部计数器确保唯一性
                 const extractElements = (node: any, depth = 0): string[] => {
                   const elements: string[] = [];
                   if (!node) return elements;
@@ -5262,10 +5502,26 @@ ${elements.map((el, index) => `${index + 1}. ${el.ref}: ${el.role} "${el.text}"`
                   // 提取元素信息
                   if (node.role && (node.role === 'button' || node.role === 'textbox' || 
                       node.role === 'link' || node.role === 'checkbox' || node.role === 'combobox')) {
-                    const name = node.name || '';
+                    let name = node.name || '';
                     const role = node.role || '';
-                    // 🔥 修复：使用 MCP 快照格式 [ref=xxx] role "text"
-                    const ref = node.id || `element_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+                    
+                    // 🔥 增强：对于没有name的元素，尝试使用description或value
+                    if (!name && node.description) {
+                      name = node.description;
+                    }
+                    if (!name && node.value) {
+                      name = node.value;
+                    }
+                    
+                    // 🔥 即使name为空也要包含元素（用placeholder或空字符串）
+                    if (!name) {
+                      name = `未命名${role}`;
+                    }
+                    
+                    // 🔥 修复：使用外部计数器生成稳定的ref
+                    const refCounter = elementCounter++;
+                    const safeName = name.replace(/\s+/g, '_').replace(/[^\w]/g, '').substring(0, 10);
+                    const ref = node.id || `element_${refCounter}_${role}_${safeName || 'unnamed'}`;
                     elements.push(`[ref=${ref}] ${role} "${name}"`);
                     
                     // 🔥 保存映射：ref -> { role, name }
@@ -5284,6 +5540,13 @@ ${elements.map((el, index) => `${index + 1}. ${el.ref}: ${el.role} "${el.text}"`
                 
                 const elements = extractElements(snapshot);
                 snapshotText += elements.join('\n');
+                
+                // 🔥 添加调试日志，查看快照内容
+                console.log(`📸 [${runId}] 快照包含 ${elements.length} 个元素`);
+                console.log(`📋 [${runId}] 快照前10个元素:`);
+                elements.slice(0, 10).forEach((elem, idx) => {
+                  console.log(`   ${idx + 1}. ${elem}`);
+                });
                 
                 // 如果快照为空，使用 HTML 作为备用
                 if (elements.length === 0) {
@@ -5315,50 +5578,385 @@ ${elements.map((el, index) => `${index + 1}. ${el.ref}: ${el.role} "${el.text}"`
                 const ref = aiResult.step.ref;
                 // 如果 ref 是 CSS 选择器格式，直接使用
                 if (ref.startsWith('#') || ref.startsWith('.') || ref.startsWith('[')) {
-                  enhancedStep = { ...step, selector: ref };
+                  const aiValue = aiResult.step.text || aiResult.step.value;
+                  enhancedStep = { 
+                    ...step, 
+                    selector: ref,
+                    ...(aiValue !== undefined ? { value: aiValue } : {})
+                  };
                   this.addLog(runId, `✅ AI 匹配成功，使用选择器: ${ref}`, 'success');
                 } else {
                   // 🔥 修复：通过映射表找到 role 和 name，使用 getByRole 定位
                   const elementInfo = refToElementMap.get(ref);
                   const page = this.playwrightRunner.getPage();
-                  if (elementInfo && elementInfo.name && page) {
-                    try {
-                      // 使用 Playwright 的 getByRole 定位元素
-                      const roleLocator = page.getByRole(elementInfo.role as any, { name: elementInfo.name, exact: false });
-                      if (await roleLocator.count() > 0) {
-                        // 使用 role 和 name 的组合作为选择器（Playwright Test Runner 会处理）
-                        enhancedStep = { ...step, selector: `${elementInfo.role}:${elementInfo.name}` };
-                        this.addLog(runId, `✅ AI 匹配成功，使用 role+name: ${elementInfo.role}:${elementInfo.name}`, 'success');
-                      } else {
+                  if (elementInfo && page) {
+                    // 🔥 优先尝试：如果element描述更具体，使用它来匹配
+                    if (aiResult.step.element && aiResult.step.element.length > 2) {
+                      try {
+                        let matched = false;
+                        
+                        // 提取关键词（去除操作词、符号、编号和期望结果）
+                        const descText = step.description
+                          .toLowerCase()
+                          .replace(/^\d+[.、)]\s*/, '') // 移除步骤编号
+                          .split(/->|→/)[0] // 只取操作部分，不要期望结果
+                          .replace(/勾选|选中|点击|复选框|checkbox/g, '')
+                          .replace(/[《》"'「」[\]]/g, '')
+                          .trim();
+                        
+                        console.log(`🔍 [${runId}] 智能匹配描述: "${descText}"`);
+                        console.log(`🔍 [${runId}] 原始描述: "${step.description}"`);
+                        console.log(`🔍 [${runId}] AI元素描述: "${aiResult.step.element}"`);
+                        console.log(`🔍 [${runId}] 元素类型: ${elementInfo.role}`);
+                        
+                        // 🔥 新增：对于按钮，从element描述中提取按钮文本
+                        if (elementInfo.role === 'button') {
+                          try {
+                            // 从"登录按钮"、"登录"按钮、《登录》按钮等格式中提取按钮文本
+                            const buttonText = aiResult.step.element
+                              .replace(/按钮|button/gi, '')
+                              .replace(/[《》"'「」[\]]/g, '')
+                              .trim();
+                            
+                            console.log(`🎯 [${runId}] 提取按钮文本: "${buttonText}"`);
+                            
+                            // 方法1: 使用 getByRole('button', {name: 'xxx'})
+                            const buttonLocator = page.getByRole('button', { name: buttonText, exact: false });
+                            if (await buttonLocator.count() > 0) {
+                              const aiValue = aiResult.step.text || aiResult.step.value;
+                              enhancedStep = { 
+                                ...step, 
+                                selector: `button:${buttonText}`,
+                                ...(aiValue !== undefined ? { value: aiValue } : {})
+                              };
+                              this.addLog(runId, `✅ AI 匹配成功，使用 getByRole('button'): "${buttonText}"`, 'success');
+                              matched = true;
+                            }
+                            
+                            // 方法2: 如果方法1失败，尝试使用 getByText
+                            if (!matched) {
+                              const textLocator = page.getByText(buttonText, { exact: false });
+                              if (await textLocator.count() > 0) {
+                                const aiValue = aiResult.step.text || aiResult.step.value;
+                                enhancedStep = { 
+                                  ...step, 
+                                  selector: `text:${buttonText}`,
+                                  ...(aiValue !== undefined ? { value: aiValue } : {})
+                                };
+                                this.addLog(runId, `✅ AI 匹配成功，使用 getByText: "${buttonText}"`, 'success');
+                                matched = true;
+                              }
+                            }
+                          } catch (buttonError: any) {
+                            console.log(`  ⚠️ 按钮查找失败: ${buttonError.message}`);
+                          }
+                        }
+                        
+                        // 🔥 新增：对于输入框，从element描述中提取输入框标签
+                        if (!matched && (elementInfo.role === 'textbox' || elementInfo.role === 'combobox')) {
+                          try {
+                            // 从"用户名输入框"、"用户名"等格式中提取标签文本
+                            const inputLabel = aiResult.step.element
+                              .replace(/输入框|文本框|textbox|input|输入|框/gi, '')
+                              .replace(/[《》"'「」[\]]/g, '')
+                              .trim();
+                            
+                            console.log(`🎯 [${runId}] 提取输入框标签: "${inputLabel}"`);
+                            
+                            // 方法1: 使用 getByLabel
+                            if (inputLabel) {
+                              const labelLocator = page.getByLabel(inputLabel, { exact: false });
+                              if (await labelLocator.count() > 0) {
+                                const aiValue = aiResult.step.text || aiResult.step.value;
+                                enhancedStep = { 
+                                  ...step, 
+                                  selector: `label:${inputLabel}`,
+                                  ...(aiValue !== undefined ? { value: aiValue } : {})
+                                };
+                                this.addLog(runId, `✅ AI 匹配成功，使用 getByLabel: "${inputLabel}"`, 'success');
+                                matched = true;
+                              }
+                            }
+                            
+                            // 方法2: 使用 getByPlaceholder
+                            if (!matched && inputLabel) {
+                              const placeholderLocator = page.getByPlaceholder(inputLabel, { exact: false });
+                              if (await placeholderLocator.count() > 0) {
+                                const aiValue = aiResult.step.text || aiResult.step.value;
+                                enhancedStep = { 
+                                  ...step, 
+                                  selector: `placeholder:${inputLabel}`,
+                                  ...(aiValue !== undefined ? { value: aiValue } : {})
+                                };
+                                this.addLog(runId, `✅ AI 匹配成功，使用 getByPlaceholder: "${inputLabel}"`, 'success');
+                                matched = true;
+                              }
+                            }
+                            
+                            // 方法3: 使用 getByRole('textbox', {name: 'xxx'})
+                            if (!matched && inputLabel) {
+                              const roleLocator = page.getByRole('textbox', { name: inputLabel, exact: false });
+                              if (await roleLocator.count() > 0) {
+                                const aiValue = aiResult.step.text || aiResult.step.value;
+                                enhancedStep = { 
+                                  ...step, 
+                                  selector: `textbox:${inputLabel}`,
+                                  ...(aiValue !== undefined ? { value: aiValue } : {})
+                                };
+                                this.addLog(runId, `✅ AI 匹配成功，使用 getByRole('textbox'): "${inputLabel}"`, 'success');
+                                matched = true;
+                              }
+                            }
+                          } catch (inputError: any) {
+                            console.log(`  ⚠️ 输入框查找失败: ${inputError.message}`);
+                          }
+                        }
+                        
+                        // 🔥 方法1: 对于复选框，优先使用文本内容查找（最通用）
+                        if (!matched && (elementInfo.role === 'checkbox' || elementInfo.role === 'radio')) {
+                          try {
+                            // 方法1.1: 使用 getByLabel
+                            const labelLocator = page.getByLabel(descText, { exact: false });
+                            if (await labelLocator.count() > 0) {
+                              const aiValue = aiResult.step.text || aiResult.step.value;
+                              enhancedStep = { 
+                                ...step, 
+                                selector: `label:${descText}`,
+                                ...(aiValue !== undefined ? { value: aiValue } : {})
+                              };
+                              this.addLog(runId, `✅ AI 匹配成功，使用 getByLabel: "${descText}"`, 'success');
+                              matched = true;
+                            }
+                            
+                            // 方法1.2: 使用 getByText 查找包含描述文本的元素附近的复选框
+                            if (!matched) {
+                              const textLocator = page.getByText(descText, { exact: false });
+                              if (await textLocator.count() > 0) {
+                                // 🔥 修复：找到文本后，直接使用label方式定位，而不是计算索引
+                                // 因为页面状态可能在AI解析和实际执行之间发生变化
+                                const aiValue = aiResult.step.text || aiResult.step.value;
+                                enhancedStep = { 
+                                  ...step, 
+                                  selector: `text:${descText}`,
+                                  ...(aiValue !== undefined ? { value: aiValue } : {})
+                                };
+                                this.addLog(runId, `✅ AI 匹配成功，通过文本查找: text:${descText}`, 'success');
+                                matched = true;
+                              }
+                            }
+                          } catch (labelError: any) {
+                            console.log(`  ⚠️ 文本查找失败: ${labelError.message}`);
+                          }
+                        }
+                        
+                        // 🔥 方法2: 遍历所有同类型元素，查找包含关键词的
+                        if (!matched) {
+                          const allElements = page.getByRole(elementInfo.role as any);
+                          const count = await allElements.count();
+                          
+                          // 提取中文关键词（按字分割，过滤停用词）
+                          const keywords = descText
+                            .replace(/\s+/g, '')
+                            .split('')
+                            .filter(w => w.length > 0 && !/[的了和与或、，。]/.test(w));
+                          
+                          console.log(`🔍 [${runId}] 智能匹配关键词:`, keywords);
+                          
+                          for (let i = 0; i < count; i++) {
+                          const elem = allElements.nth(i);
+                          
+                          // 获取元素自身的文本属性（处理null值）
+                          const text = (await elem.textContent().catch((e: any) => null)) || '';
+                          const ariaLabel = (await elem.getAttribute('aria-label').catch((e: any) => null)) || '';
+                          const title = (await elem.getAttribute('title').catch((e: any) => null)) || '';
+                          
+                          // 🔥 关键修复：对于复选框，查找关联的label元素
+                          let labelText = '';
+                          if (elementInfo.role === 'checkbox') {
+                            try {
+                              // 方法1: 通过for属性关联
+                              const id = (await elem.getAttribute('id').catch((e: any) => null)) || '';
+                              if (id) {
+                                const label = page.locator(`label[for="${id}"]`);
+                                if (await label.count() > 0) {
+                                  labelText = (await label.textContent().catch((e: any) => null)) || '';
+                                }
+                              }
+                              
+                              // 方法2: 作为label的子元素
+                              if (!labelText) {
+                                const parentLabel = elem.locator('xpath=ancestor::label[1]');
+                                if (await parentLabel.count() > 0) {
+                                  labelText = (await parentLabel.textContent().catch((e: any) => null)) || '';
+                                }
+                              }
+                              
+                              // 方法3: 查找紧邻的label元素（后面的）
+                              if (!labelText) {
+                                const nextLabel = elem.locator('xpath=following-sibling::*[1]');
+                                if (await nextLabel.count() > 0) {
+                                  const tagName = await nextLabel.evaluate((el: any) => el.tagName).catch((e: any) => '');
+                                  if (tagName.toLowerCase() === 'label') {
+                                    labelText = (await nextLabel.textContent().catch((e: any) => null)) || '';
+                                  } else {
+                                    // 可能label包裹在其他元素中，尝试查找内部文本
+                                    labelText = (await nextLabel.textContent().catch((e: any) => null)) || '';
+                                  }
+                                }
+                              }
+                              
+                              // 方法4: 查找父容器的所有文本
+                              if (!labelText) {
+                                const parent = elem.locator('xpath=parent::*');
+                                if (await parent.count() > 0) {
+                                  const parentText = (await parent.textContent().catch((e: any) => null)) || '';
+                                  // 移除复选框自己的文本
+                                  labelText = parentText.replace(text, '').trim();
+                                }
+                              }
+                            } catch (labelError) {
+                              console.warn(`⚠️ [${runId}] 查找label失败:`, labelError);
+                            }
+                          }
+                          
+                          // 组合所有文本
+                          const combinedText = `${text} ${ariaLabel} ${title} ${labelText}`.toLowerCase().trim();
+                          console.log(`  [${i}] 元素文本: "${combinedText}" (label: "${labelText}")`);
+                          
+                          // 检查是否匹配关键词
+                          const matchCount = keywords.filter(kw => combinedText.includes(kw)).length;
+                          const matchRatio = keywords.length > 0 ? matchCount / keywords.length : 0;
+                          console.log(`  [${i}] 匹配度: ${matchCount}/${keywords.length} = ${(matchRatio * 100).toFixed(0)}%`);
+                          
+                          // 匹配条件：至少匹配50%的关键词，或者匹配至少5个关键词
+                          if (matchCount >= Math.max(5, Math.ceil(keywords.length * 0.5))) {
+                            const aiValue = aiResult.step.text || aiResult.step.value;
+                            enhancedStep = { 
+                              ...step, 
+                              selector: `${elementInfo.role}:nth(${i})`,
+                              ...(aiValue !== undefined ? { value: aiValue } : {})
+                            };
+                            this.addLog(runId, `✅ AI 匹配成功，使用 role+index: ${elementInfo.role}:nth(${i}) (匹配度: ${matchCount}/${keywords.length})`, 'success');
+                            matched = true;
+                            break;
+                          }
+                          }
+                          
+                          // 如果遍历后没有匹配，尝试其他回退方案
+                          if (!matched && elementInfo.name) {
+                            // 回退：使用 role+name
+                            const roleLocator = page.getByRole(elementInfo.role as any, { name: elementInfo.name, exact: false });
+                            if (await roleLocator.count() > 0) {
+                              const aiValue = aiResult.step.text || aiResult.step.value;
+                              enhancedStep = { 
+                                ...step, 
+                                selector: `${elementInfo.role}:${elementInfo.name}`,
+                                ...(aiValue !== undefined ? { value: aiValue } : {})
+                              };
+                              this.addLog(runId, `✅ AI 匹配成功，使用 role+name: ${elementInfo.role}:${elementInfo.name}`, 'success');
+                              matched = true;
+                            }
+                          }
+                        }
+                          
+                        if (!matched) {
+                          throw new Error('无法通过任何方式匹配元素');
+                        }
+                      } catch (locatorError: any) {
+                        console.warn(`⚠️ [${runId}] 映射表定位失败: ${locatorError.message}`);
                         // 回退到使用 element 描述
                         if (aiResult.step.element) {
-                          enhancedStep = { ...step, selector: aiResult.step.element };
-                          this.addLog(runId, `✅ AI 匹配成功，使用元素描述: ${aiResult.step.element}`, 'success');
+                          const aiValue = aiResult.step.text || aiResult.step.value;
+                          enhancedStep = { 
+                            ...step, 
+                            selector: aiResult.step.element,
+                            ...(aiValue !== undefined ? { value: aiValue } : {})
+                          };
+                          this.addLog(runId, `⚠️ 回退使用元素描述: ${aiResult.step.element}`, 'warning');
                         } else {
                           this.addLog(runId, `⚠️ AI 解析出 ref 但无法定位，使用原始选择器`, 'warning');
                         }
                       }
-                    } catch (locatorError) {
-                      // 回退到使用 element 描述
-                      if (aiResult.step.element) {
-                        enhancedStep = { ...step, selector: aiResult.step.element };
-                        this.addLog(runId, `✅ AI 匹配成功，使用元素描述: ${aiResult.step.element}`, 'success');
-                      } else {
-                        this.addLog(runId, `⚠️ AI 解析出 ref 但无法定位，使用原始选择器`, 'warning');
+                    } else {
+                      // 没有element描述，直接返回错误
+                      this.addLog(runId, `⚠️ AI解析结果缺少element描述`, 'warning');
+                    }
+                  } else if (page) {
+                    // 🔥 增强：映射表中没有找到元素信息，但可以尝试智能匹配
+                    console.log(`⚠️ [${runId}] 映射表中未找到 ref: ${ref}，尝试智能匹配`);
+                    
+                    if (aiResult.step.element) {
+                      try {
+                        let matched = false;
+                        const elementDesc = aiResult.step.element;
+                        
+                        // 🔥 智能识别：如果element包含"按钮"，尝试按钮匹配
+                        if (elementDesc.includes('按钮') || elementDesc.toLowerCase().includes('button')) {
+                          const buttonText = elementDesc
+                            .replace(/按钮|button/gi, '')
+                            .replace(/[《》"'「」\[\]]/g, '')
+                            .trim();
+                          
+                          console.log(`🎯 [${runId}] 尝试匹配按钮: "${buttonText}"`);
+                          
+                          const buttonLocator = page.getByRole('button', { name: buttonText, exact: false });
+                          if (await buttonLocator.count() > 0) {
+                            const aiValue = aiResult.step.text || aiResult.step.value;
+                            enhancedStep = { 
+                              ...step, 
+                              selector: `button:${buttonText}`,
+                              ...(aiValue !== undefined ? { value: aiValue } : {})
+                            };
+                            this.addLog(runId, `✅ 智能匹配成功，使用按钮: "${buttonText}"`, 'success');
+                            matched = true;
+                          }
+                        }
+                        
+                        // 🔥 如果按钮匹配失败，尝试其他方式
+                        if (!matched) {
+                          const textToFind = elementDesc.replace(/[《》"'「」\[\]]/g, '').trim();
+                          const textLocator = page.getByText(textToFind, { exact: false });
+                          if (await textLocator.count() > 0) {
+                            const aiValue = aiResult.step.text || aiResult.step.value;
+                            enhancedStep = { 
+                              ...step, 
+                              selector: `text:${textToFind}`,
+                              ...(aiValue !== undefined ? { value: aiValue } : {})
+                            };
+                            this.addLog(runId, `✅ 智能匹配成功，使用文本: "${textToFind}"`, 'success');
+                            matched = true;
+                          }
+                        }
+                        
+                        if (!matched) {
+                          this.addLog(runId, `⚠️ 智能匹配失败，element: "${elementDesc}"`, 'warning');
+                        }
+                      } catch (smartMatchError: any) {
+                        console.warn(`⚠️ [${runId}] 智能匹配失败:`, smartMatchError.message);
                       }
                     }
-                  } else {
+                    
                     // 映射表中没有找到，尝试通过 ID 查找
                     if (page) {
                       try {
                         const idLocator = page.locator(`#${ref}`);
                         if (await idLocator.count() > 0) {
-                          enhancedStep = { ...step, selector: `#${ref}` };
+                          const aiValue = aiResult.step.text || aiResult.step.value;
+                          enhancedStep = { 
+                            ...step, 
+                            selector: `#${ref}`,
+                            ...(aiValue !== undefined ? { value: aiValue } : {})
+                          };
                           this.addLog(runId, `✅ AI 匹配成功，使用 ID: #${ref}`, 'success');
                         } else {
                           // 使用 element 描述
                           if (aiResult.step.element) {
-                            enhancedStep = { ...step, selector: aiResult.step.element };
+                            const aiValue = aiResult.step.text || aiResult.step.value;
+                            enhancedStep = { 
+                              ...step, 
+                              selector: aiResult.step.element,
+                              ...(aiValue !== undefined ? { value: aiValue } : {})
+                            };
                             this.addLog(runId, `✅ AI 匹配成功，使用元素描述: ${aiResult.step.element}`, 'success');
                           } else {
                             this.addLog(runId, `⚠️ AI 解析出 ref 但无法定位，使用原始选择器`, 'warning');
@@ -5367,7 +5965,12 @@ ${elements.map((el, index) => `${index + 1}. ${el.ref}: ${el.role} "${el.text}"`
                       } catch (idError: any) {
                         // 使用 element 描述
                         if (aiResult.step.element) {
-                          enhancedStep = { ...step, selector: aiResult.step.element };
+                          const aiValue = aiResult.step.text || aiResult.step.value;
+                          enhancedStep = { 
+                            ...step, 
+                            selector: aiResult.step.element,
+                            ...(aiValue !== undefined ? { value: aiValue } : {})
+                          };
                           this.addLog(runId, `✅ AI 匹配成功，使用元素描述: ${aiResult.step.element}`, 'success');
                         } else {
                           this.addLog(runId, `⚠️ AI 解析出 ref 但无法定位，使用原始选择器`, 'warning');
@@ -5376,7 +5979,12 @@ ${elements.map((el, index) => `${index + 1}. ${el.ref}: ${el.role} "${el.text}"`
                     } else {
                       // 没有 page，使用 element 描述
                       if (aiResult.step.element) {
-                        enhancedStep = { ...step, selector: aiResult.step.element };
+                        const aiValue = aiResult.step.text || aiResult.step.value;
+                        enhancedStep = { 
+                          ...step, 
+                          selector: aiResult.step.element,
+                          ...(aiValue !== undefined ? { value: aiValue } : {})
+                        };
                         this.addLog(runId, `✅ AI 匹配成功，使用元素描述: ${aiResult.step.element}`, 'success');
                       } else {
                         this.addLog(runId, `⚠️ AI 解析出 ref 但无法定位，使用原始选择器`, 'warning');
@@ -5385,9 +5993,105 @@ ${elements.map((el, index) => `${index + 1}. ${el.ref}: ${el.role} "${el.text}"`
                   }
                 }
               } else if (aiResult.step.element) {
-                // 如果 AI 提供了元素描述，使用它
-                enhancedStep = { ...step, selector: aiResult.step.element };
-                this.addLog(runId, `✅ AI 匹配成功，使用元素描述: ${aiResult.step.element}`, 'success');
+                // 🔥 优化：如果 AI 提供了元素描述，尝试智能匹配而不是直接作为选择器
+                const page = this.playwrightRunner.getPage();
+                if (page) {
+                  try {
+                    let matched = false;
+                    const elementDesc = aiResult.step.element;
+                    
+                    // 🔥 智能识别：如果element包含"按钮"，尝试按钮匹配
+                    if (elementDesc.includes('按钮') || elementDesc.toLowerCase().includes('button')) {
+                      const buttonText = elementDesc
+                        .replace(/按钮|button/gi, '')
+                        .replace(/[《》"'「」\[\]]/g, '')
+                        .trim();
+                      
+                      console.log(`🎯 [${runId}] 尝试匹配按钮（无ref场景）: "${buttonText}"`);
+                      
+                      const buttonLocator = page.getByRole('button', { name: buttonText, exact: false });
+                      if (await buttonLocator.count() > 0) {
+                        const aiValue = aiResult.step.text || aiResult.step.value;
+                        enhancedStep = { 
+                          ...step, 
+                          selector: `button:${buttonText}`,
+                          ...(aiValue !== undefined ? { value: aiValue } : {})
+                        };
+                        this.addLog(runId, `✅ AI 匹配成功，使用按钮: "${buttonText}"`, 'success');
+                        matched = true;
+                      }
+                    }
+                    
+                    // 🔥 智能识别：如果element包含"输入框"、"文本框"，尝试textbox匹配
+                    if (!matched && (elementDesc.includes('输入框') || elementDesc.includes('文本框') || 
+                        elementDesc.toLowerCase().includes('textbox') || elementDesc.toLowerCase().includes('input'))) {
+                      const inputText = elementDesc
+                        .replace(/输入框|文本框|textbox|input/gi, '')
+                        .replace(/[《》"'「」\[\]]/g, '')
+                        .trim();
+                      
+                      console.log(`🎯 [${runId}] 尝试匹配输入框: "${inputText}"`);
+                      
+                      const inputLocator = page.getByRole('textbox', { name: inputText, exact: false });
+                      if (await inputLocator.count() > 0) {
+                        const aiValue = aiResult.step.text || aiResult.step.value;
+                        enhancedStep = { 
+                          ...step, 
+                          selector: `textbox:${inputText}`,
+                          ...(aiValue !== undefined ? { value: aiValue } : {})
+                        };
+                        this.addLog(runId, `✅ AI 匹配成功，使用输入框: "${inputText}"`, 'success');
+                        matched = true;
+                      }
+                    }
+                    
+                    // 🔥 如果特定匹配失败，尝试通用文本匹配
+                    if (!matched) {
+                      const textToFind = elementDesc.replace(/[《》"'「」\[\]]/g, '').trim();
+                      const textLocator = page.getByText(textToFind, { exact: false });
+                      if (await textLocator.count() > 0) {
+                        const aiValue = aiResult.step.text || aiResult.step.value;
+                        enhancedStep = { 
+                          ...step, 
+                          selector: `text:${textToFind}`,
+                          ...(aiValue !== undefined ? { value: aiValue } : {})
+                        };
+                        this.addLog(runId, `✅ AI 匹配成功，使用文本: "${textToFind}"`, 'success');
+                        matched = true;
+                      }
+                    }
+                    
+                    if (!matched) {
+                      this.addLog(runId, `⚠️ 智能匹配失败，使用原始element: "${elementDesc}"`, 'warning');
+                      // 回退：直接使用element描述（可能不是有效选择器，但至少尝试）
+                      const aiValue = aiResult.step.text || aiResult.step.value;
+                      enhancedStep = { 
+                        ...step, 
+                        selector: aiResult.step.element,
+                        ...(aiValue !== undefined ? { value: aiValue } : {})
+                      };
+                    }
+                  } catch (smartMatchError: any) {
+                    console.warn(`⚠️ [${runId}] 智能匹配失败:`, smartMatchError.message);
+                    // 回退：直接使用element描述
+                    const aiValue = aiResult.step.text || aiResult.step.value;
+                    enhancedStep = { 
+                      ...step, 
+                      selector: aiResult.step.element,
+                      ...(aiValue !== undefined ? { value: aiValue } : {})
+                    };
+                    this.addLog(runId, `⚠️ 使用元素描述: ${aiResult.step.element}`, 'warning');
+                  }
+                } else {
+                  // 没有page，直接使用element描述
+                  const aiValue = aiResult.step.text || aiResult.step.value;
+                  enhancedStep = { 
+                    ...step, 
+                    selector: aiResult.step.element,
+                    ...(aiValue !== undefined ? { value: aiValue } : {})
+                  };
+                  this.addLog(runId, `✅ AI 匹配成功，使用元素描述: ${aiResult.step.element}`, 'success');
+                }
               } else {
                 this.addLog(runId, `⚠️ AI 解析未找到精确匹配，使用原始选择器`, 'warning');
               }
@@ -5406,12 +6110,18 @@ ${elements.map((el, index) => `${index + 1}. ${el.ref}: ${el.role} "${el.text}"`
       if (!result.success) {
         this.addLog(runId, `❌ 步骤 ${stepIndex} 失败: ${result.error}`, 'error');
         
+        // 🔥 等待一下再截图，确保页面状态稳定
+        await this.delay(500);
+        
         // 🔥 失败时截图
         try {
+          this.addLog(runId, `📸 正在保存失败步骤 ${stepIndex} 的截图...`, 'info');
           const page = this.playwrightRunner.getPage();
           if (page) {
             const screenshotBuffer = await page.screenshot({ fullPage: true });
-            const screenshotFilename = `step-${stepIndex}-failed-${Date.now()}.png`;
+            // 🔥 使用步骤描述作为文件名
+            const sanitizedDescription = this.sanitizeFilename(step.description || `步骤${stepIndex}`);
+            const screenshotFilename = `step-${stepIndex}-failed-${sanitizedDescription}.png`;
             await this.evidenceService.saveBufferArtifact(
               runId,
               'screenshot',
@@ -5419,9 +6129,13 @@ ${elements.map((el, index) => `${index + 1}. ${el.ref}: ${el.role} "${el.text}"`
               screenshotFilename
             );
             console.log(`📸 [${runId}] 失败步骤 ${stepIndex} 截图已保存: ${screenshotFilename}`);
+            this.addLog(runId, `✅ 失败步骤 ${stepIndex} 截图已保存: ${screenshotFilename}`, 'success');
+          } else {
+            this.addLog(runId, `⚠️ 无法获取页面对象，跳过截图`, 'warning');
           }
         } catch (screenshotError: any) {
           console.warn(`⚠️ [${runId}] 失败步骤截图失败:`, screenshotError.message);
+          this.addLog(runId, `⚠️ 失败步骤 ${stepIndex} 截图失败: ${screenshotError.message}`, 'warning');
         }
         
         this.updateTestRunStatus(runId, 'failed', `步骤 ${stepIndex} 失败: ${result.error}`);
@@ -5430,12 +6144,18 @@ ${elements.map((el, index) => `${index + 1}. ${el.ref}: ${el.role} "${el.text}"`
 
       this.addLog(runId, `✅ 步骤 ${stepIndex} 执行成功`, 'success');
       
+      // 🔥 等待操作完全完成后再截图
+      await this.delay(500);
+      
       // 🔥 使用 Playwright 页面截图
       try {
+        this.addLog(runId, `📸 正在保存步骤 ${stepIndex} 的截图...`, 'info');
         const page = this.playwrightRunner.getPage();
         if (page) {
           const screenshotBuffer = await page.screenshot({ fullPage: true });
-          const screenshotFilename = `step-${stepIndex}-success-${Date.now()}.png`;
+          // 🔥 使用步骤描述作为文件名
+          const sanitizedDescription = this.sanitizeFilename(step.description || `步骤${stepIndex}`);
+          const screenshotFilename = `step-${stepIndex}-success-${sanitizedDescription}.png`;
           await this.evidenceService.saveBufferArtifact(
             runId,
             'screenshot',
@@ -5443,9 +6163,13 @@ ${elements.map((el, index) => `${index + 1}. ${el.ref}: ${el.role} "${el.text}"`
             screenshotFilename
           );
           console.log(`📸 [${runId}] 步骤 ${stepIndex} 截图已保存: ${screenshotFilename}`);
+          this.addLog(runId, `✅ 步骤 ${stepIndex} 截图已保存: ${screenshotFilename}`, 'success');
+        } else {
+          this.addLog(runId, `⚠️ 无法获取页面对象，跳过截图`, 'warning');
         }
       } catch (screenshotError: any) {
         console.warn(`⚠️ [${runId}] 步骤 ${stepIndex} 截图失败:`, screenshotError.message);
+        this.addLog(runId, `⚠️ 步骤 ${stepIndex} 截图失败: ${screenshotError.message}`, 'warning');
       }
 
       if (testRun) {
@@ -5492,6 +6216,31 @@ ${elements.map((el, index) => `${index + 1}. ${el.ref}: ${el.role} "${el.text}"`
                 // 构建快照文本（转换为类似 MCP 快照的格式）
                 let snapshotText = `Page URL: ${pageUrl}\nPage Title: ${pageTitle}\n\n`;
                 
+                // 🔥 生成稳定的 ref（基于元素属性，避免随机值导致缓存失效）
+                const refCountMap = new Map<string, number>(); // 跟踪重复的 ref
+                const generateStableRef = (role: string, name: string): string => {
+                  // 使用 role + name 生成稳定的哈希值
+                  const data = `${role}:${name}`;
+                  let hash = 0;
+                  for (let i = 0; i < data.length; i++) {
+                    const char = data.charCodeAt(i);
+                    hash = ((hash << 5) - hash) + char;
+                    hash = hash & hash; // Convert to 32bit integer
+                  }
+                  
+                  const baseRef = `element_${role}_${Math.abs(hash).toString(36)}`;
+                  
+                  // 如果这个 ref 已经存在，添加后缀
+                  if (refCountMap.has(baseRef)) {
+                    const count = refCountMap.get(baseRef)! + 1;
+                    refCountMap.set(baseRef, count);
+                    return `${baseRef}_${count}`;
+                  } else {
+                    refCountMap.set(baseRef, 0);
+                    return baseRef;
+                  }
+                };
+                
                 // 递归提取可交互元素（使用 MCP 快照格式）
                 const extractElements = (node: any, depth = 0): string[] => {
                   const elements: string[] = [];
@@ -5503,7 +6252,9 @@ ${elements.map((el, index) => `${index + 1}. ${el.ref}: ${el.role} "${el.text}"`
                       node.role === 'heading' || node.role === 'text' || node.role === 'paragraph')) {
                     const name = node.name || '';
                     const role = node.role || '';
-                    const ref = node.id || `element_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+                    // 🔥 使用稳定的 ref 生成方法，基于 role 和 name 的哈希，而不是随机值或时间戳
+                    // 这样同一个元素在不同执行之间会有相同的 ref，缓存可以正常工作
+                    const ref = node.id || generateStableRef(role, name);
                     elements.push(`[ref=${ref}] ${role} "${name}"`);
                     
                     // 保存映射：ref -> { role, name }
@@ -5539,13 +6290,13 @@ ${elements.map((el, index) => `${index + 1}. ${el.ref}: ${el.role} "${el.text}"`
                   }
                 );
                 
-                return { aiResult, refToElementMap };
+                return { aiResult, refToElementMap, snapshotText };
               }
-              return { aiResult: null, refToElementMap: null };
+              return { aiResult: null, refToElementMap: null, snapshotText: '' };
             }
           );
           
-          const { aiResult, refToElementMap } = result;
+          const { aiResult, refToElementMap, snapshotText } = result;
           
           if (aiResult && refToElementMap && aiResult.success && aiResult.steps && aiResult.steps.length > 0) {
             const aiStep = aiResult.steps[0]; // 取第一个解析结果
@@ -5559,6 +6310,8 @@ ${elements.map((el, index) => `${index + 1}. ${el.ref}: ${el.role} "${el.text}"`
                 
                 // 🔥 如果AI返回了ref，通过refToElementMap找到对应的role和name，设置selector为role:name格式
                 let selector = aiStep.selector;
+                let needsRefresh = false; // 🔥 标记是否需要刷新缓存
+                
                 if (aiStep.ref && !selector) {
                   const elementInfo = refToElementMap.get(aiStep.ref);
                   if (elementInfo && elementInfo.role && elementInfo.name) {
@@ -5589,24 +6342,91 @@ ${elements.map((el, index) => `${index + 1}. ${el.ref}: ${el.role} "${el.text}"`
                       this.addLog(runId, `🔍 通过ref映射找到元素: ref="${aiStep.ref}" -> ${selector}`, 'info');
                     }
                   } else {
-                    // 如果映射表中没有，使用element描述作为selector
-                    selector = aiStep.element;
-                    this.addLog(runId, `⚠️ ref不在映射表中，使用element描述: "${aiStep.element}"`, 'warning');
+                    // 🔥 ref不在映射表中，说明缓存已过时，需要刷新
+                    needsRefresh = true;
+                    this.addLog(runId, `⚠️ ref不在映射表中（可能是缓存过时），清除缓存并重新调用 AI`, 'warning');
                   }
                 } else if (!selector && aiStep.element) {
                   selector = aiStep.element;
                 }
                 
-                assertion = {
-                  ...assertion,
-                  element: aiStep.element,
-                  ref: aiStep.ref,
-                  selector: selector,
-                  condition: condition,
-                  value: aiStep.value
-                };
-                
-                this.addLog(runId, `✅ AI 断言解析成功（结构化）: element="${aiStep.element}", ref="${aiStep.ref}", selector="${selector}", condition="${condition}", value="${aiStep.value || 'N/A'}"`, 'success');
+                // 🔥 如果需要刷新，清除缓存并重新调用 AI
+                if (needsRefresh) {
+                  this.addLog(runId, `🔄 正在重新调用 AI 解析断言...`, 'info');
+                  this.aiParser.clearAssertionCache(); // 清空缓存
+                  
+                  // 重新调用 AI 解析
+                  const freshAiResult = await this.aiParser.parseAssertions(
+                    assertion.description,
+                    snapshotText,
+                    runId,
+                    (message: string, level: 'info' | 'success' | 'warning' | 'error') => {
+                      this.addLog(runId, message, level);
+                    }
+                  );
+                  
+                  if (freshAiResult && freshAiResult.success && freshAiResult.steps && freshAiResult.steps.length > 0) {
+                    const freshAiStep = freshAiResult.steps[0];
+                    const freshCondition = (validConditions.includes(freshAiStep.condition as any) ? freshAiStep.condition : 'visible') as any;
+                    
+                    // 重新映射 ref
+                    let freshSelector = freshAiStep.selector;
+                    if (freshAiStep.ref && !freshSelector) {
+                      const freshElementInfo = refToElementMap.get(freshAiStep.ref);
+                      if (freshElementInfo && freshElementInfo.role && freshElementInfo.name) {
+                        freshSelector = `${freshElementInfo.role}:${freshElementInfo.name}`;
+                        this.addLog(runId, `✅ 重新解析成功，找到元素: ref="${freshAiStep.ref}" -> ${freshSelector}`, 'success');
+                      } else {
+                        freshSelector = freshAiStep.element;
+                        this.addLog(runId, `⚠️ 重新解析后ref仍不在映射表中，使用element描述: "${freshAiStep.element}"`, 'warning');
+                      }
+                    } else if (!freshSelector && freshAiStep.element) {
+                      freshSelector = freshAiStep.element;
+                    }
+                    
+                    // 更新 assertion
+                    assertion = {
+                      ...assertion,
+                      element: freshAiStep.element,
+                      ref: freshAiStep.ref,
+                      selector: freshSelector,
+                      condition: freshCondition,
+                      value: freshAiStep.value
+                    };
+                    
+                    this.addLog(runId, `✅ AI 断言重新解析成功（结构化）: element="${freshAiStep.element}", ref="${freshAiStep.ref}", selector="${freshSelector}", condition="${freshCondition}", value="${freshAiStep.value || 'N/A'}"`, 'success');
+                  } else {
+                    // 重新解析也失败了，使用 element 描述
+                    selector = aiStep.element;
+                    this.addLog(runId, `⚠️ 重新解析失败，使用原element描述: "${aiStep.element}"`, 'warning');
+                    
+                    assertion = {
+                      ...assertion,
+                      element: aiStep.element,
+                      ref: aiStep.ref,
+                      selector: selector,
+                      condition: condition,
+                      value: aiStep.value
+                    };
+                    
+                    this.addLog(runId, `✅ AI 断言解析成功（结构化）: element="${aiStep.element}", ref="${aiStep.ref}", selector="${selector}", condition="${condition}", value="${aiStep.value || 'N/A'}"`, 'success');
+                  }
+                  
+                  // 跳过后续的 assertion 更新，因为已经在上面处理了
+                  // 不使用 continue，而是在下面的 executeStep 中继续执行
+                } else {
+                  // 🔥 正常情况：ref 在映射表中，或者没有 ref
+                  assertion = {
+                    ...assertion,
+                    element: aiStep.element,
+                    ref: aiStep.ref,
+                    selector: selector,
+                    condition: condition,
+                    value: aiStep.value
+                  };
+                  
+                  this.addLog(runId, `✅ AI 断言解析成功（结构化）: element="${aiStep.element}", ref="${aiStep.ref}", selector="${selector}", condition="${condition}", value="${aiStep.value || 'N/A'}"`, 'success');
+                }
               }
               // 🔥 如果AI返回的是 browser_snapshot 命令但没有结构化信息，需要从断言描述和页面元素中提取选择器
               else if ((aiStep.action as string) === 'browser_snapshot' || (aiStep.action as string) === 'snapshot') {
@@ -5767,6 +6587,34 @@ ${elements.map((el, index) => `${index + 1}. ${el.ref}: ${el.role} "${el.text}"`
       }
 
       this.addLog(runId, `✅ 断言 ${i + 1} 通过`, 'success');
+
+      // 🔥 断言成功后保存截图
+      try {
+        this.addLog(runId, `📸 正在保存断言 ${i + 1} 的截图...`, 'info');
+        const page = this.playwrightRunner.getPage();
+        if (page) {
+          const screenshotBuffer = await page.screenshot({ fullPage: true });
+          // const sanitizedDescription = assertion.description
+          //   .replace(/[^\w\u4e00-\u9fa5\s\-]/g, '-')
+          //   .substring(0, 50);
+          const sanitizedDescription = this.sanitizeFilename(assertion.description);
+          // 🔥 使用 assertion-{序号}-success-{描述} 格式
+          const screenshotFilename = `assertion-${i + 1}-success-${sanitizedDescription}.png`;
+          await this.evidenceService.saveBufferArtifact(
+            runId,
+            'screenshot',
+            screenshotBuffer,
+            screenshotFilename
+          );
+          console.log(`📸 [${runId}] 断言 ${i + 1} 截图已保存: ${screenshotFilename}`);
+          this.addLog(runId, `✅ 断言 ${i + 1} 截图已保存: ${screenshotFilename}`, 'success');
+        } else {
+          this.addLog(runId, `⚠️ 无法获取页面对象，跳过断言截图`, 'warning');
+        }
+      } catch (screenshotError: any) {
+        console.warn(`⚠️ [${runId}] 断言 ${i + 1} 截图失败:`, screenshotError.message);
+        this.addLog(runId, `⚠️ 断言 ${i + 1} 截图失败: ${screenshotError.message}`, 'warning');
+      }
     }
 
     console.log(`✅ [${runId}] 完成 [${testCase.name}]`);

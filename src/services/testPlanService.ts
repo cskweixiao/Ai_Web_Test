@@ -118,6 +118,13 @@ export async function getTestPlanExecutionDetail(executionId: string): Promise<T
   return response.data;
 }
 
+/**
+ * 删除测试计划执行记录
+ */
+export async function deleteTestPlanExecution(executionId: string): Promise<void> {
+  await apiClient.delete(`${API_BASE_URL}/executions/${executionId}`);
+}
+
 export const testPlanService = {
   getTestPlans,
   getTestPlanDetail,
@@ -131,5 +138,6 @@ export const testPlanService = {
   updateTestPlanCaseStatus,
   getTestPlanExecutions,
   getTestPlanExecutionDetail,
+  deleteTestPlanExecution,
 };
 

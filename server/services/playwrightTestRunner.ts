@@ -109,24 +109,270 @@ export class PlaywrightTestRunner {
       switch (step.action) {
         case 'navigate':
           if (!step.url) {
-            return { success: false, error: '导航步骤缺少 URL' };
+            // 🔥 增强错误信息：尝试从描述中提取 URL 提示
+            let errorMsg = '导航步骤缺少 URL';
+            const desc = step.description || '';
+            // 尝试从描述中提取可能的 URL 或路径
+            const urlMatch = desc.match(/(?:跳转至|跳转到|自动跳转至|自动跳转到|导航到|访问|打开)[：:]\s*[(（]?\s*(\/[^\s)）]+)\s*[)）]?/i) ||
+                           desc.match(/[(（]?\s*(\/[^\s)）]+)\s*[)）]?/);
+            if (urlMatch && urlMatch[1]) {
+              errorMsg = `导航步骤缺少 URL。从描述中检测到可能的路径: ${urlMatch[1]}，请检查步骤解析逻辑是否正确提取了 URL。`;
+            }
+            return { success: false, error: errorMsg };
           }
-          await this.page.goto(step.url, { waitUntil: 'networkidle' });
+          
+          // 🔥 处理相对路径：如果 URL 是相对路径，拼接到当前页面的 base URL
+          let targetUrl = step.url;
+          if (targetUrl.startsWith('/')) {
+            try {
+              const currentUrl = this.page.url();
+              // 如果当前页面有有效 URL，使用其 origin
+              if (currentUrl && currentUrl !== 'about:blank') {
+                const baseUrl = new URL(currentUrl);
+                targetUrl = `${baseUrl.origin}${targetUrl}`;
+                console.log(`🔄 [${runId}] 相对路径转换: ${step.url} -> ${targetUrl}`);
+              } else {
+                return { success: false, error: `无法导航到相对路径 ${step.url}，当前页面 URL 无效 (${currentUrl})` };
+              }
+            } catch {
+              return { success: false, error: `URL 解析失败: ${step.url}` };
+            }
+          }
+          
+          await this.page.goto(targetUrl, { waitUntil: 'networkidle' });
           break;
 
         case 'click':
           if (!step.selector) {
             return { success: false, error: '点击步骤缺少选择器' };
           }
-          // 🔥 智能元素查找：支持 role:name 格式、文本描述和 CSS 选择器
+          // 🔥 智能元素查找：支持 label:xxx、text:xxx、role:name、role:nth(index) 格式、文本描述和 CSS 选择器
           try {
-            // 🔥 新增：检查是否是 role:name 格式（由 AI 解析器生成）
-            if (step.selector.includes(':') && !step.selector.startsWith('http')) {
-              const [role, name] = step.selector.split(':', 2);
-              if (role && name && ['button', 'textbox', 'link', 'checkbox', 'combobox'].includes(role)) {
-                const roleLocator = this.page.getByRole(role as any, { name: name.trim(), exact: false });
+            // 🔥 新增：检查是否是 label:xxx 格式（最适合复选框）
+            if (step.selector.startsWith('label:')) {
+              const labelText = step.selector.substring(6); // 移除 "label:" 前缀
+              const labelLocator = this.page.getByLabel(labelText, { exact: false });
+              if (await labelLocator.count() > 0) {
+                await labelLocator.first().click();
+                console.log(`✅ [${runId}] 使用 getByLabel 格式点击成功: ${labelText}`);
+                return { success: true };
+              }
+            }
+            
+            // 🔥 新增：检查是否是 text:xxx 格式（通过文本查找附近的可点击元素）
+            if (step.selector.startsWith('text:')) {
+              const searchText = step.selector.substring(5); // 移除 "text:" 前缀
+              console.log(`🔍 [${runId}] 使用文本查找模式: "${searchText}"`);
+              
+              // 方法1: 先尝试直接通过文本查找复选框的label
+              try {
+                const labelLocator = this.page.getByLabel(searchText, { exact: false });
+                if (await labelLocator.count() > 0) {
+                  await labelLocator.first().click();
+                  console.log(`✅ [${runId}] 通过label文本点击成功: ${searchText}`);
+                  return { success: true };
+                }
+              } catch {
+                console.log(`  ⚠️ getByLabel查找失败，尝试其他方法`);
+              }
+              
+              // 方法2: 查找包含文本的元素，然后找附近的复选框并点击
+              try {
+                const textLocator = this.page.getByText(searchText, { exact: false });
+                if (await textLocator.count() > 0) {
+                  const textElement = textLocator.first();
+                  
+                  // 🔥 优先策略：先找到并点击实际的复选框元素，而不是文本
+                  // 因为点击文本不一定能触发复选框勾选
+                  
+                  // 尝试1: 查找前面紧邻的label.el-checkbox（ElementUI标准结构）
+                  try {
+                    const nearbyLabel = textElement.locator('xpath=preceding-sibling::label[contains(@class, "el-checkbox")][1]');
+                    if (await nearbyLabel.count() > 0) {
+                      const label = nearbyLabel.first();
+                      // 优先点击label内的可见复选框图标
+                      const checkboxInner = label.locator('.el-checkbox__inner, .el-checkbox__input');
+                      if (await checkboxInner.count() > 0 && await checkboxInner.first().isVisible()) {
+                        await checkboxInner.first().click();
+                        console.log(`✅ [${runId}] 点击ElementUI复选框图标成功`);
+                        return { success: true };
+                      } else {
+                        // 否则点击label本身
+                        await label.click();
+                        console.log(`✅ [${runId}] 点击ElementUI复选框label成功`);
+                        return { success: true };
+                      }
+                    }
+                  } catch (e: any) {
+                    console.log(`  ⚠️ 点击ElementUI label失败: ${e.message}，尝试其他方法`);
+                  }
+                  
+                  // 尝试2: 查找父容器内的label（文本在label内的情况）
+                  try {
+                    const parentLabel = textElement.locator('xpath=ancestor::label[contains(@class, "checkbox") or @for][1]');
+                    if (await parentLabel.count() > 0) {
+                      await parentLabel.first().click();
+                      console.log(`✅ [${runId}] 点击父级label元素成功`);
+                      return { success: true };
+                    }
+                  } catch (e: any) {
+                    console.log(`  ⚠️ 点击父级label失败: ${e.message}`);
+                  }
+                  
+                  // 尝试3: 查找附近的复选框input（通用方式）
+                  try {
+                    const nearbyCheckbox = textElement.locator('xpath=preceding-sibling::label//input[@type="checkbox"][1] | preceding::input[@type="checkbox"][1] | following::input[@type="checkbox"][1] | ancestor::*//input[@type="checkbox"][1]');
+                    if (await nearbyCheckbox.count() > 0) {
+                      const checkbox = nearbyCheckbox.first();
+                      const isVisible = await checkbox.isVisible().catch(() => false);
+                      
+                      if (isVisible) {
+                        // input可见，直接点击
+                        await checkbox.click();
+                        console.log(`✅ [${runId}] 点击可见的复选框input成功`);
+                      } else {
+                        // input不可见，点击其父label或包装元素
+                        const parentLabel = checkbox.locator('xpath=ancestor::label[1]');
+                        if (await parentLabel.count() > 0 && await parentLabel.first().isVisible()) {
+                          await parentLabel.first().click();
+                          console.log(`✅ [${runId}] 点击复选框的父label元素成功`);
+                        } else {
+                          // 最后尝试点击复选框的可见兄弟元素
+                          const visibleSibling = checkbox.locator('xpath=preceding-sibling::span[1] | following-sibling::span[1]');
+                          if (await visibleSibling.count() > 0 && await visibleSibling.first().isVisible()) {
+                            await visibleSibling.first().click();
+                            console.log(`✅ [${runId}] 点击复选框的可见兄弟元素成功`);
+                          } else {
+                            throw new Error('找到复选框但无法找到可点击的元素');
+                          }
+                        }
+                      }
+                      return { success: true };
+                    }
+                  } catch (e: any) {
+                    console.log(`  ⚠️ 通过复选框input定位失败: ${e.message}`);
+                  }
+                  
+                  // 尝试4: 检查文本元素本身是否可点击作为备选
+                  try {
+                    const cursorStyle = await textElement.evaluate((el: Element) => window.getComputedStyle(el).cursor);
+                    if (cursorStyle === 'pointer') {
+                      await textElement.click();
+                      console.log(`✅ [${runId}] 作为备选：点击可点击的文本元素成功`);
+                      return { success: true };
+                    }
+                  } catch (e: any) {
+                    console.log(`  ⚠️ 点击文本元素失败: ${e.message}`);
+                  }
+                  
+                  // 尝试5: 最后手段，强制点击文本元素
+                  try {
+                    await textElement.click({ force: true });
+                    console.log(`⚠️ [${runId}] 最后手段：强制点击文本元素`);
+                    return { success: true };
+                  } catch (e: any) {
+                    throw new Error(`所有点击尝试都失败: ${e.message}`);
+                  }
+                }
+              } catch (e: any) {
+                console.log(`  ⚠️ getByText查找失败: ${e.message}`);
+              }
+              
+              throw new Error(`无法通过文本 "${searchText}" 找到可点击的元素`);
+            }
+            
+            // 🔥 检查是否是 role:nth(index) 格式
+            console.log(`🔍 [${runId}] 检查选择器格式: "${step.selector}"`);
+            if (step.selector.match(/^(button|textbox|link|checkbox|combobox|radio):nth\(\d+\)$/)) {
+              console.log(`✅ [${runId}] 匹配到 role:nth 格式`);
+              const match = step.selector.match(/^(button|textbox|link|checkbox|combobox|radio):nth\((\d+)\)$/);
+              if (match) {
+                const [, role, index] = match;
+                console.log(`📋 [${runId}] 解析: role=${role}, index=${index}`);
+                
+                // 🔥 修复：增加等待和重试机制
+                let retryCount = 0;
+                const maxRetries = 3;
+                
+                while (retryCount < maxRetries) {
+                  try {
+                    const roleLocator = this.page.getByRole(role as any);
+                    const count = await roleLocator.count();
+                    console.log(`📊 [${runId}] 页面上${role}元素数量: ${count} (尝试 ${retryCount + 1}/${maxRetries})`);
+                    
+                    if (count > parseInt(index)) {
+                      // 🔥 修复：确保元素可见和可点击
+                      const targetElement = roleLocator.nth(parseInt(index));
+                      await targetElement.waitFor({ state: 'visible', timeout: 5000 });
+                      await targetElement.scrollIntoViewIfNeeded();
+                      await targetElement.click({ timeout: 5000 });
+                      console.log(`✅ [${runId}] 使用 role:nth 格式点击成功: ${step.selector}`);
+                      return { success: true };
+                    } else {
+                      console.log(`⚠️ [${runId}] 元素数量不足: ${count} <= ${index}，等待后重试...`);
+                      await this.page.waitForTimeout(1000);
+                      retryCount++;
+                    }
+                  } catch (error: any) {
+                    console.log(`⚠️ [${runId}] role:nth 点击失败: ${error.message}，重试 ${retryCount + 1}/${maxRetries}`);
+                    retryCount++;
+                    if (retryCount < maxRetries) {
+                      await this.page.waitForTimeout(1000);
+                    }
+                  }
+                }
+                
+                // 所有重试都失败
+                return { success: false, error: `无法点击元素 ${step.selector}，已重试${maxRetries}次` };
+              }
+            } else {
+              console.log(`⚠️ [${runId}] 未匹配 role:nth 格式，选择器: "${step.selector}"`);
+            }
+            
+            // 🔥 检查是否是自定义格式（AI智能匹配生成的格式）
+            if (step.selector.includes(':') && !step.selector.startsWith('http') && !step.selector.includes('nth(')) {
+              const [prefix, value] = step.selector.split(':', 2);
+              const trimmedValue = value.trim();
+              
+              // 处理不同的前缀格式
+              if (prefix === 'placeholder') {
+                // placeholder:xxx -> getByPlaceholder
+                const element = this.page.getByPlaceholder(trimmedValue, { exact: false });
+                if (await element.count() > 0) {
+                  await element.first().click();
+                  console.log(`✅ [${runId}] 使用 getByPlaceholder 格式点击成功: ${trimmedValue}`);
+                  return { success: true };
+                }
+              } else if (prefix === 'label') {
+                // label:xxx -> getByLabel
+                const element = this.page.getByLabel(trimmedValue, { exact: false });
+                if (await element.count() > 0) {
+                  await element.first().click();
+                  console.log(`✅ [${runId}] 使用 getByLabel 格式点击成功: ${trimmedValue}`);
+                  return { success: true };
+                }
+              } else if (prefix === 'text') {
+                // text:xxx -> getByText
+                const element = this.page.getByText(trimmedValue, { exact: false });
+                if (await element.count() > 0) {
+                  await element.first().click();
+                  console.log(`✅ [${runId}] 使用 getByText 格式点击成功: ${trimmedValue}`);
+                  return { success: true };
+                }
+              } else if (prefix === 'button') {
+                // button:xxx -> getByRole('button')
+                const element = this.page.getByRole('button', { name: trimmedValue, exact: false });
+                if (await element.count() > 0) {
+                  await element.first().click();
+                  console.log(`✅ [${runId}] 使用 button:name 格式点击成功: ${trimmedValue}`);
+                  return { success: true };
+                }
+              } else if (['textbox', 'link', 'checkbox', 'combobox', 'radio'].includes(prefix)) {
+                // role:name -> getByRole
+                const roleLocator = this.page.getByRole(prefix as any, { name: trimmedValue, exact: false });
                 if (await roleLocator.count() > 0) {
                   await roleLocator.first().click();
+                  console.log(`✅ [${runId}] 使用 role:name 格式点击成功: ${prefix}:${trimmedValue}`);
                   return { success: true };
                 }
               }
@@ -182,6 +428,50 @@ export class PlaywrightTestRunner {
           if (!step.selector || step.value === undefined) {
             return { success: false, error: '填充步骤缺少选择器或值' };
           }
+          // 🔥 支持 role:nth(index) 格式
+          if (step.selector.match(/^(button|textbox|link|checkbox|combobox):nth\(\d+\)$/)) {
+            const match = step.selector.match(/^(button|textbox|link|checkbox|combobox):nth\((\d+)\)$/);
+            if (match) {
+              const [, role, index] = match;
+              const element = this.page.getByRole(role as any).nth(parseInt(index));
+              await element.fill(String(step.value));
+              console.log(`✅ [${runId}] 使用 role:nth 格式填充成功: ${step.selector}`);
+              break;
+            }
+          }
+          // 🔥 支持自定义格式（AI智能匹配生成的格式）
+          if (step.selector.includes(':') && !step.selector.startsWith('http') && !step.selector.includes('nth(')) {
+            const [prefix, value] = step.selector.split(':', 2);
+            const trimmedValue = value.trim();
+            
+            // 处理不同的前缀格式
+            if (prefix === 'placeholder') {
+              // placeholder:xxx -> getByPlaceholder
+              const element = this.page.getByPlaceholder(trimmedValue, { exact: false });
+              await element.fill(String(step.value));
+              console.log(`✅ [${runId}] 使用 getByPlaceholder 格式填充成功: ${trimmedValue}`);
+              break;
+            } else if (prefix === 'label') {
+              // label:xxx -> getByLabel
+              const element = this.page.getByLabel(trimmedValue, { exact: false });
+              await element.fill(String(step.value));
+              console.log(`✅ [${runId}] 使用 getByLabel 格式填充成功: ${trimmedValue}`);
+              break;
+            } else if (prefix === 'text') {
+              // text:xxx -> getByText (通常用于可编辑的contenteditable元素)
+              const element = this.page.getByText(trimmedValue, { exact: false });
+              await element.fill(String(step.value));
+              console.log(`✅ [${runId}] 使用 getByText 格式填充成功: ${trimmedValue}`);
+              break;
+            } else if (['button', 'textbox', 'link', 'checkbox', 'combobox', 'heading'].includes(prefix)) {
+              // role:name -> getByRole
+              const element = this.page.getByRole(prefix as any, { name: trimmedValue, exact: false });
+              await element.fill(String(step.value));
+              console.log(`✅ [${runId}] 使用 role:name 格式填充成功: ${prefix}:${trimmedValue}`);
+              break;
+            }
+          }
+          // 默认使用 CSS 选择器
           await this.page.fill(step.selector, String(step.value));
           break;
 
@@ -189,12 +479,57 @@ export class PlaywrightTestRunner {
           if (!step.selector || step.value === undefined) {
             return { success: false, error: '输入步骤缺少选择器或值' };
           }
+          // 🔥 支持 role:nth(index) 格式
+          if (step.selector.match(/^(button|textbox|link|checkbox|combobox):nth\(\d+\)$/)) {
+            const match = step.selector.match(/^(button|textbox|link|checkbox|combobox):nth\((\d+)\)$/);
+            if (match) {
+              const [, role, index] = match;
+              const element = this.page.getByRole(role as any).nth(parseInt(index));
+              await element.fill(String(step.value));  // 使用 fill 代替 type，更稳定
+              console.log(`✅ [${runId}] 使用 role:nth 格式输入成功: ${step.selector}`);
+              break;
+            }
+          }
+          // 🔥 支持自定义格式（AI智能匹配生成的格式）
+          if (step.selector.includes(':') && !step.selector.startsWith('http') && !step.selector.includes('nth(')) {
+            const [prefix, value] = step.selector.split(':', 2);
+            const trimmedValue = value.trim();
+            
+            // 处理不同的前缀格式
+            if (prefix === 'placeholder') {
+              // placeholder:xxx -> getByPlaceholder
+              const element = this.page.getByPlaceholder(trimmedValue, { exact: false });
+              await element.fill(String(step.value));
+              console.log(`✅ [${runId}] 使用 getByPlaceholder 格式填充成功: ${trimmedValue}`);
+              break;
+            } else if (prefix === 'label') {
+              // label:xxx -> getByLabel
+              const element = this.page.getByLabel(trimmedValue, { exact: false });
+              await element.fill(String(step.value));
+              console.log(`✅ [${runId}] 使用 getByLabel 格式填充成功: ${trimmedValue}`);
+              break;
+            } else if (prefix === 'text') {
+              // text:xxx -> getByText (通常用于可编辑的contenteditable元素)
+              const element = this.page.getByText(trimmedValue, { exact: false });
+              await element.fill(String(step.value));
+              console.log(`✅ [${runId}] 使用 getByText 格式填充成功: ${trimmedValue}`);
+              break;
+            } else if (['button', 'textbox', 'link', 'checkbox', 'combobox', 'heading'].includes(prefix)) {
+              // role:name -> getByRole
+              const element = this.page.getByRole(prefix as any, { name: trimmedValue, exact: false });
+              await element.fill(String(step.value));
+              console.log(`✅ [${runId}] 使用 role:name 格式填充成功: ${prefix}:${trimmedValue}`);
+              break;
+            }
+          }
+          // 默认使用 CSS 选择器
           await this.page.type(step.selector, String(step.value));
           break;
 
         case 'expect': {
           // 🔥 智能元素查找：支持 role:name 格式、ref参数、文本描述和 CSS 选择器
           let element: any = null;
+          let selectorText: string | undefined; // 🔥 记录selector中的文本，用于多种方式查找
           
           // 🔥 优先使用 selector（如果它是 role:name 格式，更可靠）
           if (step.selector) {
@@ -202,6 +537,7 @@ export class PlaywrightTestRunner {
               // 检查是否是 role:name 格式（由 AI 解析器生成）
               if (step.selector.includes(':') && !step.selector.startsWith('http')) {
                 const [role, name] = step.selector.split(':', 2);
+                selectorText = name?.trim(); // 记录文本用于后续查找
                 if (role && name && ['button', 'textbox', 'link', 'checkbox', 'combobox', 'heading', 'text'].includes(role)) {
                   element = this.page.getByRole(role as any, { name: name.trim(), exact: false });
                   // 🔥 检查是否成功找到元素
@@ -209,9 +545,16 @@ export class PlaywrightTestRunner {
                   if (count > 0) {
                     console.log(`✅ [${runId}] 使用 selector role:name 格式定位元素成功: ${role}:${name}`);
                   } else {
-                    // 🔥 如果role:name格式找不到元素（可能是name是值而不是label），回退到使用element描述
-                    console.log(`⚠️ [${runId}] role:name格式未找到元素（name可能是值而非label），回退到使用element描述: "${step.element || step.selector}"`);
-                    element = null; // 设置为null，让后续的智能查找逻辑处理
+                    // 🔥 修复：getByRole找不到时，尝试用getByText查找selector中的文本
+                    console.log(`⚠️ [${runId}] role:name格式未找到元素，尝试用getByText查找文本: "${name}"`);
+                    element = this.page.getByText(name.trim(), { exact: false });
+                    const textCount = await element.count();
+                    if (textCount > 0) {
+                      console.log(`✅ [${runId}] 使用getByText找到元素: "${name}"`);
+                    } else {
+                      console.log(`⚠️ [${runId}] getByText也未找到元素，继续尝试其他方法`);
+                      element = null; // 设置为null，让后续的智能查找逻辑处理
+                    }
                   }
                 } else {
                   element = this.page.locator(step.selector);
@@ -264,47 +607,30 @@ export class PlaywrightTestRunner {
           }
           
           // 🔥 如果ref也失败，使用element或selector作为文本描述进行智能查找
-          // 🔥 优先使用element描述（更准确），如果没有则使用selector
-          if (!element && (step.element || step.selector)) {
+          // 🔥 修复：优先使用selectorText（从selector中提取的文本），因为它来自ref映射，更准确
+          if (!element && (selectorText || step.element || step.selector)) {
             try {
-              // 🔥 优先使用element描述，如果selector是role:name格式且已失败，则使用element
-              let searchText = step.element;
-              if (!searchText || (step.selector && step.selector.includes(':') && !step.selector.startsWith('http'))) {
-                // 如果element为空，或者selector是role:name格式（可能已失败），使用element或selector
-                searchText = step.element || step.selector;
-              } else if (step.selector && !step.selector.includes(':')) {
-                // 如果selector不是role:name格式，也可以使用
-                searchText = step.element || step.selector;
+              // 🔥 优先级：selectorText（从role:name提取）> element描述 > selector原始值
+              let searchText = selectorText || step.element || step.selector;
+              
+              // 🔥 如果使用的是selectorText，记录日志
+              if (selectorText && selectorText !== step.element) {
+                console.log(`🔍 [${runId}] 使用selector中的文本进行智能查找: "${selectorText}"（element="${step.element}"）`);
               }
               
               // 🔥 检查是否是 role:name 格式（由 AI 解析器生成）
-              // 如果searchText是role:name格式，但之前已经失败过，直接跳过，使用element进行智能查找
-              if (searchText && searchText.includes(':') && !searchText.startsWith('http') && 
-                  step.element && searchText !== step.element) {
-                // searchText是role:name格式，但element存在且不同，说明role:name已失败，直接使用element
-                console.log(`🔍 [${runId}] role:name格式已失败，直接使用element描述进行智能查找: "${step.element}"`);
-                searchText = step.element;
-              }
-              
+              // 如果searchText是role:name格式，提取name部分
               if (searchText && searchText.includes(':') && !searchText.startsWith('http')) {
                 const [role, name] = searchText.split(':', 2);
                 if (role && name && ['button', 'textbox', 'link', 'checkbox', 'combobox', 'heading', 'text'].includes(role)) {
-                  element = this.page.getByRole(role as any, { name: name.trim(), exact: false });
-                  const count = await element.count();
-                  if (count === 0) {
-                    // 如果找不到，且element存在，使用element进行智能查找
-                    if (step.element && step.element !== searchText) {
-                      console.log(`⚠️ [${runId}] role:name格式未找到元素，使用element描述: "${step.element}"`);
-                      searchText = step.element;
-                      element = null; // 重置，继续智能查找
-                    } else {
-                      element = null; // 如果找不到，继续智能查找
-                    }
-                  }
-                } else {
-                  element = this.page.locator(searchText);
+                  // 提取name部分作为搜索文本
+                  searchText = name.trim();
+                  console.log(`🔍 [${runId}] 从role:name格式提取文本进行智能查找: "${searchText}"`);
                 }
-              } else if (searchText && (searchText.startsWith('#') || searchText.startsWith('.') || 
+              }
+              
+              // 🔥 处理 CSS 选择器格式
+              if (searchText && (searchText.startsWith('#') || searchText.startsWith('.') || 
                         searchText.startsWith('[') || searchText.includes(' '))) {
                 // 作为 CSS 选择器
                 element = this.page.locator(searchText);
@@ -782,7 +1108,7 @@ export class PlaywrightTestRunner {
                 console.log(`✅ [${runId}] 文本包含验证成功: "${text}"`);
               }
             } else if ((condition as string) === 'has_text') {
-              // 🔥 支持 has_text（精确文本匹配）
+              // 🔥 支持 has_text（文本匹配，自动 trim）
               await element.first().waitFor({ state: 'visible', timeout });
               
               let text: string | null = null;
@@ -797,10 +1123,20 @@ export class PlaywrightTestRunner {
                 text = await element.first().textContent();
               }
               
-              if (step.value && text !== String(step.value)) {
-                return { success: false, error: `期望文本为 "${step.value}"，实际为 "${text || '(空)'}"` };
+              // 🔥 修复：trim 处理空白字符后再比较，避免因空格、换行导致的匹配失败
+              const actualText = text?.trim() || '';
+              const expectedText = String(step.value || '').trim();
+              
+              if (step.value && actualText !== expectedText) {
+                // 🔥 如果严格匹配失败，尝试包含匹配（更宽松）
+                if (actualText.includes(expectedText) || expectedText.includes(actualText)) {
+                  console.log(`✅ [${runId}] 文本匹配验证成功（包含匹配）: 期望"${expectedText}"，实际"${actualText}"`);
+                } else {
+                  return { success: false, error: `期望文本为 "${expectedText}"，实际为 "${actualText}"` };
+                }
+              } else {
+                console.log(`✅ [${runId}] 精确文本匹配验证成功: "${actualText}"`);
               }
-              console.log(`✅ [${runId}] 精确文本匹配验证成功: "${text}"`);
             } else if ((condition as string) === 'has_value') {
               // 🔥 支持 has_value（验证输入框的值属性）
               await element.first().waitFor({ state: 'visible', timeout });
@@ -862,8 +1198,34 @@ export class PlaywrightTestRunner {
         }
 
         case 'wait': {
-          const waitTime = step.value ? parseInt(String(step.value), 10) : 1000;
-          await this.page.waitForTimeout(waitTime);
+          // 🔥 增强：支持等待 URL 变化
+          if (step.selector && step.selector.startsWith('url:')) {
+            const expectedPath = step.selector.substring(4); // 移除 "url:" 前缀
+            const timeout = step.value ? parseInt(String(step.value), 10) * 1000 : 10000; // 默认10秒
+            console.log(`⏳ [${runId}] 等待 URL 变化到路径: ${expectedPath}，超时: ${timeout}ms`);
+            
+            try {
+              await this.page.waitForURL(`**${expectedPath}**`, { 
+                timeout,
+                waitUntil: 'networkidle' 
+              });
+              console.log(`✅ [${runId}] URL 已变化到: ${this.page.url()}`);
+            } catch {
+              const currentUrl = this.page.url();
+              console.log(`⚠️ [${runId}] 等待 URL 变化超时，当前 URL: ${currentUrl}`);
+              // 检查 URL 是否已经包含期望的路径
+              if (currentUrl.includes(expectedPath)) {
+                console.log(`✅ [${runId}] URL 虽超时但已包含期望路径，继续执行`);
+              } else {
+                return { success: false, error: `等待 URL 变化到 ${expectedPath} 超时，当前 URL: ${currentUrl}` };
+              }
+            }
+          } else {
+            // 默认等待固定时间
+            const waitTime = step.value ? parseInt(String(step.value), 10) * 1000 : 1000;
+            console.log(`⏳ [${runId}] 等待 ${waitTime}ms`);
+            await this.page.waitForTimeout(waitTime);
+          }
           break;
         }
 

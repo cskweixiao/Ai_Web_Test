@@ -25,6 +25,7 @@ import { DraftCaseCard } from '../components/ai-generator/DraftCaseCard';
 import { MultiFileUpload } from '../components/ai-generator/MultiFileUpload';
 import { MarkdownEditor } from '../components/ai-generator/MarkdownEditor';
 import { TestCaseDetailModal } from '../components/ai-generator/TestCaseDetailModal';
+import { MAX_FILE_SIZE, MAX_FILES } from '../config/upload';
 import { SmartCompletionModal } from '../components/ai-generator/SmartCompletionModal';
 import type { PreAnalysisResult, UserConfirmation, EnhancedAxureData } from '../types/aiPreAnalysis';
 import { clsx } from 'clsx';
@@ -1988,8 +1989,8 @@ export function FunctionalTestCaseGenerator() {
               onPageModeChange={setPageMode}
               onPreviewFile={handlePreviewFile}
               onClearPreview={handleClearPreview}
-              maxFiles={20}
-              maxSize={50 * 1024 * 1024}
+              maxFiles={MAX_FILES} // 使用统一配置
+              maxSize={MAX_FILE_SIZE} // 使用统一配置，确保 AI 模型最佳处理效果
             />
           ) : (
             // 🆕 文本输入框

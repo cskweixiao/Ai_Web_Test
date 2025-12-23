@@ -10,10 +10,15 @@ import {
   XCircle, 
   AlertCircle, 
   Activity,
-  RotateCcw
+  RotateCcw,
+  ChevronLeft,
+  ChevronsLeft,
+  ChevronRight as ChevronRightIcon,
+  ChevronsRight
 } from 'lucide-react';
 import type { ColumnsType } from 'antd/es/table';
 import { format } from 'date-fns';
+import { clsx } from 'clsx';
 
 // 测试运行接口定义
 interface TestRun {
@@ -57,6 +62,13 @@ interface TestRunsDetailedTableProps {
   onSelectRun: (runId: string) => void;
   onSelectAll: () => void;
   selectAll: boolean;
+  // 🔥 新增：分页相关 props
+  total: number;
+  currentPage: number;
+  pageSize: number;
+  onPageChange: (page: number) => void;
+  onPageSizeChange: (size: number) => void;
+  loading?: boolean;
 }
 
 // 默认列宽配置
@@ -82,7 +94,13 @@ export function TestRunsDetailedTable({
   onViewLogs,
   onSelectRun,
   onSelectAll,
-  selectAll
+  selectAll,
+  total,
+  currentPage,
+  pageSize,
+  onPageChange,
+  onPageSizeChange,
+  loading = false
 }: TestRunsDetailedTableProps) {
   // 列宽状态管理
   const [columnWidths, setColumnWidths] = useState<Record<string, number>>({ ...defaultColumnWidths });
@@ -508,35 +526,36 @@ export function TestRunsDetailedTable({
   }, [columns, columnWidths, handleMouseDown, handleDoubleClick]);
 
   return (
-    <div className="space-y-4">
-      {/* 表格 */}
-      <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-        <Table
-          columns={resizableColumns}
-          dataSource={tableData}
-          rowKey="key"
-          pagination={false}
-          scroll={{ x: 1600, y: 'calc(100vh - 420px)' }}
-          size="middle"
-          className="functional-test-table"
-          tableLayout="fixed"
-          locale={{
-            emptyText: (
-              <div className="py-16 text-center">
-                <div className="text-gray-400 mb-2">
-                  <Activity className="w-12 h-12 mx-auto" />
-                </div>
-                <p className="text-gray-500">暂无测试运行记录</p>
+    <>
+      <Table
+        columns={resizableColumns}
+        dataSource={tableData}
+        rowKey="key"
+        pagination={false}
+        scroll={{ x: 1600, y: 'calc(100vh - 420px)' }}
+        size="middle"
+        className="functional-test-table"
+        tableLayout="fixed"
+        locale={{
+          emptyText: (
+            <div className="py-16 text-center">
+              <div className="text-gray-400 mb-2">
+                <Activity className="w-12 h-12 mx-auto" />
               </div>
-            )
-          }}
-        />
+              <p className="text-gray-500">暂无测试运行记录</p>
+            </div>
+          )
+        }}
+      />
 
-        {/* 底部工具栏 */}
-        <div className="flex items-center justify-between px-6 py-4 border-t border-gray-100 bg-gray-50/50">
+      {/* 底部工具栏 - 集成分页 */}
+      {!loading && total > 0 && (
+        <div className="flex justify-between items-center px-6 py-4 border-t border-gray-200 bg-gray-50">
+          {/* 左侧：记录数和重置列宽 */}
           <div className="flex items-center gap-4">
             <div className="text-sm text-gray-500">
-              共 <span className="font-semibold text-gray-700">{testRuns.length}</span> 条记录
+              共 <span className="font-semibold text-gray-700">{total}</span> 条记录，
+              第 <span className="font-semibold text-gray-700">{currentPage}</span> / <span className="font-semibold text-gray-700">{Math.ceil(total / pageSize)}</span> 页
             </div>
             <Tooltip title="重置列宽（双击列边框可重置单列）">
               <Button
@@ -550,9 +569,112 @@ export function TestRunsDetailedTable({
               </Button>
             </Tooltip>
           </div>
+
+          {/* 右侧：分页控件 */}
+          <div className="flex space-x-4">
+            {/* 分页按钮 */}
+            <div className="flex items-center space-x-1">
+              {/* 第一页 */}
+              <button
+                onClick={() => onPageChange(1)}
+                disabled={currentPage === 1}
+                className={clsx(
+                  'p-2 rounded',
+                  currentPage === 1
+                    ? 'text-gray-600 cursor-not-allowed'
+                    : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
+                )}
+                title="第一页"
+              >
+                <ChevronsLeft className="h-4 w-4" />
+              </button>
+
+              {/* 上一页 */}
+              <button
+                onClick={() => onPageChange(currentPage - 1)}
+                disabled={currentPage === 1}
+                className={clsx(
+                  'p-2 rounded',
+                  currentPage === 1
+                    ? 'text-gray-600 cursor-not-allowed'
+                    : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
+                )}
+                title="上一页"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+
+              {/* 页码输入框 */}
+              <div className="flex items-center space-x-2 px-2">
+                <input
+                  type="number"
+                  min={1}
+                  max={Math.ceil(total / pageSize)}
+                  value={currentPage}
+                  onChange={(e) => {
+                    const page = parseInt(e.target.value);
+                    const totalPages = Math.ceil(total / pageSize);
+                    if (page >= 1 && page <= totalPages) {
+                      onPageChange(page);
+                    }
+                  }}
+                  className="w-16 px-2 py-1 text-sm text-center border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <span className="text-sm text-gray-500">/ {Math.ceil(total / pageSize)}</span>
+              </div>
+
+              {/* 下一页 */}
+              <button
+                onClick={() => onPageChange(currentPage + 1)}
+                disabled={currentPage >= Math.ceil(total / pageSize)}
+                className={clsx(
+                  'p-2 rounded',
+                  currentPage >= Math.ceil(total / pageSize)
+                    ? 'text-gray-600 cursor-not-allowed'
+                    : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
+                )}
+                title="下一页"
+              >
+                <ChevronRightIcon className="h-4 w-4" />
+              </button>
+
+              {/* 最后一页 */}
+              <button
+                onClick={() => onPageChange(Math.ceil(total / pageSize))}
+                disabled={currentPage >= Math.ceil(total / pageSize)}
+                className={clsx(
+                  'p-2 rounded',
+                  currentPage >= Math.ceil(total / pageSize)
+                    ? 'text-gray-600 cursor-not-allowed'
+                    : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
+                )}
+                title="最后一页"
+              >
+                <ChevronsRight className="h-4 w-4" />
+              </button>
+            </div>
+
+            {/* 每页条数选择器 */}
+            <div className="flex items-center space-x-2">
+              <span className="text-sm text-gray-700">每页显示</span>
+              <select
+                value={pageSize}
+                onChange={(e) => onPageSizeChange(parseInt(e.target.value))}
+                className="px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                style={{ width: '80px' }}
+                title="选择每页显示的记录数"
+              >
+                <option value={10}>10</option>
+                <option value={20}>20</option>
+                <option value={50}>50</option>
+                <option value={100}>100</option>
+              </select>
+              <span className="text-sm text-gray-700">条</span>
+            </div>
+          </div>
         </div>
-      </div>
-    </div>
+      )}
+    </>
   );
 }
 

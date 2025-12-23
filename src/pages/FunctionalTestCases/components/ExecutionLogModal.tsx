@@ -104,6 +104,12 @@ export const ExecutionLogModal: React.FC<ExecutionLogModalProps> = ({
         }
     }, [isOpen, caseId, loadLogs]);
 
+    const formatDuration = (ms?: number) => {
+        if (!ms) return '-';
+        if (ms < 1000) return `${ms}毫秒`;
+        return `${(ms / 1000).toFixed(2)}秒`;
+    };
+
     const getStatusIcon = (status: ExecutionStatus) => {
         switch (status) {
             case 'passed':
@@ -187,7 +193,7 @@ export const ExecutionLogModal: React.FC<ExecutionLogModalProps> = ({
                                         </span>
                                         {log.durationMs && (
                                             <span className="text-sm text-gray-500">
-                                                耗时: {(log.durationMs / 1000).toFixed(1)}秒
+                                                耗时: {formatDuration(log.durationMs)}
                                             </span>
                                         )}
                                     </div>
@@ -204,17 +210,17 @@ export const ExecutionLogModal: React.FC<ExecutionLogModalProps> = ({
                                                         已完成: <span className="font-semibold">{log.completedSteps}</span>
                                                     </span>
                                                 )}
-                                                {log.passedSteps !== undefined && log.passedSteps > 0 && (
+                                                {log.passedSteps !== undefined  && (
                                                     <span className="text-green-600">
                                                         ✓ 通过: <span className="font-semibold">{log.passedSteps}</span>
                                                     </span>
                                                 )}
-                                                {log.failedSteps !== undefined && log.failedSteps > 0 && (
+                                                {log.failedSteps !== undefined && (
                                                     <span className="text-red-600">
                                                         ✗ 失败: <span className="font-semibold">{log.failedSteps}</span>
                                                     </span>
                                                 )}
-                                                {log.blockedSteps !== undefined && log.blockedSteps > 0 && (
+                                                {log.blockedSteps !== undefined && (
                                                     <span className="text-orange-600">
                                                         ⚠ 受阻: <span className="font-semibold">{log.blockedSteps}</span>
                                                     </span>

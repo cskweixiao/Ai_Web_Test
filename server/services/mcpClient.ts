@@ -6,6 +6,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { screenshotConfig } from '../../src/utils/screenshotConfig.js';
+import { elementCache } from './elementCache.js'; // 🔥 新增：元素缓存系统
 
 const require = createRequire(import.meta.url);
 
@@ -770,14 +771,34 @@ export class PlaywrightMcpClient {
     }
 
     try {
+      // 🔥 新增：解析快照获取页面信息和结构指纹
+      const snapshotData = this.parseSnapshotForAI();
+      const pageUrl = snapshotData.pageInfo.url || 'unknown';
+      
+      // 🔥 新增：生成缓存Key
+      const snapshotFingerprint = elementCache.generateSnapshotFingerprint(this.snapshot);
+      const cacheKey = elementCache.generateCacheKey(pageUrl, selector, snapshotFingerprint);
+
+      // 🔥 新增：尝试从缓存获取
+      const cachedElement = elementCache.get(cacheKey);
+      if (cachedElement) {
+        console.log(`⚡ [${runId}] 使用缓存元素，跳过AI调用`);
+        console.log(`   🎯 缓存元素: "${cachedElement.text}"`);
+        console.log(`   🔗 元素引用: ${cachedElement.ref}`);
+        return {
+          ref: cachedElement.ref,
+          text: cachedElement.text,
+          confidence: cachedElement.confidence,
+          fromCache: true
+        };
+      }
+
+      // 缓存未命中，进行AI解析
       console.log(`🤖 [${runId}] ===== AI元素解析开始 =====`);
       console.log(`🔍 [${runId}] 目标描述: "${selector}"`);
 
-      // 🔍 解析快照为结构化数据，提供给AI进行智能匹配
-      const snapshotData = this.parseSnapshotForAI();
-
       console.log(`📊 [${runId}] AI分析基础数据:`);
-      console.log(`   📋 页面信息: ${snapshotData.pageInfo.title} (${snapshotData.pageInfo.url})`);
+      console.log(`   📋 页面信息: ${snapshotData.pageInfo.title} (${pageUrl})`);
       console.log(`   📊 发现 ${snapshotData.elements.length} 个可交互元素`);
 
       // 打印所有发现的元素供调试
@@ -795,6 +816,14 @@ export class PlaywrightMcpClient {
         console.log(`   🔗 元素引用: ${matchedElement.ref}`);
         console.log(`   📊 置信度: ${matchedElement.confidence || 'N/A'}%`);
         console.log(`🤖 [${runId}] ===== AI元素解析完成 =====`);
+        
+        // 🔥 新增：将结果存入缓存
+        elementCache.set(cacheKey, {
+          ref: matchedElement.ref,
+          text: matchedElement.text,
+          confidence: matchedElement.confidence || 100
+        });
+        
         return matchedElement;
       }
 

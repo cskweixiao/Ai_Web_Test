@@ -1572,7 +1572,8 @@ export function TestCases() {
           enableVideo: executionConfig.enableVideo,
           environment: executionConfig.environment
         });
-        showToast.info(`✅ 测试开始执行: ${pendingTestCase.name}\n运行ID: ${response.runId}\n引擎: ${executionConfig.executionEngine === 'playwright' ? 'Playwright Test Runner' : 'MCP 客户端'}`);
+        // showToast.info(`✅ 测试开始执行: ${pendingTestCase.name}\n运行ID: ${response.runId}\n引擎: ${executionConfig.executionEngine === 'playwright' ? 'Playwright Test Runner' : 'MCP 客户端'}`);
+        showToast.info(`✅ 开始执行: ${pendingTestCase.name}`);
         console.log('测试运行ID:', response.runId);
         navigate(`/test-runs/${response.runId}/detail`);
       } catch (error: any) {

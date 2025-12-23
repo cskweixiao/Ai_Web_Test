@@ -15,7 +15,8 @@ import {
   ClipboardList,
   FolderKanban,
   BookOpen,
-  Target
+  Target,
+  Database
 } from 'lucide-react';
 
 export interface Tab {
@@ -57,6 +58,7 @@ const routeConfig: Record<string, { title: string; icon: React.ReactNode }> = {
   '/knowledge': { title: '知识库', icon: <BookOpen className="h-4 w-4" /> },
   '/user-management': { title: '用户管理', icon: <Users className="h-4 w-4" /> },
   '/settings': { title: '设置', icon: <Settings className="h-4 w-4" /> },
+  '/cache-stats': { title: '缓存统计', icon: <Database className="h-4 w-4" /> },
 };
 
 // 动态路由匹配函数 - 支持路径参数

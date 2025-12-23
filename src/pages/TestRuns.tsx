@@ -14,7 +14,11 @@ import {
   StopCircle,
   Trash2,
   LayoutGrid,
-  Table2
+  Table2,
+  ChevronLeft,
+  ChevronsLeft,
+  ChevronRight as ChevronRightIcon,
+  ChevronsRight
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { clsx } from 'clsx';
@@ -74,6 +78,9 @@ export function TestRuns() {
     const saved = localStorage.getItem('tr-viewMode');
     return saved === 'card' || saved === 'table' || saved === 'detailed' ? saved : 'card';
   });
+  // 🔥 新增：分页状态
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
   const [activeTab, setActiveTab] = useState<'logs' | 'live' | 'evidence' | 'queue'>(() => {
     const saved = localStorage.getItem('tr-activeTab');
     return saved === 'logs' || saved === 'live' || saved === 'evidence' || saved === 'queue' ? saved : 'logs';
@@ -536,7 +543,25 @@ export function TestRuns() {
 
     // 🔥 关键：不更新 testRuns，避免触发 selectedRun 同步和 LiveView 重渲染
     // 日志会在 filteredLogs 的 useMemo 中从缓冲区读取并合并
-  }, []);  // 空依赖数组，但可以访问 ref
+    
+    // 🔥 新增：触发日志容器自动滚动到底部
+    if (autoScrollLogs && activeTab === 'logs') {
+      // 使用 requestAnimationFrame 确保 DOM 更新后再滚动
+      requestAnimationFrame(() => {
+        const el = logsContainerRef.current;
+        if (el) {
+          el.scrollTop = el.scrollHeight;
+          console.log(`📜 [TestRuns] 自动滚动到底部: scrollHeight=${el.scrollHeight}`);
+        }
+        
+        // 🔥 同时滚动浏览器窗口到底部
+        window.scrollTo({
+          top: document.documentElement.scrollHeight,
+          behavior: 'auto'
+        });
+      });
+    }
+  }, [autoScrollLogs, activeTab]);  // 添加依赖项
 
   // 🔥 稳定的WebSocket连接管理 - 减少重复初始化
   useEffect(() => {
@@ -721,17 +746,36 @@ export function TestRuns() {
     }
   }, [testRuns]);
 
-  // 🔥 新增：全选/取消全选
+  // 🔥 新增：计算分页后的数据
+  const paginatedTestRuns = useMemo(() => {
+    const startIndex = (currentPage - 1) * pageSize;
+    const endIndex = startIndex + pageSize;
+    return testRuns.slice(startIndex, endIndex);
+  }, [testRuns, currentPage, pageSize]);
+
+  // 🔥 新增：全选/取消全选 - 分页场景下只选择当前页
   const handleSelectAll = useCallback(() => {
-    if (selectAll) {
-      setSelectedRunIds(new Set());
+    const allCurrentPageSelected = paginatedTestRuns.length > 0 && 
+      paginatedTestRuns.every(run => selectedRunIds.has(run.id));
+    
+    if (allCurrentPageSelected) {
+      // 取消全选：只取消当前页的选择
+      setSelectedRunIds(prev => {
+        const newSet = new Set(prev);
+        paginatedTestRuns.forEach(run => newSet.delete(run.id));
+        return newSet;
+      });
       setSelectAll(false);
     } else {
-      const allIds = new Set(testRuns.map(run => run.id));
-      setSelectedRunIds(allIds);
+      // 全选：选择当前页的所有项
+      setSelectedRunIds(prev => {
+        const newSet = new Set(prev);
+        paginatedTestRuns.forEach(run => newSet.add(run.id));
+        return newSet;
+      });
       setSelectAll(true);
     }
-  }, [selectAll, testRuns]);
+  }, [paginatedTestRuns, selectedRunIds]);
 
   // 🔥 新增：单项选择/取消选择
   const handleSelectRun = useCallback((runId: string) => {
@@ -742,10 +786,18 @@ export function TestRuns() {
       } else {
         newSet.add(runId);
       }
-      setSelectAll(newSet.size === testRuns.length);
+      // 检查当前页是否全部被选中
+      const allCurrentPageSelected = paginatedTestRuns.length > 0 && 
+        paginatedTestRuns.every(run => {
+          if (run.id === runId) {
+            return newSet.has(runId);
+          }
+          return newSet.has(run.id);
+        });
+      setSelectAll(allCurrentPageSelected);
       return newSet;
     });
-  }, [testRuns.length]);
+  }, [paginatedTestRuns]);
 
   // 🔥 新增：批量删除测试记录
   const handleBatchDelete = useCallback(async () => {
@@ -780,14 +832,15 @@ export function TestRuns() {
     }
   }, [selectedRunIds]);
 
-  // 🔥 数据变化时更新全选状态
+  // 🔥 数据变化时更新全选状态 - 检查当前页是否全部被选中
   useEffect(() => {
-    if (testRuns.length > 0 && selectedRunIds.size === testRuns.length) {
-      setSelectAll(true);
+    if (paginatedTestRuns.length > 0) {
+      const allCurrentPageSelected = paginatedTestRuns.every(run => selectedRunIds.has(run.id));
+      setSelectAll(allCurrentPageSelected);
     } else {
       setSelectAll(false);
     }
-  }, [testRuns.length, selectedRunIds.size]);
+  }, [paginatedTestRuns, selectedRunIds]);
 
   // 修改为导航到详情页面
   const handleViewLogs = useCallback((run: TestRun) => {
@@ -901,6 +954,137 @@ export function TestRuns() {
     
     return { running, queued, completed, failed };
   }, [testRuns]);
+
+  // 🔥 新增：处理每页条数变化
+  const handlePageSizeChange = useCallback((newPageSize: number) => {
+    setPageSize(newPageSize);
+    setCurrentPage(1); // 重置到第一页
+  }, []);
+
+  // 🔥 新增：当数据变化时，如果当前页没有数据，自动跳转到第一页
+  useEffect(() => {
+    const totalPages = Math.ceil(testRuns.length / pageSize);
+    if (currentPage > totalPages && totalPages > 0) {
+      setCurrentPage(1);
+    }
+  }, [testRuns.length, pageSize, currentPage]);
+
+  // 🔥 分页组件 - 可复用
+  const PaginationComponent = ({ total }: { total: number }) => {
+    if (!loading && total > 0) {
+      return (
+        <div className="flex justify-between items-center px-6 py-4 border-t border-gray-200 bg-gray-50">
+          {/* 中间：页码信息 */}
+          <div className="text-sm text-gray-500">
+            共 <span className="font-semibold text-gray-700">{total}</span> 条记录，
+            第 <span className="font-semibold text-gray-700">{currentPage}</span> / <span className="font-semibold text-gray-700">{Math.ceil(total / pageSize)}</span> 页
+          </div>
+          <div className="flex space-x-4">
+            {/* 右侧：分页按钮 */}
+            <div className="flex items-center space-x-1">
+              {/* 第一页 */}
+              <button
+                onClick={() => setCurrentPage(1)}
+                disabled={currentPage === 1}
+                className={clsx(
+                  'p-2 rounded',
+                  currentPage === 1
+                    ? 'text-gray-600 cursor-not-allowed'
+                    : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
+                )}
+                title="第一页"
+              >
+                <ChevronsLeft className="h-4 w-4" />
+              </button>
+
+              {/* 上一页 */}
+              <button
+                onClick={() => setCurrentPage(currentPage - 1)}
+                disabled={currentPage === 1}
+                className={clsx(
+                  'p-2 rounded',
+                  currentPage === 1
+                    ? 'text-gray-600 cursor-not-allowed'
+                    : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
+                )}
+                title="上一页"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+
+              {/* 页码输入框 */}
+              <div className="flex items-center space-x-2 px-2">
+                <input
+                  type="number"
+                  min={1}
+                  max={Math.ceil(total / pageSize)}
+                  value={currentPage}
+                  onChange={(e) => {
+                    const page = parseInt(e.target.value);
+                    const totalPages = Math.ceil(total / pageSize);
+                    if (page >= 1 && page <= totalPages) {
+                      setCurrentPage(page);
+                    }
+                  }}
+                  className="w-16 px-2 py-1 text-sm text-center border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <span className="text-sm text-gray-500">/ {Math.ceil(total / pageSize)}</span>
+              </div>
+
+              {/* 下一页 */}
+              <button
+                onClick={() => setCurrentPage(currentPage + 1)}
+                disabled={currentPage >= Math.ceil(total / pageSize)}
+                className={clsx(
+                  'p-2 rounded',
+                  currentPage >= Math.ceil(total / pageSize)
+                    ? 'text-gray-600 cursor-not-allowed'
+                    : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
+                )}
+                title="下一页"
+              >
+                <ChevronRightIcon className="h-4 w-4" />
+              </button>
+
+              {/* 最后一页 */}
+              <button
+                onClick={() => setCurrentPage(Math.ceil(total / pageSize))}
+                disabled={currentPage >= Math.ceil(total / pageSize)}
+                className={clsx(
+                  'p-2 rounded',
+                  currentPage >= Math.ceil(total / pageSize)
+                    ? 'text-gray-600 cursor-not-allowed'
+                    : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
+                )}
+                title="最后一页"
+              >
+                <ChevronsRight className="h-4 w-4" />
+              </button>
+            </div>
+
+            {/* 左侧：每页条数选择器 */}
+            <div className="flex items-center space-x-2">
+              <span className="text-sm text-gray-700">每页显示</span>
+              <select
+                value={pageSize}
+                onChange={(e) => handlePageSizeChange(parseInt(e.target.value))}
+                className="px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                style={{ width: '80px' }}
+                title="选择每页显示的记录数"
+              >
+                <option value={10}>10</option>
+                <option value={20}>20</option>
+                <option value={50}>50</option>
+                <option value={100}>100</option>
+              </select>
+              <span className="text-sm text-gray-700">条</span>
+            </div>
+          </div>
+        </div>
+      );
+    }
+    return null;
+  };
 
   // 🔥 格式化日志级别的颜色
   const getLogLevelColor = (level: string) => {
@@ -1137,13 +1321,25 @@ export function TestRuns() {
     );
   });
 
-  // 🔁 日志自动滚动到底部
+  // 🔁 日志自动滚动到底部 - 依赖 filteredLogs 长度变化
   useEffect(() => {
     if (activeTab !== 'logs' || !autoScrollLogs) return;
     const el = logsContainerRef.current;
     if (!el) return;
-    el.scrollTop = el.scrollHeight;
-  }, [selectedRun?.id, selectedRun?.logs?.length, activeTab, autoScrollLogs]);
+    
+    // 使用 requestAnimationFrame 确保 DOM 渲染完成后再滚动
+    requestAnimationFrame(() => {
+      if (el) {
+        el.scrollTop = el.scrollHeight;
+      }
+      
+      // 🔥 同时滚动浏览器窗口到底部
+      window.scrollTo({
+        top: document.documentElement.scrollHeight,
+        behavior: 'auto'
+      });
+    });
+  }, [selectedRun?.id, filteredLogs.length, activeTab, autoScrollLogs]);
 
   // 添加错误边界处理
   const ErrorFallback = ({ children }: { children: React.ReactNode }) => {
@@ -1362,31 +1558,42 @@ export function TestRuns() {
             {/* 🔥 根据视图模式渲染不同的组件 */}
             {viewMode === 'detailed' ? (
               // 详细表格视图（功能用例样式）
-              <TestRunsDetailedTable
-                testRuns={testRuns}
-                selectedRunIds={selectedRunIds}
-                stoppingTests={stoppingTests}
-                onStopTest={handleStopTest}
-                onViewLogs={handleViewLogs}
-                onSelectRun={handleSelectRun}
-                onSelectAll={handleSelectAll}
-                selectAll={selectAll}
-              />
+              <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                <TestRunsDetailedTable
+                  testRuns={paginatedTestRuns}
+                  selectedRunIds={selectedRunIds}
+                  stoppingTests={stoppingTests}
+                  onStopTest={handleStopTest}
+                  onViewLogs={handleViewLogs}
+                  onSelectRun={handleSelectRun}
+                  onSelectAll={handleSelectAll}
+                  selectAll={selectAll}
+                  total={testRuns.length}
+                  currentPage={currentPage}
+                  pageSize={pageSize}
+                  onPageChange={setCurrentPage}
+                  onPageSizeChange={handlePageSizeChange}
+                  loading={loading}
+                />
+              </div>
             ) : viewMode === 'table' ? (
               // 简单表格视图
-              <TestRunsTable
-                testRuns={testRuns}
-                selectedRunIds={selectedRunIds}
-                stoppingTests={stoppingTests}
-                onStopTest={handleStopTest}
-                onViewLogs={handleViewLogs}
-                onSelectRun={handleSelectRun}
-                onSelectAll={handleSelectAll}
-                selectAll={selectAll}
-              />
+              <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                <TestRunsTable
+                  testRuns={paginatedTestRuns}
+                  selectedRunIds={selectedRunIds}
+                  stoppingTests={stoppingTests}
+                  onStopTest={handleStopTest}
+                  onViewLogs={handleViewLogs}
+                  onSelectRun={handleSelectRun}
+                  onSelectAll={handleSelectAll}
+                  selectAll={selectAll}
+                />
+                <PaginationComponent total={testRuns.length} />
+              </div>
             ) : (
               // 卡片视图（原有样式）
-              <div className="bg-white rounded-xl shadow-sm border border-gray-200">
+              <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
                 {/* 🔥 列表头部 - 包含全选和标题 */}
                 <div className="px-6 py-4 border-b border-gray-200 flex items-center gap-3">
                   {/* 🔥 全选复选框 */}
@@ -1412,7 +1619,7 @@ export function TestRuns() {
 
                 {/* 🔥 测试运行项列表 */}
                 <div className="divide-y divide-gray-200">
-                  {testRuns.map((run, index) => (
+                  {paginatedTestRuns.map((run, index) => (
                     <TestRunItem
                       key={run.id || index}
                       run={run}
@@ -1425,6 +1632,7 @@ export function TestRuns() {
                     />
                   ))}
                 </div>
+                <PaginationComponent total={testRuns.length} />
               </div>
             )}
           </div>

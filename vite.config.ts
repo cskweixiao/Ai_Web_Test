@@ -6,9 +6,9 @@ export default defineConfig(({ mode }) => {
   // 🔥 加载环境变量
   const env = loadEnv(mode, process.cwd(), '');
   const backendPort = env.PORT || '3001';
-  // 🔥 修复：如果后端在远程服务器，使用 SERVER_HOST，否则使用 172.19.1.111
+  // 🔥 修复：如果后端在远程服务器，使用 SERVER_HOST，否则使用 localhost
   // 注意：这个值应该与后端实际运行的主机地址一致
-  const backendHost = env.SERVER_HOST || '172.19.1.111';
+  const backendHost = env.SERVER_HOST || 'localhost';
   
   return {
     plugins: [react()],

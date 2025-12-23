@@ -1,6 +1,7 @@
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
+import { MAX_FILE_SIZE, MAX_FILES, SUPPORTED_SINGLE_EXTENSIONS, SUPPORTED_MULTI_EXTENSIONS } from '../config/upload';
 
 // 创建上传目录
 const uploadDir = path.join(process.cwd(), 'uploads', 'axure');
@@ -26,7 +27,7 @@ const storage = multer.diskStorage({
 const fileFilter = (req: any, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
   const ext = path.extname(file.originalname).toLowerCase();
 
-  if (ext === '.html' || ext === '.htm' || ext === '.pdf' || ext === '.docx' || ext === '.doc' || ext === '.md' || ext === '.markdown' || ext === '.txt') {
+  if (SUPPORTED_SINGLE_EXTENSIONS.includes(ext as any)) {
     cb(null, true);
   } else {
     cb(new Error('只支持 HTML / PDF / DOCX / DOC / Markdown / TXT 文件'));
@@ -37,7 +38,7 @@ const fileFilter = (req: any, file: Express.Multer.File, cb: multer.FileFilterCa
 const multiFileFilter = (req: any, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
   const ext = path.extname(file.originalname).toLowerCase();
 
-  if (ext === '.html' || ext === '.htm' || ext === '.js' || ext === '.pdf' || ext === '.docx' || ext === '.doc' || ext === '.md' || ext === '.markdown' || ext === '.txt') {
+  if (SUPPORTED_MULTI_EXTENSIONS.includes(ext as any)) {
     cb(null, true);
   } else {
     cb(new Error('只支持 HTML / JS / PDF / DOCX / DOC / Markdown / TXT'));
@@ -48,7 +49,7 @@ const multiFileFilter = (req: any, file: Express.Multer.File, cb: multer.FileFil
 export const axureUpload = multer({
   storage,
   limits: {
-    fileSize: 50 * 1024 * 1024, // 50MB
+    fileSize: MAX_FILE_SIZE, // 使用统一配置
   },
   fileFilter
 });
@@ -57,8 +58,8 @@ export const axureUpload = multer({
 export const axureMultiUpload = multer({
   storage,
   limits: {
-    fileSize: 50 * 1024 * 1024, // 50MB per file
-    files: 20 // 最多20个文件
+    fileSize: MAX_FILE_SIZE, // 使用统一配置
+    files: MAX_FILES // 使用统一配置
   },
   fileFilter: multiFileFilter
 });

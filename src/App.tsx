@@ -9,6 +9,7 @@ import { TestRuns } from './pages/TestRuns';
 import { TestRunDetail } from './pages/TestRunDetail';
 import { TestReports } from './pages/TestReports';
 import Settings from './pages/Settings';
+import CacheStats from './pages/CacheStats';
 import { LLMAssistant } from './pages/LLMAssistant';
 import { TestFactory } from './pages/TestFactory.tsx';
 import { Login } from './pages/Login';
@@ -328,6 +329,7 @@ function AppContent() {
                       } />
 
                       <Route path="/settings" element={<Settings />} />
+                      <Route path="/cache-stats" element={<CacheStats />} />
 
                       {/* 错误页面 */}
                       <Route path="/error/403" element={<ForbiddenPage />} />

@@ -189,9 +189,8 @@ export function TestRunsTable({
   });
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-      <div className="overflow-x-auto">
-        <table className="min-w-full divide-y divide-gray-200">
+    <div className="overflow-x-auto">
+      <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
             <tr>
               {/* 全选复选框 */}
@@ -498,7 +497,6 @@ export function TestRunsTable({
             </AnimatePresence>
           </tbody>
         </table>
-      </div>
     </div>
   );
 }

@@ -653,9 +653,11 @@ enum system_status {
 // 🔥 测试计划模块
 
 enum test_plan_status {
-  draft        // 草稿
+  draft        // 草稿（保留以兼容旧数据）
+  not_started  // 未开始
   active       // 进行中
   completed    // 已完成
+  expired      // 已结束（时间到期）
   cancelled    // 已取消
   archived     // 已归档
 }
@@ -757,4 +759,79 @@ model test_plan_executions {
   @@index([status])
   @@index([started_at])
   @@index([finished_at])
+}
+
+// 🔥 AI解析缓存持久化系统
+
+// AI元素识别缓存表
+model ai_element_cache {
+  id               Int       @id @default(autoincrement())
+  cache_key        String    @unique @db.VarChar(255)  // MD5 hash key
+  url              String    @db.VarChar(500)          // 页面URL
+  selector         String    @db.VarChar(500)          // 元素选择器描述
+  snapshot_fp      String    @db.VarChar(32)           // 页面快照指纹
+  
+  // 缓存的元素信息
+  element_ref      String    @db.VarChar(255)          // 元素引用
+  element_text     String    @db.VarChar(1000)         // 元素文本
+  confidence       Int       @default(100)              // 置信度 0-100
+  
+  // 统计信息
+  hit_count        Int       @default(0)                // 命中次数
+  last_hit_at      DateTime? @db.Timestamp(0)          // 最后命中时间
+  
+  // 时间信息
+  created_at       DateTime  @default(now()) @db.Timestamp(0)
+  expires_at       DateTime  @db.Timestamp(0)          // 过期时间
+  
+  @@index([url])
+  @@index([expires_at])
+  @@index([created_at])
+}
+
+// AI断言解析缓存表
+model ai_assertion_cache {
+  id               Int       @id @default(autoincrement())
+  cache_key        String    @unique @db.VarChar(255)  // MD5 hash key
+  assertion_desc   String    @db.VarChar(1000)         // 断言描述
+  page_elements_fp String    @db.VarChar(32)           // 页面元素指纹
+  
+  // 缓存的解析结果
+  command_name     String    @db.VarChar(100)          // MCP命令名称
+  command_args     Json?                                // 命令参数
+  assertion_info   Json?                                // 断言信息（element, ref, condition, value等）
+  
+  // 统计信息
+  hit_count        Int       @default(0)                // 命中次数
+  last_hit_at      DateTime? @db.Timestamp(0)          // 最后命中时间
+  
+  // 时间信息
+  created_at       DateTime  @default(now()) @db.Timestamp(0)
+  expires_at       DateTime  @db.Timestamp(0)          // 过期时间
+  
+  @@index([expires_at])
+  @@index([created_at])
+}
+
+// AI操作步骤解析缓存表
+model ai_operation_cache {
+  id               Int       @id @default(autoincrement())
+  cache_key        String    @unique @db.VarChar(255)  // MD5 hash key
+  operation_desc   String    @db.VarChar(1000)         // 操作描述
+  page_elements_fp String    @db.VarChar(32)           // 页面元素指纹
+  
+  // 缓存的解析结果
+  command_name     String    @db.VarChar(100)          // MCP命令名称
+  command_args     Json?                                // 命令参数
+  
+  // 统计信息
+  hit_count        Int       @default(0)                // 命中次数
+  last_hit_at      DateTime? @db.Timestamp(0)          // 最后命中时间
+  
+  // 时间信息
+  created_at       DateTime  @default(now()) @db.Timestamp(0)
+  expires_at       DateTime  @db.Timestamp(0)          // 过期时间
+  
+  @@index([expires_at])
+  @@index([created_at])
 }

@@ -269,6 +269,26 @@ export function TestRunDetail() {
                 logs: [...prev.logs, ...newLogs]
               };
             });
+            
+            // 🔥 新增：触发自动滚动到底部
+            if (activeTab === 'logs') {
+              requestAnimationFrame(() => {
+                // 滚动内部容器到底部
+                const container = logsScrollRef.current;
+                if (container) {
+                  container.scrollTop = container.scrollHeight;
+                  if (lastLogRef.current) {
+                    lastLogRef.current.scrollIntoView({ behavior: 'auto', block: 'end' });
+                  }
+                }
+                
+                // 🔥 同时滚动浏览器窗口到底部
+                window.scrollTo({
+                  top: document.documentElement.scrollHeight,
+                  behavior: 'auto'
+                });
+              });
+            }
           }
         }
         // 处理测试运行状态更新
@@ -407,7 +427,7 @@ export function TestRunDetail() {
         clearInterval(connectionCheckInterval);
       };
     }
-  }, [id, loadTestRun, formatDuration, extractTimesFromLogs]);
+  }, [id, loadTestRun, formatDuration, extractTimesFromLogs, activeTab]);
 
   // 实时更新执行时长（从日志中提取时间 - 仅作为备用方案）
   useEffect(() => {
@@ -506,11 +526,28 @@ export function TestRunDetail() {
       // useLayoutEffect 在 DOM 更新后、浏览器绘制前执行，立即滚动
       scrollToBottom();
       
+      // 🔥 同时滚动浏览器窗口到底部
+      window.scrollTo({
+        top: document.documentElement.scrollHeight,
+        behavior: 'auto'
+      });
+      
       // 使用 requestAnimationFrame 作为备用，确保在下一帧也执行
       requestAnimationFrame(() => {
         scrollToBottom();
+        // 同时滚动浏览器窗口
+        window.scrollTo({
+          top: document.documentElement.scrollHeight,
+          behavior: 'auto'
+        });
         // 再延迟一次，确保 DOM 完全渲染
-        setTimeout(scrollToBottom, 100);
+        setTimeout(() => {
+          scrollToBottom();
+          window.scrollTo({
+            top: document.documentElement.scrollHeight,
+            behavior: 'auto'
+          });
+        }, 100);
       });
     }
     
@@ -650,8 +687,12 @@ export function TestRunDetail() {
     const totalAssertions = totalAssertionsFromLogs > 0 ? totalAssertionsFromLogs : assertionSteps.length;
 
     // 从日志中识别操作步骤执行记录（匹配 "执行步骤 X/Y:" 或 "✅ 步骤 X 执行成功" 等模式）
+    // 🔥 排除截图相关的日志消息
     const operationStepLogs = testRun.logs?.filter(log => 
-      log.message?.match(/执行步骤\s*\d+/) && !log.message?.match(/执行断言/)
+      log.message?.match(/执行步骤\s*\d+/) && 
+      !log.message?.match(/执行断言/) &&
+      !log.message?.match(/截图/) &&
+      !log.message?.includes('📸')
     ) || [];
     
     // 从日志中提取操作步骤数量
@@ -672,14 +713,19 @@ export function TestRunDetail() {
           : Math.max(0, (testRun.totalSteps ?? 0) - totalAssertions)); // 如果 steps 为空，从 totalSteps 中减去断言数量
 
     // 从日志中统计操作步骤的完成数和通过数
+    // 🔥 排除截图相关的日志消息
     const passedOperationStepLogs = testRun.logs?.filter(log => 
-      log.message?.match(/步骤\s*\d+\s*执行成功/) || 
-      log.message?.match(/✅\s*步骤\s*\d+/)
+      (log.message?.match(/步骤\s*\d+\s*执行成功/) || 
+       log.message?.match(/✅\s*步骤\s*\d+/)) &&
+      !log.message?.match(/截图/) &&
+      !log.message?.includes('📸')
     ) || [];
     const failedOperationStepLogs = testRun.logs?.filter(log => 
       (log.message?.match(/步骤\s*\d+\s*失败/) || 
        log.message?.match(/❌\s*步骤\s*\d+/)) &&
-      !log.message?.match(/断言/)
+      !log.message?.match(/断言/) &&
+      !log.message?.match(/截图/) &&
+      !log.message?.includes('📸')
     ) || [];
 
     // 断言统计：从日志中统计（匹配 "断言 X 通过" 或 "✅ 断言 X 通过" 等模式）
@@ -906,12 +952,12 @@ export function TestRunDetail() {
               <div className="flex items-center gap-2 text-xs text-gray-600">
                 <span className="text-green-600 font-medium">{stats.passedOperationSteps}</span>通过
                 <span className="text-red-600 font-medium">{stats.failedOperationSteps}</span>失败
-                <span className="text-orange-600 font-medium">{stats.totalOperationSteps - stats.passedOperationSteps - stats.failedOperationSteps}</span>阻塞
+                <span className="text-orange-600 font-medium">{Math.max(0, stats.totalOperationSteps - stats.passedOperationSteps - stats.failedOperationSteps)}</span>阻塞
               </div>
               <div className="flex items-center gap-2 text-xs text-gray-600">
                 <span className="text-green-600 font-medium">{stats.passedAssertions}</span>通过
                 <span className="text-red-600 font-medium">{stats.failedAssertions}</span>失败
-                <span className="text-orange-600 font-medium">{stats.totalAssertions - stats.passedAssertions - stats.failedAssertions > 0 ? stats.totalAssertions - stats.passedAssertions - stats.failedAssertions : 0}</span>阻塞
+                <span className="text-orange-600 font-medium">{Math.max(0, stats.totalAssertions - stats.passedAssertions - stats.failedAssertions)}</span>阻塞
               </div>
               {/* <div className="flex items-center gap-3 text-xs text-gray-600">
                 步骤：{testRun.passedSteps ?? 0} / {testRun.failedSteps ?? 0} / {(testRun.totalSteps ?? 0) - (testRun.passedSteps ?? 0) - (testRun.failedSteps ?? 0)}

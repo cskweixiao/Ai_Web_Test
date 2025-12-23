@@ -660,6 +660,19 @@ export const FunctionalCaseSelectModal: React.FC<FunctionalCaseSelectModalProps>
               className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors text-sm"
             />
           </div>
+          {/* 搜索按钮 - 仅在服务端模式下显示 */}
+            {/* {onSearch && filterMode === 'server' && (
+            {onSearch && (
+              <button
+                onClick={onSearch}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors 
+                disabled:opacity-50 text-sm font-medium"
+                disabled={loading}
+                title="搜索"
+              >
+                <Search className="h-4 w-4" />
+              </button>
+            )} */}
           {/* 筛选和重置按钮 */}
           <button
                 onClick={() => setShowFilters(!showFilters)}

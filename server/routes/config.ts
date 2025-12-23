@@ -3,6 +3,7 @@ import { BackendSettingsService } from '../services/settingsService.js';
 import { llmConfigManager } from '../../src/services/llmConfigManager.js';
 import { modelRegistry } from '../../src/services/modelRegistry.js';
 import { ProxyAgent } from 'undici';
+import { elementCache } from '../services/elementCache.js'; // 🔥 新增：元素缓存
 
 const router = Router();
 
@@ -347,6 +348,286 @@ router.post('/test-connection', async (req, res) => {
       success: false,
       error: errorMessage,
       responseTime
+    });
+  }
+});
+
+// 🔥 新增：获取缓存统计（整合所有缓存）
+router.get('/cache/stats', async (req, res) => {
+  try {
+    console.log('📊 [API] 开始获取缓存统计...');
+    
+    // 获取 elementCache 统计（从数据库聚合数据）
+    const elementStats = await elementCache.getStatsFromDatabase();
+    console.log('📊 [API] Element Cache 统计:', elementStats);
+    
+    // 获取 AI Parser 缓存统计（operationCache & assertionCache）
+    // 从 testExecutionService 获取 aiParser 实例
+    const aiParserStats = {
+      operationHits: 0,
+      operationMisses: 0,
+      assertionHits: 0,
+      assertionMisses: 0
+    };
+    
+    // 尝试从全局服务获取统计
+    try {
+      const testExecService = (global as any).testExecutionService;
+      if (testExecService && testExecService.aiParser) {
+        const parserStats = testExecService.aiParser.getCacheStats();
+        // 🔥 修复：getCacheStats() 返回的是 { operation: {...}, assertion: {...} } 格式
+        aiParserStats.operationHits = parserStats.operation?.hits || 0;
+        aiParserStats.operationMisses = parserStats.operation?.misses || 0;
+        aiParserStats.assertionHits = parserStats.assertion?.hits || 0;
+        aiParserStats.assertionMisses = parserStats.assertion?.misses || 0;
+        console.log('📊 [API] AI Parser 统计:', aiParserStats);
+      } else {
+        console.log('⚠️ [API] AI Parser 服务未初始化');
+      }
+    } catch (e) {
+      // 静默失败，使用默认值
+      console.error('❌ [API] 获取AI Parser缓存统计失败:', e);
+    }
+    
+    // 综合统计
+    const totalRequests = 
+      elementStats.totalRequests + 
+      aiParserStats.operationHits + aiParserStats.operationMisses + 
+      aiParserStats.assertionHits + aiParserStats.assertionMisses;
+      
+    const totalHits = 
+      elementStats.cacheHits + 
+      aiParserStats.operationHits + 
+      aiParserStats.assertionHits;
+      
+    const totalMisses = 
+      elementStats.cacheMisses + 
+      aiParserStats.operationMisses + 
+      aiParserStats.assertionMisses;
+      
+    const hitRate = totalRequests > 0 ? (totalHits / totalRequests) * 100 : 0;
+    
+    // 计算状态
+    let status: 'excellent' | 'good' | 'normal' | 'poor';
+    if (hitRate >= 60) {
+      status = 'excellent';
+    } else if (hitRate >= 40) {
+      status = 'good';
+    } else if (hitRate >= 20) {
+      status = 'normal';
+    } else {
+      status = 'poor';
+    }
+    
+    // 计算节省的成本和时间
+    // 假设：每次AI调用平均成本0.02元，平均响应时间8秒
+    const estimatedCost = totalHits * 0.02;
+    const estimatedTime = totalHits * 8000; // 毫秒
+    
+    // 格式化时间
+    let timeString: string;
+    if (estimatedTime < 1000) {
+      timeString = `${estimatedTime.toFixed(0)}ms`;
+    } else if (estimatedTime < 60000) {
+      timeString = `${(estimatedTime / 1000).toFixed(1)}秒`;
+    } else if (estimatedTime < 3600000) {
+      timeString = `${(estimatedTime / 60000).toFixed(1)}分钟`;
+    } else {
+      timeString = `${(estimatedTime / 3600000).toFixed(1)}小时`;
+    }
+    
+    const responseData = {
+      totalRequests,
+      cacheHits: totalHits,
+      cacheMisses: totalMisses,
+      hitRate: parseFloat(hitRate.toFixed(1)),
+      totalElements: elementStats.totalElements,
+      memoryUsage: elementStats.memoryUsage,
+      estimatedSavings: {
+        apiCalls: totalHits,
+        cost: estimatedCost.toFixed(2) + ' 元',
+        time: timeString
+      },
+      status,
+      // 详细统计
+      breakdown: {
+        element: {
+          requests: elementStats.totalRequests,
+          hits: elementStats.cacheHits,
+          misses: elementStats.cacheMisses,
+          hitRate: elementStats.hitRate
+        },
+        operation: {
+          requests: aiParserStats.operationHits + aiParserStats.operationMisses,
+          hits: aiParserStats.operationHits,
+          misses: aiParserStats.operationMisses,
+          hitRate: (aiParserStats.operationHits + aiParserStats.operationMisses) > 0 
+            ? ((aiParserStats.operationHits / (aiParserStats.operationHits + aiParserStats.operationMisses)) * 100).toFixed(1)
+            : 0
+        },
+        assertion: {
+          requests: aiParserStats.assertionHits + aiParserStats.assertionMisses,
+          hits: aiParserStats.assertionHits,
+          misses: aiParserStats.assertionMisses,
+          hitRate: (aiParserStats.assertionHits + aiParserStats.assertionMisses) > 0 
+            ? ((aiParserStats.assertionHits / (aiParserStats.assertionHits + aiParserStats.assertionMisses)) * 100).toFixed(1)
+            : 0
+        }
+      }
+    };
+    
+    console.log('✅ [API] 缓存统计响应数据:', responseData);
+    
+    res.json({
+      success: true,
+      data: responseData
+    });
+  } catch (error: any) {
+    console.error('❌ [API] 获取缓存统计失败:', error);
+    console.error('❌ [API] 错误堆栈:', error.stack);
+    res.status(500).json({
+      success: false,
+      error: error.message || '获取缓存统计失败'
+    });
+  }
+});
+
+// 🔥 新增：清空元素缓存
+router.post('/cache/clear', async (req, res) => {
+  try {
+    const { url } = req.body;
+    
+    if (url) {
+      // 清空指定URL的缓存
+      const count = elementCache.clearByUrl(url);
+      res.json({
+        success: true,
+        message: `已清理指定URL的缓存`,
+        data: { clearedCount: count }
+      });
+    } else {
+      // 清空所有缓存
+      elementCache.clear();
+      res.json({
+        success: true,
+        message: '已清空所有元素缓存'
+      });
+    }
+  } catch (error: any) {
+    console.error('❌ 清空缓存失败:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message || '清空缓存失败'
+    });
+  }
+});
+
+// 🔥 新增：重置缓存统计
+router.post('/cache/reset-stats', async (req, res) => {
+  try {
+    elementCache.resetStats();
+    res.json({
+      success: true,
+      message: '缓存统计已重置'
+    });
+  } catch (error: any) {
+    console.error('❌ 重置统计失败:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message || '重置统计失败'
+    });
+  }
+});
+
+// 🔥 新增：打印缓存报告
+router.get('/cache/report', async (req, res) => {
+  try {
+    // 打印到控制台
+    elementCache.printStatsReport();
+    
+    const stats = elementCache.getStats();
+    res.json({
+      success: true,
+      message: '缓存报告已生成（查看服务器控制台）',
+      data: stats
+    });
+  } catch (error: any) {
+    console.error('❌ 生成缓存报告失败:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message || '生成缓存报告失败'
+    });
+  }
+});
+
+// 🔥 新增：调试端点 - 直接查询数据库缓存状态
+router.get('/cache/debug', async (req, res) => {
+  try {
+    console.log('🔍 [调试] 开始查询数据库缓存状态...');
+    
+    // 直接使用 Prisma 查询数据库
+    const { PrismaClient } = await import('../../src/generated/prisma/index.js');
+    const prisma = new PrismaClient();
+    
+    try {
+      // 查询所有缓存记录（包括过期的）
+      const allCaches = await prisma.ai_element_cache.findMany({
+        take: 10,
+        orderBy: { created_at: 'desc' }
+      });
+      
+      // 统计信息
+      const totalCount = await prisma.ai_element_cache.count();
+      const activeCount = await prisma.ai_element_cache.count({
+        where: {
+          expires_at: { gt: new Date() }
+        }
+      });
+      
+      const hitStats = await prisma.ai_element_cache.aggregate({
+        _sum: { hit_count: true },
+        _avg: { hit_count: true },
+        _max: { hit_count: true }
+      });
+      
+      console.log('✅ [调试] 数据库查询成功');
+      
+      res.json({
+        success: true,
+        data: {
+          database: {
+            totalCaches: totalCount,
+            activeCaches: activeCount,
+            expiredCaches: totalCount - activeCount,
+            hitStats: {
+              total: hitStats._sum.hit_count || 0,
+              average: hitStats._avg.hit_count || 0,
+              max: hitStats._max.hit_count || 0
+            }
+          },
+          samples: allCaches.map(cache => ({
+            cache_key: cache.cache_key.substring(0, 16) + '...',
+            element_text: cache.element_text,
+            hit_count: cache.hit_count,
+            created_at: cache.created_at,
+            expires_at: cache.expires_at,
+            is_expired: cache.expires_at <= new Date()
+          })),
+          memory: {
+            cacheSize: elementCache['cache'].size,
+            stats: elementCache['stats']
+          }
+        }
+      });
+    } finally {
+      await prisma.$disconnect();
+    }
+  } catch (error: any) {
+    console.error('❌ [调试] 查询数据库失败:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message || '查询失败',
+      stack: error.stack
     });
   }
 });

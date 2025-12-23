@@ -2,6 +2,8 @@ import { PlaywrightMcpClient } from './mcpClient.js';
 import { llmConfigManager, LLMConfigManager } from '../../src/services/llmConfigManager.js';
 import { ProxyAgent } from 'undici';
 import type { LLMConfig } from '../../src/types/llm.js';
+import crypto from 'crypto'; // 🔥 用于生成缓存key
+import { PrismaClient } from '../../src/generated/prisma/index.js'; // 🔥 数据库持久化
 
 // 🔥 重新导出类型以便向后兼容
 export type { LLMConfig } from '../../src/types/llm.js';
@@ -50,13 +52,38 @@ export interface MCPCommand {
 
 export class AITestParser {
   private mcpClient: PlaywrightMcpClient;
+  private prisma: PrismaClient; // 🔥 数据库客户端
+  
+  // 🔥 L1缓存：断言解析缓存（内存）
+  private assertionCache: Map<string, MCPCommand & { assertion?: any }> = new Map();
+  private cacheMaxSize = 100; // 最大缓存数量
+  
+  // 🔥 L1缓存：操作步骤解析缓存（内存）
+  private operationCache: Map<string, MCPCommand> = new Map();
+  private operationCacheMaxSize = 200; // 操作缓存通常更大
+  
+  // 🔥 缓存统计
+  private cacheStats = {
+    assertionHits: 0,
+    assertionMisses: 0,
+    operationHits: 0,
+    operationMisses: 0
+  };
+  
+  // 🔥 持久化配置
+  private enablePersistence: boolean;
+  private cacheTTL = 7 * 24 * 60 * 60 * 1000; // 默认7天过期
+  private syncInterval: NodeJS.Timeout | null = null;
+  
   private configManager: LLMConfigManager;
   private useConfigManager: boolean;
   private legacyConfig: LLMConfig | null = null; // 🔥 存储传统模式下的配置
 
-  constructor(mcpClient: PlaywrightMcpClient, llmConfig?: LLMConfig) {
+  constructor(mcpClient: PlaywrightMcpClient, llmConfig?: LLMConfig, options?: { persistence?: boolean }) {
     this.mcpClient = mcpClient;
+    this.prisma = new PrismaClient();
     this.configManager = llmConfigManager;
+    this.enablePersistence = options?.persistence !== false; // 默认启用持久化
 
     // 如果提供了llmConfig，使用传统模式；否则使用配置管理器
     this.useConfigManager = !llmConfig;
@@ -68,8 +95,17 @@ export class AITestParser {
     } else {
       // 配置管理器模式：使用动态配置
       console.log('🤖 AI解析器启用 (配置管理器模式) - 延迟初始化');
-      // 🔥 修复：不在构造函数中进行异步初始化，避免阻塞服务启动
-      // 配置管理器将在首次使用时进行初始化
+    }
+    
+    // 🔥 初始化缓存持久化
+    if (this.enablePersistence) {
+      console.log('💾 AI解析缓存持久化已启用');
+      this.loadCachesFromDatabase().catch(err => {
+        console.error('❌ 从数据库加载AI缓存失败:', err);
+      });
+      
+      // 定期同步缓存到数据库（每10分钟）
+      this.startPeriodicSync();
     }
   }
 
@@ -205,6 +241,75 @@ export class AITestParser {
     }
     
     return '未知';
+  }
+
+  /**
+   * 🔥 生成操作缓存Key
+   */
+  private generateOperationCacheKey(stepDescription: string, pageElements: string): string {
+    const normalizedDesc = stepDescription.toLowerCase().trim();
+    // 生成页面元素指纹（只包含核心元素，避免因动态内容变化导致缓存失效）
+    const elementsHash = crypto
+      .createHash('md5')
+      .update(pageElements.substring(0, 500)) // 只取前500字符
+      .digest('hex')
+      .substring(0, 8);
+    
+    return `${normalizedDesc}::${elementsHash}`;
+  }
+
+  /**
+   * 🔥 设置操作缓存
+   */
+  private setOperationCache(cacheKey: string, command: MCPCommand): void {
+    // 如果缓存已满，删除最早的一半
+    if (this.operationCache.size >= this.operationCacheMaxSize) {
+      const keysToDelete = Array.from(this.operationCache.keys()).slice(0, Math.floor(this.operationCacheMaxSize / 2));
+      keysToDelete.forEach(key => this.operationCache.delete(key));
+      console.log(`🗑️ 操作缓存已满，清理了 ${keysToDelete.length} 条旧缓存`);
+    }
+
+    this.operationCache.set(cacheKey, command);
+    console.log(`💾 操作结果已缓存 (当前: ${this.operationCache.size}/${this.operationCacheMaxSize})`);
+  }
+
+  /**
+   * 🔥 获取缓存统计信息
+   */
+  public getCacheStats(): {
+    operation: { hits: number; misses: number; size: number; hitRate: string };
+    assertion: { hits: number; misses: number; size: number; hitRate: string };
+  } {
+    const operationTotal = this.cacheStats.operationHits + this.cacheStats.operationMisses;
+    const assertionTotal = this.cacheStats.assertionHits + this.cacheStats.assertionMisses;
+
+    return {
+      operation: {
+        hits: this.cacheStats.operationHits,
+        misses: this.cacheStats.operationMisses,
+        size: this.operationCache.size,
+        hitRate: operationTotal > 0 
+          ? `${((this.cacheStats.operationHits / operationTotal) * 100).toFixed(2)}%`
+          : 'N/A'
+      },
+      assertion: {
+        hits: this.cacheStats.assertionHits,
+        misses: this.cacheStats.assertionMisses,
+        size: this.assertionCache.size,
+        hitRate: assertionTotal > 0
+          ? `${((this.cacheStats.assertionHits / assertionTotal) * 100).toFixed(2)}%`
+          : 'N/A'
+      }
+    };
+  }
+
+  /**
+   * 🔥 清空所有缓存
+   */
+  public clearAllCaches(): void {
+    this.operationCache.clear();
+    this.assertionCache.clear();
+    console.log('🗑️ 已清空所有AI解析缓存');
   }
 
   /**
@@ -415,6 +520,7 @@ export class AITestParser {
         id: `step-${Date.now()}`,
         action: mcpCommand.name,
         description: nextStepText,
+        order: 0,
         stepType: 'operation',  // 🔥 标记为操作步骤
         ...mcpCommand.arguments
       };
@@ -628,8 +734,41 @@ export class AITestParser {
         return tabSwitchCommand;
       }
 
-      // 1. 提取页面元素
+      // 🔥 检查操作缓存（L1内存 + L2数据库）
       const pageElements = this.extractPageElements(snapshot);
+      const pageElementsStr = typeof pageElements === 'string' ? pageElements : JSON.stringify(pageElements);
+      const cacheKey = this.generateOperationCacheKey(stepDescription, pageElementsStr);
+      
+      // L1: 检查内存缓存
+      let cachedCommand = this.operationCache.get(cacheKey);
+      
+      // L2: 如果内存没有，检查数据库
+      if (!cachedCommand && this.enablePersistence) {
+        cachedCommand = await this.getOperationFromDatabase(cacheKey);
+        if (cachedCommand) {
+          // 加载到内存缓存
+          this.operationCache.set(cacheKey, cachedCommand);
+          console.log(`💾 从数据库加载操作缓存`);
+        }
+      }
+      
+      if (cachedCommand) {
+        this.cacheStats.operationHits++;
+        console.log(`⚡ 使用缓存的操作解析结果，跳过AI调用`);
+        if (logCallback) {
+          logCallback(`⚡ 使用缓存的解析结果 (命中${this.cacheStats.operationHits}次)`, 'info');
+        }
+        // 异步更新命中统计
+        if (this.enablePersistence) {
+          this.updateOperationHitCount(cacheKey).catch(() => {});
+        }
+        return cachedCommand;
+      }
+      
+      this.cacheStats.operationMisses++;
+
+      // 1. 提取页面元素
+      // const pageElements = this.extractPageElements(snapshot); // 已在上面提取
 
       // 2. 构建操作专用的用户提示词
       const userPrompt = this.buildOperationUserPrompt(stepDescription, pageElements);
@@ -641,6 +780,10 @@ export class AITestParser {
       const mcpCommand = this.parseAIResponse(aiResponse);
 
       console.log(`✅ AI操作解析成功: ${mcpCommand.name}`);
+      
+      // 🔥 将结果存入缓存（L1内存 + L2数据库）
+      await this.setOperationCache(cacheKey, mcpCommand, stepDescription, pageElementsStr);
+      
       return mcpCommand;
 
     } catch (error: any) {
@@ -710,8 +853,6 @@ export class AITestParser {
     runId?: string,
     logCallback?: (message: string, level: 'info' | 'success' | 'warning' | 'error') => void
   ): Promise<MCPCommand & { assertion?: any }> {
-    console.log(`🤖 使用AI解析断言: "${assertionDescription}"`);
-
     try {
       // 1. 🔥 过滤快照中的非功能性错误
       const filteredSnapshot = this.filterSnapshotErrors(snapshot);
@@ -719,19 +860,56 @@ export class AITestParser {
       // 2. 提取页面元素（使用过滤后的快照）
       const pageElements = this.extractPageElements(filteredSnapshot);
 
-      // 3. 构建断言专用的用户提示词
+      // 3. 🔥 生成缓存 key
+      const pageFingerprint = this.generatePageFingerprint(pageElements);
+      const cacheKey = this.generateCacheKey(assertionDescription, pageFingerprint);
+
+      // 4. 🔥 检查缓存（L1内存 + L2数据库）
+      let cachedResult = this.assertionCache.get(cacheKey);
+      
+      // L2: 如果内存没有，检查数据库
+      if (!cachedResult && this.enablePersistence) {
+        cachedResult = await this.getAssertionFromDatabase(cacheKey);
+        if (cachedResult) {
+          // 加载到内存缓存
+          this.assertionCache.set(cacheKey, cachedResult);
+          console.log(`💾 从数据库加载断言缓存`);
+        }
+      }
+      
+      if (cachedResult) {
+        console.log(`✅ 使用缓存的断言解析结果: "${assertionDescription}" (指纹: ${pageFingerprint})`);
+        if (logCallback) {
+          logCallback(`✅ 使用缓存的断言解析结果（避免重复 AI 调用）`, 'info');
+        }
+        // 异步更新命中统计
+        if (this.enablePersistence) {
+          this.updateAssertionHitCount(cacheKey).catch(() => {});
+        }
+        return cachedResult;
+      }
+
+      console.log(`🤖 使用AI解析断言: "${assertionDescription}" (指纹: ${pageFingerprint})`);
+
+      // 5. 构建断言专用的用户提示词
       const userPrompt = this.buildAssertionUserPrompt(assertionDescription, pageElements);
 
-      // 4. 调用AI模型（断言模式），传递 runId 和日志回调
+      // 6. 调用AI模型（断言模式），传递 runId 和日志回调
       const aiResponse = await this.callLLM(userPrompt, 'assertion', runId, logCallback);
 
-      // 5. 解析AI响应（包含结构化断言信息）
+      // 7. 解析AI响应（包含结构化断言信息）
       const mcpCommand = this.parseAIResponse(aiResponse);
 
       console.log(`✅ AI断言解析成功: ${mcpCommand.name}`);
       if (mcpCommand.assertion) {
         console.log(`📋 结构化断言信息:`, JSON.stringify(mcpCommand.assertion, null, 2));
       }
+
+      // 8. 🔥 保存到缓存（L1内存 + L2数据库）
+      await this.cleanupCache(); // 清理旧缓存
+      await this.setAssertionCache(cacheKey, mcpCommand, assertionDescription, pageFingerprint);
+      console.log(`💾 断言解析结果已缓存 (缓存数: ${this.assertionCache.size}/${this.cacheMaxSize})`);
+
       return mcpCommand;
 
     } catch (error: any) {
@@ -739,6 +917,67 @@ export class AITestParser {
       // 直接抛出错误，让上层处理
       throw new Error(`AI断言解析失败: ${error.message}`);
     }
+  }
+
+  /**
+   * 🔥 生成页面元素指纹（用于缓存 key）
+   * 基于页面主要元素生成一个简短的哈希值
+   */
+  private generatePageFingerprint(pageElements: Array<{ ref: string, role: string, text: string }>): string {
+    // 只使用前10个元素的 role 和 text 生成指纹
+    const topElements = pageElements.slice(0, 10);
+    const fingerprintData = topElements
+      .map(el => `${el.role}:${el.text.substring(0, 20)}`) // 只取前20个字符
+      .join('|');
+    
+    // 简单哈希（使用字符串长度和字符码之和）
+    let hash = 0;
+    for (let i = 0; i < fingerprintData.length; i++) {
+      const char = fingerprintData.charCodeAt(i);
+      hash = ((hash << 5) - hash) + char;
+      hash = hash & hash; // Convert to 32bit integer
+    }
+    
+    return Math.abs(hash).toString(36); // 转换为36进制字符串
+  }
+
+  /**
+   * 🔥 生成缓存 key
+   */
+  private generateCacheKey(assertionDescription: string, pageFingerprint: string): string {
+    return `${assertionDescription.trim()}::${pageFingerprint}`;
+  }
+
+  /**
+   * 🔥 清理缓存（LRU 策略）
+   */
+  private cleanupCache(): void {
+    if (this.assertionCache.size >= this.cacheMaxSize) {
+      // 删除最早的 20% 缓存项
+      const deleteCount = Math.floor(this.cacheMaxSize * 0.2);
+      const keysToDelete = Array.from(this.assertionCache.keys()).slice(0, deleteCount);
+      keysToDelete.forEach(key => this.assertionCache.delete(key));
+      console.log(`🧹 清理断言缓存: 删除 ${deleteCount} 个旧缓存项，当前缓存数: ${this.assertionCache.size}`);
+    }
+  }
+
+  /**
+   * 🔥 清空所有缓存（公共方法）
+   */
+  public clearAssertionCache(): void {
+    const size = this.assertionCache.size;
+    this.assertionCache.clear();
+    console.log(`🧹 已清空所有断言缓存 (清空 ${size} 个缓存项)`);
+  }
+
+  /**
+   * 🔥 获取断言缓存的简单统计信息（重命名以避免方法冲突）
+   */
+  public getAssertionCacheInfo(): { size: number; maxSize: number; hitRate?: number } {
+    return {
+      size: this.assertionCache.size,
+      maxSize: this.cacheMaxSize
+    };
   }
 
   /**
@@ -767,8 +1006,10 @@ export class AITestParser {
         else if (trimmedLine.includes('combobox')) role = 'combobox';
         else role = 'element';
 
-        if (ref && texts.length > 0) {
-          elements.push({ ref, role, text: texts[0] || '' });
+        // 🔥 修复：即使text为空也要包含元素（特别是输入框可能没有name）
+        if (ref) {
+          const text = texts.length > 0 ? texts[0] : '';
+          elements.push({ ref, role, text });
         }
       }
     }
@@ -1406,6 +1647,12 @@ ${elementsContext}
    - 必须精确匹配value
    - 不允许回退到其他元素
 
+3. **⭐ 一致性要求（重要）**：
+   - 对于相同的断言描述和相似的页面状态，应该选择相同的验证元素
+   - 优先选择最明显、最具代表性的元素（如页面标题、核心内容元素）
+   - 避免每次选择不同的元素导致验证结果不一致
+   - 如果断言描述提到"页面跳转"或"页面状态"，优先验证页面标题或 URL 相关元素
+
 ## 示例对比
 
 ### ✅ 好的断言（专注核心）
@@ -1511,20 +1758,6 @@ ${elementsContext}
       const errorDetails = `错误详情: ${error.message}`;
       const modelInfoStr = `模型标识: ${currentConfig.model}`;
       const modeStr = `运行模式: ${modelInfo.mode}`;
-      
-      // 构建完整的错误信息
-      let fullErrorMessage = `${errorMessage}\n   ${errorDetails}\n   ${modelInfoStr}\n   ${modeStr}`;
-      
-      // 增强错误信息
-      if (error.message.includes('401')) {
-        fullErrorMessage += `\n   💡 建议: 请检查API密钥是否有效`;
-      } else if (error.message.includes('429')) {
-        fullErrorMessage += `\n   💡 建议: API调用频率超限，请稍后重试`;
-      } else if (error.message.includes('fetch')) {
-        fullErrorMessage += `\n   💡 建议: 请检查网络连接`;
-      } else if (error.message.includes('Arrearage') || error.message.includes('overdue-payment')) {
-        fullErrorMessage += `\n   💡 建议: 账户欠费，请检查账户状态`;
-      }
 
       // 🔥 修复：如果提供了日志回调，将错误信息拆分成多条日志记录，便于前端显示
       if (logCallback && runId) {
@@ -2051,5 +2284,299 @@ ${this.formatTestStepsForAI(testCase.steps)}
       }] : [],
       risk_level: patches.length > 2 ? 'high' : patches.length > 0 ? 'medium' : 'low'
     };
+  }
+
+  /**
+   * 🔥 ====== 缓存持久化方法 ======
+   */
+
+  /**
+   * 从数据库加载所有缓存到内存
+   */
+  private async loadCachesFromDatabase(): Promise<void> {
+    try {
+      const now = new Date();
+      
+      // 加载断言缓存
+      const assertions = await this.prisma.ai_assertion_cache.findMany({
+        where: { expires_at: { gt: now } },
+        orderBy: { created_at: 'desc' },
+        take: this.cacheMaxSize
+      });
+      
+      for (const item of assertions) {
+        const command: MCPCommand & { assertion?: any } = {
+          name: item.command_name,
+          arguments: (item.command_args as Record<string, any>) || {},
+          assertion: item.assertion_info || undefined
+        };
+        this.assertionCache.set(item.cache_key, command);
+      }
+      
+      // 加载操作缓存
+      const operations = await this.prisma.ai_operation_cache.findMany({
+        where: { expires_at: { gt: now } },
+        orderBy: { created_at: 'desc' },
+        take: this.operationCacheMaxSize
+      });
+      
+      for (const item of operations) {
+        const command: MCPCommand = {
+          name: item.command_name,
+          arguments: (item.command_args as Record<string, any>) || {}
+        };
+        this.operationCache.set(item.cache_key, command);
+      }
+      
+      console.log(`📥 从数据库加载AI缓存: 断言${assertions.length}条, 操作${operations.length}条`);
+      
+      // 清理过期记录
+      await Promise.all([
+        this.prisma.ai_assertion_cache.deleteMany({ where: { expires_at: { lte: now } } }),
+        this.prisma.ai_operation_cache.deleteMany({ where: { expires_at: { lte: now } } })
+      ]);
+      
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : '未知错误';
+      console.error('❌ 从数据库加载AI缓存失败:', errorMessage);
+    }
+  }
+
+  /**
+   * 从数据库获取断言缓存
+   */
+  private async getAssertionFromDatabase(cacheKey: string): Promise<(MCPCommand & { assertion?: any }) | null> {
+    try {
+      const item = await this.prisma.ai_assertion_cache.findUnique({
+        where: { cache_key: cacheKey }
+      });
+      
+      if (!item || item.expires_at <= new Date()) {
+        return null;
+      }
+      
+      return {
+        name: item.command_name,
+        arguments: (item.command_args as Record<string, any>) || {},
+        assertion: item.assertion_info || undefined
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * 从数据库获取操作缓存
+   */
+  private async getOperationFromDatabase(cacheKey: string): Promise<MCPCommand | null> {
+    try {
+      const item = await this.prisma.ai_operation_cache.findUnique({
+        where: { cache_key: cacheKey }
+      });
+      
+      if (!item || item.expires_at <= new Date()) {
+        return null;
+      }
+      
+      return {
+        name: item.command_name,
+        arguments: (item.command_args as Record<string, any>) || {}
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * 设置断言缓存（内存 + 数据库）
+   */
+  private async setAssertionCache(
+    cacheKey: string,
+    command: MCPCommand & { assertion?: any },
+    assertionDesc: string,
+    pageFingerprint: string
+  ): Promise<void> {
+    // L1: 内存缓存
+    this.assertionCache.set(cacheKey, command);
+    
+    // L2: 数据库持久化
+    if (this.enablePersistence) {
+      try {
+        const expiresAt = new Date(Date.now() + this.cacheTTL);
+        await this.prisma.ai_assertion_cache.upsert({
+          where: { cache_key: cacheKey },
+          update: {
+            command_name: command.name,
+            command_args: command.arguments,
+            assertion_info: command.assertion || null,
+            expires_at: expiresAt
+          },
+          create: {
+            cache_key: cacheKey,
+            assertion_desc: assertionDesc.substring(0, 1000),
+            page_elements_fp: pageFingerprint,
+            command_name: command.name,
+            command_args: command.arguments,
+            assertion_info: command.assertion || null,
+            expires_at: expiresAt
+          }
+        });
+      } catch {
+        // 忽略数据库错误
+      }
+    }
+  }
+
+  /**
+   * 设置操作缓存（内存 + 数据库）
+   */
+  private async setOperationCache(
+    cacheKey: string,
+    command: MCPCommand,
+    operationDesc: string,
+    pageElementsStr: string
+  ): Promise<void> {
+    // L1: 内存缓存
+    this.operationCache.set(cacheKey, command);
+    
+    // L2: 数据库持久化
+    if (this.enablePersistence) {
+      try {
+        const expiresAt = new Date(Date.now() + this.cacheTTL);
+        const pageFingerprint = crypto.createHash('md5').update(pageElementsStr).digest('hex').substring(0, 32);
+        
+        await this.prisma.ai_operation_cache.upsert({
+          where: { cache_key: cacheKey },
+          update: {
+            command_name: command.name,
+            command_args: command.arguments,
+            expires_at: expiresAt
+          },
+          create: {
+            cache_key: cacheKey,
+            operation_desc: operationDesc.substring(0, 1000),
+            page_elements_fp: pageFingerprint,
+            command_name: command.name,
+            command_args: command.arguments,
+            expires_at: expiresAt
+          }
+        });
+      } catch {
+        // 忽略数据库错误
+      }
+    }
+  }
+
+  /**
+   * 更新断言缓存命中统计
+   */
+  private async updateAssertionHitCount(cacheKey: string): Promise<void> {
+    try {
+      await this.prisma.ai_assertion_cache.update({
+        where: { cache_key: cacheKey },
+        data: {
+          hit_count: { increment: 1 },
+          last_hit_at: new Date()
+        }
+      });
+    } catch {
+      // 忽略更新错误
+    }
+  }
+
+  /**
+   * 更新操作缓存命中统计
+   */
+  private async updateOperationHitCount(cacheKey: string): Promise<void> {
+    try {
+      await this.prisma.ai_operation_cache.update({
+        where: { cache_key: cacheKey },
+        data: {
+          hit_count: { increment: 1 },
+          last_hit_at: new Date()
+        }
+      });
+    } catch {
+      // 忽略更新错误
+    }
+  }
+
+  /**
+   * 清理旧缓存
+   */
+  private async cleanupCache(): Promise<void> {
+    // 清理内存缓存
+    if (this.assertionCache.size >= this.cacheMaxSize) {
+      const keysToDelete = Array.from(this.assertionCache.keys()).slice(0, 10);
+      keysToDelete.forEach(key => this.assertionCache.delete(key));
+    }
+    
+    if (this.operationCache.size >= this.operationCacheMaxSize) {
+      const keysToDelete = Array.from(this.operationCache.keys()).slice(0, 20);
+      keysToDelete.forEach(key => this.operationCache.delete(key));
+    }
+  }
+
+  /**
+   * 启动定期同步任务
+   */
+  private startPeriodicSync(): void {
+    this.syncInterval = setInterval(() => {
+      this.syncCachesToDatabase().catch(err => {
+        console.error('定期同步AI缓存失败:', err);
+      });
+    }, 10 * 60 * 1000); // 每10分钟
+    
+    console.log('⏰ 已启动AI缓存定期同步任务（每10分钟）');
+  }
+
+  /**
+   * 同步内存缓存到数据库
+   */
+  private async syncCachesToDatabase(): Promise<void> {
+    if (!this.enablePersistence) return;
+    
+    try {
+      let synced = 0;
+      
+      // 同步断言缓存
+      for (const [key, command] of this.assertionCache.entries()) {
+        await this.setAssertionCache(key, command, '', '');
+        synced++;
+      }
+      
+      // 同步操作缓存
+      for (const [key, command] of this.operationCache.entries()) {
+        await this.setOperationCache(key, command, '', '');
+        synced++;
+      }
+      
+      if (synced > 0) {
+        console.log(`🔄 同步AI缓存到数据库: ${synced}条`);
+      }
+    } catch {
+      console.error('❌ 同步AI缓存失败');
+    }
+  }
+
+  /**
+   * 停止定期同步任务
+   */
+  stopPeriodicSync(): void {
+    if (this.syncInterval) {
+      clearInterval(this.syncInterval);
+      this.syncInterval = null;
+    }
+  }
+
+  /**
+   * 优雅关闭
+   */
+  async shutdown(): Promise<void> {
+    console.log('🔄 正在同步AI缓存到数据库...');
+    this.stopPeriodicSync();
+    await this.syncCachesToDatabase();
+    await this.prisma.$disconnect();
+    console.log('✅ AI解析器已关闭');
   }
 }

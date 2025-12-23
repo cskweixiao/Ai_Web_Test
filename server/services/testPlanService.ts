@@ -148,7 +148,7 @@ export async function getTestPlanDetail(planId: number): Promise<TestPlanDetailR
       },
       plan_executions: {
         orderBy: { started_at: 'desc' },
-        take: 10, // 只取最近10条执行记录
+        // 获取所有执行记录，以便找到每个用例的最新执行结果
       },
     },
   });
@@ -175,18 +175,127 @@ export async function getTestPlanDetail(planId: number): Promise<TestPlanDetailR
     updated_at: plan.updated_at.toISOString(),
   };
 
-  // 转换用例数据
-  const cases: TestPlanCase[] = plan.plan_cases.map((c) => ({
-    id: c.id,
-    plan_id: c.plan_id,
-    case_id: c.case_id,
-    case_type: c.case_type as any,
-    case_name: c.case_name,
-    sort_order: c.sort_order,
-    is_executed: c.is_executed,
-    execution_result: c.execution_result as any,
-    created_at: c.created_at.toISOString(),
-  }));
+  // 从测试计划执行记录中收集所有用例的最新执行结果
+  const caseExecutionMap = new Map<number, {
+    result: string;
+    executed_at: string;
+    executor_name: string;
+    execution_id?: string;
+    status?: string; // 执行状态
+  }>();
+  
+  // 遍历所有测试计划执行记录，找到每个用例的最新执行结果
+  for (const execution of plan.plan_executions) {
+    const executionResults = (execution.execution_results as TestPlanCaseResult[]) || [];
+    
+    for (const result of executionResults) {
+      const caseId = result.case_id;
+      const existing = caseExecutionMap.get(caseId);
+      
+      // 如果还没有记录，或者当前执行记录更新，则更新
+      if (!existing || (result.executed_at && (!existing.executed_at || result.executed_at > existing.executed_at))) {
+        // 从执行记录中获取状态，如果执行记录已完成，用例状态也是 completed
+        // 如果执行记录还在运行中，用例状态也是 running
+        // 如果执行记录失败，用例状态是 failed
+        // 如果执行记录已取消，用例状态是 cancelled
+        let caseStatus: string | undefined;
+        if (execution.status) {
+          const statusMap: Record<string, string> = {
+            'running': 'running',
+            'completed': 'completed',
+            'failed': 'failed',
+            'cancelled': 'cancelled',
+          };
+          caseStatus = statusMap[execution.status.toLowerCase()] || 'completed';
+        } else {
+          // 如果没有状态，但有执行结果，默认为已完成
+          caseStatus = 'completed';
+        }
+        
+        caseExecutionMap.set(caseId, {
+          result: result.result,
+          executed_at: result.executed_at || execution.started_at.toISOString(),
+          executor_name: execution.executor_name,
+          execution_id: result.execution_id,
+          status: caseStatus,
+        });
+      }
+    }
+  }
+
+  // 转换用例数据，并获取功能用例的详细信息
+  const cases: TestPlanCase[] = await Promise.all(
+    plan.plan_cases.map(async (c) => {
+      let caseDetail = undefined;
+      
+      // 如果是功能测试用例，获取详细信息
+      if (c.case_type === 'functional') {
+        const functionalCase = await prisma.functional_test_cases.findUnique({
+          where: { id: c.case_id },
+          include: {
+            project_version: {
+              select: {
+                id: true,
+                version_name: true,
+                version_code: true,
+              },
+            },
+          },
+        });
+        
+        if (functionalCase) {
+          caseDetail = {
+            id: functionalCase.id,
+            name: functionalCase.name,
+            case_type: functionalCase.case_type,
+            priority: functionalCase.priority,
+            source: functionalCase.source,
+            project_version_id: functionalCase.project_version_id,
+            project_version: functionalCase.project_version ? {
+              id: functionalCase.project_version.id,
+              version_name: functionalCase.project_version.version_name,
+              version_code: functionalCase.project_version.version_code,
+            } : null,
+          };
+        }
+      }
+      
+      // 从测试计划执行记录中获取最新执行结果
+      const latestExecution = caseExecutionMap.get(c.case_id);
+      let is_executed = c.is_executed;
+      let execution_result = c.execution_result as any;
+      
+      if (latestExecution) {
+        is_executed = true;
+        execution_result = latestExecution.result;
+        
+        // 将最新执行记录信息添加到 case_detail（如果 caseDetail 不存在，创建一个）
+        if (!caseDetail) {
+          caseDetail = {};
+        }
+        caseDetail.last_execution = {
+          execution_id: latestExecution.execution_id,
+          final_result: latestExecution.result,
+          executed_at: latestExecution.executed_at,
+          executor_name: latestExecution.executor_name,
+          status: latestExecution.status || 'completed', // 添加状态字段
+        };
+      }
+      
+      return {
+        id: c.id,
+        plan_id: c.plan_id,
+        case_id: c.case_id,
+        case_type: c.case_type as any,
+        case_name: c.case_name,
+        sort_order: c.sort_order,
+        is_executed: is_executed,
+        execution_result: execution_result,
+        created_at: c.created_at.toISOString(),
+        case_detail: caseDetail,
+      };
+    })
+  );
 
   // 转换执行记录数据
   const executions: TestPlanExecution[] = plan.plan_executions.map((e) => ({
@@ -598,6 +707,15 @@ export async function updateTestPlanCaseStatus(
 }
 
 /**
+ * 删除测试计划执行记录
+ */
+export async function deleteTestPlanExecution(executionId: string): Promise<void> {
+  await prisma.test_plan_executions.delete({
+    where: { id: executionId },
+  });
+}
+
+/**
  * 获取测试计划执行记录的详细信息（包含每个用例的执行日志）
  */
 export async function getTestPlanExecutionDetail(executionId: string): Promise<TestPlanExecution> {
@@ -621,24 +739,64 @@ export async function getTestPlanExecutionDetail(executionId: string): Promise<T
 
       // 获取功能测试用例的执行记录
       try {
-        const executionRecord = await prisma.functional_test_execution_results.findUnique({
-          where: { execution_id: result.execution_id },
+        const executionRecord = await prisma.functional_test_executions.findUnique({
+          where: { id: result.execution_id },
+          include: {
+            executor: {
+              select: {
+                id: true,
+                username: true,
+                account_name: true,
+              }
+            }
+          }
         });
 
         if (executionRecord) {
-          return {
+          const executorName = executionRecord.executor.account_name || executionRecord.executor.username;
+          
+          // 调试日志：检查步骤统计数据
+          console.log(`[调试] 用例 ${result.case_id} 执行记录步骤统计:`, {
+            total_steps: executionRecord.total_steps,
+            completed_steps: executionRecord.completed_steps,
+            passed_steps: executionRecord.passed_steps,
+            failed_steps: executionRecord.failed_steps,
+            blocked_steps: executionRecord.blocked_steps,
+          });
+          
+          const caseResult = {
             ...result,
             actualResult: executionRecord.actual_result || undefined,
             comments: executionRecord.comments || undefined,
             screenshots: executionRecord.screenshots || undefined,
             attachments: executionRecord.attachments || undefined,
             stepResults: executionRecord.step_results || undefined,
-            totalSteps: executionRecord.total_steps || undefined,
-            completedSteps: executionRecord.completed_steps || undefined,
-            passedSteps: executionRecord.passed_steps || undefined,
-            failedSteps: executionRecord.failed_steps || undefined,
-            blockedSteps: executionRecord.blocked_steps || undefined,
+            totalSteps: executionRecord.total_steps ?? undefined,
+            completedSteps: executionRecord.completed_steps ?? undefined,
+            passedSteps: executionRecord.passed_steps ?? undefined,
+            failedSteps: executionRecord.failed_steps ?? undefined,
+            blockedSteps: executionRecord.blocked_steps ?? undefined,
+            // 添加执行人和时间信息
+            executor_id: executionRecord.executor_id,
+            executor_name: executorName,
+            executed_at: executionRecord.executed_at.toISOString(),
+            started_at: executionRecord.executed_at.toISOString(), // 功能测试只有执行时间，作为开始时间
+            finished_at: executionRecord.duration_ms 
+              ? new Date(executionRecord.executed_at.getTime() + executionRecord.duration_ms).toISOString()
+              : executionRecord.executed_at.toISOString(),
+            duration_ms: executionRecord.duration_ms || undefined,
           };
+          
+          // 调试日志：检查返回的数据
+          console.log(`[调试] 用例 ${result.case_id} 返回的步骤统计:`, {
+            totalSteps: caseResult.totalSteps,
+            completedSteps: caseResult.completedSteps,
+            passedSteps: caseResult.passedSteps,
+            failedSteps: caseResult.failedSteps,
+            blockedSteps: caseResult.blockedSteps,
+          });
+          
+          return caseResult;
         }
       } catch (error) {
         console.error(`获取用例 ${result.case_id} 的执行记录失败:`, error);
@@ -684,5 +842,6 @@ export default {
   updateTestPlanExecution,
   updateTestPlanCaseStatus,
   getTestPlanExecutionDetail,
+  deleteTestPlanExecution,
 };
 
