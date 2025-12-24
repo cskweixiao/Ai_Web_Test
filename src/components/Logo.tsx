@@ -28,7 +28,7 @@ export function Logo({ size = 'md', showText = true, className = '' }: LogoProps
 
   return (
     <motion.div 
-      className={`flex items-center space-x-3 ${className}`}
+      className={`flex items-center space-x-0 ${className}`}
       whileHover={{ scale: 1.02 }}
       transition={{ duration: 0.2 }}
     >
@@ -61,7 +61,7 @@ export function Logo({ size = 'md', showText = true, className = '' }: LogoProps
                   // src="/logo.png"
                   src="/logo1.svg"
                   alt="Sakura Logo"
-                  className="w-full h-full object-contain"
+                  className=" object-contain"
                   style={{ width: '60px', height: '60px' }}
                 />
       {/* 系统名称 - 现代化排版 */}
@@ -79,7 +79,7 @@ export function Logo({ size = 'md', showText = true, className = '' }: LogoProps
             animate={{ opacity: 1, x: 0 }}
             transition={{ delay: 0.1 }}
           >
-            Sakura Ai
+            Sakura AI
           </motion.span>
           {size !== 'sm' && (
             <motion.span 

@@ -689,6 +689,32 @@ export function createAxureRoutes(): Router {
       if (ext === '.html' || ext === '.htm') {
         docContent = await fs.readFile(filePath, 'utf-8');
         console.log(`📄 HTML文件读取成功，长度: ${docContent.length} 字符`);
+        
+        // 🔥 过滤掉base64图片，只保留图片位置标记
+        const originalLength = docContent.length;
+        let imageCount = 0;
+        
+        docContent = docContent.replace(/<img\s+([^>]*?)src="data:image\/[^;]+;base64,[^"]*"([^>]*)>/gi, (match) => {
+          imageCount++;
+          const altMatch = match.match(/alt="([^"]*)"/i);
+          const altText = altMatch ? altMatch[1] : '';
+          return `<img src="[图片${imageCount}${altText ? ': ' + altText : ''}]" alt="${altText || '图片' + imageCount}" />`;
+        });
+        
+        // 处理超长src属性（可能是base64）
+        docContent = docContent.replace(/<img\s+([^>]*?)src="[^"]{1000,}"([^>]*)>/gi, (match) => {
+          imageCount++;
+          const altMatch = match.match(/alt="([^"]*)"/i);
+          const altText = altMatch ? altMatch[1] : '';
+          return `<img src="[图片${imageCount}${altText ? ': ' + altText : ''}]" alt="${altText || '图片' + imageCount}" />`;
+        });
+        
+        if (imageCount > 0) {
+          console.log(`   🖼️  已过滤 ${imageCount} 个base64图片`);
+          console.log(`   📊 过滤前: ${originalLength} 字符，过滤后: ${docContent.length} 字符`);
+          console.log(`   📉 减少: ${originalLength - docContent.length} 字符 (${((1 - docContent.length / originalLength) * 100).toFixed(1)}%)`);
+        }
+        
         contentSourceType = 'html';
         extractionMethod = 'direct';
       } else if (ext === '.pdf') {
@@ -739,14 +765,43 @@ export function createAxureRoutes(): Router {
           );
         }
         
-        // 尝试方案1：使用 mammoth（推荐，格式化更好）
+        // 尝试方案1：使用 mammoth 转换为HTML（保留结构和图片位置）
         try {
-          console.log('   📝 方案1: 尝试使用 mammoth 提取...');
-          const extracted = await mammoth.extractRawText({ buffer: docxBuffer });
-          docContent = extracted.value || '';
-          console.log(`   ✅ mammoth 提取成功，文本长度: ${docContent.length} 字符`);
+          console.log('   📝 方案1: 尝试使用 mammoth 转换为HTML...');
+          const extracted = await mammoth.convertToHtml({ buffer: docxBuffer });
+          let htmlContent = extracted.value || '';
+          console.log(`   ✅ mammoth 转换成功，HTML长度: ${htmlContent.length} 字符`);
+          
+          // 🔥 过滤掉base64图片，只保留图片位置标记
+          let imageCount = 0;
+          const originalLength = htmlContent.length;
+          
+          // 匹配所有 <img> 标签，特别是包含 base64 的
+          htmlContent = htmlContent.replace(/<img\s+([^>]*?)src="data:image\/[^;]+;base64,[^"]*"([^>]*)>/gi, (match) => {
+            imageCount++;
+            // 保留其他属性（如果有），但用简单的标记替换base64
+            const altMatch = match.match(/alt="([^"]*)"/i);
+            const altText = altMatch ? altMatch[1] : '';
+            return `<img src="[图片${imageCount}${altText ? ': ' + altText : ''}]" alt="${altText || '图片' + imageCount}" />`;
+          });
+          
+          // 也处理可能的其他格式的base64图片
+          htmlContent = htmlContent.replace(/<img\s+([^>]*?)src="[^"]{1000,}"([^>]*)>/gi, (match) => {
+            imageCount++;
+            const altMatch = match.match(/alt="([^"]*)"/i);
+            const altText = altMatch ? altMatch[1] : '';
+            return `<img src="[图片${imageCount}${altText ? ': ' + altText : ''}]" alt="${altText || '图片' + imageCount}" />`;
+          });
+          
+          if (imageCount > 0) {
+            console.log(`   🖼️  已过滤 ${imageCount} 个base64图片`);
+            console.log(`   📊 过滤前: ${originalLength} 字符，过滤后: ${htmlContent.length} 字符`);
+            console.log(`   📉 减少: ${originalLength - htmlContent.length} 字符 (${((1 - htmlContent.length / originalLength) * 100).toFixed(1)}%)`);
+          }
+          
+          docContent = htmlContent;
           contentSourceType = 'docx';
-          extractionMethod = 'mammoth';
+          extractionMethod = 'mammoth-html';
         } catch (mammothError: any) {
           console.warn(`   ⚠️ mammoth 提取失败: ${mammothError.message}`);
           
@@ -790,6 +845,39 @@ export function createAxureRoutes(): Router {
       } else if (ext === '.md' || ext === '.markdown' || ext === '.txt') {
         docContent = await fs.readFile(filePath, 'utf-8');
         console.log(`📄 文本/Markdown读取成功，长度: ${docContent.length} 字符`);
+        
+        // 🔥 如果是Markdown文件，过滤掉base64图片
+        if (ext === '.md' || ext === '.markdown') {
+          const originalLength = docContent.length;
+          let imageCount = 0;
+          
+          // Markdown格式: ![alt](data:image/...)
+          docContent = docContent.replace(/!\[([^\]]*)\]\(data:image\/[^;]+;base64,[^)]*\)/gi, (match, altText) => {
+            imageCount++;
+            return `![${altText || '图片' + imageCount}]([图片${imageCount}${altText ? ': ' + altText : ''}])`;
+          });
+          
+          // 处理超长URL（可能是base64）
+          docContent = docContent.replace(/!\[([^\]]*)\]\(([^)]{1000,})\)/gi, (match, altText) => {
+            imageCount++;
+            return `![${altText || '图片' + imageCount}]([图片${imageCount}${altText ? ': ' + altText : ''}])`;
+          });
+          
+          // HTML格式的图片在Markdown中
+          docContent = docContent.replace(/<img\s+([^>]*?)src="data:image\/[^;]+;base64,[^"]*"([^>]*)>/gi, (match) => {
+            imageCount++;
+            const altMatch = match.match(/alt="([^"]*)"/i);
+            const altText = altMatch ? altMatch[1] : '';
+            return `<img src="[图片${imageCount}${altText ? ': ' + altText : ''}]" alt="${altText || '图片' + imageCount}" />`;
+          });
+          
+          if (imageCount > 0) {
+            console.log(`   🖼️  已过滤 ${imageCount} 个base64图片`);
+            console.log(`   📊 过滤前: ${originalLength} 字符，过滤后: ${docContent.length} 字符`);
+            console.log(`   📉 减少: ${originalLength - docContent.length} 字符 (${((1 - docContent.length / originalLength) * 100).toFixed(1)}%)`);
+          }
+        }
+        
         contentSourceType = ext === '.txt' ? 'text' : 'markdown';
         extractionMethod = 'direct';
       } else {
@@ -841,6 +929,34 @@ export function createAxureRoutes(): Router {
       console.log('═'.repeat(60));
       console.log('');
 
+      // 🆕 内容长度安全检查（在过滤图片后仍然超长时才截断）
+      const MAX_CONTENT_LENGTH = 200000; // 保守限制为20万字符（系统提示词+用户提示词总共约25万）
+      let processedContent = docContent;
+
+      if (docContent.length > MAX_CONTENT_LENGTH) {
+        console.log(`\n⚠️  【内容长度安全检查】即使过滤图片后，文档内容仍然过长`);
+        console.log(`   - 当前长度: ${docContent.length} 字符`);
+        console.log(`   - AI模型限制: ${MAX_CONTENT_LENGTH} 字符`);
+        console.log(`   - 超出: ${docContent.length - MAX_CONTENT_LENGTH} 字符`);
+        console.log(`   - 说明: 已过滤base64图片，但文本内容本身过多`);
+
+        // 智能截断策略：保留开头70%和结尾30%的内容
+        const keepStart = Math.floor(MAX_CONTENT_LENGTH * 0.7);
+        const keepEnd = MAX_CONTENT_LENGTH - keepStart;
+        
+        const startContent = docContent.substring(0, keepStart);
+        const endContent = docContent.substring(docContent.length - keepEnd);
+        
+        processedContent = startContent + 
+          '\n\n[... 文档中间部分因长度限制已省略 ...]\n\n' + 
+          endContent;
+        
+        console.log(`   ✅ 已截断，新长度: ${processedContent.length} 字符`);
+        console.log(`   - 保留开头: ${keepStart} 字符 (70%)`);
+        console.log(`   - 保留结尾: ${keepEnd} 字符 (30%)`);
+        console.log(`   💡 建议: 将文档拆分为多个小文档分别上传处理\n`);
+      }
+
       // 将补充业务规则转换为数组（按行分割，过滤空行）
       const businessRulesArray = businessRules
         ? businessRules.split('\n').map((r: string) => r.trim()).filter((r: string) => r.length > 0)
@@ -848,7 +964,7 @@ export function createAxureRoutes(): Router {
 
       // 直接调用AI生成需求文档（传递 pageMode、platformType 和 businessRules）
       const result = await getAIService().generateRequirementFromHtmlDirect(
-        docContent,
+        processedContent,
         {
           systemName,
           moduleName,
@@ -925,6 +1041,74 @@ export function createAxureRoutes(): Router {
       console.log(`   页面模式: ${pageMode === 'new' ? '新增页面' : '修改页面'}`);
       console.log(`   系统名称: ${systemName || '未指定'}, 模块名称: ${moduleName || '未指定'}`);
 
+      // 🔥 先过滤文本中的base64图片
+      let processedText = text;
+      const originalTextLength = text.length;
+      let imageCount = 0;
+
+      // Markdown格式: ![alt](data:image/...)
+      processedText = processedText.replace(/!\[([^\]]*)\]\(data:image\/[^;]+;base64,[^)]*\)/gi, (match, altText) => {
+        imageCount++;
+        return `![${altText || '图片' + imageCount}]([图片${imageCount}${altText ? ': ' + altText : ''}])`;
+      });
+      
+      // 处理超长URL（可能是base64）
+      processedText = processedText.replace(/!\[([^\]]*)\]\(([^)]{1000,})\)/gi, (match, altText) => {
+        imageCount++;
+        return `![${altText || '图片' + imageCount}]([图片${imageCount}${altText ? ': ' + altText : ''}])`;
+      });
+      
+      // HTML格式的图片
+      processedText = processedText.replace(/<img\s+([^>]*?)src="data:image\/[^;]+;base64,[^"]*"([^>]*)>/gi, (match) => {
+        imageCount++;
+        const altMatch = match.match(/alt="([^"]*)"/i);
+        const altText = altMatch ? altMatch[1] : '';
+        return `<img src="[图片${imageCount}${altText ? ': ' + altText : ''}]" alt="${altText || '图片' + imageCount}" />`;
+      });
+      
+      // 处理超长src属性（可能是base64）
+      processedText = processedText.replace(/<img\s+([^>]*?)src="[^"]{1000,}"([^>]*)>/gi, (match) => {
+        imageCount++;
+        const altMatch = match.match(/alt="([^"]*)"/i);
+        const altText = altMatch ? altMatch[1] : '';
+        return `<img src="[图片${imageCount}${altText ? ': ' + altText : ''}]" alt="${altText || '图片' + imageCount}" />`;
+      });
+      
+      if (imageCount > 0) {
+        console.log(`\n🖼️  【文本图片过滤】检测到并过滤了base64图片`);
+        console.log(`   - 图片数量: ${imageCount} 个`);
+        console.log(`   📊 过滤前: ${originalTextLength} 字符`);
+        console.log(`   📊 过滤后: ${processedText.length} 字符`);
+        console.log(`   📉 减少: ${originalTextLength - processedText.length} 字符 (${((1 - processedText.length / originalTextLength) * 100).toFixed(1)}%)\n`);
+      }
+
+      // 🆕 内容长度安全检查（在过滤图片后）
+      const MAX_CONTENT_LENGTH = 200000; // 保守限制为20万字符（系统提示词+用户提示词总共约25万）
+
+      if (processedText.length > MAX_CONTENT_LENGTH) {
+        console.log(`\n⚠️  【内容长度安全检查】即使过滤图片后，文本内容仍然过长`);
+        console.log(`   - 当前长度: ${processedText.length} 字符`);
+        console.log(`   - AI模型限制: ${MAX_CONTENT_LENGTH} 字符`);
+        console.log(`   - 超出: ${processedText.length - MAX_CONTENT_LENGTH} 字符`);
+        console.log(`   - 说明: 已过滤base64图片，但文本内容本身过多`);
+
+        // 智能截断策略：保留开头70%和结尾30%的内容
+        const keepStart = Math.floor(MAX_CONTENT_LENGTH * 0.7);
+        const keepEnd = MAX_CONTENT_LENGTH - keepStart;
+        
+        const startContent = processedText.substring(0, keepStart);
+        const endContent = processedText.substring(processedText.length - keepEnd);
+        
+        processedText = startContent + 
+          '\n\n[... 文本中间部分因长度限制已省略 ...]\n\n' + 
+          endContent;
+        
+        console.log(`   ✅ 已截断，新长度: ${processedText.length} 字符`);
+        console.log(`   - 保留开头: ${keepStart} 字符 (70%)`);
+        console.log(`   - 保留结尾: ${keepEnd} 字符 (30%)`);
+        console.log(`   💡 建议: 将内容拆分为多个部分分别处理\n`);
+      }
+
       // 将补充业务规则转换为数组
       const businessRulesArray = businessRules
         ? (Array.isArray(businessRules) ? businessRules : businessRules.split('\n').map((r: string) => r.trim()).filter((r: string) => r.length > 0))
@@ -932,7 +1116,7 @@ export function createAxureRoutes(): Router {
 
       // 调用AI生成需求文档
       const result = await getAIService().generateRequirementFromHtmlDirect(
-        text,
+        processedText,
         {
           systemName,
           moduleName,
@@ -966,7 +1150,14 @@ export function createAxureRoutes(): Router {
           sessionId,
           requirementDoc: result.requirementDoc,
           sections: result.sections,
-          contentSourceType: 'text'
+          contentSourceType: 'text',
+          // 🆕 返回过滤信息，让前端知道发生了什么
+          filterInfo: imageCount > 0 ? {
+            imagesFiltered: imageCount,
+            originalLength: originalTextLength,
+            filteredLength: processedText.length,
+            reductionPercent: ((1 - processedText.length / originalTextLength) * 100).toFixed(1)
+          } : null
         }
       });
     } catch (error: any) {

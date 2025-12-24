@@ -62,7 +62,7 @@ const navigationItems: NavigationItem[] = [
 ];
 
 // 侧边栏宽度常量
-const SIDEBAR_WIDTH_EXPANDED = 260;
+const SIDEBAR_WIDTH_EXPANDED = 250;
 const SIDEBAR_WIDTH_COLLAPSED = 80;
 
 export function Layout({ children }: LayoutProps) {
@@ -308,15 +308,15 @@ export function Layout({ children }: LayoutProps) {
           {/* Logo 区域 */}
           <div className={clsx(
             "flex h-20 items-center border-b border-gray-200/50 dark:border-gray-700/50 transition-all duration-300",
-            sidebarCollapsed ? "justify-center px-4" : "px-6"
+            sidebarCollapsed ? "justify-center px-0" : "px-0"
           )}>
             <Logo size="lg" showText={!sidebarCollapsed} />
           </div>
 
           {/* 导航菜单 */}
           <nav className={clsx(
-            "flex-1 py-8 space-y-3 overflow-y-auto",
-            sidebarCollapsed ? "px-3" : "px-6"
+            "flex-1 py-4 space-y-3 overflow-y-auto",
+            sidebarCollapsed ? "px-3" : "px-4"
           )}>
             {filteredNavigationItems.map((item, index) => {
               const Icon = item.icon;

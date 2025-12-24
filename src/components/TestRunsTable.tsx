@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { format } from 'date-fns';
+import { Tag, Tooltip } from 'antd';
 
 // 测试运行接口定义
 interface TestRun {
@@ -113,12 +114,28 @@ export function TestRunsTable({
   // 状态文本
   const getStatusText = (status: string) => {
     switch (status) {
-      case 'running': return '执行中';
+      case 'running': return '进行中';
       case 'completed': return '已完成';
       case 'failed': return '失败';
       case 'queued': return '队列中';
       case 'cancelled': return '已取消';
       default: return '未知';
+    }
+  };
+
+  // 获取执行结果配置
+  const getStatusConfig = (status: string | null | undefined) => {
+    switch (status) {
+      case 'pass':
+        return { color: 'success', text: '✓ 通过', icon: '✓' };
+      case 'fail':
+        return { color: 'error', text: '✗ 失败', icon: '✗' };
+      case 'block':
+        return { color: 'warning', text: '⚠ 阻塞', icon: '⚠' };
+      case 'skip':
+        return { color: 'default', text: '⊘ 跳过', icon: '⊘' };
+      default:
+        return { color: 'default', text: '未执行', icon: '-' };
     }
   };
 
@@ -209,27 +226,27 @@ export function TestRunsTable({
               {/* 测试名称 */}
               <th className="px-0 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 <div className="flex items-center space-x-2 cursor-pointer hover:bg-gray-100 -mx-2 px-2 py-1 rounded" onClick={() => handleSort('name')}>
-                  <span>场景用例</span>
-                  <SortIcon field="name" />
-                </div>
-              </th>
-              {/* 状态 */}
-              <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                <div className="flex items-center justify-center space-x-2 cursor-pointer hover:bg-gray-100 -mx-2 px-2 py-1 rounded" onClick={() => handleSort('status')}>
-                  <span>执行状态</span>
-                  <SortIcon field="status" />
+                  <span>用例名称</span>
+                  {/* <SortIcon field="name" /> */}
                 </div>
               </th>
               {/* 环境 */}
               <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
                 <div className="flex items-center justify-center space-x-2 cursor-pointer hover:bg-gray-100 -mx-2 px-2 py-1 rounded" onClick={() => handleSort('environment')}>
                   <span>执行环境</span>
-                  <SortIcon field="environment" />
+                  {/* <SortIcon field="environment" /> */}
                 </div>
               </th>
               {/* 进度 */}
-              <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 执行进度
+              </th>
+              {/* 状态 */}
+              <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <div className="flex items-center justify-center space-x-2 cursor-pointer hover:bg-gray-100 -mx-2 px-2 py-1 rounded" onClick={() => handleSort('status')}>
+                  <span>执行状态</span>
+                  {/* <SortIcon field="status" /> */}
+                </div>
               </th>
               {/* 执行信息 */}
               <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -239,28 +256,28 @@ export function TestRunsTable({
               <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
                 <div className="flex items-center justify-center space-x-2 cursor-pointer hover:bg-gray-100 -mx-2 px-2 py-1 rounded" onClick={() => handleSort('executor')}>
                   <span>执行者</span>
-                  <SortIcon field="executor" />
+                  {/* <SortIcon field="executor" /> */}
                 </div>
               </th>
               {/* 开始时间 */}
               <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 <div className="flex items-center space-x-2 cursor-pointer hover:bg-gray-100 -mx-2 px-2 py-1 rounded" onClick={() => handleSort('startTime')}>
                   <span>开始时间</span>
-                  <SortIcon field="startTime" />
+                  {/* <SortIcon field="startTime" /> */}
                 </div>
               </th>
               {/* 结束时间 */}
               <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 <div className="flex items-center space-x-2 cursor-pointer hover:bg-gray-100 -mx-2 px-2 py-1 rounded" onClick={() => handleSort('endTime')}>
                   <span>结束时间</span>
-                  <SortIcon field="endTime" />
+                  {/* <SortIcon field="endTime" /> */}
                 </div>
               </th>
               {/* 用时 */}
               <th className="px-0 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 <div className="flex items-center justify-center space-x-2 cursor-pointer hover:bg-gray-100 -mx-2 px-2 py-1 rounded" onClick={() => handleSort('duration')}>
                   <span>执行用时</span>
-                  <SortIcon field="duration" />
+                  {/* <SortIcon field="duration" /> */}
                 </div>
               </th>
 
@@ -323,20 +340,8 @@ export function TestRunsTable({
                         </div>
                       )}
                     </td>
-                    {/* 状态 */}
-                    <td className="px-0 py-3 w-[120px]">
-                      <div className="flex items-center justify-center space-x-2">
-                        {/* {getStatusIcon(run.status)} */}
-                        <span className={clsx(
-                          'inline-flex px-2 py-1 rounded-full text-xs font-medium border',
-                          getStatusColor(run.status)
-                        )}>
-                          {getStatusText(run.status)}
-                        </span>
-                      </div>
-                    </td>
                     {/* 环境 */}
-                    <td className="px-0 py-3 w-[120px]">
+                    <td className="px-0 py-3">
                       <div className="flex items-center justify-center space-x-2">
                       <span className="text-center flex px-2 py-1 rounded text-xs bg-gray-100 text-gray-800 border border-gray-200">
                         {run.environment}
@@ -344,7 +349,7 @@ export function TestRunsTable({
                       </div>
                     </td>
                     {/* 进度 */}
-                    <td className="px-3 py-3 w-[100px]">
+                    {/* <td className="px-3 py-3 w-[100px]">
                       {run.status === 'running' ? (
                         <div className="w-full">
                           <div className="flex items-center justify-between text-xs text-gray-600 mb-1">
@@ -363,9 +368,21 @@ export function TestRunsTable({
                           {run.completedSteps}/{run.totalSteps}
                         </span>
                       )}
-                    </td>
+                    </td> */}
+                    {/* 状态 */}
+                    {/* <td className="px-0 py-3 w-[120px]">
+                      <div className="flex items-center justify-center space-x-2">
+                        {getStatusIcon(run.status)}
+                        <span className={clsx(
+                          'inline-flex px-2 py-1 rounded-full text-xs font-medium border',
+                          getStatusColor(run.status)
+                        )}>
+                          {getStatusText(run.status)}
+                        </span>
+                      </div>
+                    </td> */}
                     {/* 执行信息 */}
-                    <td className="px-3 py-3 w-[180px]">
+                    {/* <td className="px-3 py-3 w-[180px]">
                       <div className="text-sm text-gray-600 space-y-1">
                         <div className="flex items-center justify-center space-x-2">
                           <span className="text-green-600 font-medium">{run.passedSteps}</span>
@@ -375,21 +392,91 @@ export function TestRunsTable({
                           <span className="text-orange-600 font-medium">{run.totalSteps-run.passedSteps-run.failedSteps}</span>
                           <span className="text-gray-400">阻塞</span>
                         </div>
-                        {/* <div className="flex items-center space-x-2">
-                          <span className="text-red-600 font-medium">{run.failedSteps}</span>
-                          <span className="text-gray-400">失败</span>
-                        </div> */}
+                      </div>
+                    </td> */}
+                    <td className="px-2 py-3 text-sm text-center">
+                      <div className="flex items-center justify-center gap-2">
+                        <div className="w-16 bg-gray-200 rounded-full h-1.5 overflow-hidden">
+                          <div
+                            className="h-full bg-blue-500 rounded-full"
+                            style={{ width: `${run.progress}%` }}
+                          />
+                        </div>
+                        <span className="font-medium text-gray-900 text-xs">{run.progress}%</span>
                       </div>
                     </td>
+                    <td className="px-3 py-3">
+                      <div className="flex items-center justify-center space-x-2">
+                        <span className={clsx(
+                          'inline-flex px-2 py-1 rounded-md text-xs font-medium border',
+                          getStatusColor(run.status)
+                        )}>
+                          {/* {getStatusIcon(run.status)} &nbsp;  */}
+                          {getStatusText(run.status)}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="px-3 py-3 text-sm text-center">
+                      {(() => {
+                        // 根据执行状态和统计信息确定执行结果
+                        let executionResult: string | null = null;
+                        if (run.status === 'completed') {
+                          if (run.failedSteps > 0) {
+                            executionResult = 'fail';
+                          } else if (run.passedSteps > 0) {
+                            executionResult = 'pass';
+                          } else {
+                            executionResult = 'block';
+                          }
+                        } else if (run.status === 'running') {
+                          // 执行中：不显示结果
+                          executionResult = null;
+                        } else if (run.status === 'failed') {
+                          executionResult = 'fail';
+                        }
+
+                        const config = getStatusConfig(executionResult || null);
+                        const resultText = executionResult === 'pass' ? '通过' :
+                          executionResult === 'fail' ? '失败' :
+                            executionResult === 'block' ? '阻塞' : '未知';
+
+                        return (
+                          <Tooltip
+                            placement="top"
+                            styles={{ body: { padding: '8px', fontSize: '13px' } }}
+                            title={
+                              executionResult ? (
+                                <div>
+                                  {run.executor && (
+                                    <div>执行人: {run.executor}</div>
+                                  )}
+                                  <div>执行状态: {run.status === 'completed' ? '已完成' : run.status === 'running' ? '进行中' : run.status === 'failed' ? '失败' : run.status === 'queued' ? '排队中' : '未知'}</div>
+                                  <div>执行结果: {resultText}</div>
+                                  {run.startTime && (
+                                    <div>开始时间: {safeFormat(run.startTime, 'yyyy-MM-dd HH:mm:ss')}</div>
+                                  )}
+                                  {run.endTime && (
+                                    <div>结束时间: {safeFormat(run.endTime, 'yyyy-MM-dd HH:mm:ss')}</div>
+                                  )}
+                                  
+                                </div>
+                              ) : run.status === 'running' ? '执行中，暂无结果' : '暂无执行结果'
+                            }
+                          >
+                            <Tag style={{ marginInlineEnd: 0 }} color={config.color}>{config.text}</Tag>
+                          </Tooltip>
+                        );
+                      })()}
+                    </td>
                     {/* 执行者 */}
-                    <td className="px-0 py-3 w-[100px]">
+                    <td className="px-0 py-3">
                       <div className="flex items-center justify-center text-sm text-gray-600">
                         <User className="h-3 w-3 mr-1" />
                         {run.executor}
                       </div>
                     </td>
                     {/* 开始时间 */}
-                    <td className="px-2 py-3 w-[180px]">
+                    <td className="px-2 py-3">
                       <div className="flex items-center text-sm text-gray-600">
                         <Clock className="h-3 w-3 mr-1" />
                         <span className="truncate max-w-32" title={safeFormat(run.startTime, 'yyyy-MM-dd HH:mm:ss')}>
@@ -398,7 +485,7 @@ export function TestRunsTable({
                       </div>
                     </td>
                     {/* 结束时间 */}
-                    <td className="px-2 py-3 w-[180px]">
+                    <td className="px-2 py-3">
                       <div className="flex items-center text-sm text-gray-600">
                         <Clock className="h-3 w-3 mr-1" />
                         <span className="truncate max-w-32" title={safeFormat(run.endTime, 'yyyy-MM-dd HH:mm:ss')}>
@@ -407,7 +494,7 @@ export function TestRunsTable({
                       </div>
                     </td>
                     {/* 用时 */}
-                    <td className="px-2 py-3 w-[100px]">
+                    <td className="px-2 py-3">
                       <span className="flex items-center justify-center text-sm text-gray-600">{run.duration}</span>
                     </td>
                     {/* 操作 */}

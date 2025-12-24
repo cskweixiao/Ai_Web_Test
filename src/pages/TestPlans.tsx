@@ -205,7 +205,7 @@ export function TestPlans() {
     const Icon = config.icon;
     
     return (
-      <span className={clsx('inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium', config.color)}>
+      <span className={clsx('inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium', config.color)}>
         {Icon && <Icon className="w-3 h-3" />}
         {config.label}
       </span>
@@ -227,7 +227,7 @@ export function TestPlans() {
     const Icon = config.icon;
     
     return (
-      <span className={clsx('inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium', config.color)}>
+      <span className={clsx('inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium', config.color)}>
         <Icon className="w-3 h-3" />
         {config.label}
       </span>
@@ -360,31 +360,31 @@ export function TestPlans() {
             <table className="w-full">
               <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     所属项目
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     计划名称
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
                     计划类型
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
                     计划状态
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
                     用例总数
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
                     执行次数
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
                     负责人
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     计划时间
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     操作
                   </th>
                 </tr>
@@ -392,10 +392,10 @@ export function TestPlans() {
               <tbody className="bg-white divide-y divide-gray-200">
                 {testPlans.map((plan) => (
                   <tr key={plan.id} className="hover:bg-gray-50 transition-colors">
-                    <td className="px-6 py-3 whitespace-nowrap text-sm text-gray-500">
+                    <td className="px-3 py-3 whitespace-nowrap text-sm text-gray-500">
                       {plan.project || '-'}
                     </td>
-                    <td className="px-6 py-3">
+                    <td className="px-3 py-3">
                       <div className="flex flex-col">
                         <button
                           onClick={() => handleViewPlan(plan)}
@@ -409,14 +409,14 @@ export function TestPlans() {
                         )} */}
                       </div>
                     </td>
-                    <td className="px-6 py-3 whitespace-nowrap">
+                    <td className="px-3 py-3 text-center whitespace-nowrap">
                       {getPlanTypeBadge(plan.plan_type)}
                     </td>
-                    <td className="px-6 py-3 whitespace-nowrap">
+                    <td className="px-3 py-3 text-center whitespace-nowrap">
                       {getStatusBadge(plan)}
                     </td>
-                    <td className="px-6 py-3 whitespace-nowrap text-sm text-gray-500">
-                      <div className="flex items-center gap-2">
+                    <td className="px-3 py-3 whitespace-nowrap text-sm text-gray-500">
+                      <div className="flex items-center justify-center gap-2">
                         <span className="font-medium">{plan.total_cases || 0}</span>
                         {plan.functional_cases !== undefined && plan.ui_auto_cases !== undefined && (
                           <span className="text-xs text-gray-400">
@@ -425,11 +425,11 @@ export function TestPlans() {
                         )}
                       </div>
                     </td>
-                    <td className="px-6 py-3 whitespace-nowrap">
+                    <td className="px-3 py-3 text-center whitespace-nowrap">
                       <div className="w-full">
                         {plan.completed_executions && plan.completed_executions > 0 ? (
-                          <div>
-                            <div className="flex items-center justify-between text-xs text-gray-600 mb-1">
+                          <div className="flex items-center justify-center">
+                            <div className="text-xs text-gray-600">
                               <span>已执行 {plan.completed_executions} 次</span>
                             </div>
                           </div>
@@ -438,16 +438,16 @@ export function TestPlans() {
                         )}
                       </div>
                     </td>
-                    <td className="px-6 py-3 whitespace-nowrap text-sm text-gray-500">
+                    <td className="px-3 py-3 flex items-center justify-center whitespace-nowrap text-sm text-gray-500">
                       {plan.owner_name || '-'}
                     </td>
-                    <td className="px-6 py-3 whitespace-nowrap text-sm text-gray-500">
+                    <td className="px-3 py-3 whitespace-nowrap text-sm text-gray-500">
                       <div className="flex items-center gap-1">
-                        <Clock className="w-4 h-4" />
+                        <Clock className="w-3 h-3" />
                         {formatDate(plan.start_date)} ~ {formatDate(plan.end_date)}
                       </div>
                     </td>
-                    <td className="px-6 py-3 whitespace-nowrap text-sm font-medium">
+                    <td className="px-3 py-3 whitespace-nowrap text-sm font-medium">
                       <div className="flex items-center gap-5">
                         <button
                           onClick={() => handleViewPlan(plan)}

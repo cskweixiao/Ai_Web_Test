@@ -885,10 +885,11 @@ export function TestPlanDetail() {
             </div>
             <div>
               <div className="text-sm text-gray-500 mb-1">计划状态</div>
-              <div className={clsx('inline-flex items-center gap-2 px-3 py-1 rounded-lg text-sm font-medium', getStatusColor())}>
+              <span>{getStatusText()}</span>
+              {/* <div className={clsx('inline-flex items-center gap-2 px-3 py-1 rounded-lg text-sm font-medium', getStatusColor())}>
                 {getStatusIcon()}
                 <span>{getStatusText()}</span>
-              </div>
+              </div> */}
             </div>
           </div>
           
@@ -1271,7 +1272,7 @@ export function TestPlanDetail() {
 
                                     return (
                                       <span className={clsx(
-                                        'inline-flex px-2 py-0.5 rounded-full text-xs font-medium border whitespace-nowrap',
+                                        'inline-flex px-2 py-0.5 rounded-md text-xs font-medium border whitespace-nowrap',
                                         config.className
                                       )}>
                                         {config.text}
@@ -1580,7 +1581,7 @@ export function TestPlanDetail() {
                                 </td>
                                 <td className="px-4 py-3 text-sm">
                                   <span className={clsx(
-                                    'px-2 py-1 rounded-full text-xs font-medium',
+                                    'px-2 py-1 rounded-md text-xs font-medium',
                                     execution.status === 'completed' ? 'bg-green-100 text-green-700' :
                                     execution.status === 'queued' ? 'bg-yellow-100 text-yellow-700' :
                                     execution.status === 'running' ? 'bg-blue-100 text-blue-700' :
