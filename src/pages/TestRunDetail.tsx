@@ -1,5 +1,5 @@
 import { useState, useEffect, useLayoutEffect, useCallback, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import {
   ArrowLeft,
   Clock,
@@ -26,6 +26,12 @@ import type { TestRun as TestRunType } from '../types/test';
 export function TestRunDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
+  
+  // 🔥 获取来源信息
+  const fromPath = (location.state as any)?.from;
+  const fromTab = (location.state as any)?.fromTab;
+  const planId = (location.state as any)?.planId;
 
   const [testRun, setTestRun] = useState<TestRunType | null>(null);
   const [loading, setLoading] = useState(true);
@@ -42,6 +48,17 @@ export function TestRunDetail() {
   const lastLogRef = useRef<HTMLDivElement>(null);
   // 记录上一次的日志数量，用于判断是否有新日志
   const prevLogsLengthRef = useRef<number>(0);
+
+  // 🔥 处理返回逻辑
+  const handleGoBack = () => {
+    if (fromPath) {
+      // 如果有来源路径，返回到来源路径
+      navigate(fromPath, { state: { activeTab: fromTab } });
+    } else {
+      // 否则返回到测试运行列表
+      navigate('/test-runs');
+    }
+  };
 
   // 安全的日期格式化函数
   const safeFormatDate = (date: Date | string | undefined, formatStr: string): string => {
@@ -783,7 +800,7 @@ export function TestRunDetail() {
         {/* 头部 */}
         {/* <div className="mb-6">
           <button
-            onClick={() => navigate('/test-runs')}
+            onClick={handleGoBack}
             className="flex items-center text-gray-600 hover:text-gray-900 mb-4"
           >
             <ArrowLeft className="h-4 w-4 mr-2" />
@@ -816,20 +833,20 @@ export function TestRunDetail() {
           </div>
         </div> */}
         {/* 顶部导航栏 */}
-        <div className="mb-3 flex items-center justify-between gap-4">
+        <div className="mb-3 flex items-center justify-between gap-0">
           <div className="flex items-center gap-4">
             <button
-              onClick={() => navigate('/test-runs')}
+              onClick={handleGoBack}
               className="flex items-center gap-2 px-0 py-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
             >
               <ArrowLeft className="h-4 w-4" />
               返回列表
             </button>
             <div>
-              <h1 className="text-2xl font-bold text-gray-900 max-w-[1000px]">
+              <p className="text-sm text-gray-500 mt-0">ID: {testRun.id}</p>
+              <h1 className="text-2xl font-bold text-gray-900 max-w-[1000px] truncate" title={testRun.name || `测试运行 ${testRun.id}`}>
                 {testRun.name || `测试运行 ${testRun.id}`}
               </h1>
-              <p className="text-sm text-gray-500 mt-1">ID: {testRun.id}</p>
             </div>
           </div>
           <div className="flex items-center gap-4">

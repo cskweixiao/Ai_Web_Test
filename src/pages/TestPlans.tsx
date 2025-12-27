@@ -1,6 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plus,
   Search,
@@ -20,14 +19,16 @@ import {
   ChevronsLeft,
   ChevronRight as ChevronRightIcon,
   ChevronsRight,
+  User,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
 import { clsx } from 'clsx';
+import { Tag, Tooltip } from 'antd';
 import { testPlanService } from '../services/testPlanService';
-import type { TestPlan, TestPlanStatus, TestPlanType } from '../types/testPlan';
+import type { ExecutionResult, TestPlan, TestPlanStatus, TestPlanType } from '../types/testPlan';
 import { showToast } from '../utils/toast';
-import { Modal } from '../components/ui/modal';
+import { Modal as AntModal } from 'antd';
 import { SystemOption } from '../types/test';
 import * as systemService from '../services/systemService';
 export function TestPlans() {
@@ -39,8 +40,7 @@ export function TestPlans() {
   const [selectedProject, setSelectedProject] = useState('');
   const [selectedPlanType, setSelectedPlanType] = useState<TestPlanType | ''>('');
   const [selectedStatus, setSelectedStatus] = useState<TestPlanStatus | ''>('');
-  const [showDeleteModal, setShowDeleteModal] = useState(false);
-  const [selectedPlan, setSelectedPlan] = useState<TestPlan | null>(null);
+  const [selectedResult, setSelectedResult] = useState<ExecutionResult | ''>('');
   const [systemOptions, setSystemOptions] = useState<SystemOption[]>([]);
   // 分页
   const [currentPage, setCurrentPage] = useState(1);
@@ -58,6 +58,7 @@ export function TestPlans() {
         project: selectedProject || undefined,
         plan_type: selectedPlanType || undefined,
         status: selectedStatus || undefined,
+        result: selectedResult || undefined,
       });
       
       setTestPlans(response.data);
@@ -86,7 +87,7 @@ export function TestPlans() {
   
   useEffect(() => {
     loadTestPlans();
-  }, [currentPage, pageSize, searchTerm, selectedProject, selectedPlanType, selectedStatus]);
+  }, [currentPage, pageSize, searchTerm, selectedProject, selectedPlanType, selectedStatus, selectedResult]);
 
   // 处理每页条数变化
   const handlePageSizeChange = (newPageSize: number) => {
@@ -114,21 +115,6 @@ export function TestPlans() {
     navigate(`/test-plans/${plan.id}/execute`);
   };
 
-  // 删除测试计划
-  const handleDeletePlan = async () => {
-    if (!selectedPlan) return;
-    
-    try {
-      await testPlanService.deleteTestPlan(selectedPlan.id);
-      showToast.success('测试计划已删除');
-      setShowDeleteModal(false);
-      setSelectedPlan(null);
-      loadTestPlans();
-    } catch (error: any) {
-      console.error('删除测试计划失败:', error);
-      showToast.error('删除测试计划失败');
-    }
-  };
 
   // 刷新功能 - 重新加载测试计划列表
   const handleSearch = () => {
@@ -142,6 +128,7 @@ export function TestPlans() {
     setSelectedProject('');
     setSelectedPlanType('');
     setSelectedStatus('');
+    setSelectedResult('');
     setCurrentPage(1);
     showToast.success('已重置筛选条件');
   };
@@ -188,11 +175,30 @@ export function TestPlans() {
     return 'not_started'; // 未开始
   };
 
-  // 获取状态标签
+  // 获取执行结果配置（与TestPlanDetail保持一致）
+  const getStatusConfig = (status: string | null | undefined) => {
+    switch (status) {
+      case 'pass':
+        return { color: 'success', text: '✓ 通过', icon: '✓' };
+      case 'fail':
+        return { color: 'error', text: '✗ 失败', icon: '✗' };
+      case 'block':
+        return { color: 'warning', text: '⚠ 阻塞', icon: '⚠' };
+      case 'skip':
+        return { color: 'default', text: '⊘ 跳过', icon: '⊘' };
+      default:
+        return { color: 'default', text: '未知', icon: '' };
+    }
+  };
+
+  // 获取状态标签（与TestPlanDetail执行历史表格保持一致）
   const getStatusBadge = (plan: TestPlan) => {
-    const computedStatus = getComputedStatus(plan);
+    // 🔥 修复：直接使用 plan.status（后端已同步更新 test_plans 表的状态）
+    // 后端在执行状态变化时会自动调用 updateTestPlanStatusFromLatestExecution 同步状态
+    const status = plan.status || getComputedStatus(plan);
     
     const statusConfig = {
+      draft: { label: '草稿', color: 'bg-gray-100 text-gray-700', icon: Clock },
       not_started: { label: '未开始', color: 'bg-gray-100 text-gray-700', icon: Clock },
       active: { label: '进行中', color: 'bg-blue-100 text-blue-700', icon: Activity },
       completed: { label: '已完成', color: 'bg-green-100 text-green-700', icon: CheckCircle },
@@ -201,14 +207,68 @@ export function TestPlans() {
       archived: { label: '已归档', color: 'bg-gray-100 text-gray-500', icon: null },
     };
 
-    const config = statusConfig[computedStatus as keyof typeof statusConfig] || statusConfig.not_started;
-    const Icon = config.icon;
+    const config = statusConfig[status as keyof typeof statusConfig] || statusConfig.not_started;
     
     return (
       <span className={clsx('inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium', config.color)}>
-        {Icon && <Icon className="w-3 h-3" />}
         {config.label}
       </span>
+    );
+  };
+
+  // 获取计划结果（基于最新执行记录）
+  const getPlanResult = (plan: TestPlan) => {
+    // 根据最新执行状态和统计信息确定执行结果
+    let executionResult: string | null = null;
+    const status = plan.latest_execution_status;
+    const passedCases = plan.latest_execution_passed_cases || 0;
+    const failedCases = plan.latest_execution_failed_cases || 0;
+    const blockedCases = plan.latest_execution_blocked_cases || 0;
+
+    if (status === 'completed') {
+      // 已完成：根据失败和阻塞情况判断
+      if (failedCases > 0) {
+        executionResult = 'fail';
+      } else if (blockedCases > 0) {
+        executionResult = 'block';
+      } else if (passedCases > 0) {
+        executionResult = 'pass';
+      }
+    } else if (status === 'running') {
+      // 执行中：不显示结果
+      executionResult = null;
+    } else if (status === 'failed') {
+      executionResult = 'fail';
+    }
+
+    const config = getStatusConfig(executionResult || null);
+    const resultText = executionResult === 'pass' ? '通过' :
+      executionResult === 'fail' ? '失败' :
+        executionResult === 'block' ? '阻塞' :
+          executionResult === 'skip' ? '跳过' : '未知';
+
+    if (!executionResult && status !== 'running') {
+      return <span className="text-sm text-gray-400">-</span>;
+    }
+
+    return (
+      <Tooltip
+        placement="top"
+        styles={{ body: { padding: '8px', fontSize: '13px' } }}
+        title={
+          executionResult ? (
+            <div>
+              <div>执行状态: {status === 'completed' ? '已完成' : status === 'running' ? '执行中' : status || '未知'}</div>
+              <div>执行结果: {resultText}</div>
+              {passedCases > 0 && <div>通过: {passedCases}</div>}
+              {failedCases > 0 && <div>失败: {failedCases}</div>}
+              {blockedCases > 0 && <div>阻塞: {blockedCases}</div>}
+            </div>
+          ) : status === 'running' ? '执行中，暂无结果' : '暂无执行结果'
+        }
+      >
+        <Tag style={{ marginInlineEnd: 0, padding: '1px 8px' }} color={config.color}>{config.text}</Tag>
+      </Tooltip>
     );
   };
 
@@ -310,12 +370,25 @@ export function TestPlans() {
                 className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               >
                 <option value="">所有状态</option>
+                {/* <option value="draft">草稿</option> */}
                 <option value="not_started">未开始</option>
                 <option value="active">进行中</option>
                 <option value="completed">已完成</option>
                 <option value="expired">已结束</option>
                 <option value="cancelled">已取消</option>
                 <option value="archived">已归档</option>
+              </select>
+
+              <select
+                value={selectedResult}
+                onChange={(e) => setSelectedResult(e.target.value as ExecutionResult | '')}
+                className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              >
+                <option value="">所有结果</option>
+                <option value="pass">通过</option>
+                <option value="fail">失败</option>
+                <option value="block">阻塞</option>
+                <option value="skip">跳过</option>
               </select>
             </div>
 
@@ -369,11 +442,26 @@ export function TestPlans() {
                   <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
                     计划类型
                   </th>
+                  {/* <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    用例总数
+                  </th>
+                  <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    通过
+                  </th>
+                  <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    失败
+                  </th>
+                  <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    阻塞
+                  </th> */}
+                  <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    计划进度
+                  </th>
                   <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
                     计划状态
                   </th>
                   <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    用例总数
+                    计划结果
                   </th>
                   <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
                     执行次数
@@ -412,18 +500,34 @@ export function TestPlans() {
                     <td className="px-3 py-3 text-center whitespace-nowrap">
                       {getPlanTypeBadge(plan.plan_type)}
                     </td>
+                    {/* <td className="px-3 py-3 text-center whitespace-nowrap w-15">
+                      <span className="text-center text-sm font-medium">{plan.total_cases || 0}</span>
+                    </td>
+                    <td className="px-3 py-3 text-center whitespace-nowrap w-15">
+                      <span className="text-sm font-medium text-green-600">{plan.latest_execution_passed_cases || 0}</span>
+                    </td>
+                    <td className="px-3 py-3 text-center whitespace-nowrap w-15">
+                      <span className="text-sm font-medium text-red-600">{plan.latest_execution_failed_cases || 0}</span>
+                    </td>
+                    <td className="px-3 py-3 text-center whitespace-nowrap w-15">
+                      <span className="text-sm font-medium text-yellow-600">{plan.latest_execution_blocked_cases || 0}</span>
+                    </td> */}
+                    <td className="px-3 py-3 text-center whitespace-nowrap w-15">
+                      <div className="flex items-center justify-start gap-2 ">
+                        <div className="w-16 bg-gray-200 rounded-md h-1.5 overflow-hidden">
+                          <div 
+                            className="h-full bg-blue-500 rounded-md"
+                            style={{ width: `${plan.latest_execution_progress ?? 0}%` }}
+                          />
+                        </div>
+                        <span className="font-medium text-gray-900 text-xs">{plan.latest_execution_progress ?? 0}%</span>
+                      </div>
+                    </td>
                     <td className="px-3 py-3 text-center whitespace-nowrap">
                       {getStatusBadge(plan)}
                     </td>
-                    <td className="px-3 py-3 whitespace-nowrap text-sm text-gray-500">
-                      <div className="flex items-center justify-center gap-2">
-                        <span className="font-medium">{plan.total_cases || 0}</span>
-                        {plan.functional_cases !== undefined && plan.ui_auto_cases !== undefined && (
-                          <span className="text-xs text-gray-400">
-                            (功能:{plan.functional_cases} / UI:{plan.ui_auto_cases})
-                          </span>
-                        )}
-                      </div>
+                    <td className="px-3 py-3 text-center whitespace-nowrap">
+                      {getPlanResult(plan)}
                     </td>
                     <td className="px-3 py-3 text-center whitespace-nowrap">
                       <div className="w-full">
@@ -434,12 +538,15 @@ export function TestPlans() {
                             </div>
                           </div>
                         ) : (
-                          <span className="text-sm text-gray-400">未执行</span>
+                          <span className="text-sm text-gray-400">-</span>
                         )}
                       </div>
                     </td>
                     <td className="px-3 py-3 flex items-center justify-center whitespace-nowrap text-sm text-gray-500">
-                      {plan.owner_name || '-'}
+                      <div className="flex items-center gap-1">
+                        <User className="w-3.5 h-3.5" />
+                        <span className="max-w-[70px] truncate" title={plan.owner_name || '-'}>{plan.owner_name || '-'}</span>
+                      </div>
                     </td>
                     <td className="px-3 py-3 whitespace-nowrap text-sm text-gray-500">
                       <div className="flex items-center gap-1">
@@ -472,8 +579,22 @@ export function TestPlans() {
                         </button>
                         <button
                           onClick={() => {
-                            setSelectedPlan(plan);
-                            setShowDeleteModal(true);
+                            AntModal.confirm({
+                              title: '确认删除',
+                              content: `确定删除测试计划: "${plan.name}" 吗？`,
+                              okText: '确认删除',
+                              okButtonProps: { danger: true },
+                              cancelText: '取消',
+                              onOk: async () => {
+                                try {
+                                  await testPlanService.deleteTestPlan(plan.id);
+                                  showToast.success(`测试计划已删除`);
+                                  loadTestPlans();
+                                } catch (error: any) {
+                                  showToast.error('删除测试计划失败: ' + error.message);
+                                }
+                              }
+                            });
                           }}
                           className="text-red-600 hover:text-red-800"
                           title="删除"
@@ -602,37 +723,6 @@ export function TestPlans() {
         </div>
       </div>
 
-      {/* 删除确认对话框 */}
-      {showDeleteModal && selectedPlan && (
-        <Modal
-          isOpen={showDeleteModal}
-          onClose={() => setShowDeleteModal(false)}
-          title="确认删除"
-        >
-          <div className="p-6">
-            <p className="text-gray-700 mb-4">
-              确定要删除测试计划 <span className="font-semibold">{selectedPlan.name}</span> 吗？
-            </p>
-            <p className="text-sm text-gray-500 mb-6">
-              删除后可以在归档中恢复
-            </p>
-            <div className="flex justify-end gap-3">
-              <button
-                onClick={() => setShowDeleteModal(false)}
-                className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
-              >
-                取消
-              </button>
-              <button
-                onClick={handleDeletePlan}
-                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg"
-              >
-                删除
-              </button>
-            </div>
-          </div>
-        </Modal>
-      )}
     </div>
   );
 }

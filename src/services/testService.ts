@@ -285,6 +285,9 @@ export class TestService {
     system?: string;
     module?: string; // 🔥 新增：模块参数
     projectVersion?: string; // 🔥 新增：版本参数
+    executionStatus?: string; // 🆕 执行状态筛选
+    executionResult?: string; // 🆕 执行结果筛选
+    author?: string; // 🆕 创建者筛选
   }): Promise<{
     data: TestCase[];
     pagination: {
@@ -324,6 +327,15 @@ export class TestService {
       }
       if (params.projectVersion && params.projectVersion.trim()) {
         queryParams.append('projectVersion', params.projectVersion); // 🔥 新增：版本参数
+      }
+      if (params.executionStatus && params.executionStatus.trim()) {
+        queryParams.append('executionStatus', params.executionStatus); // 🆕 执行状态参数
+      }
+      if (params.executionResult && params.executionResult.trim()) {
+        queryParams.append('executionResult', params.executionResult); // 🆕 执行结果参数
+      }
+      if (params.author && params.author.trim()) {
+        queryParams.append('author', params.author); // 🆕 创建者参数
       }
 
       // 添加时间戳防止缓存
@@ -490,6 +502,7 @@ export class TestService {
       enableTrace?: boolean;
       enableVideo?: boolean;
       environment?: string;
+      planExecutionId?: string; // 🔥 新增：测试计划执行记录ID，用于完成后同步数据
     }
   ): Promise<{runId: string}> {
     try {
@@ -501,7 +514,8 @@ export class TestService {
           executionEngine: options?.executionEngine || 'mcp',
           enableTrace: options?.enableTrace || false,
           enableVideo: options?.enableVideo || false,
-          environment: options?.environment || 'staging'
+          environment: options?.environment || 'staging',
+          planExecutionId: options?.planExecutionId, // 🔥 传递测试计划执行记录ID
         })
       });
 
@@ -560,9 +574,25 @@ export class TestService {
   }
 
   // 获取所有测试运行
-  async getAllTestRuns(): Promise<TestRun[]> {
+  async getAllTestRuns(options?: {
+    sortBy?: 'startedAt' | 'finishedAt' | 'startTime';
+    sortOrder?: 'asc' | 'desc';
+  }): Promise<TestRun[]> {
     try {
-      const response = await fetch(`${API_BASE_URL}/tests/runs`, {
+      // 🔥 构建查询参数，将排序选项传递给后端
+      const queryParams = new URLSearchParams();
+      if (options?.sortBy) {
+        queryParams.append('sortBy', options.sortBy);
+      }
+      if (options?.sortOrder) {
+        queryParams.append('sortOrder', options.sortOrder);
+      }
+
+      const url = queryParams.toString() 
+        ? `${API_BASE_URL}/tests/runs?${queryParams.toString()}`
+        : `${API_BASE_URL}/tests/runs`;
+
+      const response = await fetch(url, {
         headers: this.getAuthHeaders()
       });
       const data = await response.json();
@@ -571,7 +601,11 @@ export class TestService {
         throw new Error(data.error || '获取测试运行列表失败');
       }
 
-      return data.data;
+      const testRuns: TestRun[] = data.data || [];
+
+      console.log(`✅ 获取测试运行 ${testRuns.length} 条，排序: ${options?.sortBy || 'startedAt'} ${options?.sortOrder || 'desc'}`);
+
+      return testRuns;
     } catch (error) {
       console.error('获取测试运行列表失败:', error);
       throw error;

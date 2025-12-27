@@ -1,6 +1,6 @@
 # 📦 安装指南
 
-本文档提供 TestFlow 的详细安装步骤和配置说明。
+本文档提供 Sakura AI 的详细安装步骤和配置说明。
 
 ---
 
@@ -34,8 +34,8 @@
 
 ```bash
 # 克隆项目
-git clone https://github.com/testflow/testflow.git
-cd testflow
+git clone https://github.com/Sakura AI/Sakura AI.git
+cd Sakura AI
 
 # 一键启动 (自动安装依赖、配置环境、启动服务)
 npm start
@@ -60,7 +60,7 @@ npx playwright install chromium
 编辑 `.env` 文件:
 
 ```bash
-DATABASE_URL="mysql://username:password@localhost:3306/testflow?timezone=Asia/Shanghai"
+DATABASE_URL="mysql://username:password@localhost:3306/Sakura AI?timezone=Asia/Shanghai"
 ```
 
 应用数据库迁移:
@@ -89,7 +89,7 @@ npm run dev:server    # 后端 (端口 3001)
 
 ```bash
 # ========== 数据库配置 ==========
-DATABASE_URL="mysql://username:password@localhost:3306/testflow?timezone=Asia/Shanghai"
+DATABASE_URL="mysql://username:password@localhost:3306/Sakura AI?timezone=Asia/Shanghai"
 
 # ========== 应用配置 ==========
 NODE_ENV=development               # 环境: development / production
@@ -113,7 +113,7 @@ MAX_CONCURRENT_TESTS=6             # 最大并发数
 
 ```bash
 # ========== AI 模型配置 ==========
-# TestFlow 支持 4 种 AI 模型,可在前端设置页面一键切换
+# Sakura AI 支持 4 种 AI 模型,可在前端设置页面一键切换
 
 # OpenRouter 配置 (支持 GPT-4o, DeepSeek, Claude)
 OPENROUTER_API_KEY=your_openrouter_api_key_here
@@ -157,7 +157,7 @@ LOG_FULL_PROMPT=false              # 是否记录完整 AI Prompt
 ### MySQL 数据库创建
 
 ```sql
-CREATE DATABASE testflow CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE DATABASE Sakura AI CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 ```
 
 ### 应用数据库迁移

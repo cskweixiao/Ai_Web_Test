@@ -398,7 +398,7 @@ export function TestCaseDetail() {
             <div className="grid grid-cols-2 gap-6">
               <div className="col-span-2">
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  测试用例名称 <span className="text-red-500">*</span>
+                  用例名称 <span className="text-red-500">*</span>
                 </label>
                 <input
                   ref={nameInputRef}

@@ -1,5 +1,5 @@
 /** @type {import('tailwindcss').Config} */
-export default {
+module.exports = {
   content: ['./index.html', './src/**/*.{js,ts,jsx,tsx}'],
   theme: {
     extend: {
@@ -13,6 +13,7 @@ export default {
         'slide-out-to-top': 'slideOutToTop 0.3s ease-in',
         'slide-in-from-left': 'slideInFromLeft 0.3s ease-out',
         'slide-out-to-left': 'slideOutToLeft 0.3s ease-in',
+        'progress-shimmer': 'progressShimmer 1.5s ease-in-out infinite',
       },
       keyframes: {
         slideInRight: {
@@ -51,6 +52,10 @@ export default {
           '0%': { transform: 'translateX(0)', opacity: 1 },
           '100%': { transform: 'translateX(-10%)', opacity: 0 },
         },
+        progressShimmer: {
+          '0%': { backgroundPosition: '-200% 0' },
+          '100%': { backgroundPosition: '200% 0' },
+        },
       },
     },
   },
@@ -58,3 +63,4 @@ export default {
     require('@tailwindcss/typography'),
   ],
 };
+

@@ -8,8 +8,11 @@ import type {
   StartTestPlanExecutionInput,
   TestPlanListQuery,
 } from '../../src/types/testPlan';
+import { TestExecutionService } from '../services/testExecution';
 
-const router = Router();
+// 🔥 修改为函数导出，接受testExecutionService参数
+export function createTestPlanRoutes(testExecutionService: TestExecutionService): Router {
+  const router = Router();
 
 /**
  * 获取测试计划列表
@@ -24,6 +27,7 @@ router.get('/', async (req: Request, res: Response) => {
       project: req.query.project as string,
       plan_type: req.query.plan_type as any,
       status: req.query.status as any,
+      result: req.query.result as any,
       owner_id: req.query.owner_id ? parseInt(req.query.owner_id as string) : undefined,
       start_date: req.query.start_date as string,
       end_date: req.query.end_date as string,
@@ -146,17 +150,35 @@ router.delete('/:id/cases/:caseId', async (req: Request, res: Response) => {
 router.post('/:id/execute', async (req: Request, res: Response) => {
   try {
     const planId = parseInt(req.params.id);
+    
+    // 🔥 修复：正确接收 autoExecute 和 executionConfig 参数
+    const autoExecute = req.body.autoExecute !== undefined ? req.body.autoExecute : true; // 默认 true
+    const executionConfig = req.body.executionConfig || undefined;
+    
+    console.log(`📋 [testPlan路由] 接收执行请求:`, {
+      planId,
+      executor_id: req.body.executor_id,
+      execution_type: req.body.execution_type,
+      case_ids: req.body.case_ids,
+      autoExecute,
+      executionConfig
+    });
+    
     const input: StartTestPlanExecutionInput = {
       plan_id: planId,
       executor_id: req.body.executor_id,
       execution_type: req.body.execution_type,
       case_ids: req.body.case_ids,
+      autoExecute, // 🔥 传递 autoExecute 参数
+      executionConfig, // 🔥 传递 executionConfig 参数
     };
-    const result = await testPlanService.startTestPlanExecution(input);
+    
+    // 🔥 传递testExecutionService实例
+    const result = await testPlanService.startTestPlanExecution(input, testExecutionService);
     res.json(result);
   } catch (error: any) {
     console.error('开始执行测试计划失败:', error);
-    res.status(500).json({ error: error.message || '开始执行测试计划失败' });
+    res.json({ error: error.message || '开始执行测试计划失败' });
   }
 });
 
@@ -242,5 +264,8 @@ router.delete('/executions/:executionId', async (req: Request, res: Response) =>
   }
 });
 
-export default router;
+  return router;
+}
+
+export default createTestPlanRoutes;
 

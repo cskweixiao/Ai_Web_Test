@@ -150,7 +150,7 @@ export const ErrorPage: React.FC<ErrorPageProps> = ({
             <p className="text-sm text-gray-500">
               如果问题持续存在,请联系系统管理员或
               <a
-                href="mailto:support@testflow.com"
+                href="mailto:support@Sakura AI.com"
                 className="text-blue-600 hover:text-blue-700 underline ml-1"
               >
                 技术支持

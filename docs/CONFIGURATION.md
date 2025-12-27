@@ -1,6 +1,6 @@
 # ⚙️ 配置详解
 
-TestFlow 完整环境变量配置说明。
+Sakura AI 完整环境变量配置说明。
 
 ---
 
@@ -9,7 +9,7 @@ TestFlow 完整环境变量配置说明。
 ```bash
 # ========== 数据库配置 ==========
 # ⚠️ 重要：必须包含时区配置，确保时间存储正确
-DATABASE_URL="mysql://username:password@localhost:3306/testflow?timezone=Asia/Shanghai"
+DATABASE_URL="mysql://username:password@localhost:3306/Sakura AI?timezone=Asia/Shanghai"
 
 # ========== 应用配置 ==========
 NODE_ENV=development               # 环境: development / production
@@ -71,7 +71,7 @@ LOG_FULL_PROMPT=false              # 是否记录完整 AI Prompt
 
 | 配置项 | 说明 | 默认值 | 示例 |
 |-------|------|--------|------|
-| `DATABASE_URL` | MySQL 连接字符串（**必须包含时区配置**） | 无 | `mysql://user:pass@localhost:3306/testflow?timezone=Asia/Shanghai` |
+| `DATABASE_URL` | MySQL 连接字符串（**必须包含时区配置**） | 无 | `mysql://user:pass@localhost:3306/Sakura AI?timezone=Asia/Shanghai` |
 
 **格式**：`mysql://用户名:密码@主机:端口/数据库名?timezone=时区`
 

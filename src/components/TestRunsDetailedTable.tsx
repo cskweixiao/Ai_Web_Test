@@ -19,6 +19,7 @@ import {
 import type { ColumnsType } from 'antd/es/table';
 import { format } from 'date-fns';
 import { clsx } from 'clsx';
+import { tr } from 'date-fns/locale';
 
 // 测试运行接口定义
 interface TestRun {
@@ -45,6 +46,12 @@ interface TestRun {
   }>;
   screenshots: string[];
   error?: string;
+  // 🔥 新增：测试用例相关信息
+  system?: string;
+  module?: string;
+  tags?: string[];
+  priority?: 'high' | 'medium' | 'low';
+  projectVersion?: string;
 }
 
 // 表格行数据类型
@@ -74,16 +81,21 @@ interface TestRunsDetailedTableProps {
 // 默认列宽配置
 const defaultColumnWidths: Record<string, number> = {
   select: 50,
-  name: 450,
-  status: 100,
-  environment: 100,
+  name: 400,
+  system: 150,
+  projectVersion: 100,
+  module: 100,
+  tags: 80,
+  priority: 80,
+  status: 80,
+  environment: 80,
   progress: 100,
   steps: 140,
   executor: 100,
   startTime: 140,
   endTime: 140,
   duration: 100,
-  actions: 100,
+  actions: 60,
 };
 
 export function TestRunsDetailedTable({
@@ -264,7 +276,52 @@ export function TestRunsDetailedTable({
       ),
     },
     {
-      title: '场景用例',
+      title: '所属项目',
+      dataIndex: 'system',
+      key: 'system',
+      width: 100,
+      // align: 'center',
+      // sorter: (a, b) => (a.system || '').localeCompare(b.system || ''),
+      render: (system: string) => (
+        <div className="flex items-center justify-left">
+          <span className="text-sm text-gray-700 truncate max-w-50" title={system || '-'}>
+            {system || '-'}
+          </span>
+        </div>
+      ),
+    },
+    {
+      title: '所属版本',
+      dataIndex: 'projectVersion',
+      key: 'projectVersion',
+      width: 100,
+      // align: 'center',
+      // sorter: (a, b) => (a.projectVersion || '').localeCompare(b.projectVersion || ''),
+      render: (projectVersion: string) => (
+        <div className="flex items-center justify-center">
+          <span className="text-sm text-gray-700 truncate max-w-24" title={projectVersion || '-'}>
+            {projectVersion || '-'}
+          </span>
+        </div>
+      ),
+    },
+    {
+      title: '所属模块',
+      dataIndex: 'module',
+      key: 'module',
+      width: 100,
+      align: 'center',
+      // sorter: (a, b) => (a.module || '').localeCompare(b.module || ''),
+      render: (module: string) => (
+        <div className="flex items-center justify-center">
+          <span className="text-sm text-gray-700 truncate max-w-24" title={module || '-'}>
+            {module || '-'}
+          </span>
+        </div>
+      ),
+    },
+    {
+      title: '用例名称',
       dataIndex: 'name',
       key: 'name',
       width: 300,
@@ -296,6 +353,59 @@ export function TestRunsDetailedTable({
           </div>
         </Tooltip>
       ),
+    },
+    {
+      title: '标签',
+      dataIndex: 'tags',
+      key: 'tags',
+      width: 120,
+      align: 'center',
+      render: (tags: string[]) => (
+        <div className="flex items-center justify-center flex-wrap gap-1">
+          {tags && Array.isArray(tags) && tags.length > 0 ? (
+            tags.slice(0, 2).map((tag, idx) => (
+              <Tag key={idx} color="purple" style={{ marginInlineEnd: 0 }}>
+                {tag}
+              </Tag>
+            ))
+          ) : (
+            <span className="text-sm text-gray-400">-</span>
+          )}
+          {tags && Array.isArray(tags) && tags.length > 2 && (
+            <span className="text-xs text-gray-500">+{tags.length - 2}</span>
+          )}
+        </div>
+      ),
+    },
+    {
+      title: '优先级',
+      dataIndex: 'priority',
+      key: 'priority',
+      width: 80,
+      align: 'center',
+      // sorter: (a, b) => {
+      //   const priorityOrder = { high: 3, medium: 2, low: 1 };
+      //   return (priorityOrder[a.priority as keyof typeof priorityOrder] || 0) - 
+      //          (priorityOrder[b.priority as keyof typeof priorityOrder] || 0);
+      // },
+      render: (priority: string) => {
+        if (!priority) return <span className="text-sm text-gray-400">-</span>;
+        const colorMap = {
+          high: 'error',
+          medium: 'warning',
+          low: 'default'
+        };
+        const textMap = {
+          high: '高',
+          medium: '中',
+          low: '低'
+        };
+        return (
+          <Tag color={colorMap[priority as keyof typeof colorMap] || 'default'} style={{ marginInlineEnd: 0 }}>
+            {textMap[priority as keyof typeof textMap] || priority}
+          </Tag>
+        );
+      },
     },
     {
       title: '执行状态',
@@ -388,9 +498,11 @@ export function TestRunsDetailedTable({
       align: 'center',
       // sorter: (a, b) => a.executor.localeCompare(b.executor),
       render: (executor: string) => (
-        <div className="flex items-center justify-center gap-1 text-sm text-gray-600">
-          <User className="w-3.5 h-3.5 text-gray-400" />
-          {executor}
+        <div className="flex items-center justify-start gap-1 overflow-hidden">
+          <User className="w-7 h-7 text-gray-400" />
+          <span className="text-sm text-gray-600 max-w-30 truncate" title={executor || '-'}>
+            {executor}
+          </span>
         </div>
       ),
     },
@@ -435,7 +547,7 @@ export function TestRunsDetailedTable({
       ),
     },
     {
-      title: '执行用时',
+      title: '执行时长',
       dataIndex: 'duration',
       key: 'duration',
       width: 100,
@@ -532,8 +644,8 @@ export function TestRunsDetailedTable({
         dataSource={tableData}
         rowKey="key"
         pagination={false}
-        scroll={{ x: 1600, y: 'calc(100vh - 420px)' }}
-        size="middle"
+        scroll={{ x: 2000, y: 'calc(100vh - 420px)' }}
+        size="small"
         className="functional-test-table"
         tableLayout="fixed"
         locale={{
@@ -663,6 +775,7 @@ export function TestRunsDetailedTable({
                 className="px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
                 style={{ width: '80px' }}
                 title="选择每页显示的记录数"
+                aria-label="选择每页显示的记录数"
               >
                 <option value={10}>10</option>
                 <option value={20}>20</option>

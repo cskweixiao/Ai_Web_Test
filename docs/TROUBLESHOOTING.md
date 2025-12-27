@@ -1,6 +1,6 @@
 # 🐛 故障排除指南
 
-TestFlow 常见问题和解决方案。
+Sakura AI 常见问题和解决方案。
 
 ---
 
@@ -134,7 +134,7 @@ npx prisma generate
 **解决**：
 ```sql
 # 确保数据库使用 utf8mb4 字符集
-ALTER DATABASE testflow CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+ALTER DATABASE Sakura AI CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 ```
 
 ---
@@ -530,7 +530,7 @@ npx prisma studio
 
 ### 问题反馈
 
-- [提交 Bug](https://github.com/testflow/testflow/issues)
+- [提交 Bug](https://github.com/Sakura AI/Sakura AI/issues)
 
 ---
 

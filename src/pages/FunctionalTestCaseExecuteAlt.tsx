@@ -1279,7 +1279,7 @@ export function TestCaseExecutor({
                 ) : (
                   <>
                     <Save className="w-3.5 h-3.5" />
-                    {showBatchControls && hasNext ? '提交并继续 →' : '提交结果'}
+                    {showBatchControls && hasNext ? '提交并继续 →' : '提交所有结果'}
                   </>
                 )}
               </button>

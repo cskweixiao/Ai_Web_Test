@@ -321,10 +321,34 @@ export const TableView: React.FC<ViewProps> = ({
             ellipsis: { showTitle: false },
             render: (text: string) => (
                 <div style={{ paddingRight: '0px' }}>
-                    <Tooltip title={text} placement="topLeft">
+                    <Tooltip title={<div className="text-xs">
+                            <div className="font-medium">{text || '-'}</div>
+                        </div>
+                    } 
+                    placement="topLeft"
+                    styles={{ body: { padding: '8px' } }}
+                >
                         <span className="text-gray-700 block truncate">{text || '-'}</span>
                     </Tooltip>
                 </div>
+            ),
+        },
+        { 
+            title: '所属版本',
+            dataIndex: 'project_version',
+            key: 'project_version',
+            width: 120,
+            ellipsis: { showTitle: false },
+            render: (_text: string, record) => (
+                <Tooltip title={<div className="text-xs">
+                            <div className="font-medium">{record.project_version?.version_name || '-'}</div>
+                        </div>
+                    } 
+                    placement="topLeft"
+                    styles={{ body: { padding: '8px' } }}
+                >
+                    <span className="text-gray-700 block truncate">{record.project_version?.version_name || '-'}</span>
+                </Tooltip>
             ),
         },
         {
@@ -335,8 +359,14 @@ export const TableView: React.FC<ViewProps> = ({
             ellipsis: { showTitle: false },
             render: (text: string) => (
                 <div style={{ paddingLeft: '5px' }}>
-                <Tooltip title={text} placement="topLeft">
-                    <span className="text-gray-700 block truncate">{text || '-'}</span>
+                <Tooltip title={<div className="text-xs">
+                            <div className="font-medium">{text || '-'}</div>
+                        </div>
+                    } 
+                    placement="topLeft"
+                    styles={{ body: { padding: '8px' } }}
+                >
+                    <span className="text-gray-700 truncate">{text || '-'}</span>
                 </Tooltip>
                 </div>
             ),
@@ -447,44 +477,44 @@ export const TableView: React.FC<ViewProps> = ({
                 </Tooltip>
             ),
         },
-        {
-            title: '用例版本',
-            dataIndex: 'project_version',
-            key: 'project_version',
-            width: 120,
-            align: 'center',
-            sorter: (a, b) => (a.project_version?.version_code || '').localeCompare(b.project_version?.version_code || ''),
-            sortDirections: ['ascend', 'descend'],
-            defaultSortOrder: 'ascend',
-            render: (version: FlatRowData['project_version']) => {
-                if (!version) {
-                    return <span className="text-gray-400 text-xs">-</span>;
-                }
-                return (
-                    <Tooltip title={`${version.version_name} (${version.version_code})`}>
-                        <span
-                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium whitespace-nowrap"
-                            style={{ 
-                                backgroundColor: version.is_main ? '#c6f6d5' : '#e2e8f0', 
-                                color: version.is_main ? '#276749' : '#4a5568' 
-                            }}
-                        >
-                            {version.is_main && <span>⭐</span>}
-                            <span className="truncate max-w-[100px]">{version.version_name}</span>
-                        </span>
-                    </Tooltip>
-                );
-            },
-        },
+        // {
+        //     title: '用例版本',
+        //     dataIndex: 'project_version',
+        //     key: 'project_version',
+        //     width: 120,
+        //     align: 'center',
+        //     sorter: (a, b) => (a.project_version?.version_code || '').localeCompare(b.project_version?.version_code || ''),
+        //     sortDirections: ['ascend', 'descend'],
+        //     defaultSortOrder: 'ascend',
+        //     render: (version: FlatRowData['project_version']) => {
+        //         if (!version) {
+        //             return <span className="text-gray-400 text-xs">-</span>;
+        //         }
+        //         return (
+        //             <Tooltip title={`${version.version_name} (${version.version_code})`}>
+        //                 <span
+        //                     className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium whitespace-nowrap"
+        //                     style={{ 
+        //                         backgroundColor: version.is_main ? '#c6f6d5' : '#e2e8f0', 
+        //                         color: version.is_main ? '#276749' : '#4a5568' 
+        //                     }}
+        //                 >
+        //                     {version.is_main && <span>⭐</span>}
+        //                     <span className="truncate max-w-[100px]">{version.version_name}</span>
+        //                 </span>
+        //             </Tooltip>
+        //         );
+        //     },
+        // },
         {
             title: '用例类型',
             dataIndex: 'case_type',
             key: 'case_type',
             width: 80,
             align: 'center',
-            sorter: (a, b) => a.case_type?.localeCompare(b.case_type || '') || 0,
-            sortDirections: ['ascend', 'descend'],
-            defaultSortOrder: 'ascend',
+            // sorter: (a, b) => a.case_type?.localeCompare(b.case_type || '') || 0,
+            // sortDirections: ['ascend', 'descend'],
+            // defaultSortOrder: 'ascend',
             render: (caseType: string) => {
                 const config = getCaseTypeConfig(caseType);
                 return (
@@ -503,9 +533,9 @@ export const TableView: React.FC<ViewProps> = ({
             key: 'priority',
             width: 80,
             align: 'center',
-            sorter: (a, b) => a.priority?.localeCompare(b.priority || '') || 0,
-            sortDirections: ['ascend', 'descend'],
-            defaultSortOrder: 'ascend',
+            // sorter: (a, b) => a.priority?.localeCompare(b.priority || '') || 0,
+            // sortDirections: ['ascend', 'descend'],
+            // defaultSortOrder: 'ascend',
             render: (priority: string) => {
                 const config = getPriorityConfig(priority);
                 return (
@@ -550,9 +580,9 @@ export const TableView: React.FC<ViewProps> = ({
             key: 'execution_status',
             width: 90,
             align: 'center',
-            sorter: (a, b) => a.execution_status?.localeCompare(b.execution_status || '') || 0,
-            sortDirections: ['ascend', 'descend'],
-            defaultSortOrder: 'ascend',
+            // sorter: (a, b) => a.execution_status?.localeCompare(b.execution_status || '') || 0,
+            // sortDirections: ['ascend', 'descend'],
+            // defaultSortOrder: 'ascend',
             render: (execution_status: string | null, record: FlatRowData) => {
                 // 根据实际执行结果展示状态
                 const getStatusConfig = (status: string | null) => {
@@ -564,7 +594,7 @@ export const TableView: React.FC<ViewProps> = ({
                         case 'block':
                             return { color: 'warning', text: '⚠ 阻塞', icon: '⚠' };
                         default:
-                            return { color: 'default', text: '未执行', icon: '-' };
+                            return { color: 'default', text: '未知', icon: '' };
                     }
                 };
                 const config = getStatusConfig(execution_status);
@@ -615,9 +645,9 @@ export const TableView: React.FC<ViewProps> = ({
             key: 'source',
             width: 90,
             align: 'center',
-            sorter: (a, b) => a.source?.localeCompare(b.source || '') || 0,
-            sortDirections: ['ascend', 'descend'],
-            defaultSortOrder: 'ascend',
+            // sorter: (a, b) => a.source?.localeCompare(b.source || '') || 0,
+            // sortDirections: ['ascend', 'descend'],
+            // defaultSortOrder: 'ascend',
             render: (source: string) => {
                 const config = getSourceConfig(source);
                 return (

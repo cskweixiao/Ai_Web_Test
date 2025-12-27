@@ -314,6 +314,9 @@ export function TestCaseTable({
               </th> */}
 
               {/* 滚动列区域 */}
+              <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" style={{ width: '30px', minWidth: '30px' }}>
+                ID
+              </th>
               <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" style={{ width: '80px', minWidth: '80px' }}>
               所属项目
               </th>
@@ -373,11 +376,11 @@ export function TestCaseTable({
                 </div>
               </th>
               <th 
-                className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
                 // onClick={() => handleSort('author')}
                 style={{ width: '80px', minWidth: '80px' }}
               >
-                <div className="flex items-center space-x-1">
+                <div className="space-x-1">
                   <span>创建者</span>
                   {/* <SortIcon field="author" /> */}
                 </div>
@@ -503,11 +506,16 @@ export function TestCaseTable({
                   {/* 滚动列区域 */}
                   <td className="px-3 py-3">
                     <div className="flex items-center text-sm text-gray-900 truncate">
-                      <span className="truncate">{testCase.system}</span>
+                      <span className="truncate max-w-20">{testCase.id}</span>
                     </div>
                   </td>
                   <td className="px-3 py-3">
                     <div className="flex items-center text-sm text-gray-900 truncate">
+                      <span className="truncate">{testCase.system}</span>
+                    </div>
+                  </td>
+                  <td className="px-3 py-3">
+                    <div className="flex items-left text-sm text-gray-900 truncate">
                       <span className="truncate">{testCase.projectVersion || '-'}</span>
                     </div>
                   </td>
@@ -543,7 +551,7 @@ export function TestCaseTable({
                   <td className="px-3 py-3 text-center">
                     <div className="flex items-center justify-center">
                       <span className={clsx(
-                        'inline-flex px-2 py-0.5 rounded-full text-xs font-medium border',
+                        'inline-flex px-2 py-0.5 rounded-md text-xs font-medium border',
                         getPriorityColor(testCase.priority)
                       )}>
                         {getPriorityText(testCase.priority)}
@@ -555,7 +563,7 @@ export function TestCaseTable({
                     <div className="flex items-center justify-center">
                       {(testCase as any).executionStatus ? (
                         <span className={clsx(
-                          'inline-flex px-2 py-0.5 rounded-full text-xs font-medium border whitespace-nowrap',
+                          'inline-flex px-2 py-0.5 rounded-md text-xs font-medium border whitespace-nowrap',
                           (testCase as any).executionStatus === 'running' && 'bg-blue-100 text-blue-800 border-blue-200',
                           (testCase as any).executionStatus === 'completed' && 'bg-green-100 text-green-800 border-green-200',
                           (testCase as any).executionStatus === 'failed' && 'bg-red-100 text-red-800 border-red-200',
@@ -576,7 +584,7 @@ export function TestCaseTable({
                   {/* Success Rate */}
                   <td className="px-3 py-3 text-center">
                     {testCase.lastRun && testCase.lastRun !== '' && testCase.success_rate !== undefined && testCase.success_rate !== null ? (
-                      <span className="text-xs text-gray-900 font-medium">
+                      <span className="text-sm text-gray-900 font-medium">
                         {testCase.success_rate}%
                       </span>
                     ) : (
@@ -588,7 +596,7 @@ export function TestCaseTable({
                     <div className="flex items-center justify-center">
                       {(testCase as any).executionResult ? (
                         <span className={clsx(
-                          'inline-flex px-2 py-0.5 rounded-full text-xs font-medium border whitespace-nowrap',
+                          'inline-flex px-2 py-0.5 rounded-md text-xs font-medium border whitespace-nowrap',
                           (testCase as any).executionResult === 'pass' && 'bg-green-100 text-green-800 border-green-200',
                           (testCase as any).executionResult === 'fail' && 'bg-red-100 text-red-800 border-red-200',
                           (testCase as any).executionResult === 'skip' && 'bg-gray-100 text-gray-800 border-gray-200'
@@ -608,7 +616,7 @@ export function TestCaseTable({
                   <td className="px-3 py-3 text-center">
                     <div className="flex items-center justify-center">
                       <span className={clsx(
-                        'inline-flex px-2 py-0.5 rounded-full text-xs font-medium border',
+                        'inline-flex px-2 py-0.5 rounded-md text-xs font-medium border',
                         getStatusColor(testCase.status)
                       )}>
                         {getStatusText(testCase.status)}
@@ -617,12 +625,11 @@ export function TestCaseTable({
                   </td>
                   {/* Author */}
                   <td className="px-3 py-3">
-                    <div className="flex items-center text-sm text-gray-600 truncate">
+                    <div className="flex items-center justify-center text-sm text-gray-600">
                       <User className="h-3 w-3 mr-1 flex-shrink-0" />
-                      <span className="truncate">{testCase.author}</span>
+                      <span className="max-w-20 truncate">{testCase.author}</span>
                     </div>
                   </td>
-                  
                   {/* Created Time */}
                   <td className="px-3 py-3">
                     <div className="flex items-center text-xs text-gray-500 ">
@@ -697,7 +704,7 @@ export function TestCaseTable({
                 {/* Expanded Row */}
                 {expandedRows.has(testCase.id) && (
                   <tr className="bg-blue-50 border-t-0">
-                    <td colSpan={onSelectionChange ? 15 : 16} className="px-4 py-4">
+                    <td colSpan={onSelectionChange ? 14 : 16} className="px-4 py-4">
                       <motion.div
                         initial={{ opacity: 0, height: 0 }}
                         animate={{ opacity: 1, height: 'auto' }}
@@ -705,12 +712,22 @@ export function TestCaseTable({
                         transition={{ duration: 0.2 }}
                         className="space-y-4 w-full max-w-full"
                       >
+                        <div className="min-w-0">
+                          <h4 className="text-sm font-medium text-gray-900 mb-2 flex items-center">
+                            用例ID
+                          </h4>
+                          <div className="bg-white rounded-lg p-3 border border-blue-200 max-h-64 overflow-y-auto">
+                            <pre className="text-sm text-gray-700 whitespace-pre-wrap font-mono leading-relaxed">
+                              {testCase.id}
+                            </pre>
+                          </div>
+                        </div>
                         {/* Test Steps - 操作步骤和预期结果 */}
                         <div className="grid grid-cols-1 lg:grid-cols-[2fr_3fr] gap-4 w-full min-w-0">
                           {/* 操作步骤 */}
                           <div className="min-w-0">
                             <h4 className="text-sm font-medium text-gray-900 mb-2 flex items-center">
-                              <Tag className="h-4 w-4 mr-1" />
+                              {/* <Tag className="h-4 w-4 mr-1" /> */}
                               操作步骤
                             </h4>
                             <div className="bg-white rounded-lg p-3 border border-blue-200 max-h-64 overflow-y-auto">
@@ -771,7 +788,7 @@ export function TestCaseTable({
                         <div>
                           <h4 className="text-sm font-medium text-gray-900 mb-2">断言预期</h4>
                           <div className="bg-white rounded-lg p-3 border border-blue-200 max-h-64 overflow-y-auto">
-                            <pre className="text-sm text-gray-700 whitespace-pre-wrap font-mono leading-relaxed">
+                            <pre className="text-sm text-gray-900 whitespace-pre-wrap font-mono leading-relaxed">
                               {testCase.assertions || '暂无断言预期'}
                             </pre>
                           </div>

@@ -25,7 +25,7 @@ export function TestPlanForm() {
     description: '',
     project: '',
     plan_type: 'functional',
-    status: 'draft',
+    status: 'not_started',
     members: [],
     owner_id: user?.id || 0,
     start_date: '',
@@ -257,9 +257,11 @@ export function TestPlanForm() {
                     onChange={(e) => handleChange('status', e.target.value as TestPlanStatus)}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   >
-                    <option value="draft">草稿</option>
+                    {/* <option value="draft">草稿</option> */}
+                    <option value="not_started">未开始</option>
                     <option value="active">进行中</option>
                     <option value="completed">已完成</option>
+                    <option value="expired">已结束</option>
                     <option value="cancelled">已取消</option>
                     <option value="archived">已归档</option>
                   </select>

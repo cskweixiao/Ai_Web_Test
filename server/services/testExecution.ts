@@ -208,6 +208,7 @@ export class TestExecutionService {
       let projectVersion: string | undefined = undefined; // 🔥 新增：版本信息
       let preconditions = ''; // 🔥 新增：前置条件
       let testData = ''; // 🔥 新增：测试数据
+      let caseType: string | undefined = undefined; // 🔥 新增：用例类型
       if (typeof dbCase.steps === 'string' && dbCase.steps) {
         try {
           const stepsObj = JSON.parse(dbCase.steps);
@@ -234,11 +235,39 @@ export class TestExecutionService {
             // 🔥 新增：从 steps JSON 中读取前置条件和测试数据
             preconditions = stepsObj.preconditions || '';
             testData = stepsObj.testData || '';
+            // 🔥 新增：从 steps JSON 中读取用例类型
+            if (stepsObj.caseType) {
+              caseType = stepsObj.caseType;
+            }
           } else {
             steps = dbCase.steps;
           }
         } catch (e) {
           steps = dbCase.steps;
+        }
+      }
+      
+      // 🔥 新增：如果没有 caseType，尝试从 tags 推断
+      if (!caseType && Array.isArray(dbCase.tags)) {
+        const tags = dbCase.tags as string[];
+        if (tags.some(tag => tag.includes('冒烟') || tag.toLowerCase().includes('smoke'))) {
+          caseType = 'SMOKE';
+        } else if (tags.some(tag => tag.includes('全量') || tag.toLowerCase().includes('full'))) {
+          caseType = 'FULL';
+        } else if (tags.some(tag => tag.includes('异常') || tag.toLowerCase().includes('abnormal'))) {
+          caseType = 'ABNORMAL';
+        } else if (tags.some(tag => tag.includes('边界') || tag.toLowerCase().includes('boundary'))) {
+          caseType = 'BOUNDARY';
+        } else if (tags.some(tag => tag.includes('性能') || tag.toLowerCase().includes('performance'))) {
+          caseType = 'PERFORMANCE';
+        } else if (tags.some(tag => tag.includes('安全') || tag.toLowerCase().includes('security'))) {
+          caseType = 'SECURITY';
+        } else if (tags.some(tag => tag.includes('可用性') || tag.toLowerCase().includes('usability'))) {
+          caseType = 'USABILITY';
+        } else if (tags.some(tag => tag.includes('兼容') || tag.toLowerCase().includes('compatibility'))) {
+          caseType = 'COMPATIBILITY';
+        } else if (tags.some(tag => tag.includes('可靠') || tag.toLowerCase().includes('reliability'))) {
+          caseType = 'RELIABILITY';
         }
       }
 
@@ -259,6 +288,7 @@ export class TestExecutionService {
       priority: priority, // 🔥 修复：使用从 steps JSON 中读取的 priority
       status: status, // 🔥 修复：使用从 steps JSON 中读取的 status
       author: author, // 🔥 使用从 steps JSON 中读取的 author
+      caseType: caseType, // 🔥 新增：用例类型
     };
   }
 
@@ -274,14 +304,22 @@ export class TestExecutionService {
         module: true,
         project: true,
         created_at: true,
-        updated_at: true // 🔥 新增：更新时间字段
+        updated_at: true, // 🔥 新增：更新时间字段
+        deleted_at: true
       }
     });
+    // 🔥 软删除：如果已删除，返回null
+    if (testCase && testCase.deleted_at) {
+      return null;
+    }
     return testCase ? this.dbTestCaseToApp(testCase) : null;
   }
 
   public async getTestCases(): Promise<TestCase[]> {
     const testCases = await this.prisma.test_cases.findMany({
+      where: {
+        deleted_at: null // 🔥 软删除：只查询未删除的记录
+      },
       select: {
         id: true,
         title: true,
@@ -310,9 +348,14 @@ export class TestExecutionService {
         module: true,
         project: true,
         created_at: true,
-        updated_at: true // 🔥 新增：更新时间字段
+        updated_at: true, // 🔥 新增：更新时间字段
+        deleted_at: true
       }
     });
+    // 🔥 软删除：如果已删除，返回null
+    if (testCase && testCase.deleted_at) {
+      return null;
+    }
     return testCase ? this.dbTestCaseToApp(testCase) : null;
   }
 
@@ -478,16 +521,23 @@ export class TestExecutionService {
     system?: string;
     module?: string; // 🔥 新增：模块参数
     projectVersion?: string; // 🔥 新增：版本参数
+    executionStatus?: string; // 🆕 执行状态筛选
+    executionResult?: string; // 🆕 执行结果筛选
+    author?: string; // 🆕 创建者筛选
     userDepartment?: string;
     isSuperAdmin?: boolean;
   }): Promise<{data: TestCase[], total: number}> {
-    const { page, pageSize, search, tag, priority, status, system, module, projectVersion, userDepartment, isSuperAdmin } = params;
+    const { page, pageSize, search, tag, priority, status, system, module, projectVersion, executionStatus, executionResult, author, userDepartment, isSuperAdmin } = params;
 
     // 构建基础查询条件（用于 count，不支持 mode 参数）
-    const whereForCount: any = {};
+    const whereForCount: any = {
+      deleted_at: null // 🔥 软删除：只查询未删除的记录
+    };
 
     // 构建查询条件（用于 findMany，支持 mode 参数）
-    const where: any = {};
+    const where: any = {
+      deleted_at: null // 🔥 软删除：只查询未删除的记录
+    };
 
     // 🔥 部门权限过滤：非超级管理员只能看自己部门的数据
     if (!isSuperAdmin && userDepartment) {
@@ -496,17 +546,29 @@ export class TestExecutionService {
     }
 
     // 搜索条件（标题、系统、模块）
+    // 注意：ID搜索在应用层进行，以支持完全的模糊匹配
     // 🔥 修复：MySQL 不支持 mode 参数，移除所有 mode（MySQL 的 contains 默认已是不区分大小写）
-    if (search && search.trim()) {
-      const searchConditions = [
-        { title: { contains: search } },
-        { system: { contains: search } },
-        { module: { contains: search } }
-      ];
+    const searchTerm = search && search.trim() ? search.trim() : '';
+    let searchIdMode = false; // 标记是否为纯数字搜索
+    
+    if (searchTerm) {
+      // 检查是否为纯数字搜索
+      const searchId = parseInt(searchTerm, 10);
+      searchIdMode = !isNaN(searchId) && searchId > 0 && searchTerm === String(searchId);
       
-      // MySQL 中 contains 默认不区分大小写（取决于字段 collation）
-      whereForCount.OR = searchConditions;
-      where.OR = searchConditions;
+      if (!searchIdMode) {
+        // 非纯数字搜索：在数据库层面进行文本搜索
+        const searchConditions: any[] = [
+          { title: { contains: searchTerm } },
+          { system: { contains: searchTerm } },
+          { module: { contains: searchTerm } }
+        ];
+        
+        // MySQL 中 contains 默认不区分大小写（取决于字段 collation）
+        whereForCount.OR = searchConditions;
+        where.OR = searchConditions;
+      }
+      // 纯数字搜索：不在数据库层面过滤，稍后在应用层进行ID模糊匹配
     }
 
     // 系统过滤 - 🔥 修复：使用equals而非contains避免特殊字符问题
@@ -555,8 +617,16 @@ export class TestExecutionService {
       })
     ]);
 
-    // 🔥 应用层过滤 priority 和 status（因为这些字段在数据库中不存在）
+    // 🔥 应用层过滤 priority、status、ID（因为这些字段在数据库中不存在或需要特殊处理）
     let filteredData = testCases.map(this.dbTestCaseToApp);
+
+    // 🆕 ID模糊搜索（应用层）- 支持完全的模糊匹配
+    // 例如：搜索"12"可以匹配ID为12、123、1234、312、5123等
+    if (searchIdMode && searchTerm) {
+      filteredData = filteredData.filter(testCase => 
+        String(testCase.id).includes(searchTerm)
+      );
+    }
 
     // Priority过滤（应用层）
     if (priority && priority.trim()) {
@@ -573,11 +643,19 @@ export class TestExecutionService {
       filteredData = filteredData.filter(testCase => testCase.projectVersion === projectVersion);
     }
 
+    // 🆕 创建者过滤（应用层，因为 author 信息存储在 steps JSON 中）
+    if (author && author.trim()) {
+      filteredData = filteredData.filter(testCase => testCase.author === author);
+    }
+
     // 如果应用了应用层过滤，需要重新计算总数和分页
-    if ((priority && priority.trim()) || (status && status.trim()) || (projectVersion && projectVersion.trim())) {
+    if (searchIdMode || (priority && priority.trim()) || (status && status.trim()) || (projectVersion && projectVersion.trim()) || (author && author.trim())) {
       // 重新获取所有数据进行应用层过滤统计
       const allTestCases = await this.prisma.test_cases.findMany({
-        where,
+        where: {
+          ...where,
+          deleted_at: null // 🔥 软删除：只查询未删除的记录
+        },
         select: {
           id: true,
           title: true,
@@ -592,6 +670,13 @@ export class TestExecutionService {
 
       let allFilteredData = allTestCases.map(this.dbTestCaseToApp);
 
+      // 🆕 ID模糊搜索（应用层）
+      if (searchIdMode && searchTerm) {
+        allFilteredData = allFilteredData.filter(testCase => 
+          String(testCase.id).includes(searchTerm)
+        );
+      }
+
       if (priority && priority.trim()) {
         allFilteredData = allFilteredData.filter(testCase => testCase.priority === priority);
       }
@@ -605,6 +690,11 @@ export class TestExecutionService {
         allFilteredData = allFilteredData.filter(testCase => testCase.projectVersion === projectVersion);
       }
 
+      // 🆕 创建者过滤
+      if (author && author.trim()) {
+        allFilteredData = allFilteredData.filter(testCase => testCase.author === author);
+      }
+
       // 手动分页
       const newTotal = allFilteredData.length;
       const startIndex = skip;
@@ -612,16 +702,44 @@ export class TestExecutionService {
       filteredData = allFilteredData.slice(startIndex, endIndex);
 
       // 🔥 新增：增强测试用例数据（添加成功率、最后运行等）
-      const enhancedData = await this.enhanceTestCasesWithRunData(filteredData);
+      let enhancedData = await this.enhanceTestCasesWithRunData(filteredData);
+
+      // 🆕 执行状态筛选（应用层）
+      if (executionStatus && executionStatus.trim()) {
+        enhancedData = enhancedData.filter(testCase => testCase.executionStatus === executionStatus);
+      }
+
+      // 🆕 执行结果筛选（应用层）
+      if (executionResult && executionResult.trim()) {
+        enhancedData = enhancedData.filter(testCase => testCase.executionResult === executionResult);
+      }
 
       return {
         data: enhancedData,
-        total: newTotal
+        total: enhancedData.length
       };
     }
 
     // 🔥 新增：增强测试用例数据（添加成功率、最后运行等）
-    const enhancedData = await this.enhanceTestCasesWithRunData(filteredData);
+    let enhancedData = await this.enhanceTestCasesWithRunData(filteredData);
+
+    // 🆕 执行状态筛选（应用层，因为这些数据来自 test_runs 表）
+    if (executionStatus && executionStatus.trim()) {
+      enhancedData = enhancedData.filter(testCase => testCase.executionStatus === executionStatus);
+    }
+
+    // 🆕 执行结果筛选（应用层，因为这些数据来自 test_runs 表）
+    if (executionResult && executionResult.trim()) {
+      enhancedData = enhancedData.filter(testCase => testCase.executionResult === executionResult);
+    }
+
+    // 如果应用了执行状态或执行结果筛选，需要重新计算总数
+    if ((executionStatus && executionStatus.trim()) || (executionResult && executionResult.trim())) {
+      return {
+        data: enhancedData,
+        total: enhancedData.length
+      };
+    }
 
     return {
       data: enhancedData,
@@ -776,7 +894,12 @@ export class TestExecutionService {
 
   public async deleteTestCase(id: number): Promise<boolean> {
     try {
-      await this.prisma.test_cases.delete({ where: { id } });
+      // 🔥 软删除：只更新deleted_at字段，不真正删除数据
+      await this.prisma.test_cases.update({ 
+        where: { id },
+        data: { deleted_at: new Date() }
+      });
+      console.log(`✅ 测试用例 ${id} 已软删除（保留执行记录用于数据分析）`);
       return true;
     } catch (error) {
       console.error(`删除测试用例 ${id} 失败:`, error);
@@ -799,6 +922,7 @@ export class TestExecutionService {
       executionEngine?: 'mcp' | 'playwright', // 🔥 新增：执行引擎选择
       enableTrace?: boolean, // 🔥 新增：是否启用 trace（仅 Playwright）
       enableVideo?: boolean, // 🔥 新增：是否启用 video（仅 Playwright）
+      planExecutionId?: string, // 🔥 新增：测试计划执行记录ID，用于完成后同步数据
     } = {}
   ): Promise<string> {
     // 🚀 性能监控：记录开始时间
@@ -839,7 +963,8 @@ export class TestExecutionService {
       startedAt: new Date(),
       executor: executorName, // 🔥 修复：设置执行者名称
       ...options,
-      executionEngine // 🔥 保存执行引擎到 testRun
+      executionEngine, // 🔥 保存执行引擎到 testRun
+      planExecutionId: options.planExecutionId, // 🔥 新增：保存测试计划执行记录ID
     };
 
     testRunStore.set(runId, testRun);
@@ -2862,6 +2987,157 @@ ${elements.map((el, index) => `${index + 1}. ${el.ref}: ${el.role} "${el.text}"`
     }
   }
 
+  /**
+   * 🔥 新增：同步测试结果到 test_plan_executions 表
+   * 用于单个用例执行时更新测试计划执行记录
+   */
+  private async syncToTestPlanExecution(runId: string, testRun: TestRun, planExecutionId: string): Promise<void> {
+    try {
+      console.log(`📋 [${runId}] 开始同步到测试计划执行记录: ${planExecutionId}`);
+      
+      // 查询测试计划执行记录
+      const planExecution = await this.prisma.test_plan_executions.findUnique({
+        where: { id: planExecutionId }
+      });
+      
+      if (!planExecution) {
+        console.warn(`⚠️ [${runId}] 测试计划执行记录不存在: ${planExecutionId}`);
+        return;
+      }
+      
+      // 获取测试用例信息
+      const testCase = await this.findTestCaseById(testRun.testCaseId);
+      const caseName = testCase?.name || `测试用例 #${testRun.testCaseId}`;
+      
+      // 判断执行结果
+      let result: 'pass' | 'fail' | 'block' = 'pass';
+      const failedSteps = testRun.failedSteps || 0;
+      const totalSteps = testRun.totalSteps || 0;
+      const passedSteps = testRun.passedSteps || 0;
+      
+      if (failedSteps > 0) {
+        result = 'fail';
+      } else if (totalSteps > 0 && passedSteps < totalSteps) {
+        result = 'block';
+      }
+      
+      // 计算执行时长
+      let durationMs = 0;
+      if (testRun.duration) {
+        // duration 格式为 "20.923s"
+        const match = testRun.duration.match(/^([\d.]+)s$/);
+        if (match) {
+          durationMs = Math.round(parseFloat(match[1]) * 1000);
+        }
+      }
+      
+      // 🔥 获取执行者信息
+      let executorName = 'System';
+      let executorId: number | undefined;
+      if (testRun.userId) {
+        try {
+          const user = await this.prisma.users.findUnique({
+            where: { id: parseInt(testRun.userId) },
+            select: { id: true, username: true, account_name: true }
+          });
+          if (user) {
+            executorName = user.account_name || user.username;
+            executorId = user.id;
+          }
+        } catch (e) {
+          console.warn(`⚠️ [${runId}] 获取执行者信息失败:`, e);
+        }
+      }
+      
+      // 🔥 获取完成时间
+      const startedAt = testRun.startedAt?.toISOString() || new Date().toISOString();
+      const finishedAt = testRun.finishedAt?.toISOString() || new Date().toISOString();
+      const completedSteps = testRun.completedSteps || totalSteps;
+      const blockedSteps = totalSteps - passedSteps - failedSteps;
+      
+      // 🔥 确定执行状态
+      let executionStatus: 'running' | 'completed' | 'failed' | 'cancelled' | 'error' | 'queued' = 'completed';
+      if (testRun.status === 'failed' || testRun.status === 'error') {
+        executionStatus = testRun.status as 'failed' | 'error';
+      } else if (testRun.status === 'cancelled') {
+        executionStatus = 'cancelled';
+      }
+      
+      // 构建执行结果（🔥 修复：添加步骤统计数据，与功能测试保持一致）
+      const caseResult = {
+        case_id: testRun.testCaseId,
+        case_name: caseName,
+        case_type: 'ui_auto',
+        result: result,
+        duration_ms: durationMs,
+        executed_at: new Date().toISOString(),
+        execution_id: runId,
+        // 🔥 新增：步骤统计数据
+        totalSteps: totalSteps,
+        passedSteps: passedSteps,
+        failedSteps: failedSteps,
+        blockedSteps: blockedSteps > 0 ? blockedSteps : 0,
+        completedSteps: completedSteps,
+        started_at: startedAt,
+        finished_at: finishedAt,
+        executor_name: executorName,
+        executor_id: executorId,
+        // 🔥 新增：执行状态
+        execution_status: executionStatus,
+      };
+      
+      // 获取现有的 execution_results
+      const existingResults = (planExecution.execution_results as any[]) || [];
+      
+      // 添加或更新当前用例的结果
+      const updatedResults = [...existingResults.filter(r => r.case_id !== testRun.testCaseId), caseResult];
+      
+      // 计算统计数据
+      const passedCases = updatedResults.filter(r => r.result === 'pass').length;
+      const failedCases = updatedResults.filter(r => r.result === 'fail').length;
+      const blockedCases = updatedResults.filter(r => r.result === 'block').length;
+      const completedCases = updatedResults.length;
+      const totalCases = planExecution.total_cases || completedCases;
+      const progress = totalCases > 0 ? Math.round((completedCases / totalCases) * 100) : 100;
+      
+      // 确定执行状态
+      const isAllCompleted = completedCases >= totalCases;
+      const newStatus = isAllCompleted ? 'completed' : 'running';
+      
+      // 计算总执行时长
+      const totalDurationMs = updatedResults.reduce((sum, r) => sum + (r.duration_ms || 0), 0);
+      
+      // 更新测试计划执行记录
+      await this.prisma.test_plan_executions.update({
+        where: { id: planExecutionId },
+        data: {
+          status: newStatus,
+          progress: progress,
+          completed_cases: completedCases,
+          passed_cases: passedCases,
+          failed_cases: failedCases,
+          blocked_cases: blockedCases,
+          execution_results: updatedResults,
+          duration_ms: totalDurationMs,
+          finished_at: isAllCompleted ? new Date() : undefined,
+        }
+      });
+      
+      console.log(`✅ [${runId}] 同步到测试计划执行记录成功:`, {
+        planExecutionId,
+        result,
+        status: newStatus,
+        progress,
+        passedCases,
+        failedCases,
+        blockedCases,
+      });
+    } catch (error) {
+      console.error(`❌ [${runId}] 同步到测试计划执行记录失败:`, error);
+      throw error;
+    }
+  }
+
   // 🚀 Phase 6: 日志批量处理队列，解决同步WebSocket瓶颈
   private logQueue: Map<string, { logs: TestLog[]; timer?: NodeJS.Timeout }> = new Map();
 
@@ -3112,6 +3388,17 @@ ${elements.map((el, index) => `${index + 1}. ${el.ref}: ${el.role} "${el.text}"`
         console.log(`💾 [${runId}] 测试完成，已同步到数据库（duration: ${duration}）`);
       } catch (err) {
         console.error(`❌ [${runId}] 同步数据库失败:`, err);
+      }
+      
+      // 🔥 新增：如果存在 planExecutionId，同步数据到 test_plan_executions 表
+      const planExecutionId = (testRun as any).planExecutionId;
+      if (planExecutionId) {
+        try {
+          await this.syncToTestPlanExecution(runId, testRun, planExecutionId);
+          console.log(`📋 [${runId}] 测试完成，已同步到测试计划执行记录: ${planExecutionId}`);
+        } catch (err) {
+          console.error(`❌ [${runId}] 同步到测试计划执行记录失败:`, err);
+        }
       }
       
       // 🔥 延迟发送 test_complete 消息，确保数据库同步完成
@@ -6587,6 +6874,13 @@ ${elements.map((el, index) => `${index + 1}. ${el.ref}: ${el.role} "${el.text}"`
       }
 
       this.addLog(runId, `✅ 断言 ${i + 1} 通过`, 'success');
+
+      // 🔥 断言成功后更新 passedSteps（修复 passedSteps 少计1的bug）
+      if (testRun) {
+        testRun.passedSteps = (testRun.passedSteps || 0) + 1;
+        testRun.completedSteps = assertionIndex;
+        testRun.progress = Math.round((assertionIndex / totalSteps) * 100);
+      }
 
       // 🔥 断言成功后保存截图
       try {

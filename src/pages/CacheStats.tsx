@@ -88,6 +88,13 @@ const getStatusBadge = (status: string) => {
   return badges[status as keyof typeof badges] || badges.normal;
 };
 
+// 统一处理 hitRate 的格式化（处理字符串和数字类型）
+const formatHitRate = (rate: number | string | undefined | null): string => {
+  if (rate === undefined || rate === null) return '0.0';
+  const numRate = typeof rate === 'string' ? parseFloat(rate) : rate;
+  return isNaN(numRate) ? '0.0' : numRate.toFixed(1);
+};
+
 const CacheStatsPage: React.FC = () => {
   const [stats, setStats] = useState<CacheStats | null>(null);
   const [loading, setLoading] = useState(false);
@@ -162,24 +169,58 @@ const CacheStatsPage: React.FC = () => {
     return () => clearInterval(interval);
   }, [fetchStats]);
 
-  // 获取趋势数据（从后端返回）
+  // 获取趋势数据（从后端返回或生成模拟数据）
   const getTrendData = () => {
-    if (!stats || !stats.trendData || stats.trendData.length === 0) {
-      // 如果没有趋势数据，返回空数组或提示数据
-      return [
-        { time: '暂无数据', hitRate: 0, requests: 0 }
-      ];
+    if (!stats) {
+      return [];
     }
-    return stats.trendData;
+    
+    // 如果后端提供了趋势数据，直接使用
+    if (stats.trendData && stats.trendData.length > 0) {
+      return stats.trendData;
+    }
+    
+    // 如果没有趋势数据，基于当前统计生成一个数据点
+    // 这样至少能显示当前状态
+    const now = new Date();
+    const currentTime = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
+    
+    return [
+      {
+        time: currentTime,
+        hitRate: stats.hitRate || 0,
+        requests: stats.totalRequests || 0
+      }
+    ];
   };
 
   // 饼图数据
   const getPieData = () => {
     if (!stats) return [];
-    return [
-      { name: '缓存命中', value: stats.cacheHits, color: '#52c41a' },
-      { name: '缓存未命中', value: stats.cacheMisses, color: '#f5222d' }
-    ];
+    
+    // 如果没有任何数据，返回一个占位数据
+    if (stats.totalRequests === 0) {
+      return [
+        { name: '暂无数据', value: 1, color: '#e5e7eb' }
+      ];
+    }
+    
+    // 如果只有命中没有未命中，或者只有未命中没有命中
+    if (stats.cacheHits === 0 && stats.cacheMisses === 0) {
+      return [
+        { name: '暂无数据', value: 1, color: '#e5e7eb' }
+      ];
+    }
+    
+    const data = [];
+    if (stats.cacheHits > 0) {
+      data.push({ name: '缓存命中', value: stats.cacheHits, color: '#52c41a' });
+    }
+    if (stats.cacheMisses > 0) {
+      data.push({ name: '缓存未命中', value: stats.cacheMisses, color: '#f5222d' });
+    }
+    
+    return data;
   };
 
   // 初始加载状态
@@ -303,6 +344,17 @@ const CacheStatsPage: React.FC = () => {
 
   // 渲染趋势图内容
   const renderTrendChart = () => {
+    // 如果没有数据，显示提示信息
+    if (!trendData || trendData.length === 0) {
+      return (
+        <div className="flex flex-col items-center justify-center h-[300px] text-gray-400">
+          <Activity className="w-16 h-16 mb-4 opacity-30" />
+          <p className="text-sm">暂无趋势数据</p>
+          <p className="text-xs mt-2">系统会随着使用时间积累趋势数据</p>
+        </div>
+      );
+    }
+
     const commonProps = {
       data: trendData,
     };
@@ -313,14 +365,14 @@ const CacheStatsPage: React.FC = () => {
           dataKey="time" 
           stroke="#94a3b8"
           style={{ fontSize: 12 }}
-          // label={{ value: '时间', position: 'insideBottom', offset: -5, style: { fontSize: 11, fill: '#64748b', marginBottom: 10 } }}
+          label={{ value: '时间', position: 'insideBottom', offset: -5, style: { fontSize: 11, fill: '#64748b' } }}
         />
       ),
       yAxis: (
         <YAxis 
           stroke="#94a3b8"
           style={{ fontSize: 12 }}
-          label={{ value: '数量', angle: -90, position: 'insideLeft', style: { fontSize: 11, fill: '#64748b' } }}
+          label={{ value: '数值', angle: -90, position: 'insideLeft', style: { fontSize: 11, fill: '#64748b' } }}
         />
       ),
       tooltip: (
@@ -590,7 +642,7 @@ const CacheStatsPage: React.FC = () => {
                     boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
                     background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'
                   }}
-                  bodyStyle={{ padding: '20px' }}
+                  styles={{ body: { padding: '20px' } }}
                 >
                   <div className="text-white">
                     <div className="flex items-center justify-between mb-2">
@@ -598,14 +650,12 @@ const CacheStatsPage: React.FC = () => {
                         <DatabaseOutlined /> 元素缓存
                       </span>
                       <span className="text-2xl font-bold">
-                        {typeof stats?.breakdown?.element.hitRate === 'string' 
-                          ? stats?.breakdown?.element.hitRate 
-                          : (stats?.breakdown?.element.hitRate || 0).toFixed(1)}%
+                        {formatHitRate(stats?.breakdown?.element.hitRate)}%
                       </span>
                     </div>
                     <div className="flex justify-between text-xs opacity-80">
-                      <span>命中: {stats?.breakdown?.element.hits}</span>
-                      <span>总计: {stats?.breakdown?.element.requests}</span>
+                      <span>命中: {stats?.breakdown?.element.hits || 0}</span>
+                      <span>总计: {stats?.breakdown?.element.requests || 0}</span>
                     </div>
                   </div>
                 </Card>
@@ -619,7 +669,7 @@ const CacheStatsPage: React.FC = () => {
                     boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
                     background: 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)'
                   }}
-                  bodyStyle={{ padding: '20px' }}
+                  styles={{ body: { padding: '20px' } }}
                 >
                   <div className="text-white">
                     <div className="flex items-center justify-between mb-2">
@@ -627,14 +677,12 @@ const CacheStatsPage: React.FC = () => {
                         <ApiOutlined /> 操作缓存
                       </span>
                       <span className="text-2xl font-bold">
-                        {typeof stats?.breakdown?.operation.hitRate === 'string' 
-                          ? stats?.breakdown?.operation.hitRate 
-                          : (stats?.breakdown?.operation.hitRate || 0).toFixed(1)}%
+                        {formatHitRate(stats?.breakdown?.operation.hitRate)}%
                       </span>
                     </div>
                     <div className="flex justify-between text-xs opacity-80">
-                      <span>命中: {stats?.breakdown?.operation.hits}</span>
-                      <span>总计: {stats?.breakdown?.operation.requests}</span>
+                      <span>命中: {stats?.breakdown?.operation.hits || 0}</span>
+                      <span>总计: {stats?.breakdown?.operation.requests || 0}</span>
                     </div>
                   </div>
                 </Card>
@@ -648,7 +696,7 @@ const CacheStatsPage: React.FC = () => {
                     boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
                     background: 'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)'
                   }}
-                  bodyStyle={{ padding: '20px' }}
+                  styles={{ body: { padding: '20px' } }}
                 >
                   <div className="text-white">
                     <div className="flex items-center justify-between mb-2">
@@ -656,14 +704,12 @@ const CacheStatsPage: React.FC = () => {
                         <TrophyOutlined /> 断言缓存
                       </span>
                       <span className="text-2xl font-bold">
-                        {typeof stats?.breakdown?.assertion.hitRate === 'string' 
-                          ? stats?.breakdown?.assertion.hitRate 
-                          : (stats?.breakdown?.assertion.hitRate || 0).toFixed(1)}%
+                        {formatHitRate(stats?.breakdown?.assertion.hitRate)}%
                       </span>
                     </div>
                     <div className="flex justify-between text-xs opacity-80">
-                      <span>命中: {stats?.breakdown?.assertion.hits}</span>
-                      <span>总计: {stats?.breakdown?.assertion.requests}</span>
+                      <span>命中: {stats?.breakdown?.assertion.hits || 0}</span>
+                      <span>总计: {stats?.breakdown?.assertion.requests || 0}</span>
                     </div>
                   </div>
                 </Card>
@@ -919,7 +965,7 @@ const CacheStatsPage: React.FC = () => {
                 <Card 
                   title={<span style={{ fontSize: 16, fontWeight: 600 }}>🎯 命中率分析</span>}
                   style={{ borderRadius: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.08)', height: '100%' }}
-                  bodyStyle={{ padding: '0 24px 24px' }}
+                  styles={{ body: { padding: '0 24px 24px' } }}
                 >
                   <div className="relative" style={{ height: 270 }}>
                     <ResponsiveContainer width="100%" height="100%">
@@ -1090,19 +1136,19 @@ const CacheStatsPage: React.FC = () => {
                       {
                         key: '4',
                         metric: '🔍 元素缓存请求',
-                        value: `${stats?.breakdown?.element.requests || 0} 次 (命中率: ${typeof stats?.breakdown?.element.hitRate === 'string' ? stats?.breakdown?.element.hitRate : (stats?.breakdown?.element.hitRate || 0).toFixed(1)}%)`,
+                        value: `${stats?.breakdown?.element.requests || 0} 次 (命中率: ${formatHitRate(stats?.breakdown?.element.hitRate)}%)`,
                         description: '页面元素定位识别请求'
                       },
                       {
                         key: '5',
                         metric: '⚡ 操作缓存请求',
-                        value: `${stats?.breakdown?.operation.requests || 0} 次 (命中率: ${typeof stats?.breakdown?.operation.hitRate === 'string' ? stats?.breakdown?.operation.hitRate : (stats?.breakdown?.operation.hitRate || 0).toFixed(1)}%)`,
+                        value: `${stats?.breakdown?.operation.requests || 0} 次 (命中率: ${formatHitRate(stats?.breakdown?.operation.hitRate)}%)`,
                         description: '测试操作步骤解析请求'
                       },
                       {
                         key: '6',
                         metric: '✓ 断言缓存请求',
-                        value: `${stats?.breakdown?.assertion.requests || 0} 次 (命中率: ${typeof stats?.breakdown?.assertion.hitRate === 'string' ? stats?.breakdown?.assertion.hitRate : (stats?.breakdown?.assertion.hitRate || 0).toFixed(1)}%)`,
+                        value: `${stats?.breakdown?.assertion.requests || 0} 次 (命中率: ${formatHitRate(stats?.breakdown?.assertion.hitRate)}%)`,
                         description: '断言验证逻辑解析请求'
                       },
                       {
@@ -1157,7 +1203,7 @@ const CacheStatsPage: React.FC = () => {
                 boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
                 background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'
               }}
-              bodyStyle={{ padding: '24px' }}
+              styles={{ body: { padding: '24px' } }}
             >
               <div className="text-white">
                 <div className="flex items-center justify-between mb-4">
@@ -1170,9 +1216,7 @@ const CacheStatsPage: React.FC = () => {
                 
                 <div className="mb-3">
                   <div className="text-4xl font-bold mb-1">
-                    {typeof stats?.breakdown?.element.hitRate === 'string' 
-                      ? stats?.breakdown?.element.hitRate 
-                      : (stats?.breakdown?.element.hitRate || 0).toFixed(1)}%
+                    {formatHitRate(stats?.breakdown?.element.hitRate)}%
                   </div>
                   <div className="text-sm opacity-90">命中率</div>
                 </div>
@@ -1216,7 +1260,7 @@ const CacheStatsPage: React.FC = () => {
                 boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
                 background: 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)'
               }}
-              bodyStyle={{ padding: '24px' }}
+              styles={{ body: { padding: '24px' } }}
             >
               <div className="text-white">
                 <div className="flex items-center justify-between mb-4">
@@ -1229,9 +1273,7 @@ const CacheStatsPage: React.FC = () => {
                 
                 <div className="mb-3">
                   <div className="text-4xl font-bold mb-1">
-                    {typeof stats?.breakdown?.operation.hitRate === 'string' 
-                      ? stats?.breakdown?.operation.hitRate 
-                      : (stats?.breakdown?.operation.hitRate || 0).toFixed(1)}%
+                    {formatHitRate(stats?.breakdown?.operation.hitRate)}%
                   </div>
                   <div className="text-sm opacity-90">命中率</div>
                 </div>
@@ -1275,7 +1317,7 @@ const CacheStatsPage: React.FC = () => {
                 boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
                 background: 'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)'
               }}
-              bodyStyle={{ padding: '24px' }}
+              styles={{ body: { padding: '24px' } }}
             >
               <div className="text-white">
                 <div className="flex items-center justify-between mb-4">
@@ -1288,9 +1330,7 @@ const CacheStatsPage: React.FC = () => {
                 
                 <div className="mb-3">
                   <div className="text-4xl font-bold mb-1">
-                    {typeof stats?.breakdown?.assertion.hitRate === 'string' 
-                      ? stats?.breakdown?.assertion.hitRate 
-                      : (stats?.breakdown?.assertion.hitRate || 0).toFixed(1)}%
+                    {formatHitRate(stats?.breakdown?.assertion.hitRate)}%
                   </div>
                   <div className="text-sm opacity-90">命中率</div>
                 </div>
@@ -1421,9 +1461,7 @@ const CacheStatsPage: React.FC = () => {
                         requests: stats?.breakdown?.element.requests || 0,
                         hits: stats?.breakdown?.element.hits || 0,
                         misses: stats?.breakdown?.element.misses || 0,
-                        hitRate: typeof stats?.breakdown?.element.hitRate === 'string' 
-                          ? parseFloat(stats?.breakdown?.element.hitRate) 
-                          : (stats?.breakdown?.element.hitRate || 0),
+                        hitRate: parseFloat(formatHitRate(stats?.breakdown?.element.hitRate)),
                         description: '缓存页面元素定位信息，避免重复识别相同元素'
                       },
                       {
@@ -1433,9 +1471,7 @@ const CacheStatsPage: React.FC = () => {
                         requests: stats?.breakdown?.operation.requests || 0,
                         hits: stats?.breakdown?.operation.hits || 0,
                         misses: stats?.breakdown?.operation.misses || 0,
-                        hitRate: typeof stats?.breakdown?.operation.hitRate === 'string' 
-                          ? parseFloat(stats?.breakdown?.operation.hitRate) 
-                          : (stats?.breakdown?.operation.hitRate || 0),
+                        hitRate: parseFloat(formatHitRate(stats?.breakdown?.operation.hitRate)),
                         description: '缓存操作步骤解析结果，加速测试用例执行'
                       },
                       {
@@ -1445,9 +1481,7 @@ const CacheStatsPage: React.FC = () => {
                         requests: stats?.breakdown?.assertion.requests || 0,
                         hits: stats?.breakdown?.assertion.hits || 0,
                         misses: stats?.breakdown?.assertion.misses || 0,
-                        hitRate: typeof stats?.breakdown?.assertion.hitRate === 'string' 
-                          ? parseFloat(stats?.breakdown?.assertion.hitRate) 
-                          : (stats?.breakdown?.assertion.hitRate || 0),
+                        hitRate: parseFloat(formatHitRate(stats?.breakdown?.assertion.hitRate)),
                         description: '缓存断言验证逻辑，提升验证效率'
                       }
                     ]}
@@ -1529,7 +1563,7 @@ const CacheStatsPage: React.FC = () => {
             <Card 
               title={<span style={{ fontSize: 16, fontWeight: 600 }}>🎯 命中率分析</span>}
               style={{ borderRadius: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.08)', height: '100%' }}
-              bodyStyle={{ padding: '0 24px 24px' }}
+              styles={{ body: { padding: '0 24px 24px' } }}
             >
               <div className="relative" style={{ height: 270 }}>
                 <ResponsiveContainer width="100%" height="100%">
@@ -1621,7 +1655,7 @@ const CacheStatsPage: React.FC = () => {
                 <Card 
                   title={<span style={{ fontSize: 16, fontWeight: 600 }}>🎯 命中率分析</span>}
                   style={{ borderRadius: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.08)', height: '100%' }}
-                  bodyStyle={{ padding: '0 24px 24px' }}
+                  styles={{ body: { padding: '0 24px 24px' } }}
                 >
                   <div className="relative" style={{ height: 270 }}>
                     <ResponsiveContainer width="100%" height="100%">
@@ -1752,19 +1786,19 @@ const CacheStatsPage: React.FC = () => {
                       {
                         key: '4',
                         metric: '🔍 元素缓存请求',
-                        value: `${stats?.breakdown?.element.requests || 0} 次 (命中率: ${typeof stats?.breakdown?.element.hitRate === 'string' ? stats?.breakdown?.element.hitRate : (stats?.breakdown?.element.hitRate || 0).toFixed(1)}%)`,
+                        value: `${stats?.breakdown?.element.requests || 0} 次 (命中率: ${formatHitRate(stats?.breakdown?.element.hitRate)}%)`,
                         description: '页面元素定位识别请求'
                       },
                       {
                         key: '5',
                         metric: '⚡ 操作缓存请求',
-                        value: `${stats?.breakdown?.operation.requests || 0} 次 (命中率: ${typeof stats?.breakdown?.operation.hitRate === 'string' ? stats?.breakdown?.operation.hitRate : (stats?.breakdown?.operation.hitRate || 0).toFixed(1)}%)`,
+                        value: `${stats?.breakdown?.operation.requests || 0} 次 (命中率: ${formatHitRate(stats?.breakdown?.operation.hitRate)}%)`,
                         description: '测试操作步骤解析请求'
                       },
                       {
                         key: '6',
                         metric: '✓ 断言缓存请求',
-                        value: `${stats?.breakdown?.assertion.requests || 0} 次 (命中率: ${typeof stats?.breakdown?.assertion.hitRate === 'string' ? stats?.breakdown?.assertion.hitRate : (stats?.breakdown?.assertion.hitRate || 0).toFixed(1)}%)`,
+                        value: `${stats?.breakdown?.assertion.requests || 0} 次 (命中率: ${formatHitRate(stats?.breakdown?.assertion.hitRate)}%)`,
                         description: '断言验证逻辑解析请求'
                       },
                       {

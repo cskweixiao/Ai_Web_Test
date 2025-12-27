@@ -1,4 +1,4 @@
-# TestFlow 系统操作手册
+# Sakura AI 系统操作手册
 
 <div align="center">
 
@@ -27,9 +27,9 @@
 
 ## 1. 系统简介
 
-### 1.1 TestFlow 是什么？
+### 1.1 Sakura AI 是什么？
 
-TestFlow 是一个企业级 AI 驱动的自动化测试平台，核心特性包括：
+Sakura AI 是一个企业级 AI 驱动的自动化测试平台，核心特性包括：
 
 - **🎨 AI测试用例生成**: 从Axure原型自动生成测试用例，效率提升20-50倍
 - **🎭 UI自动化测试**: 基于Playwright的浏览器自动化执行
@@ -79,7 +79,7 @@ TestFlow 是一个企业级 AI 驱动的自动化测试平台，核心特性包�
 
 ### 3.1 功能概述
 
-**AI测试用例生成器** 是TestFlow的核心功能，可以从Axure原型文件一键生成完整的功能测试用例。
+**AI测试用例生成器** 是Sakura AI的核心功能，可以从Axure原型文件一键生成完整的功能测试用例。
 
 **核心价值**:
 - ⏱️ **效率提升**: 10分钟完成2-3天的工作（提升20-50倍）
@@ -366,7 +366,7 @@ tail -f logs/server.log | grep "RAG"
 
 ### 4.1 功能概述
 
-TestFlow 基于 **Playwright** 实现浏览器自动化测试，支持：
+Sakura AI 基于 **Playwright** 实现浏览器自动化测试，支持：
 
 - 🌐 Chrome / Firefox / WebKit 多浏览器
 - 📡 实时WebSocket状态推送
@@ -1730,9 +1730,9 @@ A:
 
 **技术支持**:
 
-- 📧 邮箱: support@testflow.dev
-- 🐛 Bug反馈: https://github.com/testflow/testflow/issues
-- 📚 在线文档: https://docs.testflow.dev
+- 📧 邮箱: support@Sakura AI.dev
+- 🐛 Bug反馈: https://github.com/Sakura AI/Sakura AI/issues
+- 📚 在线文档: https://docs.Sakura AI.dev
 
 **反馈渠道**:
 
@@ -1743,10 +1743,10 @@ A:
 
 <div align="center">
 
-**TestFlow - 让自动化测试变得简单而强大！** 🚀
+**Sakura AI - 让自动化测试变得简单而强大！** 🚀
 
 版本 2.5.0 | 最后更新: 2025-11-11
 
-[⬆ 返回顶部](#testflow-系统操作手册)
+[⬆ 返回顶部](#Sakura AI-系统操作手册)
 
 </div>

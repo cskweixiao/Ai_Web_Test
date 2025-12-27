@@ -61,6 +61,14 @@ export interface TestPlan {
   functional_cases?: number;
   ui_auto_cases?: number;
   completed_executions?: number;
+  // 最新执行记录的进度数据
+  latest_execution_progress?: number; // 进度百分比
+  latest_execution_completed_cases?: number; // 已完成用例数
+  latest_execution_total_cases?: number; // 总用例数（来自执行记录）
+  latest_execution_passed_cases?: number; // 通过用例数（来自最新执行记录）
+  latest_execution_failed_cases?: number; // 失败用例数（来自最新执行记录）
+  latest_execution_blocked_cases?: number; // 阻塞用例数（来自最新执行记录）
+  latest_execution_status?: ExecutionStatus; // 最新执行状态
 }
 
 /**
@@ -197,6 +205,19 @@ export interface TestPlanCaseResult {
   passedSteps?: number;
   failedSteps?: number;
   blockedSteps?: number;
+  
+  // 🔥 新增：执行状态
+  execution_status?: 'running' | 'completed' | 'failed' | 'cancelled' | 'error' | 'queued';
+}
+
+/**
+ * 执行配置
+ */
+export interface ExecutionConfig {
+  executionEngine?: 'mcp' | 'playwright';
+  enableTrace?: boolean;
+  enableVideo?: boolean;
+  environment?: string;
 }
 
 /**
@@ -207,6 +228,8 @@ export interface StartTestPlanExecutionInput {
   executor_id: number;
   execution_type: TestCaseType; // 执行哪种类型的用例
   case_ids?: number[]; // 可选：指定执行哪些用例，不指定则执行所有
+  autoExecute?: boolean; // 是否自动执行，默认 true（批量执行时），false（单个用例执行时）
+  executionConfig?: ExecutionConfig; // 执行配置（环境、引擎、trace、video等）
 }
 
 /**
@@ -219,6 +242,7 @@ export interface TestPlanListQuery {
   project?: string;
   plan_type?: TestPlanType;
   status?: TestPlanStatus;
+  result?: ExecutionResult;
   owner_id?: number;
   start_date?: string;
   end_date?: string;

@@ -140,9 +140,10 @@ export const FilterBar: React.FC<FilterBarProps> = ({
                 >
                     <option value="">所有结果</option>
                     <option value="pending">⏳ 未执行</option>
-                    <option value="passed">✅ 通过</option>
-                    <option value="failed">❌ 失败</option>
-                    <option value="blocked">🚫 受阻</option>
+                    <option value="pass">✅ 通过</option>
+                    <option value="fail">❌ 失败</option>
+                    <option value="block">🚫 阻塞</option>
+                    <option value="skip">⏭️ 跳过</option>
                 </select>
                 
                 {/* Actions */}
@@ -178,7 +179,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
                         exit={{ height: 0, opacity: 0 }}
                         className="overflow-hidden"
                     >
-                        <div className="pt-4 mt-4 border-t border-gray-100 grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4">
+                        <div className="pt-2 mt-4 border-t border-gray-100 grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4">
                             <div className="space-y-1">
                                 {/* <label className="text-xs font-medium text-gray-500">模块</label>
                                 <select

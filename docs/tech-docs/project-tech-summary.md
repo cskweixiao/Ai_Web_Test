@@ -1,8 +1,8 @@
-# 🚀 TestFlow AI 自动化测试平台 - 技术架构总结
+# 🚀 Sakura AI AI 自动化测试平台 - 技术架构总结
 
 ## 📋 项目概述
 
-**TestFlow** 是一个基于 AI + MCP + Playwright 的智能化 Web 自动化测试平台，支持自然语言测试用例编写和执行。
+**Sakura AI** 是一个基于 AI + MCP + Playwright 的智能化 Web 自动化测试平台，支持自然语言测试用例编写和执行。
 
 ## 🏗️ 技术架构
 

@@ -137,7 +137,7 @@ router.get('/export', async (req, res) => {
     const exportData = await getSettingsService().exportSettings();
     
     res.setHeader('Content-Type', 'application/json');
-    res.setHeader('Content-Disposition', 'attachment; filename="testflow-settings.json"');
+    res.setHeader('Content-Disposition', 'attachment; filename="Sakura AI-settings.json"');
     res.send(exportData);
   } catch (error: any) {
     console.error('❌ 导出配置失败:', error);
@@ -264,8 +264,8 @@ router.post('/test-connection', async (req, res) => {
 
     // 只对 OpenRouter API 添加额外的识别头
     if (!modelInfo.customBaseUrl) {
-      fetchOptions.headers['HTTP-Referer'] = 'https://testflow-ai.com';
-      fetchOptions.headers['X-Title'] = 'TestFlow AI Testing Platform';
+      fetchOptions.headers['HTTP-Referer'] = 'https://Sakura AI-ai.com';
+      fetchOptions.headers['X-Title'] = 'Sakura AI AI Testing Platform';
     }
 
     // 如果配置了代理，使用 undici 的 ProxyAgent

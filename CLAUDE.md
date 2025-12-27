@@ -4,7 +4,7 @@
 
 ## 项目概述
 
-TestFlow 是一个企业级自动化测试平台，具备AI驱动的批量更新功能。基于 React 18 + TypeScript 前端和 Node.js + Express 后端构建，集成 Playwright 进行浏览器自动化和 MCP（模型上下文协议）进行AI驱动的测试执行。
+Sakura AI 是一个企业级自动化测试平台，具备AI驱动的批量更新功能。基于 React 18 + TypeScript 前端和 Node.js + Express 后端构建，集成 Playwright 进行浏览器自动化和 MCP（模型上下文协议）进行AI驱动的测试执行。
 
 ## 核心命令
 

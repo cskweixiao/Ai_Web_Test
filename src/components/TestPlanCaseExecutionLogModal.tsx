@@ -72,10 +72,12 @@ export const TestPlanCaseExecutionLogModal: React.FC<TestPlanCaseExecutionLogMod
       footer={null}
       width={800}
       className="execution-log-modal"
-      bodyStyle={{
-        maxHeight: '70vh',
-        overflowY: 'auto',
-        padding: '16px 24px',
+      styles={{
+        body: {
+          maxHeight: '70vh',
+          overflowY: 'auto',
+          padding: '16px 24px',
+        },
       }}
     >
       <div className="py-4">

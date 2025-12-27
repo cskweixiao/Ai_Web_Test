@@ -75,6 +75,7 @@ interface FunctionalCaseSelectModalProps {
   selectedCaseIds: number[] | Set<number>;
   onSelectedCasesChange: (ids: number[] | Set<number>) => void;
   importedCaseIds?: Set<number>;
+  associatedCaseIds?: Set<number>; // 已关联的用例ID（用于测试计划等场景）
   loading?: boolean;
   searchTerm?: string;
   onSearchChange?: (term: string) => void;
@@ -110,6 +111,7 @@ interface FunctionalCaseSelectModalProps {
  * - 批量选择
  * - 分页
  * - 已导入标记
+ * - 已关联标记
  */
 export const FunctionalCaseSelectModal: React.FC<FunctionalCaseSelectModalProps> = ({
   isOpen,
@@ -119,6 +121,7 @@ export const FunctionalCaseSelectModal: React.FC<FunctionalCaseSelectModalProps>
   selectedCaseIds,
   onSelectedCasesChange,
   importedCaseIds,
+  associatedCaseIds,
   loading = false,
   searchTerm = '',
   onSearchChange,
@@ -339,6 +342,11 @@ export const FunctionalCaseSelectModal: React.FC<FunctionalCaseSelectModalProps>
               已导入
             </span>
           )}
+          {associatedCaseIds?.has(functionalCase.id) && (
+            <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-600 font-medium">
+              已关联
+            </span>
+          )}
         </div>
         {functionalCase.description && (
           <p className="text-sm text-gray-600 line-clamp-2">
@@ -352,7 +360,7 @@ export const FunctionalCaseSelectModal: React.FC<FunctionalCaseSelectModalProps>
               {functionalCase.system}
             </span>
           )}
-          {functionalCase.project_version_id && (
+          {functionalCase.project_version && (
             <span className="flex items-center">
               <Package className="h-3 w-3 mr-1" />
               {functionalCase.project_version?.version_name || 
@@ -385,6 +393,153 @@ export const FunctionalCaseSelectModal: React.FC<FunctionalCaseSelectModalProps>
     </label>
   );
 
+  // 渲染表格视图
+  const renderTableView = () => (
+    <div className="border border-gray-300 rounded-lg">
+      <table className="table-auto w-max min-w-full">
+          <thead className="bg-gray-50 border-b border-gray-200">
+            <tr>
+              <th className="w-12 px-4 py-3 text-left">
+                <input
+                  type="checkbox"
+                  checked={displayCases.length > 0 && selectedCount === displayCases.length}
+                  onChange={(e) => {
+                    if (e.target.checked) {
+                      selectAll();
+                    } else {
+                      clearSelection();
+                    }
+                  }}
+                  className="rounded text-blue-600 focus:ring-blue-500"
+                  aria-label="全选所有用例"
+                  title="全选所有用例"
+                />
+              </th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider whitespace-nowrap">
+                用例编号
+              </th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider whitespace-nowrap min-w-[120px]">
+                所属系统
+              </th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider whitespace-nowrap min-w-[100px]">
+                所属版本
+              </th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider whitespace-nowrap min-w-[100px]">
+                所属模块
+              </th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider whitespace-nowrap min-w-[120px]">
+                所属场景
+              </th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider min-w-[200px]">
+                用例名称
+              </th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider whitespace-nowrap min-w-[100px]">
+                用例类型
+              </th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider whitespace-nowrap min-w-[80px]">
+                优先级
+              </th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider whitespace-nowrap min-w-[100px]">
+                是否关联
+              </th>
+            </tr>
+          </thead>
+           <tbody className="bg-white divide-y divide-gray-200">
+             {displayCases.map((functionalCase) => (
+              <tr
+                key={functionalCase.id}
+                onClick={() => toggleSelection(functionalCase.id)}
+                className={clsx(
+                  "cursor-pointer transition-colors",
+                  isSelected(functionalCase.id) ? "bg-blue-50" : "hover:bg-gray-50"
+                )}
+              >
+                <td className="px-4 py-3">
+                  <input
+                    type="checkbox"
+                    checked={isSelected(functionalCase.id)}
+                    onChange={() => {}}
+                    className="rounded text-blue-600 focus:ring-blue-500"
+                    aria-label={`选择用例 ${functionalCase.name}`}
+                    title={`选择用例 ${functionalCase.name}`}
+                  />
+                </td>
+                <td className="px-4 py-3 text-sm text-gray-500 font-mono">
+                  TC_{String(functionalCase.id).padStart(5, '0')}
+                </td>
+                <td className="px-4 py-3 text-sm text-gray-600">
+                  {functionalCase.system ? (
+                    <span className="inline-flex items-center gap-1 px-2 py-1 bg-blue-100 text-blue-700 rounded-full text-xs">
+                      <Package className="h-3 w-3" />
+                      {functionalCase.system}
+                    </span>
+                  ) : '-'}
+                </td>
+                <td className="px-4 py-3 text-sm text-gray-600">
+                  {functionalCase.project_version ? (
+                    <span className="inline-flex items-center gap-1 px-2 py-1 bg-purple-100 text-purple-700 rounded-full text-xs">
+                      <Package className="h-3 w-3" />
+                      {functionalCase.project_version?.version_name || 
+                       functionalCase.project_version?.version_code || 
+                       functionalCase.project_version_id}
+                    </span>
+                  ) : '-'}
+                </td>
+                <td className="px-4 py-3 text-sm text-gray-600">
+                  {functionalCase.module || '-'}
+                </td>
+                <td className="px-4 py-3 text-sm text-gray-600">
+                  {functionalCase.scenario_name ? (
+                    <span className="inline-flex items-center gap-1 px-2 py-1 bg-orange-100 text-orange-700 rounded-full text-xs">
+                      <FileText className="h-3 w-3" />
+                      {functionalCase.scenario_name}
+                    </span>
+                  ) : '-'}
+                </td>
+                <td className="px-4 py-3 whitespace-nowrap">
+                  <div className="text-sm font-medium text-gray-900">{functionalCase.name}</div>
+                  {functionalCase.description && (
+                    <div className="text-xs text-gray-500 truncate mt-1 max-w-[300px]">
+                      {functionalCase.description}
+                    </div>
+                  )}
+                </td>
+                <td className="px-4 py-3">
+                  <div className="flex items-center gap-2">
+                    {CaseTypeBadge && functionalCase.case_type && (
+                      <CaseTypeBadge caseType={functionalCase.case_type} />
+                    )}
+                  </div>
+                </td>
+                <td className="px-4 py-3">
+                  {functionalCase.priority && (
+                    <span className={clsx(
+                      'text-xs px-2 py-1 rounded-full font-medium inline-block',
+                      getPriorityInfo(functionalCase.priority).className
+                    )}>
+                      {getPriorityInfo(functionalCase.priority).text}
+                    </span>
+                  )}
+                </td>
+                <td className="px-4 py-3">
+                {importedCaseIds?.has(functionalCase.id) && (
+                      <span className="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-600 font-medium">
+                        已导入
+                      </span>
+                    )}
+                    {associatedCaseIds?.has(functionalCase.id) && (
+                      <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-600 font-medium">
+                        已关联
+                      </span>
+                    )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+    </div>
+  );
+
   // 渲染用例项（卡片视图）
   const renderCardItem = (functionalCase: FunctionalCase) => (
     <div
@@ -415,9 +570,25 @@ export const FunctionalCaseSelectModal: React.FC<FunctionalCaseSelectModalProps>
             <span className="text-xs text-gray-500 font-mono">
               TC_{String(functionalCase.id).padStart(5, '0')}
             </span>
+            {CaseTypeBadge && functionalCase.case_type && (
+              <CaseTypeBadge caseType={functionalCase.case_type} />
+            )}
+            {functionalCase.priority && (
+              <span className={clsx(
+                'text-xs px-2 py-1 rounded-full font-medium',
+                getPriorityInfo(functionalCase.priority).className
+              )}>
+                {getPriorityInfo(functionalCase.priority).text}
+              </span>
+            )}
             {importedCaseIds?.has(functionalCase.id) && (
               <span className="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-600 font-medium">
                 已导入
+              </span>
+            )}
+            {associatedCaseIds?.has(functionalCase.id) && (
+              <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-600 font-medium">
+                已关联
               </span>
             )}
           </div>
@@ -428,35 +599,18 @@ export const FunctionalCaseSelectModal: React.FC<FunctionalCaseSelectModalProps>
             </p>
           )}
           <div className="flex items-center gap-2 flex-wrap">
-            {functionalCase.priority && (
-              <span className={clsx(
-                'text-xs px-2 py-1 rounded-full font-medium',
-                getPriorityInfo(functionalCase.priority).className
-              )}>
-                {getPriorityInfo(functionalCase.priority).text}
-              </span>
-            )}
-            {CaseTypeBadge && functionalCase.case_type && (
-              <CaseTypeBadge caseType={functionalCase.case_type} />
-            )}
             {functionalCase.system && (
               <span className="text-xs px-2 py-1 bg-blue-100 text-blue-700 rounded-full flex items-center gap-1">
                 <Package className="h-3 w-3" />
                 {functionalCase.system}
               </span>
             )}
-            {functionalCase.project_version_id && (
+            {functionalCase.project_version && (
               <span className="text-xs px-2 py-1 bg-purple-100 text-purple-700 rounded-full flex items-center gap-1">
                 <Package className="h-3 w-3" />
                 {functionalCase.project_version?.version_name || 
                  functionalCase.project_version?.version_code || 
                  functionalCase.project_version_id}
-              </span>
-            )}
-            {functionalCase.scenario_name && (
-              <span className="text-xs px-2 py-1 bg-orange-100 text-orange-700 rounded-full flex items-center gap-1">
-                <FileText className="h-3 w-3" />
-                {functionalCase.scenario_name}
               </span>
             )}
             {functionalCase.module && (
@@ -465,147 +619,15 @@ export const FunctionalCaseSelectModal: React.FC<FunctionalCaseSelectModalProps>
                 {functionalCase.module}
               </span>
             )}
+            {functionalCase.scenario_name && (
+              <span className="text-xs px-2 py-1 bg-orange-100 text-orange-700 rounded-full flex items-center gap-1">
+                <FileText className="h-3 w-3" />
+                {functionalCase.scenario_name}
+              </span>
+            )}
+
           </div>
         </div>
-      </div>
-    </div>
-  );
-
-  // 渲染表格视图
-  const renderTableView = () => (
-    <div className="border border-gray-300 rounded-lg overflow-hidden">
-      <div className="overflow-x-auto">
-        <table className="w-full">
-          <thead className="bg-gray-50 border-b border-gray-200">
-            <tr>
-              <th className="w-12 px-4 py-3 text-left">
-                <input
-                  type="checkbox"
-                  checked={displayCases.length > 0 && selectedCount === displayCases.length}
-                  onChange={(e) => {
-                    if (e.target.checked) {
-                      selectAll();
-                    } else {
-                      clearSelection();
-                    }
-                  }}
-                  className="rounded text-blue-600 focus:ring-blue-500"
-                  aria-label="全选所有用例"
-                  title="全选所有用例"
-                />
-              </th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">
-                用例编号
-              </th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">
-                用例名称
-              </th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">
-                优先级
-              </th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">
-                所属系统
-              </th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">
-                所属版本
-              </th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">
-                所属场景
-              </th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">
-                模块
-              </th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">
-                状态
-              </th>
-            </tr>
-          </thead>
-           <tbody className="bg-white divide-y divide-gray-200">
-             {displayCases.map((functionalCase) => (
-              <tr
-                key={functionalCase.id}
-                onClick={() => toggleSelection(functionalCase.id)}
-                className={clsx(
-                  "cursor-pointer transition-colors",
-                  isSelected(functionalCase.id) ? "bg-blue-50" : "hover:bg-gray-50"
-                )}
-              >
-                <td className="px-4 py-3">
-                  <input
-                    type="checkbox"
-                    checked={isSelected(functionalCase.id)}
-                    onChange={() => {}}
-                    className="rounded text-blue-600 focus:ring-blue-500"
-                    aria-label={`选择用例 ${functionalCase.name}`}
-                    title={`选择用例 ${functionalCase.name}`}
-                  />
-                </td>
-                <td className="px-4 py-3 text-sm text-gray-500 font-mono">
-                  TC_{String(functionalCase.id).padStart(5, '0')}
-                </td>
-                <td className="px-4 py-3">
-                  <div className="text-sm font-medium text-gray-900">{functionalCase.name}</div>
-                  {functionalCase.description && (
-                    <div className="text-xs text-gray-500 line-clamp-1 mt-1">
-                      {functionalCase.description}
-                    </div>
-                  )}
-                </td>
-                <td className="px-4 py-3">
-                  {functionalCase.priority && (
-                    <span className={clsx(
-                      'text-xs px-2 py-1 rounded-full font-medium inline-block',
-                      getPriorityInfo(functionalCase.priority).className
-                    )}>
-                      {getPriorityInfo(functionalCase.priority).text}
-                    </span>
-                  )}
-                </td>
-                <td className="px-4 py-3 text-sm text-gray-600">
-                  {functionalCase.system ? (
-                    <span className="inline-flex items-center gap-1 px-2 py-1 bg-blue-100 text-blue-700 rounded-full text-xs">
-                      <Package className="h-3 w-3" />
-                      {functionalCase.system}
-                    </span>
-                  ) : '-'}
-                </td>
-                <td className="px-4 py-3 text-sm text-gray-600">
-                  {functionalCase.project_version_id ? (
-                    <span className="inline-flex items-center gap-1 px-2 py-1 bg-purple-100 text-purple-700 rounded-full text-xs">
-                      <Package className="h-3 w-3" />
-                      {functionalCase.project_version?.version_name || 
-                       functionalCase.project_version?.version_code || 
-                       functionalCase.project_version_id}
-                    </span>
-                  ) : '-'}
-                </td>
-                <td className="px-4 py-3 text-sm text-gray-600">
-                  {functionalCase.scenario_name ? (
-                    <span className="inline-flex items-center gap-1 px-2 py-1 bg-orange-100 text-orange-700 rounded-full text-xs">
-                      <FileText className="h-3 w-3" />
-                      {functionalCase.scenario_name}
-                    </span>
-                  ) : '-'}
-                </td>
-                <td className="px-4 py-3 text-sm text-gray-600">
-                  {functionalCase.module || '-'}
-                </td>
-                <td className="px-4 py-3">
-                  <div className="flex items-center gap-2">
-                    {CaseTypeBadge && functionalCase.case_type && (
-                      <CaseTypeBadge caseType={functionalCase.case_type} />
-                    )}
-                    {importedCaseIds?.has(functionalCase.id) && (
-                      <span className="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-600 font-medium">
-                        已导入
-                      </span>
-                    )}
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
       </div>
     </div>
   );
@@ -656,7 +678,7 @@ export const FunctionalCaseSelectModal: React.FC<FunctionalCaseSelectModalProps>
                   onSearch?.();
                 }
               }}
-              placeholder="搜索用例ID、测试场景、测试点、用例名称、创建人..."
+              placeholder="搜索用例ID、用例名称..."
               className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors text-sm"
             />
           </div>
@@ -844,12 +866,6 @@ export const FunctionalCaseSelectModal: React.FC<FunctionalCaseSelectModalProps>
           ) : (
             <>
               {/* 根据视图模式渲染不同的布局 */}
-              {viewMode === 'table' && (
-                <div className="h-full max-h-[500px] overflow-y-auto">
-                  {renderTableView()}
-                </div>
-              )}
-              
               {viewMode === 'list' && (
                 <div className="h-full max-h-[500px] overflow-y-auto border border-gray-200 rounded-lg">
                   <div className="divide-y divide-gray-200">
@@ -857,7 +873,11 @@ export const FunctionalCaseSelectModal: React.FC<FunctionalCaseSelectModalProps>
                   </div>
                 </div>
               )}
-
+              {viewMode === 'table' && (
+                <div className="w-full max-h-[500px] overflow-x-auto overflow-y-auto">
+                  {renderTableView()}
+                </div>
+              )}
               {viewMode === 'card' && (
                 <div className="h-full max-h-[500px] overflow-y-auto">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3 p-1">

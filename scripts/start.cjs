@@ -27,7 +27,7 @@ const SERVER_HOST = process.env.SERVER_HOST || '127.0.0.1';
 const npmCmd = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 const npxCmd = process.platform === 'win32' ? 'npx.cmd' : 'npx';
 
-console.log('\n🚀 TestFlow 启动脚本');
+console.log('\n🚀 Sakura AI 启动脚本');
 console.log('====================\n');
 
 // 检查依赖是否已安装
@@ -279,7 +279,7 @@ function checkServiceHealth(url, serviceName, maxAttempts = 60) {
 
 // 启动服务
 async function startServices() {
-  console.log('\n🔥 启动 TestFlow 服务...');
+  console.log('\n🔥 启动 Sakura AI 服务...');
   console.log('====================\n');
   
   // 🔥 修复：按顺序启动服务，确保后端先启动成功后再启动前端

@@ -1,8 +1,8 @@
-# TestFlow: AI驱动的自动化测试平台
+# Sakura AI: AI驱动的自动化测试平台
 
 一个开源的企业级测试平台，核心功能包括**AI测试用例生成**和**UI自动化测试执行**。
 
-**项目地址**: https://github.com/testflow/testflow
+**项目地址**: https://github.com/Sakura AI/Sakura AI
 **开源协议**: GPL-3.0
 
 ---
@@ -15,7 +15,7 @@
 
 **效率对比**：
 
-| 对比项 | 传统手写 | TestFlow |
+| 对比项 | 传统手写 | Sakura AI |
 |--------|---------|----------|
 | 100个用例耗时 | 2-3天 | 15分钟 |
 | 人力成本 | 1人×2-3天 | 1人×15分钟 |
@@ -212,7 +212,7 @@
 - 用例数量：180个
 - 质量评分：平均78分
 
-**使用TestFlow**：
+**使用Sakura AI**：
 - 测试工程师：1人
 - AI生成：25分钟
 - 人工审核：2小时
@@ -238,7 +238,7 @@
 - 人力成本：6人天
 - 执行效率：约20个用例/人/天
 
-**使用TestFlow**：
+**使用Sakura AI**：
 - 自动化执行：并发6个
 - 总耗时：3小时
 - 人工监控：1人
@@ -281,8 +281,8 @@
 
 ```bash
 # 1. 克隆项目
-git clone https://github.com/testflow/testflow.git
-cd testflow
+git clone https://github.com/Sakura AI/Sakura AI.git
+cd Sakura AI
 
 # 2. 安装依赖
 npm install
@@ -392,12 +392,12 @@ npm run dev
 
 ## 联系方式
 
-- 邮箱: support@testflow.dev
-- GitHub: https://github.com/testflow/testflow
-- 问题反馈: https://github.com/testflow/testflow/issues
+- 邮箱: support@Sakura AI.dev
+- GitHub: https://github.com/Sakura AI/Sakura AI
+- 问题反馈: https://github.com/Sakura AI/Sakura AI/issues
 
 ---
 
-**如果TestFlow对你有帮助，欢迎给项目一个Star支持！**
+**如果Sakura AI对你有帮助，欢迎给项目一个Star支持！**
 
-Made with ❤️ by TestFlow Team
+Made with ❤️ by Sakura AI Team

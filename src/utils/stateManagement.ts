@@ -199,7 +199,7 @@ export class ImportExportManager {
   /**
    * 下载配置文件
    */
-  static downloadConfig(configData: string, filename: string = 'testflow-config.json'): void {
+  static downloadConfig(configData: string, filename: string = 'Sakura AI-config.json'): void {
     try {
       const blob = new Blob([configData], { type: 'application/json' });
       const url = URL.createObjectURL(blob);

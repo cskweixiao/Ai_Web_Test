@@ -28,10 +28,12 @@ export interface TestCase {
   module?: string;    // 新增模块字段
   department?: string; // 🔥 新增：部门字段
   projectVersion?: string; // 🔥 新增：所属版本字段
+  caseType?: string; // 🔥 新增：用例类型（SMOKE、FULL、ABNORMAL等）
   author?: string;
   created?: string;
   updated?: string; // 🔥 新增：更新时间字段
   lastRun?: string;
+  lastRunStatus?: 'completed' | 'failed' | 'error' | 'cancelled'; // 🔥 新增：最后一次执行状态
   success_rate?: number;
   suiteId?: number; // 🔥 新增：关联的测试套件ID
 }
@@ -135,11 +137,12 @@ export interface TestRun {
   id:string;
   runId: string;
   testCaseId: number;
-  name?: string; // 🔥 新增：测试运行名称（通常来自测试用例标题）
+  name?: string; // 🔥 新增：测试用例名称（通常来自测试用例标题）
   status: TestRunStatus;
   logs: TestLog[];
+  // 🔥 优化：统一使用 startedAt 和 finishedAt 时间字段
   startedAt: Date;
-  actualStartedAt?: Date; // 🔥 新增：实际开始执行时间（首次变为running状态时）
+  finishedAt?: Date;
   environment: string;
   suiteId?: string;
   reuseBrowser?: boolean;
@@ -151,15 +154,12 @@ export interface TestRun {
   steps: TestStep[];
   successfulSteps: string[];
   error?: string;
-  endedAt?: Date;
-  finishedAt?: Date; // 🔥 新增：完成时间（与 endedAt 同义，用于数据库同步）
   // 🔥 新增：进度跟踪属性
   totalSteps?: number;
   completedSteps?: number;
   passedSteps?: number;
   failedSteps?: number;
   progress?: number;
-  startTime?: Date;
   duration?: string;
   userId?: string; // 🔥 新增：执行者用户ID
   executor?: string; // 🔥 新增：执行者名称（用户名）

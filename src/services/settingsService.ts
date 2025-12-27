@@ -38,7 +38,7 @@ export interface AppSettings {
 // 设置服务类
 export class SettingsService {
   private static instance: SettingsService;
-  private readonly STORAGE_KEY = 'testflow_settings';
+  private readonly STORAGE_KEY = 'Sakura AI_settings';
 
   private constructor() {}
 

@@ -1050,10 +1050,10 @@ async function batchSaveTestCases(testCases, sessionId) {
 
 ### 联系方式
 
-- 📧 **邮箱**: support@testflow.com
-- 💬 **内部 Slack**: #testflow-support
-- 📚 **文档中心**: https://docs.testflow.com
-- 🐛 **Bug 反馈**: https://github.com/testflow/issues
+- 📧 **邮箱**: support@Sakura AI.com
+- 💬 **内部 Slack**: #Sakura AI-support
+- 📚 **文档中心**: https://docs.Sakura AI.com
+- 🐛 **Bug 反馈**: https://github.com/Sakura AI/issues
 
 ### 培训资源
 
@@ -1098,4 +1098,4 @@ async function batchSaveTestCases(testCases, sessionId) {
 
 *文档版本: v1.0*
 *最后更新: 2025-10-28*
-*维护者: TestFlow Team*
+*维护者: Sakura AI Team*

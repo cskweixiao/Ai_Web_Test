@@ -1,6 +1,6 @@
 # MCP执行流程图
 
-本文档详细描述TestFlow自动化测试平台中MCP（Model Context Protocol）执行的完整流程，包括步骤解析、命令生成、执行和结果处理。
+本文档详细描述Sakura AI自动化测试平台中MCP（Model Context Protocol）执行的完整流程，包括步骤解析、命令生成、执行和结果处理。
 
 ## MCP执行主流程
 

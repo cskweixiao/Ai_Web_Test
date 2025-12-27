@@ -20,8 +20,8 @@ export const KanbanView: React.FC<ViewProps> = ({
 
         return {
             DRAFT: allCases.filter(tc => tc.executionStatus === 'pending'),
-            PUBLISHED: allCases.filter(tc => tc.executionStatus === 'passed'),
-            ARCHIVED: allCases.filter(tc => tc.executionStatus === 'failed' || tc.executionStatus === 'blocked'),
+            PUBLISHED: allCases.filter(tc => tc.executionStatus === 'pass'),
+            ARCHIVED: allCases.filter(tc => tc.executionStatus === 'fail' || tc.executionStatus === 'block'),
         };
     }, [organizedData]);
 

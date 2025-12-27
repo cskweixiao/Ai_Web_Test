@@ -61,7 +61,7 @@ import systemsRouter from './routes/systems.js';
 // 🔥 新增：知识库管理路由
 import knowledgeRouter from './routes/knowledge.js';
 // 🔥 新增：测试计划管理路由
-import testPlanRouter from './routes/testPlan.js';
+import createTestPlanRoutes from './routes/testPlan.js';
 // 🔥 新增：初始化功能开关和权限
 import { initializeAllFeatureFlags } from './middleware/featureFlag.js';
 import { PermissionService } from './middleware/auth.js';
@@ -470,7 +470,7 @@ async function startServer() {
       console.error('\n📋 解决方案：');
       console.error('   1. 创建 .env 文件在项目根目录');
       console.error('   2. 添加 DATABASE_URL 配置，例如：');
-      console.error('      DATABASE_URL="mysql://username:password@localhost:3306/testflow"');
+      console.error('      DATABASE_URL="mysql://username:password@localhost:3306/Sakura AI"');
       console.error('\n💡 提示：可以参考 docs/CONFIGURATION.md 查看完整配置说明');
       throw new Error('DATABASE_URL 环境变量未设置');
     }
@@ -739,7 +739,7 @@ async function startServer() {
 
     // 🔥 新增：测试计划管理路由
     console.log('🔧 注册测试计划管理路由...');
-    app.use('/api/v1/test-plans', authenticate, testPlanRouter);
+    app.use('/api/v1/test-plans', authenticate, createTestPlanRoutes(testExecutionService));
 
     console.log('✅ API路由注册完成');
 
@@ -770,6 +770,21 @@ async function startServer() {
     // 如果只需要本地访问，可以通过环境变量 SERVER_HOST=127.0.0.1 限制
     const host = process.env.SERVER_HOST || '0.0.0.0';
     const portNumber = typeof PORT === 'string' ? parseInt(PORT, 10) : PORT;
+    
+    // 🔥 添加端口占用错误处理
+    server.on('error', (error: any) => {
+      if (error.code === 'EADDRINUSE') {
+        console.error(`❌ 端口 ${portNumber} 已被占用！`);
+        console.error('\n💡 解决方案：');
+        console.error('   1. 停止其他占用该端口的进程');
+        console.error('   2. 或者修改 .env 文件中的 PORT 配置');
+        console.error('   3. 使用命令查找占用进程: netstat -ano | findstr :' + portNumber);
+        process.exit(1);
+      } else {
+        console.error('❌ 服务器启动错误:', error);
+        process.exit(1);
+      }
+    });
     
     server.listen(portNumber, host, () => {
       console.log('✅ HTTP服务器监听回调被调用');

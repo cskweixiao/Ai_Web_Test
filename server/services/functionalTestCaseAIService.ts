@@ -337,8 +337,8 @@ export class FunctionalTestCaseAIService {
       // 🔥 打印请求头信息（隐藏敏感信息）
       const headersForLog: Record<string, string> = {
         'Authorization': `Bearer ${config.apiKey.substring(0, 10)}...`,
-        'HTTP-Referer': 'https://testflow-ai.com',
-        'X-Title': 'TestFlow AI Testing Platform',
+        'HTTP-Referer': 'https://Sakura AI-ai.com',
+        'X-Title': 'Sakura AI AI Testing Platform',
         'Content-Type': 'application/json'
       };
       console.log(`   请求头:`, headersForLog);
@@ -356,8 +356,8 @@ export class FunctionalTestCaseAIService {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${config.apiKey}`,
-          'HTTP-Referer': 'https://testflow-ai.com',
-          'X-Title': 'TestFlow AI Testing Platform',
+          'HTTP-Referer': 'https://Sakura AI-ai.com',
+          'X-Title': 'Sakura AI AI Testing Platform',
           'Content-Type': 'application/json'
         },
         body: JSON.stringify(requestBody)

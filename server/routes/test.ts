@@ -16,7 +16,10 @@ export function testRoutes(testExecutionService: TestExecutionService): Router {
         status = '',
         system = '',
         module = '', // 🔥 新增：模块参数
-        projectVersion = '' // 🔥 新增：版本参数
+        projectVersion = '', // 🔥 新增：版本参数
+        executionStatus = '', // 🆕 执行状态筛选
+        executionResult = '', // 🆕 执行结果筛选
+        author = '' // 🆕 创建者筛选
       } = req.query;
 
       const pageNum = parseInt(page as string);
@@ -39,6 +42,9 @@ export function testRoutes(testExecutionService: TestExecutionService): Router {
         system: system as string,
         module: module as string, // 🔥 新增：模块参数
         projectVersion: projectVersion as string, // 🔥 新增：版本参数
+        executionStatus: executionStatus as string, // 🆕 执行状态筛选
+        executionResult: executionResult as string, // 🆕 执行结果筛选
+        author: author as string, // 🆕 创建者筛选
         userDepartment,
         isSuperAdmin
       });
@@ -141,7 +147,8 @@ export function testRoutes(testExecutionService: TestExecutionService): Router {
         environment = 'staging',
         executionEngine = 'mcp', // 🔥 新增：执行引擎选择
         enableTrace = false,     // 🔥 新增：是否启用 trace（仅 Playwright）
-        enableVideo = false      // 🔥 新增：是否启用 video（仅 Playwright）
+        enableVideo = false,     // 🔥 新增：是否启用 video（仅 Playwright）
+        planExecutionId          // 🔥 新增：测试计划执行记录ID，用于完成后同步数据
       } = req.body;
       const actualCaseId = caseId || testCaseId;
 
@@ -155,7 +162,14 @@ export function testRoutes(testExecutionService: TestExecutionService): Router {
       // 🔥 修复：从认证中间件获取用户ID并传递
       const userId = req.user?.id ? String(req.user.id) : undefined;
 
-      // 🔥 传递执行引擎选项和用户ID
+      console.log(`📋 [test路由] 执行测试用例:`, {
+        caseId: actualCaseId,
+        planExecutionId,
+        executionEngine,
+        userId
+      });
+
+      // 🔥 传递执行引擎选项、用户ID和planExecutionId
       const runId = await testExecutionService.runTest(
         actualCaseId, 
         environment,
@@ -164,7 +178,8 @@ export function testRoutes(testExecutionService: TestExecutionService): Router {
           userId: userId,
           executionEngine: executionEngine as 'mcp' | 'playwright',
           enableTrace: enableTrace === true,
-          enableVideo: enableVideo === true
+          enableVideo: enableVideo === true,
+          planExecutionId: planExecutionId // 🔥 传递测试计划执行记录ID
         }
       );
 
@@ -319,8 +334,9 @@ export function testRoutes(testExecutionService: TestExecutionService): Router {
             testCaseId: dbRun.testCaseId,
             name: dbRun.testCaseTitle,
             status: dbRun.status,
-            startTime: dbRun.startedAt || dbRun.queuedAt,
-            endTime: dbRun.finishedAt,
+            // 🔥 优化：统一使用 startedAt 和 finishedAt 字段
+            startedAt: dbRun.startedAt || dbRun.queuedAt,
+            finishedAt: dbRun.finishedAt,
             duration: duration, // 🔥 使用从数据库 durationMs 计算的准确值
             progress: dbRun.progress || 0,
             totalSteps: dbRun.totalSteps || 0,
@@ -330,9 +346,7 @@ export function testRoutes(testExecutionService: TestExecutionService): Router {
             executor: executorName,
             environment: dbRun.environment || 'default',
             logs: logs,
-            screenshots: dbRun.screenshots || [],
-            // 🔥 修复：添加 startedAt，确保前端可以使用与后端相同的时间源
-            startedAt: dbRun.startedAt ? new Date(dbRun.startedAt) : undefined
+            screenshots: dbRun.screenshots || []
           } as any;
           console.log(`✅ [${runId}] 从数据库查询成功，执行者: ${executorName}`);
         }
@@ -420,11 +434,17 @@ export function testRoutes(testExecutionService: TestExecutionService): Router {
       const userId = req.user?.id;
       const isSuperAdmin = req.user?.isSuperAdmin || false;
 
+      // 🔥 获取排序参数
+      const sortBy = (req.query.sortBy as string) || 'startedAt';
+      const sortOrder = (req.query.sortOrder as string) || 'desc';
+
       console.log('📊 [GET /runs] 查询参数:', {
         userId,
         userDepartment,
         isSuperAdmin,
-        hasUser: !!req.user
+        hasUser: !!req.user,
+        sortBy,
+        sortOrder
       });
 
       // 从内存中获取正在运行或最近的测试
@@ -494,8 +514,9 @@ export function testRoutes(testExecutionService: TestExecutionService): Router {
           testCaseId: dbRun.testCaseId,
           name: dbRun.testCaseTitle,
           status: dbRun.status,
-          startTime: dbRun.startedAt || dbRun.queuedAt,
-          endTime: dbRun.finishedAt,
+          // 🔥 优化：统一使用 startedAt 和 finishedAt 字段
+          startedAt: dbRun.startedAt || dbRun.queuedAt,
+          finishedAt: dbRun.finishedAt,
           // 🔥 修复：保留三位小数，确保精度（如 5.001s）
           duration: dbRun.durationMs ? `${(dbRun.durationMs / 1000).toFixed(3)}s` : '0s',
           progress: dbRun.progress,
@@ -512,11 +533,17 @@ export function testRoutes(testExecutionService: TestExecutionService): Router {
       });
 
       // 🚀 为内存中的测试运行补充测试用例名称和完整时间信息
-      const enrichedMemoryRuns = await Promise.all(
+      const enrichedMemoryRunsWithNull = await Promise.all(
         memoryRuns.map(async (run) => {
           try {
             // 获取测试用例详情
             const testCase = await testExecutionService.getTestCaseById(run.testCaseId);
+            
+            // 🔥 新增：如果测试用例已删除（返回null），则过滤掉该记录
+            if (!testCase) {
+              console.log(`🗑️ 测试运行 ${run.id} 的关联用例 #${run.testCaseId} 已被删除，将被过滤`);
+              return null;
+            }
             
             // 🔥 修复：如果 executor 是 userId 字符串，查询用户名
             let executorName = run.executor || 'System';
@@ -541,10 +568,10 @@ export function testRoutes(testExecutionService: TestExecutionService): Router {
 
             return {
               ...run,
-              name: testCase?.name || `测试 #${run.testCaseId}`,
-              // 确保时间字段存在
-              startTime: run.startTime || run.queuedAt || new Date(),
-              endTime: run.endTime || run.finishedAt,
+              name: testCase.name,
+              // 🔥 优化：统一使用 startedAt 和 finishedAt 字段
+              startedAt: run.startedAt || run.queuedAt || new Date(),
+              finishedAt: run.finishedAt || run.endedAt,
               // 补充其他可能缺失的字段
               duration: run.duration || '0s',
               progress: run.progress || 0,
@@ -556,31 +583,33 @@ export function testRoutes(testExecutionService: TestExecutionService): Router {
               screenshots: run.screenshots || []
             };
           } catch (error) {
-            console.error(`获取测试用例 #${run.testCaseId} 详情失败:`, error);
-            // 即使获取失败，也返回基本信息
-            return {
-              ...run,
-              name: `测试 #${run.testCaseId}`,
-              startTime: run.startTime || run.queuedAt || new Date(),
-              endTime: run.endTime || run.finishedAt,
-              duration: run.duration || '0s',
-              progress: run.progress || 0,
-              totalSteps: run.totalSteps || 0,
-              completedSteps: run.completedSteps || 0,
-              passedSteps: run.passedSteps || 0,
-              failedSteps: run.failedSteps || 0,
-              executor: run.executor || 'System',
-              screenshots: run.screenshots || []
-            };
+            console.error(`❌ 获取测试用例 #${run.testCaseId} 详情失败:`, error);
+            // 🔥 修改：获取失败时也返回 null，不展示该记录
+            return null;
           }
         })
       );
 
-      // 合并并按时间倒序排序
+      // 🔥 新增：过滤掉 null 值（即关联用例已删除的记录）
+      const enrichedMemoryRuns = enrichedMemoryRunsWithNull.filter((run): run is NonNullable<typeof run> => run !== null);
+
+      // 🔥 合并数据并按指定字段排序
       const allRuns = [...enrichedMemoryRuns, ...dbRunsFormatted].sort((a, b) => {
-        const timeA = (a.startTime || a.queuedAt || new Date()).getTime();
-        const timeB = (b.startTime || b.queuedAt || new Date()).getTime();
-        return timeB - timeA;
+        // 支持按 startedAt、finishedAt 或 startTime 排序
+        let valueA: number;
+        let valueB: number;
+
+        if (sortBy === 'finishedAt') {
+          valueA = a.finishedAt ? new Date(a.finishedAt).getTime() : 0;
+          valueB = b.finishedAt ? new Date(b.finishedAt).getTime() : 0;
+        } else {
+          // 默认使用 startedAt
+          valueA = a.startedAt ? new Date(a.startedAt).getTime() : 0;
+          valueB = b.startedAt ? new Date(b.startedAt).getTime() : 0;
+        }
+
+        // 根据排序顺序返回结果
+        return sortOrder === 'desc' ? valueB - valueA : valueA - valueB;
       });
 
       console.log(`📊 [GET /runs] 最终返回数据: 内存=${enrichedMemoryRuns.length}, 数据库=${dbRunsFormatted.length}, 总计=${allRuns.length}`);

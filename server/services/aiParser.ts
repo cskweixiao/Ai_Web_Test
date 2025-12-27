@@ -1717,8 +1717,8 @@ ${elementsContext}
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${currentConfig.apiKey}`,
-          'HTTP-Referer': 'https://testflow-ai.com',
-          'X-Title': 'TestFlow AI Testing Platform',
+          'HTTP-Referer': 'https://Sakura AI-ai.com',
+          'X-Title': 'Sakura AI AI Testing Platform',
           'Content-Type': 'application/json'
         },
         body: JSON.stringify(requestBody)

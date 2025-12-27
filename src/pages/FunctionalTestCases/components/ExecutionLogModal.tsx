@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Modal, Timeline, Tag, Empty, Spin, Image } from 'antd';
 import { CheckCircle, XCircle, AlertCircle, Clock, FileText } from 'lucide-react';
-import { ExecutionStatus, ExecutionLog } from '../types';
+import { ExecutionResult, ExecutionLog } from '../types';
 import { functionalTestCaseService } from '../../../services/functionalTestCaseService';
 
 interface ExecutionLogModalProps {
@@ -46,18 +46,13 @@ export const ExecutionLogModal: React.FC<ExecutionLogModalProps> = ({
     const [logs, setLogs] = useState<ExecutionLog[]>([]);
     const [loading, setLoading] = useState(false);
 
-    // 映射后端的 finalResult 到前端的 ExecutionStatus
-    const mapFinalResultToStatus = useCallback((finalResult: string): ExecutionStatus => {
-        switch (finalResult) {
-            case 'pass':
-                return 'passed';
-            case 'fail':
-                return 'failed';
-            case 'block':
-                return 'blocked';
-            default:
-                return 'pending';
+    // 后端和前端现在使用相同的值，无需映射
+    const mapFinalResultToStatus = useCallback((finalResult: string): ExecutionResult => {
+        // 确保返回标准的执行结果值
+        if (['pass', 'fail', 'block', 'skip'].includes(finalResult)) {
+            return finalResult as ExecutionResult;
         }
+        return 'pending';
     }, []);
 
     const loadLogs = useCallback(async () => {
@@ -110,37 +105,42 @@ export const ExecutionLogModal: React.FC<ExecutionLogModalProps> = ({
         return `${(ms / 1000).toFixed(2)}秒`;
     };
 
-    const getStatusIcon = (status: ExecutionStatus) => {
+    const getStatusIcon = (status: ExecutionResult) => {
         switch (status) {
-            case 'passed':
+            case 'pass':
                 return <CheckCircle className="w-5 h-5 text-green-500" />;
-            case 'failed':
+            case 'fail':
                 return <XCircle className="w-5 h-5 text-red-500" />;
-            case 'blocked':
+            case 'block':
                 return <AlertCircle className="w-5 h-5 text-orange-500" />;
+            case 'skip':
+                return <Clock className="w-5 h-5 text-blue-400" />;
             default:
                 return <Clock className="w-5 h-5 text-gray-400" />;
         }
     };
 
-    const getStatusTag = (status: ExecutionStatus) => {
+    const getStatusTag = (status: ExecutionResult) => {
         switch (status) {
-            case 'passed':
+            case 'pass':
                 return <Tag color="success">通过</Tag>;
-            case 'failed':
+            case 'fail':
                 return <Tag color="error">失败</Tag>;
-            case 'blocked':
-                return <Tag color="warning">受阻</Tag>;
+            case 'block':
+                return <Tag color="warning">阻塞</Tag>;
+            case 'skip':
+                return <Tag color="default">跳过</Tag>;
             default:
-                return <Tag color="default">未执行</Tag>;
+                return <Tag color="default">-</Tag>;
         }
     };
 
-    const getStatusColor = (status: ExecutionStatus) => {
+    const getStatusColor = (status: ExecutionResult) => {
         switch (status) {
-            case 'passed': return 'green';
-            case 'failed': return 'red';
-            case 'blocked': return 'orange';
+            case 'pass': return 'green';
+            case 'fail': return 'red';
+            case 'block': return 'orange';
+            case 'skip': return 'blue';
             default: return 'gray';
         }
     };
@@ -158,10 +158,12 @@ export const ExecutionLogModal: React.FC<ExecutionLogModalProps> = ({
             footer={null}
             width={800}
             className="execution-log-modal"
-            bodyStyle={{ 
-                maxHeight: '70vh', 
-                overflowY: 'auto',
-                padding: '16px 24px'
+            styles={{ 
+                body: {
+                    maxHeight: '70vh', 
+                    overflowY: 'auto',
+                    padding: '16px 24px'
+                }
             }}
         >
             <div className="py-4">

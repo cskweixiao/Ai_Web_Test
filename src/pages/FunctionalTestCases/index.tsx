@@ -406,9 +406,9 @@ export function FunctionalTestCases() {
 
             scenario.testPoints.forEach(point => {
                 const total = point.testCases.length;
-                // Usually 'passed' is 100%, 'failed' is also executed. 
-                // Let's count 'passed', 'failed', 'blocked' as executed.
-                const executed = point.testCases.filter(tc => ['passed', 'failed', 'blocked'].includes(tc.executionStatus)).length;
+                // Usually 'pass' is 100%, 'fail' is also executed. 
+                // Let's count 'pass', 'fail', 'block' as executed.
+                const executed = point.testCases.filter(tc => ['pass', 'fail', 'block'].includes(tc.executionStatus)).length;
 
                 point.progress = total > 0 ? Math.round((executed / total) * 100) : 0;
 

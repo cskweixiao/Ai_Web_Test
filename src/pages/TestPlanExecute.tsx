@@ -9,6 +9,7 @@ import {
   Loader2,
   ChevronLeft,
   ChevronRight,
+  AlertTriangle,
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { showToast } from '../utils/toast';
@@ -38,6 +39,9 @@ interface CaseExecutionState {
     passedSteps?: number;
     failedSteps?: number;
     blockedSteps?: number;
+    // 🔥 新增：时间字段
+    started_at?: string;
+    finished_at?: string;
     screenshots?: Array<{
       fileName: string;
       fileSize: number;
@@ -60,6 +64,9 @@ export function TestPlanExecute() {
   const [searchParams] = useSearchParams();
   const executionType = searchParams.get('type') as 'functional' | 'ui_auto' || 'functional';
   const executionMode = searchParams.get('mode') as 'single' | 'batch' | 'all' || 'all'; // 默认为 all
+  const continueFromExecutionId = searchParams.get('continueFrom'); // 🔥 继续/重新执行的执行ID
+  const continueMode = searchParams.get('continueMode') as 'continue' | 'reexecute' | null; // 🔥 继续执行模式：continue=保留历史，reexecute=完全重置
+  const fromTab = searchParams.get('fromTab') as 'cases' | 'executions' | null; // 🔥 来源tab，用于返回时恢复
   const { user } = useAuth();
 
   const [loading, setLoading] = useState(true);
@@ -74,10 +81,23 @@ export function TestPlanExecute() {
   // 🔥 使用 ref 跟踪是否已提交结果，避免依赖问题
   const hasSubmittedResultsRef = useRef(false);
   const executionIdRef = useRef<string>('');
+  // 🔥 使用 ref 跟踪当前用例的开始时间
+  const caseStartTimeRef = useRef<string>('');
+  
+  // 🔥 退出确认相关状态
+  const [showExitConfirm, setShowExitConfirm] = useState(false);
+  const [isExiting, setIsExiting] = useState(false);
   
   // 当前用例的详细数据
   const [currentTestCase, setCurrentTestCase] = useState<Record<string, unknown> | null>(null);
   const [loadingCase, setLoadingCase] = useState(false);
+
+  // 🔥 返回测试计划详情页的辅助函数（携带来源tab状态）
+  const navigateBackToPlan = useCallback(() => {
+    navigate(`/test-plans/${id}`, { 
+      state: fromTab ? { activeTab: fromTab } : undefined 
+    });
+  }, [navigate, id, fromTab]);
 
   // 计时器
   useEffect(() => {
@@ -86,6 +106,155 @@ export function TestPlanExecute() {
     }, 1000);
     return () => clearInterval(timer);
   }, []);
+
+  // 🔥 判断是否有未完成的执行（用于阻止退出）
+  const hasUnfinishedExecution = useMemo(() => {
+    // 🔥 继续执行模式下，即使executionId还没设置，也应该阻止退出
+    if (continueFromExecutionId) return true;
+    // 如果没有执行ID，说明还没开始执行
+    if (!executionId) return false;
+    // 如果是正在执行UI自动化，也需要阻止
+    if (executing) return true;
+    // 如果有用例但还没全部完成
+    const completedCount = Array.from(caseStates.values()).filter(s => s.completed).length;
+    return planCases.length > 0 && completedCount < planCases.length;
+  }, [continueFromExecutionId, executionId, executing, caseStates, planCases]);
+  
+  // 使用 ref 跟踪 hasUnfinishedExecution，避免闭包问题
+  const hasUnfinishedExecutionRef = useRef(hasUnfinishedExecution);
+  hasUnfinishedExecutionRef.current = hasUnfinishedExecution;
+
+  // 🔥 beforeunload 事件监听 - 阻止关闭/刷新页面
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (hasUnfinishedExecutionRef.current) {
+        e.preventDefault();
+        // 现代浏览器会忽略自定义消息，但仍需设置 returnValue
+        e.returnValue = '您有未完成的测试执行，确定要离开吗？';
+        return e.returnValue;
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, []);
+
+  // 🔥 popstate 事件监听 - 阻止浏览器后退按钮
+  useEffect(() => {
+    // 添加一个历史记录条目，用于捕获后退操作
+    if (hasUnfinishedExecution && !isExiting) {
+      window.history.pushState({ preventBack: true }, '');
+    }
+
+    const handlePopState = () => {
+      if (hasUnfinishedExecutionRef.current && !isExiting) {
+        // 阻止后退，重新推入历史记录
+        window.history.pushState({ preventBack: true }, '');
+        // 显示确认弹窗
+        setShowExitConfirm(true);
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+    };
+  }, [hasUnfinishedExecution, isExiting]);
+
+  // 🔥 确认退出并更新执行状态
+  const handleConfirmExit = async () => {
+    setIsExiting(true);
+    
+    try {
+      // 更新执行状态为已取消
+      if (executionId) {
+        const completedCount = Array.from(caseStates.values()).filter(s => s.completed).length;
+        const passedCount = Array.from(caseStates.values()).filter(s => s.finalResult === 'pass').length;
+        const failedCount = Array.from(caseStates.values()).filter(s => s.finalResult === 'fail').length;
+        const blockedCount = Array.from(caseStates.values()).filter(s => s.finalResult === 'block').length;
+        const skippedCount = Array.from(caseStates.values()).filter(s => s.finalResult === 'skip').length;
+        
+        // 构建已执行的用例结果
+        const executionResults = planCases
+          .filter(pc => {
+            const state = caseStates.get(pc.case_id);
+            return state && state.completed === true;
+          })
+          .map((pc) => {
+            const state = caseStates.get(pc.case_id);
+            if (!state) return null;
+            
+            return {
+              case_id: pc.case_id,
+              case_name: pc.case_name,
+              case_type: pc.case_type,
+              result: state.finalResult,
+              // 🔥 修复：使用 executionDetails 中的时间，而不是当前时间
+              executed_at: state.executionDetails?.finished_at || new Date().toISOString(),
+              executor_name: user?.accountName || user?.username,
+              execution_id: state.executionDetails?.execution_id,
+              duration_ms: state.executionDetails?.duration_ms,
+              actualResult: state.executionDetails?.actualResult,
+              comments: state.executionDetails?.comments,
+              totalSteps: state.executionDetails?.totalSteps,
+              completedSteps: state.executionDetails?.completedSteps,
+              passedSteps: state.executionDetails?.passedSteps,
+              failedSteps: state.executionDetails?.failedSteps,
+              blockedSteps: state.executionDetails?.blockedSteps,
+              screenshots: state.executionDetails?.screenshots,
+              execution_status: 'completed' as const,
+              // 🔥 修复：添加缺失的时间字段
+              started_at: state.executionDetails?.started_at,
+              finished_at: state.executionDetails?.finished_at,
+              // 🔥 保存步骤执行结果，以便继续执行时恢复
+              stepResults: state.executionDetails?.stepResults,
+            };
+          })
+          .filter(Boolean);
+
+        await testPlanService.updateTestPlanExecution(executionId, {
+          status: 'cancelled',
+          progress: Math.round((completedCount / planCases.length) * 100),
+          completed_cases: completedCount,
+          passed_cases: passedCount,
+          failed_cases: failedCount,
+          blocked_cases: blockedCount,
+          skipped_cases: skippedCount,
+          finished_at: new Date(),
+          // 🔥 修复：使用每条用例的 duration_ms 总和
+          duration_ms: executionResults.reduce((sum, r) => sum + ((r as Record<string, unknown>).duration_ms as number || 0), 0),
+          execution_results: executionResults,
+          error_message: '用户中途退出执行',
+        });
+        
+        console.log('✅ 执行状态已更新为已取消');
+        showToast.info('执行已取消');
+      }
+    } catch (error) {
+      console.error('更新执行状态失败:', error);
+    }
+
+    setShowExitConfirm(false);
+    
+    // 导航回测试计划详情页（携带来源tab状态）
+    navigateBackToPlan();
+  };
+
+  // 🔥 取消退出
+  const handleCancelExit = () => {
+    setShowExitConfirm(false);
+  };
+
+  // 🔥 处理返回按钮点击
+  const handleBackClick = () => {
+    if (hasUnfinishedExecution) {
+      setShowExitConfirm(true);
+    } else {
+      navigateBackToPlan();
+    }
+  };
 
   // 格式化时间
   const formattedTime = useMemo(() => {
@@ -99,6 +268,7 @@ export function TestPlanExecute() {
 
     setLoading(true);
     let createdExecutionId: string | null = null;
+    let initialCaseIndex = 0; // 🔥 用于跟踪继续执行时的初始用例索引
     
     try {
       // 获取测试计划详情
@@ -123,36 +293,191 @@ export function TestPlanExecute() {
 
       if (filteredCases.length === 0) {
         showToast.error('没有找到要执行的用例');
-        navigate(`/test-plans/${id}`);
+        navigateBackToPlan();
         return;
       }
 
       setPlanCases(filteredCases);
 
-      // 🔥 修复：在确认有用例后再创建执行记录
-      try {
-        const execution = await testPlanService.startTestPlanExecution({
-          plan_id: parseInt(id),
-          executor_id: user.id,
-          execution_type: executionType,
-          case_ids: filteredCases.map((c) => c.case_id),
-        });
-        createdExecutionId = execution.id;
-        setExecutionId(execution.id);
-        executionIdRef.current = execution.id;
-      } catch (execError) {
-        console.error('创建执行记录失败:', execError);
-        showToast.error('创建执行记录失败');
-        navigate(`/test-plans/${id}`);
-        return;
+      // 🔥 继续执行或重新执行模式：复用之前的执行记录
+      if (continueFromExecutionId) {
+        const isReexecute = continueMode === 'reexecute';
+        console.log(`🔄 ${isReexecute ? '重新执行' : '继续执行'}模式，复用执行记录:`, continueFromExecutionId);
+        
+        try {
+          // 获取之前的执行详情
+          const previousExecution = await testPlanService.getTestPlanExecutionDetail(continueFromExecutionId);
+          const originalTotalCases = previousExecution.total_cases || filteredCases.length;
+          
+          if (isReexecute) {
+            // 🔥 重新执行：完全重置所有执行结果
+            await testPlanService.updateTestPlanExecution(continueFromExecutionId, {
+              status: 'running',
+              error_message: null,
+              // 🔥 重置开始时间为当前时间
+              started_at: new Date(),
+              // 🔥 清空结束时间和耗时
+              finished_at: null,
+              duration_ms: null,
+              // 🔥 重置进度为 0
+              progress: 0,
+              // 🔥 保留原来的用例数量
+              total_cases: originalTotalCases,
+              // 🔥 重置所有统计数据为 0
+              completed_cases: 0,
+              passed_cases: 0,
+              failed_cases: 0,
+              blocked_cases: 0,
+              skipped_cases: 0,
+              // 🔥 清空执行结果列表
+              execution_results: [],
+            });
+            
+            setExecutionId(continueFromExecutionId);
+            executionIdRef.current = continueFromExecutionId;
+            hasSubmittedResultsRef.current = false; // 重新执行时，还没有提交任何结果
+            
+            // 🔥 重新执行时，不恢复之前的用例状态，保持空状态
+            setCaseStates(new Map());
+            console.log(`✅ 重新执行模式：已重置所有执行状态，保留用例数量 ${originalTotalCases}`);
+            
+            showToast.success(`重新执行，共 ${filteredCases.length} 个用例`);
+          } else {
+            // 🔥 继续执行：保留之前的历史数据
+            const restoredStates = new Map<number, CaseExecutionState>();
+            
+            if (previousExecution.execution_results && Array.isArray(previousExecution.execution_results)) {
+              (previousExecution.execution_results as Array<{
+                case_id: number;
+                case_name: string;
+                case_type: string;
+                result: ExecutionResult | '';
+                execution_id?: string;
+                duration_ms?: number;
+                actualResult?: string;
+                comments?: string;
+                totalSteps?: number;
+                completedSteps?: number;
+                passedSteps?: number;
+                failedSteps?: number;
+                blockedSteps?: number;
+                started_at?: string;
+                finished_at?: string;
+                screenshots?: Array<{
+                  fileName: string;
+                  fileSize: number;
+                  mimeType: string;
+                  base64Data: string;
+                  uploadedAt: string;
+                }>;
+                // 🔥 新增：步骤执行结果
+                stepResults?: Array<{
+                  stepIndex: number;
+                  status: 'pass' | 'fail' | 'block' | null;
+                  note: string;
+                }>;
+              }>).forEach(result => {
+                if (result.result) {
+                  restoredStates.set(result.case_id, {
+                    caseId: result.case_id,
+                    caseName: result.case_name,
+                    caseType: result.case_type,
+                    finalResult: result.result,
+                    completed: true,
+                    executionDetails: {
+                      execution_id: result.execution_id,
+                      duration_ms: result.duration_ms,
+                      actualResult: result.actualResult,
+                      comments: result.comments,
+                      totalSteps: result.totalSteps,
+                      completedSteps: result.completedSteps,
+                      passedSteps: result.passedSteps,
+                      failedSteps: result.failedSteps,
+                      blockedSteps: result.blockedSteps,
+                      started_at: result.started_at,
+                      finished_at: result.finished_at,
+                      screenshots: result.screenshots,
+                      // 🔥 恢复步骤执行结果
+                      stepResults: result.stepResults,
+                    },
+                  });
+                }
+              });
+            }
+            
+            // 🔥 继续执行：更新执行状态为运行中，保留已完成的数据
+            await testPlanService.updateTestPlanExecution(continueFromExecutionId, {
+              status: 'running',
+              error_message: null,
+              // 🔥 清空结束时间（继续执行时这些需要重新计算）
+              finished_at: null,
+              duration_ms: null,
+            });
+            
+            setExecutionId(continueFromExecutionId);
+            executionIdRef.current = continueFromExecutionId;
+            hasSubmittedResultsRef.current = restoredStates.size > 0;
+            
+            // 🔥 继续执行时，恢复之前已完成用例的状态
+            setCaseStates(restoredStates);
+            console.log(`✅ 继续执行模式：已恢复 ${restoredStates.size} 个已完成用例的状态`);
+            
+            // 🔥 找到第一个未完成的用例索引
+            const firstUnfinishedIndex = filteredCases.findIndex(c => !restoredStates.has(c.case_id));
+            if (firstUnfinishedIndex > 0) {
+              initialCaseIndex = firstUnfinishedIndex;
+              setCurrentCaseIndex(firstUnfinishedIndex);
+              console.log(`✅ 继续执行模式：跳转到第 ${firstUnfinishedIndex + 1} 个用例（第一个未完成）`);
+            } else if (firstUnfinishedIndex === -1) {
+              // 所有用例都已完成，从第一个开始
+              console.log(`✅ 继续执行模式：所有用例已完成，从第一个开始`);
+            }
+            
+            const remainingCount = filteredCases.length - restoredStates.size;
+            showToast.success(`继续执行，还剩 ${remainingCount} 个用例`);
+          }
+        } catch (error) {
+          console.error('获取之前执行记录失败，将创建新的执行记录:', error);
+          // 如果获取失败，回退到创建新执行记录
+          const execution = await testPlanService.startTestPlanExecution({
+            plan_id: parseInt(id),
+            executor_id: user.id,
+            execution_type: executionType,
+            case_ids: filteredCases.map((c) => c.case_id),
+          });
+          createdExecutionId = execution.id;
+          setExecutionId(execution.id);
+          executionIdRef.current = execution.id;
+        }
+      } else {
+        // 🔥 正常模式：创建新的执行记录
+        try {
+          const execution = await testPlanService.startTestPlanExecution({
+            plan_id: parseInt(id),
+            executor_id: user.id,
+            execution_type: executionType,
+            case_ids: filteredCases.map((c) => c.case_id),
+          });
+          createdExecutionId = execution.id;
+          setExecutionId(execution.id);
+          executionIdRef.current = execution.id;
+        } catch (execError) {
+          console.error('创建执行记录失败:', execError);
+          showToast.error('创建执行记录失败');
+          navigateBackToPlan();
+          return;
+        }
       }
 
       // 如果是UI自动化，直接开始自动执行
       if (executionType === 'ui_auto') {
         await executeUIAutoCases(filteredCases);
       } else {
-        // 功能测试，加载第一个用例的详情
-        await loadCaseDetails(filteredCases[0]);
+        // 功能测试，加载用例详情
+        // 🔥 继续执行时加载第一个未完成的用例，否则加载第一个用例
+        const caseToLoad = filteredCases[initialCaseIndex] || filteredCases[0];
+        console.log(`📋 加载用例详情: 索引=${initialCaseIndex}, case_id=${caseToLoad.case_id}, case_name=${caseToLoad.case_name}`);
+        await loadCaseDetails(caseToLoad);
       }
     } catch (error) {
       console.error('加载测试计划失败:', error);
@@ -168,12 +493,12 @@ export function TestPlanExecute() {
         }
       }
       
-      navigate(`/test-plans/${id}`);
+      navigateBackToPlan();
     } finally {
       setLoading(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id, user, executionType, searchParams]);
+  }, [id, user, executionType, searchParams, continueFromExecutionId, navigateBackToPlan]);
 
   // 加载测试计划和用例
   useEffect(() => {
@@ -204,6 +529,9 @@ export function TestPlanExecute() {
       
       if (result.success && result.data) {
         setCurrentTestCase(result.data);
+        
+        // 🔥 记录当前用例的开始时间
+        caseStartTimeRef.current = new Date().toISOString();
         
         // 初始化执行状态（如果还没有）
         if (!caseStates.has(planCase.case_id)) {
@@ -330,6 +658,11 @@ export function TestPlanExecute() {
 
       // 完成执行
       try {
+        // 🔥 修复：使用每条用例的 duration_ms 总和
+        const totalDurationMs = Array.from(caseStates.values())
+          .filter(s => s.completed && s.executionDetails?.duration_ms)
+          .reduce((sum, s) => sum + (s.executionDetails?.duration_ms || 0), 0);
+        
         await testPlanService.updateTestPlanExecution(executionId, {
           status: 'completed',
           progress: 100,
@@ -337,7 +670,7 @@ export function TestPlanExecute() {
           passed_cases: passedCount,
           failed_cases: failedCount,
           finished_at: new Date(),
-          duration_ms: seconds * 1000,
+          duration_ms: totalDurationMs || seconds * 1000, // 回退到计时器值（UI自动化可能没有详细耗时）
         });
       } catch (updateError) {
         // 如果执行记录已被删除（用户取消），则忽略错误
@@ -350,7 +683,7 @@ export function TestPlanExecute() {
       
       // 延迟1秒后返回，让用户看到结果
       setTimeout(() => {
-        navigate(`/test-plans/${id}`);
+        navigateBackToPlan();
       }, 1000);
     } catch (error) {
       console.error('执行UI自动化失败:', error);
@@ -359,11 +692,16 @@ export function TestPlanExecute() {
       
       // 更新执行状态为失败
       try {
+        // 🔥 修复：使用每条用例的 duration_ms 总和
+        const failedTotalDurationMs = Array.from(caseStates.values())
+          .filter(s => s.completed && s.executionDetails?.duration_ms)
+          .reduce((sum, s) => sum + (s.executionDetails?.duration_ms || 0), 0);
+        
         await testPlanService.updateTestPlanExecution(executionId, {
           status: 'failed',
           error_message: errorMessage,
           finished_at: new Date(),
-          duration_ms: seconds * 1000,
+          duration_ms: failedTotalDurationMs || seconds * 1000, // 回退到计时器值
         });
       } catch (updateError) {
         // 如果执行记录已被删除（用户取消），则忽略错误
@@ -405,13 +743,15 @@ export function TestPlanExecute() {
     }
     
     // 从 executionDetails 恢复执行结果
+    // 🔥 注意：不恢复 executionTime，返回上一个用例后应该重新计时
     console.log('✅ [获取初始数据] 为用例恢复执行结果:', {
       case_id: currentCase.case_id,
       case_name: currentCase.case_name,
       finalResult: state.finalResult,
       actualResult长度: state.executionDetails.actualResult?.length || 0,
       comments长度: state.executionDetails.comments?.length || 0,
-      executionTime: Math.floor((state.executionDetails.duration_ms || 0) / 1000),
+      原executionTime: Math.floor((state.executionDetails.duration_ms || 0) / 1000),
+      新executionTime: '重新计时(0)',
     });
     
     // 🔥 从 base64 恢复截图数据
@@ -447,7 +787,8 @@ export function TestPlanExecute() {
       comments: state.executionDetails.comments || '',
       stepResults: state.executionDetails.stepResults || [], // 🔥 恢复步骤执行结果
       screenshots: restoredScreenshots, // 🔥 从 base64 恢复截图
-      executionTime: Math.floor((state.executionDetails.duration_ms || 0) / 1000),
+      // executionTime: Math.floor((state.executionDetails.duration_ms || 0) / 1000),
+      executionTime: 0, // 🔥 不恢复执行时长，返回上一个用例后重新计时
     };
     
     console.log('📋 [恢复执行结果] 完整数据:', {
@@ -532,6 +873,12 @@ export function TestPlanExecute() {
       );
 
       // 标记为已完成，保存完整的执行详情
+      const finishedAt = new Date();
+      // 🔥 使用真实的开始时间（从 ref 中获取），如果没有则使用当前时间作为fallback
+      const startedAt = caseStartTimeRef.current ? new Date(caseStartTimeRef.current) : new Date(finishedAt.getTime() - result.executionTime * 1000);
+      // 🔥 计算真实的耗时（毫秒）
+      const actualDurationMs = finishedAt.getTime() - startedAt.getTime();
+      
       const newState: CaseExecutionState = {
         caseId: currentCase.case_id,
         caseName: currentCase.case_name,
@@ -541,7 +888,7 @@ export function TestPlanExecute() {
         // 🔥 保存详细执行信息
         executionDetails: {
           execution_id: execution_id,
-          duration_ms: result.executionTime * 1000,
+          duration_ms: actualDurationMs, // 使用真实耗时
           actualResult: result.actualResult,
           comments: result.comments || undefined,
           totalSteps: result.stepResults.length,
@@ -549,6 +896,9 @@ export function TestPlanExecute() {
           passedSteps: result.stepResults.filter(r => r.status === 'pass').length,
           failedSteps: result.stepResults.filter(r => r.status === 'fail').length,
           blockedSteps: result.stepResults.filter(r => r.status === 'block').length,
+          // 🔥 保存时间字段
+          started_at: startedAt.toISOString(),
+          finished_at: finishedAt.toISOString(),
           screenshots: result.screenshots.map(s => ({
             fileName: s.name,
             fileSize: s.file.size,
@@ -638,9 +988,9 @@ export function TestPlanExecute() {
               case_name: pc.case_name,
               case_type: pc.case_type,
               result: result.finalResult as ExecutionResult,
-              duration_ms: result.executionTime * 1000,
+              duration_ms: actualDurationMs, // 使用真实耗时
               execution_id: execution_id,
-              executed_at: new Date().toISOString(),
+              executed_at: finishedAt.toISOString(),
               executor_name: user?.accountName || user?.username,
               // 🔥 增加详细信息字段
               actualResult: result.actualResult,
@@ -657,6 +1007,12 @@ export function TestPlanExecute() {
                 base64Data: s.preview.split(',')[1],
                 uploadedAt: new Date().toISOString(),
               })),
+              // 🔥 新增：执行状态和时间字段
+              execution_status: 'completed' as const,
+              started_at: startedAt.toISOString(),
+              finished_at: finishedAt.toISOString(),
+              // 🔥 保存步骤执行结果，以便继续执行时恢复
+              stepResults: result.stepResults,
             };
           } else if (state.executionDetails) {
             console.log(`📂 [构建executionResults] case_id ${pc.case_id} - 之前执行用例分支（有executionDetails）`);
@@ -666,7 +1022,7 @@ export function TestPlanExecute() {
               case_name: pc.case_name,
               case_type: pc.case_type,
               result: state.finalResult,
-              executed_at: new Date().toISOString(),
+              executed_at: state.executionDetails.finished_at || new Date().toISOString(),
               executor_name: user?.accountName || user?.username,
               // 从 executionDetails 中读取详细信息
               execution_id: state.executionDetails.execution_id,
@@ -679,6 +1035,12 @@ export function TestPlanExecute() {
               failedSteps: state.executionDetails.failedSteps,
               blockedSteps: state.executionDetails.blockedSteps,
               screenshots: state.executionDetails.screenshots,
+              // 🔥 新增：执行状态和时间字段
+              execution_status: 'completed' as const,
+              started_at: state.executionDetails.started_at,
+              finished_at: state.executionDetails.finished_at,
+              // 🔥 保存步骤执行结果，以便继续执行时恢复
+              stepResults: state.executionDetails.stepResults,
             };
           } else {
             console.log(`⚠️ [构建executionResults] case_id ${pc.case_id} - else分支（无executionDetails），state:`, {
@@ -687,13 +1049,19 @@ export function TestPlanExecute() {
               有executionDetails: !!state.executionDetails,
             });
             // 没有详细信息的情况（比如跳过的用例）
+            const now = new Date().toISOString();
             return {
               case_id: pc.case_id,
               case_name: pc.case_name,
               case_type: pc.case_type,
               result: state.finalResult,
-              executed_at: new Date().toISOString(),
+              executed_at: now,
               executor_name: user?.accountName || user?.username,
+              // 🔥 新增：执行状态和时间字段（跳过的用例也视为已完成）
+              execution_status: 'completed' as const,
+              started_at: now,
+              finished_at: now,
+              duration_ms: 0,
             };
           }
         })
@@ -754,7 +1122,7 @@ export function TestPlanExecute() {
             blocked_cases: result.finalResult === 'block' ? 1 : 0,
             skipped_cases: 0,
             finished_at: new Date(),
-            duration_ms: result.executionTime * 1000,
+            duration_ms: actualDurationMs, // 使用真实耗时
             execution_results: executionResults,
           });
         } catch (updateError) {
@@ -766,7 +1134,7 @@ export function TestPlanExecute() {
 
         showToast.success('执行结果已保存');
         setTimeout(() => {
-          navigate(`/test-plans/${id}`);
+          navigateBackToPlan();
         }, 1000);
         return;
       }
@@ -779,12 +1147,18 @@ export function TestPlanExecute() {
       } else {
         // 所有用例执行完成
         try {
+          // 🔥 修复：使用每条用例的 duration_ms 总和
+          const completedTotalDurationMs = executionResults.reduce(
+            (sum, r) => sum + ((r as Record<string, unknown>).duration_ms as number || 0), 
+            0
+          );
+          
           await testPlanService.updateTestPlanExecution(executionId, {
             status: 'completed',
             progress: 100,
             completed_cases: planCases.length,
             finished_at: new Date(),
-            duration_ms: seconds * 1000,
+            duration_ms: completedTotalDurationMs,
             execution_results: executionResults,
           });
         } catch (updateError) {
@@ -796,7 +1170,7 @@ export function TestPlanExecute() {
 
         showToast.success('所有用例执行完成');
         setTimeout(() => {
-          navigate(`/test-plans/${id}`);
+          navigateBackToPlan();
         }, 1000);
       }
     } catch (error) {
@@ -818,53 +1192,134 @@ export function TestPlanExecute() {
         'skip'
       );
 
+      // 🔥 修复：跳过用例也是提交结果，标记已提交
+      hasSubmittedResultsRef.current = true;
+
+      const finishedAt = new Date();
+      // 🔥 使用真实的开始时间，如果没有则使用当前时间作为fallback
+      const startedAt = caseStartTimeRef.current ? new Date(caseStartTimeRef.current) : finishedAt;
+      // 🔥 计算真实的耗时（毫秒）
+      const actualDurationMs = finishedAt.getTime() - startedAt.getTime();
+      
       const newState: CaseExecutionState = {
         caseId: currentCase.case_id,
         caseName: currentCase.case_name,
         caseType: currentCase.case_type,
         finalResult: 'skip',
         completed: true,
+        // 🔥 跳过的用例也保存执行详情，包含真实的时间信息和耗时
+        executionDetails: {
+          duration_ms: actualDurationMs,
+          totalSteps: 0,
+          completedSteps: 0,
+          passedSteps: 0,
+          failedSteps: 0,
+          blockedSteps: 0,
+          started_at: startedAt.toISOString(),
+          finished_at: finishedAt.toISOString(),
+        },
       };
 
-      setCaseStates((prev) => new Map(prev).set(currentCase.case_id, newState));
+      // 🔥 修复：构建包含当前跳过用例的完整状态 Map
+      const allCompletedCases = new Map(caseStates);
+      allCompletedCases.set(currentCase.case_id, newState); // 添加当前刚跳过的用例
 
-      // 更新执行结果列表
-      const completedCount = Array.from(caseStates.values()).filter(s => s.completed).length + 1;
-      const skippedCount = Array.from(caseStates.values()).filter(s => s.finalResult === 'skip').length + 1;
+      // 🔥 使用 allCompletedCases 更新 React 状态
+      setCaseStates(allCompletedCases);
+
+      // 更新执行结果列表（使用 allCompletedCases 计算）
+      const completedCount = Array.from(allCompletedCases.values()).filter(s => s.completed).length;
+      const passedCount = Array.from(allCompletedCases.values()).filter(s => s.finalResult === 'pass').length;
+      const failedCount = Array.from(allCompletedCases.values()).filter(s => s.finalResult === 'fail').length;
+      const blockedCount = Array.from(allCompletedCases.values()).filter(s => s.finalResult === 'block').length;
+      const skippedCount = Array.from(allCompletedCases.values()).filter(s => s.finalResult === 'skip').length;
       
-      const executionResults = planCases.slice(0, completedCount).map((pc, idx) => {
-        const state = caseStates.get(pc.case_id);
-        if (idx === currentCaseIndex) {
-          return {
-            case_id: pc.case_id,
-            case_name: pc.case_name,
-            case_type: pc.case_type,
-            result: 'skip' as ExecutionResult,
-            executed_at: new Date().toISOString(),
-            executor_name: user?.accountName || user?.username,
-          };
-        } else if (state) {
-          return {
-            case_id: pc.case_id,
-            case_name: pc.case_name,
-            case_type: pc.case_type,
-            result: state.finalResult,
-            executed_at: new Date().toISOString(),
-            executor_name: user?.accountName || user?.username,
-          };
-        }
-        return null;
-      }).filter(Boolean);
+      const executionResults = planCases
+        .filter(pc => {
+          const state = allCompletedCases.get(pc.case_id);
+          return state && state.completed === true;
+        })
+        .map((pc) => {
+          const state = allCompletedCases.get(pc.case_id);
+          if (!state) return null;
+          
+          // 🔥 当前跳过的用例
+          if (pc.case_id === currentCase.case_id) {
+            return {
+              case_id: pc.case_id,
+              case_name: pc.case_name,
+              case_type: pc.case_type,
+              result: 'skip' as ExecutionResult,
+              executed_at: finishedAt.toISOString(),
+              executor_name: user?.accountName || user?.username,
+              execution_status: 'completed' as const,
+              // 🔥 跳过的用例也记录真实的时间信息和耗时
+              started_at: startedAt.toISOString(),
+              finished_at: finishedAt.toISOString(),
+              duration_ms: actualDurationMs,
+              // 🔥 跳过的用例没有步骤执行结果
+              stepResults: [],
+            };
+          } else if (state.executionDetails) {
+            // 🔥 之前执行的用例，从 state.executionDetails 中读取完整的详细信息
+            return {
+              case_id: pc.case_id,
+              case_name: pc.case_name,
+              case_type: pc.case_type,
+              result: state.finalResult,
+              executed_at: state.executionDetails.finished_at || new Date().toISOString(),
+              executor_name: user?.accountName || user?.username,
+              execution_id: state.executionDetails.execution_id,
+              duration_ms: state.executionDetails.duration_ms,
+              actualResult: state.executionDetails.actualResult,
+              comments: state.executionDetails.comments,
+              totalSteps: state.executionDetails.totalSteps,
+              completedSteps: state.executionDetails.completedSteps,
+              passedSteps: state.executionDetails.passedSteps,
+              failedSteps: state.executionDetails.failedSteps,
+              blockedSteps: state.executionDetails.blockedSteps,
+              screenshots: state.executionDetails.screenshots,
+              execution_status: 'completed' as const,
+              // 🔥 添加时间字段
+              started_at: state.executionDetails.started_at,
+              finished_at: state.executionDetails.finished_at,
+              // 🔥 保存步骤执行结果，以便继续执行时恢复
+              stepResults: state.executionDetails.stepResults,
+            };
+          } else {
+            // 没有详细信息的情况（比如之前跳过的用例）
+            const now = new Date().toISOString();
+            return {
+              case_id: pc.case_id,
+              case_name: pc.case_name,
+              case_type: pc.case_type,
+              result: state.finalResult,
+              executed_at: now,
+              executor_name: user?.accountName || user?.username,
+              execution_status: 'completed' as const,
+              // 🔥 跳过的用例也记录时间信息
+              started_at: now,
+              finished_at: now,
+              duration_ms: 0,
+              // 🔥 没有步骤执行结果
+              stepResults: [],
+            };
+          }
+        })
+        .filter(Boolean);
 
       showToast.info('已跳过当前用例');
       
       if (currentCaseIndex < planCases.length - 1) {
-        // 更新进度
+        // 更新进度（包含完整统计数据）
         try {
           await testPlanService.updateTestPlanExecution(executionId, {
             status: 'running',
             progress: Math.round((completedCount / planCases.length) * 100),
             completed_cases: completedCount,
+            passed_cases: passedCount,
+            failed_cases: failedCount,
+            blocked_cases: blockedCount,
             skipped_cases: skippedCount,
             execution_results: executionResults,
           });
@@ -876,14 +1331,24 @@ export function TestPlanExecute() {
         }
         handleNextCase();
       } else {
-        // 最后一个用例，返回测试计划
+        // 最后一个用例，返回测试计划（包含完整统计数据）
         try {
+          // 🔥 修复：使用每条用例的 duration_ms 总和
+          const skipCompletedTotalDurationMs = executionResults.reduce(
+            (sum, r) => sum + ((r as Record<string, unknown>).duration_ms as number || 0), 
+            0
+          );
+          
           await testPlanService.updateTestPlanExecution(executionId, {
             status: 'completed',
             progress: 100,
             completed_cases: planCases.length,
+            passed_cases: passedCount,
+            failed_cases: failedCount,
+            blocked_cases: blockedCount,
+            skipped_cases: skippedCount,
             finished_at: new Date(),
-            duration_ms: seconds * 1000,
+            duration_ms: skipCompletedTotalDurationMs,
             execution_results: executionResults,
           });
         } catch (updateError) {
@@ -893,7 +1358,8 @@ export function TestPlanExecute() {
           }
         }
         
-        navigate(`/test-plans/${id}`);
+        showToast.success('所有用例执行完成');
+        navigateBackToPlan();
       }
     } catch (error) {
       console.error('跳过用例失败:', error);
@@ -1030,7 +1496,7 @@ export function TestPlanExecute() {
           {/* 顶部导航 */}
           <div className="mb-6">
             <button
-              onClick={() => navigate(`/test-plans/${id}`)}
+              onClick={handleBackClick}
               className="inline-flex items-center gap-2 text-gray-600 hover:text-gray-900 mb-4"
             >
               <ArrowLeft className="w-5 h-5" />
@@ -1077,7 +1543,7 @@ export function TestPlanExecute() {
                 <div className="w-16 h-16 text-gray-300 mx-auto mb-4">📋</div>
                 <p className="text-gray-500">没有找到要执行的用例</p>
                 <button
-                  onClick={() => navigate(`/test-plans/${id}`)}
+                  onClick={handleBackClick}
                   className="mt-4 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg"
                 >
                   返回测试计划
@@ -1108,7 +1574,7 @@ export function TestPlanExecute() {
                 {/* 返回按钮 */}
                 <div className="px-4 pt-4 pb-2 flex-shrink-0">
                   <button
-                    onClick={() => navigate(`/test-plans/${id}`)}
+                    onClick={handleBackClick}
                     className="inline-flex items-center gap-2 text-gray-600 hover:text-gray-900 transition-colors"
                   >
                     <ArrowLeft className="w-5 h-5" />
@@ -1217,7 +1683,7 @@ export function TestPlanExecute() {
                                     'font-medium',
                                     isActive ? 'text-blue-900' : 'text-gray-900'
                                   )}>
-                                    {index + 1}. {planCase.case_name}
+                                    {index + 1}. [TC_{String(planCase.case_id).padStart(5, '0')}] {planCase.case_name}
                                   </div>
                                 </div>
                                 {state?.completed && (
@@ -1269,18 +1735,19 @@ export function TestPlanExecute() {
           <TestCaseExecutor
             testCase={currentTestCase}
             onSubmit={handleSaveCurrentCase}
-            onCancel={async () => {
-              // 如果已创建执行记录，取消时删除它
-              if (executionId) {
-                try {
-                  await testPlanService.deleteTestPlanExecution(executionId);
-                  console.log('已删除执行记录:', executionId);
-                } catch (error) {
-                  console.error('删除执行记录失败:', error);
-                  // 即使删除失败也继续返回
+            onCancel={() => {
+              // 🔥 使用统一的退出确认逻辑
+              if (hasUnfinishedExecution) {
+                setShowExitConfirm(true);
+              } else {
+                // 如果已创建执行记录但没有未完成的执行，删除它
+                if (executionId && !hasSubmittedResultsRef.current) {
+                  testPlanService.deleteTestPlanExecution(executionId)
+                    .then(() => console.log('已删除执行记录:', executionId))
+                    .catch((error) => console.error('删除执行记录失败:', error));
                 }
+                navigateBackToPlan();
               }
-              navigate(`/test-plans/${id}`);
             }}
             showBatchControls={!isSingleCaseExecution}
             onPrevious={handlePrevCase}
@@ -1293,6 +1760,110 @@ export function TestPlanExecute() {
           />
         </div>
       </div>
+
+      {/* 🔥 退出确认弹窗 */}
+      {showExitConfirm && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-xl max-w-md w-full mx-4 overflow-hidden">
+            {/* 弹窗头部 */}
+            <div className="flex items-center gap-3 p-5 border-b border-gray-200 bg-yellow-50">
+              <div className="flex-shrink-0 w-10 h-10 rounded-full bg-yellow-100 flex items-center justify-center">
+                <AlertTriangle className="w-5 h-5 text-yellow-600" />
+              </div>
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900">确认退出执行</h3>
+                <p className="text-sm text-gray-600">您有未完成的测试执行</p>
+              </div>
+            </div>
+            
+            {/* 弹窗内容 */}
+            <div className="p-5">
+              <div className="mb-4">
+                <p className="text-gray-700 mb-3">
+                  当前执行进度将被保存，执行历史状态将标记为<span className="font-semibold text-yellow-600">已取消</span>。
+                </p>
+                
+                {/* 执行进度信息 */}
+                <div className="bg-gray-50 rounded-lg p-4">
+                  <div className="grid grid-cols-2 gap-3 text-sm">
+                    <div className="flex justify-between">
+                      <span className="text-gray-500">总用例数:</span>
+                      <span className="font-medium text-gray-900">{statistics.total}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-500">已完成:</span>
+                      <span className="font-medium text-blue-600">{statistics.completed}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-500">通过:</span>
+                      <span className="font-medium text-green-600">{statistics.passed}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-500">失败:</span>
+                      <span className="font-medium text-red-600">{statistics.failed}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-500">阻塞:</span>
+                      <span className="font-medium text-yellow-600">{statistics.blocked}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-500">跳过:</span>
+                      <span className="font-medium text-gray-600">{statistics.skipped}</span>
+                    </div>
+                    {/* <div className="flex justify-between">
+                      <span className="text-gray-500">已用时间:</span>
+                      <span className="font-medium text-gray-900">{formattedTime}</span>
+                    </div> */}
+                  </div>
+                  
+                  {/* 进度条 */}
+                  <div className="mt-3">
+                    <div className="flex justify-between text-xs text-gray-500 mb-1">
+                      <span>执行进度</span>
+                      <span>{Math.round((statistics.completed / statistics.total) * 100)}%</span>
+                    </div>
+                    <div className="w-full bg-gray-200 rounded-full h-2">
+                      <div
+                        className="bg-blue-600 h-2 rounded-full transition-all"
+                        style={{ width: `${(statistics.completed / statistics.total) * 100}%` }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+              
+              <p className="text-sm text-gray-500">
+                确定要退出吗？已提交的执行结果将会保留。
+              </p>
+            </div>
+            
+            {/* 弹窗按钮 */}
+            <div className="flex items-center justify-end gap-3 p-5 border-t border-gray-200 bg-gray-50">
+              <button
+                onClick={handleCancelExit}
+                disabled={isExiting}
+                className="px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50"
+              >
+                继续执行
+              </button>
+              <button
+                onClick={handleConfirmExit}
+                disabled={isExiting}
+                className="px-4 py-2 text-white bg-yellow-600 rounded-lg hover:bg-yellow-700 transition-colors disabled:opacity-50 flex items-center gap-2"
+              >
+                {isExiting ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    正在保存...
+                  </>
+                ) : (
+                  '确认退出'
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

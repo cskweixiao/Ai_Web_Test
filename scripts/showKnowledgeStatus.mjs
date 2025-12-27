@@ -28,7 +28,7 @@ function getSystemName(collectionName) {
 
 async function main() {
   try {
-    console.log('📊 TestFlow 知识库状态总览\n');
+    console.log('📊 Sakura AI 知识库状态总览\n');
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
 
     // 获取所有集合

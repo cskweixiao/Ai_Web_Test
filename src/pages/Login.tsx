@@ -145,7 +145,7 @@ export const Login: React.FC = () => {
               <div className="w-full h-full bg-white rounded-xl p-2 flex items-center justify-center">
                 <img
                   src="/logo.png"
-                  alt="TestFlow Logo"
+                  alt="Sakura AI Logo"
                   className="w-full h-full object-contain"
                 />
               </div>

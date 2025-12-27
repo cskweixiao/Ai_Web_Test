@@ -1,11 +1,11 @@
-# TestFlow 项目结构说明
+# Sakura AI 项目结构说明
 
 > 最后更新: 2025-11-10
 
 ## 📁 目录结构
 
 ```
-testflow/
+Sakura AI/
 ├── 📁 src/                      # 前端源代码
 │   ├── components/              # React组件
 │   ├── pages/                   # 页面组件
@@ -113,7 +113,7 @@ testflow/
 - `MCP_DEPLOYMENT_GUIDE.md` - MCP部署指南
 - `TEST_EXECUTION_PERFORMANCE_OPTIMIZATION.md` - 性能优化
 - `AI_CONFIG_OPTIMIZATION.md` - AI配置优化
-- `TestFlow系统功能介绍文档.md` - 功能说明
+- `Sakura AI系统功能介绍文档.md` - 功能说明
 - 等等...
 
 ---

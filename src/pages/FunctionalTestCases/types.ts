@@ -1,8 +1,9 @@
-export type ExecutionStatus = 'pending' | 'passed' | 'failed' | 'blocked';
+// 执行结果：与 src/types/testPlan.ts 保持一致
+export type ExecutionResult = 'pass' | 'fail' | 'block' | 'skip' | 'pending';
 
 export interface ExecutionLog {
     id: string;
-    status: ExecutionStatus;
+    status: ExecutionResult;
     executor: string;
     time: string;
     comment?: string;
@@ -27,7 +28,7 @@ export interface TestCaseItem {
     module: string;
     priority: string;
     status: string;
-    executionStatus: ExecutionStatus;
+    executionStatus: ExecutionResult;
     lastRun?: string;
     logs: ExecutionLog[];
     created_at: string;
@@ -98,7 +99,7 @@ export interface ViewProps {
     onDeleteCase: (id: number) => void;  // 🔧 移除name参数
     onEditPoint: (point: TestPointGroup) => void;
     onDeletePoint: (pointId: number, pointName: string) => void;
-    onUpdateExecutionStatus: (caseId: number, status: ExecutionStatus) => void;
+    onUpdateExecutionStatus: (caseId: number, status: ExecutionResult) => void;
     onViewLogs: (caseId: number) => void;
     onExecuteCase: (id: number, style?: 'default' | 'alt' | 'ui-auto') => void;  // 🆕 执行用例，可选择样式（新增ui-auto）
     // 分页相关（可选，供表格视图使用）

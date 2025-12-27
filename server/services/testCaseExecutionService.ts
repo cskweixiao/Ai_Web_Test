@@ -330,6 +330,11 @@ export class TestCaseExecutionService {
         where.status = filters.status;
       }
       
+      // 🔥 新增：过滤掉关联用例已删除的记录
+      where.test_cases = {
+        deleted_at: null
+      };
+      
       console.log('📊 [TestCaseExecutionService.getExecutions] 查询条件:', JSON.stringify(where, null, 2));
       
       const executions = await this.prisma.test_case_executions.findMany({
@@ -341,6 +346,13 @@ export class TestCaseExecutionService {
               username: true,
               email: true,
               account_name: true
+            }
+          },
+          // 🔥 新增：关联 test_cases 以检查 deleted_at 字段
+          test_cases: {
+            select: {
+              id: true,
+              deleted_at: true
             }
           }
         },

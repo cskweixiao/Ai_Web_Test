@@ -18,7 +18,8 @@ import {
   ChevronLeft,
   ChevronsLeft,
   ChevronRight as ChevronRightIcon,
-  ChevronsRight
+  ChevronsRight,
+  Search
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { clsx } from 'clsx';
@@ -57,9 +58,69 @@ interface TestRun {
   }>;
   screenshots: string[];
   error?: string;
+  // 🔥 新增：测试用例相关信息，用于筛选
+  system?: string;
+  module?: string;
+  tags?: string[];
+  priority?: 'high' | 'medium' | 'low';
+  projectVersion?: string;
+  startedAt?: Date; // 用于兼容
+  finishedAt?: Date; // 用于兼容
 }
 
-export function TestRuns() {
+// 🔥 新增：搜索和筛选参数接口
+interface TestRunsFilterProps {
+  searchTerm?: string;
+  statusFilter?: string;
+  resultFilter?: string;  // 🆕 执行结果筛选
+  executorFilter?: string;
+  environmentFilter?: string;
+  systemFilter?: string; // 🔥 新增：项目筛选
+  versionFilter?: string; // 🔥 新增：版本筛选
+  moduleFilter?: string; // 🔥 新增：模块筛选
+  tagFilter?: string; // 🔥 新增：标签筛选
+  priorityFilter?: string; // 🔥 新增：优先级筛选
+  hideHeader?: boolean; // 🔥 新增：是否隐藏标题
+  hideStats?: boolean; // 🔥 新增：是否隐藏统计数据栏
+  hideViewSwitcher?: boolean; // 🔥 新增：是否隐藏视图切换器
+  externalViewMode?: 'table' | 'detailed' | 'card'; // 🔥 新增：外部控制的视图模式
+  onViewModeChange?: (mode: 'table' | 'detailed' | 'card') => void; // 🔥 新增：视图模式变化回调
+  onStopAllRef?: React.MutableRefObject<(() => void) | null>; // 🔥 新增：停止所有按钮的引用
+  onRefreshRef?: React.MutableRefObject<(() => void) | null>; // 🔥 新增：刷新按钮的引用
+  statsRef?: React.MutableRefObject<{ running: number; queued: number; completed: number; failed: number } | null>; // 🔥 新增：统计数据的引用
+  stoppingAllRef?: React.MutableRefObject<boolean | null>; // 🔥 新增：停止中状态的引用
+  onFilterOptionsUpdate?: (options: {
+    systems: string[];
+    versions: string[];
+    modules: string[];
+    tags: string[];
+    executors: string[];
+    environments: string[];
+  }) => void; // 🔥 新增：筛选选项更新回调
+}
+
+export function TestRuns({ 
+  searchTerm = '', 
+  statusFilter = '', 
+  resultFilter = '',  // 🆕 执行结果筛选
+  executorFilter = '',
+  hideStats = false,
+  hideViewSwitcher = false,
+  externalViewMode,
+  onViewModeChange, 
+  environmentFilter = '',
+  systemFilter = '',
+  versionFilter = '',
+  moduleFilter = '',
+  tagFilter = '',
+  priorityFilter = '',
+  hideHeader = false,
+  onStopAllRef,
+  onRefreshRef,
+  statsRef,
+  stoppingAllRef,
+  onFilterOptionsUpdate
+}: TestRunsFilterProps = {}) {
   // 🚀 优化：移除组件渲染日志
   // console.log('🔥 [TestRuns] 组件重新渲染，时间戳:', Date.now());
 
@@ -74,10 +135,21 @@ export function TestRuns() {
   const [selectedRunIds, setSelectedRunIds] = useState<Set<string>>(new Set());
   const [selectAll, setSelectAll] = useState(false);
   // 🔥 新增：视图模式状态（卡片视图、简单表格视图、详细表格视图）
-  const [viewMode, setViewMode] = useState<'card' | 'table' | 'detailed'>(() => {
+  const [internalViewMode, setInternalViewMode] = useState<'card' | 'table' | 'detailed'>(() => {
     const saved = localStorage.getItem('tr-viewMode');
     return saved === 'card' || saved === 'table' || saved === 'detailed' ? saved : 'card';
   });
+  
+  // 🔥 使用外部viewMode或内部viewMode
+  const viewMode = externalViewMode || internalViewMode;
+  const setViewMode = (mode: 'card' | 'table' | 'detailed') => {
+    if (onViewModeChange) {
+      onViewModeChange(mode);
+    } else {
+      setInternalViewMode(mode);
+    }
+  };
+  
   // 🔥 新增：分页状态
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
@@ -88,10 +160,12 @@ export function TestRuns() {
   useEffect(() => {
     localStorage.setItem('tr-activeTab', activeTab);
   }, [activeTab]);
-  // 🔥 保存视图模式偏好
+  // 🔥 保存视图模式偏好（仅在非外部控制时）
   useEffect(() => {
-    localStorage.setItem('tr-viewMode', viewMode);
-  }, [viewMode]);
+    if (!externalViewMode) {
+      localStorage.setItem('tr-viewMode', internalViewMode);
+    }
+  }, [internalViewMode, externalViewMode]);
   // 🔥 核心修复3：简化 selectedRun 同步逻辑，直接复用 testRuns 中的对象
   useEffect(() => {
     if (!selectedRun) return;
@@ -142,12 +216,29 @@ export function TestRuns() {
       console.log('🧹 TestRuns组件卸载，设置挂载状态为false');
     };
   }, []);
+  
+  // 🔥 新增：监听筛选条件变化，重置分页到第一页
+  React.useEffect(() => {
+    console.log('🔍 [TestRuns] 筛选条件变化，重置分页到第一页');
+    setCurrentPage(1);
+  }, [
+    searchTerm,
+    statusFilter,
+    resultFilter,
+    executorFilter,
+    environmentFilter,
+    systemFilter,
+    versionFilter,
+    moduleFilter,
+    tagFilter,
+    priorityFilter
+  ]);
 
   // 🔥 从后端API加载真实的测试运行数据 - 修复异步状态更新问题
   const loadTestRuns = React.useCallback(async () => {
     try {
       setLoading(true);
-      console.log('📊 正在加载测试运行数据...');
+      // console.log('📊 正在加载测试运行数据...');
       
       // 🔥 清理停止状态 - 与实际运行状态同步
       // 这将在数据加载完成后执行
@@ -157,208 +248,221 @@ export function TestRuns() {
         console.warn('WebSocket连接初始化失败，将使用HTTP API轮询:', error);
       });
 
-      // 🔥 添加认证header
-      const token = localStorage.getItem('authToken');
-      const headers: HeadersInit = {};
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
-      }
-
-      // 🔥 使用统一的 API 配置
-      const { getApiBaseUrl } = await import('../config/api');
-      const response = await fetch(`${getApiBaseUrl('/api/tests/runs')}`, {
-        headers
+      // 🔥 使用 testService.getAllTestRuns() 方法，支持排序
+      // 按 startedAt 降序排列，最新的测试显示在最前面
+      const apiData = await testService.getAllTestRuns({
+        sortBy: 'startedAt',
+        sortOrder: 'asc'
       });
       
-      // 🚀 修复：检查请求是否被中断
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      // 🔥 调试：查看第一个测试运行的数据结构
+      if (apiData && apiData.length > 0) {
+        const firstRun = apiData[0] as any;
+        console.log('📊 [TestRuns] API返回的第一个测试运行数据:', firstRun);
+        console.log('📊 [TestRuns] 测试运行数据结构:', {
+          hasSystem: !!firstRun.system,
+          hasModule: !!firstRun.module,
+          hasTags: !!firstRun.tags,
+          hasPriority: !!firstRun.priority,
+          hasProjectVersion: !!firstRun.projectVersion,
+          hasTestCase: !!firstRun.testCase,
+          hasCaseDetail: !!firstRun.caseDetail,
+          testCaseId: firstRun.testCaseId,
+          rawData: firstRun
+        });
       }
       
-      const data = await response.json();
+      // 🔥 批量获取测试用例信息（如果后端没有返回）
+      const testCaseIds = [...new Set((apiData || []).map((run: any) => (run as any).testCaseId).filter(Boolean))];
+      const testCaseMap = new Map<number, any>();
       
-      // 添加详细日志，查看原始数据
-      console.log('📊 API返回数据:', { success: data.success, count: data.data?.length || 0 });
-      
-      if (data.success) {
-        // 转换数据格式，确保时间字段正确
-        const runs = (data.data || []).map((run: any) => {
-          // 安全地转换日期
-          let startTime;
-          let endTime;
-          
-          try {
-            startTime = run.startTime ? new Date(run.startTime) : null;
-            // 验证日期是否有效
-            if (startTime && isNaN(startTime.getTime())) {
-              startTime = null;
-            }
-          } catch (e) {
-            console.error('无效的开始时间:', run.startTime);
-            startTime = null;
-          }
-          
-          try {
-            endTime = run.endTime ? new Date(run.endTime) : undefined;
-            // 验证日期是否有效
-            if (endTime && isNaN(endTime.getTime())) {
-              endTime = undefined;
-            }
-          } catch (e) {
-            console.error('无效的结束时间:', run.endTime);
-            endTime = undefined;
-          }
-          
-          // 补充可能缺失的字段，确保数据结构完整
-          const processedRun = {
-            id: run.id || `unknown-${Date.now()}`,
-            testCaseId: run.testCaseId || 0,
-            name: run.name || '未命名测试',
-            status: run.status || 'completed',
-            progress: run.progress || 0,
-            startTime,
-            endTime,
-            duration: run.duration || '0s',
-            totalSteps: run.totalSteps || 0,
-            completedSteps: run.completedSteps || 0,
-            passedSteps: run.passedSteps || 0,
-            failedSteps: run.failedSteps || 0,
-            executor: run.executor || 'System',
-            environment: run.environment || 'default',
-            logs: (run.logs || []).map((log: any) => {
-              let timestamp;
-              try {
-                timestamp = log.timestamp ? new Date(log.timestamp) : null;
-                if (timestamp && isNaN(timestamp.getTime())) {
-                  timestamp = null;
-                }
-              } catch (e) {
-                console.error('无效的日志时间戳:', log.timestamp);
-                timestamp = null;
-              }
-              
-              return {
-                id: log.id || `log-${Date.now()}-${Math.random()}`,
-                timestamp,
-                level: log.level || 'info',
-                message: log.message || '无日志信息',
-                stepId: log.stepId
-              };
-            }),
-            screenshots: run.screenshots || []
-          };
-          
-          // console.log('处理后的测试运行数据:', processedRun);
-          return processedRun;
-        });
-        
-        setTestRuns(runs);
-        console.log('📊 成功加载测试运行数据:', runs.length, '条记录');
-        
-        // 🔥 清理停止状态 - 只保留实际还在运行的测试
-        setStoppingTests(prev => {
-          const runningIds = new Set(runs
-            .filter(run => run.status === 'running' || run.status === 'queued')
-            .map(run => run.id)
-          );
-          
-          const cleanedSet = new Set();
-          for (const testId of prev) {
-            if (runningIds.has(testId)) {
-              cleanedSet.add(testId);
-            }
-          }
-          
-          if (cleanedSet.size !== prev.size) {
-            console.log(`🧹 清理了 ${prev.size - cleanedSet.size} 个无效的停止状态`);
-          }
-          
-          return cleanedSet;
-        });
-      } else {
-        console.error('获取测试运行失败:', data.error);
-        
-        // 尝试加载套件运行数据
+      if (testCaseIds.length > 0) {
         try {
-          const suiteResponse = await fetch(`${getApiBaseUrl('/api/suites/runs')}`);
-          const suiteData = await suiteResponse.json();
-          
-          console.log('📊 套件数据:', { success: suiteData.success, count: suiteData.data?.length || 0 });
-          
-          if (suiteData.success && suiteData.data && suiteData.data.length > 0) {
-            // 将套件运行数据转换为测试运行格式
-            const suiteRuns = suiteData.data.map((suiteRun: any) => {
-              // 安全地转换日期
-              let startTime;
-              let endTime;
-              
-              try {
-                startTime = suiteRun.startTime ? new Date(suiteRun.startTime) : null;
-                // 验证日期是否有效
-                if (startTime && isNaN(startTime.getTime())) {
-                  startTime = null;
-                }
-              } catch (e) {
-                console.error('套件运行：无效的开始时间:', suiteRun.startTime);
-                startTime = null;
-              }
-              
-              try {
-                endTime = suiteRun.endTime ? new Date(suiteRun.endTime) : undefined;
-                // 验证日期是否有效
-                if (endTime && isNaN(endTime.getTime())) {
-                  endTime = undefined;
-                }
-              } catch (e) {
-                console.error('套件运行：无效的结束时间:', suiteRun.endTime);
-                endTime = undefined;
-              }
-              
-              // 补充可能缺失的字段
-              const processedSuiteRun = {
-                id: suiteRun.id || `suite-${Date.now()}`,
-                testCaseId: suiteRun.suiteId || 0,
-                name: `Suite: ${suiteRun.suiteName || suiteRun.suiteId || 'Unknown'}`,
-                status: suiteRun.status || 'completed',
-                progress: suiteRun.progress || 0,
-                startTime,
-                endTime,
-                duration: suiteRun.duration || '0s',
-                totalSteps: suiteRun.totalCases || 0,
-                completedSteps: suiteRun.completedCases || 0,
-                passedSteps: suiteRun.passedCases || 0,
-                failedSteps: suiteRun.failedCases || 0,
-                executor: 'System',
-                environment: suiteRun.environment || 'default',
-                logs: [],
-                screenshots: [],
-                error: suiteRun.error
-              };
-              
-              // console.log('处理后的套件运行数据:', processedSuiteRun);
-              return processedSuiteRun;
-            });
-            
-            // 🚀 修复：只在组件挂载时更新状态
-            if (isMountedRef.current) {
-              setTestRuns(suiteRuns);
-              console.log('📊 成功加载套件运行数据:', suiteRuns.length, '条记录');
-            } else {
-              console.log('组件已卸载，跳过状态更新');
+          // 批量获取测试用例信息
+          const testCasePromises = testCaseIds.map(async (id: number) => {
+            try {
+              const testCase = await testService.getTestCaseById(id);
+              return { id, testCase };
+            } catch (error) {
+              console.warn(`⚠️ [TestRuns] 获取测试用例 ${id} 失败:`, error);
+              return null;
             }
-          } else {
-            console.warn('没有可用的测试运行或套件运行数据');
-            if (isMountedRef.current) {
-              setTestRuns([]);  // 设置为空数组，而不是null或undefined
+          });
+          
+          const testCaseResults = await Promise.allSettled(testCasePromises);
+          testCaseResults.forEach((result) => {
+            if (result.status === 'fulfilled' && result.value) {
+              testCaseMap.set(result.value.id, result.value.testCase);
             }
-          }
-        } catch (suiteError) {
-          console.error('获取套件运行数据失败:', suiteError);
-          if (isMountedRef.current) {
-            setTestRuns([]);  // 设置为空数组，以防错误
-          }
+          });
+          
+          console.log(`✅ [TestRuns] 成功获取 ${testCaseMap.size}/${testCaseIds.length} 个测试用例信息`);
+        } catch (error) {
+          console.error('❌ [TestRuns] 批量获取测试用例信息失败:', error);
         }
       }
+      
+      // 转换数据格式，确保时间字段正确
+      const runs = (apiData || []).map((run: any) => {
+        // 🔥 修复：优先使用 startedAt 字段，而不是 startTime
+        // startedAt 是测试实际开始时间，startTime 可能不准确
+        let startTime;
+        let endTime;
+        
+        try {
+          // 优先使用 startedAt，其次是 actualStartedAt，最后才是 startTime
+          const startTimeField = run.startedAt || run.actualStartedAt || run.startTime;
+          startTime = startTimeField ? new Date(startTimeField) : new Date(); // 使用当前时间作为默认值
+          // 验证日期是否有效
+          if (isNaN(startTime.getTime())) {
+            startTime = new Date(); // 无效时使用当前时间
+          }
+        } catch {
+          console.error('无效的开始时间:', run.startedAt || run.startTime);
+          startTime = new Date(); // 异常时使用当前时间
+        }
+        
+        try {
+          // 优先使用 finishedAt，其次是 endedAt，最后才是 endTime
+          const endTimeField = run.finishedAt || run.endedAt || run.endTime;
+          endTime = endTimeField ? new Date(endTimeField) : undefined;
+          // 验证日期是否有效
+          if (endTime && isNaN(endTime.getTime())) {
+            endTime = undefined;
+          }
+        } catch {
+          console.error('无效的结束时间:', run.finishedAt || run.endTime);
+          endTime = undefined;
+        }
+        
+        // 补充可能缺失的字段，确保数据结构完整
+        const processedRun = {
+          id: run.id || `unknown-${Date.now()}`,
+          testCaseId: run.testCaseId || 0,
+          name: run.name || '未命名测试',
+          status: run.status || 'completed',
+          progress: run.progress || 0,
+          // 🔥 修复：使用 startedAt 和 finishedAt 字段名，与组件保持一致
+          startedAt: startTime,
+          finishedAt: endTime,
+          startTime: startTime, // 兼容旧字段
+          endTime: endTime, // 兼容旧字段
+          duration: run.duration || '0s',
+          totalSteps: run.totalSteps || 0,
+          completedSteps: run.completedSteps || 0,
+          passedSteps: run.passedSteps || 0,
+          failedSteps: run.failedSteps || 0,
+          executor: run.executor || 'System',
+          environment: run.environment || 'default',
+          // 🔥 新增：从测试用例或测试运行数据中提取筛选字段
+          // 优先级：1. 测试运行数据本身 2. 嵌套的testCase对象 3. 嵌套的caseDetail对象 4. 通过testCaseId获取的测试用例信息
+          system: (run as any).system || (run as any).testCase?.system || (run as any).caseDetail?.system || testCaseMap.get(run.testCaseId)?.system || '',
+          module: (run as any).module || (run as any).testCase?.module || (run as any).caseDetail?.module || testCaseMap.get(run.testCaseId)?.module || '',
+          tags: (() => {
+            const runTags = (run as any).tags || (run as any).testCase?.tags || (run as any).caseDetail?.tags;
+            if (runTags) {
+              return Array.isArray(runTags) ? runTags : runTags.split(',').map((t: string) => t.trim());
+            }
+            const testCase = testCaseMap.get(run.testCaseId);
+            if (testCase?.tags) {
+              return Array.isArray(testCase.tags) ? testCase.tags : testCase.tags.split(',').map((t: string) => t.trim());
+            }
+            return [];
+          })(),
+          priority: (run as any).priority || (run as any).testCase?.priority || (run as any).caseDetail?.priority || testCaseMap.get(run.testCaseId)?.priority || 'medium',
+          projectVersion: (run as any).projectVersion || (run as any).testCase?.projectVersion || (run as any).caseDetail?.version || (run as any).testCase?.project_version?.version_name || testCaseMap.get(run.testCaseId)?.projectVersion || testCaseMap.get(run.testCaseId)?.project_version?.version_name || '',
+          logs: (run.logs || []).map((log: any) => {
+            let timestamp;
+            try {
+              timestamp = log.timestamp ? new Date(log.timestamp) : null;
+              if (timestamp && isNaN(timestamp.getTime())) {
+                timestamp = null;
+              }
+            } catch {
+              console.error('无效的日志时间戳:', log.timestamp);
+              timestamp = null;
+            }
+            
+            return {
+              id: log.id || `log-${Date.now()}-${Math.random()}`,
+              timestamp,
+              level: log.level || 'info',
+              message: log.message || '无日志信息',
+              stepId: log.stepId
+            };
+          }),
+          screenshots: run.screenshots || []
+        };
+        
+        return processedRun;
+      });
+      
+      // 🔥 调试：输出处理后的数据（仅第一个）
+      if (runs.length > 0) {
+        const firstRun = runs[0] as any;
+        console.log(`📊 [TestRuns] 处理后的第一个测试运行数据:`, {
+          id: firstRun.id,
+          name: firstRun.name,
+          system: firstRun.system,
+          module: firstRun.module,
+          tags: firstRun.tags,
+          priority: firstRun.priority,
+          projectVersion: firstRun.projectVersion,
+          testCaseId: firstRun.testCaseId
+        });
+      }
+      
+      setTestRuns(runs);
+      // console.log('📊 成功加载测试运行数据:', runs.length, '条记录（已按开始时间降序排列）');
+      
+      // 🔥 新增：从测试运行数据中提取筛选选项
+      if (onFilterOptionsUpdate) {
+        const systems = Array.from(new Set(runs.map((run: any) => run.system).filter(Boolean))) as string[];
+        const versions = Array.from(new Set(runs.map((run: any) => run.projectVersion).filter(Boolean))) as string[];
+        const modules = Array.from(new Set(runs.map((run: any) => run.module).filter(Boolean))) as string[];
+        const tags = Array.from(new Set(runs.flatMap((run: any) => (Array.isArray(run.tags) ? run.tags : [])).filter(Boolean))) as string[];
+        const executors = Array.from(new Set(runs.map((run: any) => run.executor).filter(Boolean))) as string[];
+        const environments = Array.from(new Set(runs.map((run: any) => run.environment).filter(Boolean))) as string[];
+        
+        console.log(`📊 [TestRuns] 提取的筛选选项:`, {
+          systems: systems.length,
+          versions: versions.length,
+          modules: modules.length,
+          tags: tags.length,
+          executors: executors.length,
+          environments: environments.length
+        });
+        
+        onFilterOptionsUpdate({
+          systems: systems.sort(),
+          versions: versions.sort(),
+          modules: modules.sort(),
+          tags: tags.sort(),
+          executors: executors.sort(),
+          environments: environments.sort()
+        });
+      }
+      
+      // 🔥 清理停止状态 - 只保留实际还在运行的测试
+      setStoppingTests(prev => {
+        const runningIds = new Set(runs
+          .filter((run: any) => run.status === 'running' || run.status === 'queued')
+          .map((run: any) => run.id)
+        );
+        
+        const cleanedSet = new Set<string>();
+        for (const testId of prev) {
+          if (runningIds.has(testId)) {
+            cleanedSet.add(testId);
+          }
+        }
+        
+        if (cleanedSet.size !== prev.size) {
+          console.log(`🧹 清理了 ${prev.size - cleanedSet.size} 个无效的停止状态`);
+        }
+        
+        return cleanedSet;
+      });
     } catch (error) {
       console.error('加载测试运行失败:', error);
       if (isMountedRef.current) {
@@ -370,7 +474,7 @@ export function TestRuns() {
         setLoading(false);
       }
     }
-  }, []); // 空依赖数组，因为函数内部没有依赖外部变量
+  }, [onFilterOptionsUpdate]); // 依赖onFilterOptionsUpdate
 
   // 🔥 优化的WebSocket消息处理 - 减少不必要的状态更新
   const updateTestRunIncrementally = useCallback((message: any) => {
@@ -746,12 +850,89 @@ export function TestRuns() {
     }
   }, [testRuns]);
 
+  // 🔥 新增：根据搜索和筛选条件过滤测试运行数据
+  const filteredTestRuns = useMemo(() => {
+    return testRuns.filter(run => {
+      // 搜索条件：匹配测试名称或测试用例ID（保持模糊搜索）
+      let matchesSearch = false;
+      if (!searchTerm) {
+        matchesSearch = true;
+      } else {
+        const searchLower = searchTerm.toLowerCase();
+        // 匹配测试运行名称
+        const matchesName = run.name.toLowerCase().includes(searchLower);
+        // 🆕 匹配测试用例ID（模糊匹配，支持部分ID搜索）
+        const matchesId = run.testCaseId && String(run.testCaseId).includes(searchTerm);
+        
+        matchesSearch = matchesName || matchesId;
+      }
+      
+      // 状态筛选（精确匹配）
+      const matchesStatus = !statusFilter || run.status === statusFilter;
+      
+      // 🆕 执行结果筛选：根据 status 和 steps 计算实际执行结果（精确匹配）
+      let matchesResult = true;
+      if (resultFilter) {
+        // 计算实际执行结果（使用小写值以匹配筛选选项）
+        let actualResult: string | null = null;
+        if (run.status === 'completed') {
+          if (run.failedSteps > 0) {
+            actualResult = 'fail';
+          } else if (run.passedSteps > 0) {
+            actualResult = 'pass';
+          } else {
+            actualResult = 'skip';  // 没有通过也没有失败的步骤
+          }
+        } else if (run.status === 'failed') {
+          actualResult = 'fail';
+        } else if (run.status === 'cancelled') {
+          actualResult = 'skip';
+        }
+        
+        matchesResult = actualResult === resultFilter;
+      }
+      
+      // 执行者筛选（精确匹配）
+      const matchesExecutor = !executorFilter || 
+        run.executor.toLowerCase() === executorFilter.toLowerCase();
+      
+      // 环境筛选（精确匹配）
+      const matchesEnvironment = !environmentFilter || 
+        run.environment.toLowerCase() === environmentFilter.toLowerCase();
+      
+      // 🔥 新增：项目筛选（精确匹配）
+      const matchesSystem = !systemFilter || 
+        (run.system && run.system.toLowerCase() === systemFilter.toLowerCase());
+      
+      // 🔥 新增：版本筛选（精确匹配）
+      const matchesVersion = !versionFilter || 
+        (run.projectVersion && run.projectVersion.toLowerCase() === versionFilter.toLowerCase());
+      
+      // 🔥 新增：模块筛选（精确匹配）
+      const matchesModule = !moduleFilter || 
+        (run.module && run.module.toLowerCase() === moduleFilter.toLowerCase());
+      
+      // 🔥 新增：标签筛选（精确匹配）
+      const matchesTag = !tagFilter || 
+        (run.tags && Array.isArray(run.tags) && run.tags.some(tag => 
+          tag.toLowerCase() === tagFilter.toLowerCase()
+        ));
+      
+      // 🔥 新增：优先级筛选（精确匹配）
+      const matchesPriority = !priorityFilter || run.priority === priorityFilter;
+      
+      return matchesSearch && matchesStatus && matchesResult && matchesExecutor && matchesEnvironment &&
+        matchesSystem && matchesVersion && matchesModule && matchesTag && matchesPriority;
+    });
+  }, [testRuns, searchTerm, statusFilter, resultFilter, executorFilter, environmentFilter, 
+      systemFilter, versionFilter, moduleFilter, tagFilter, priorityFilter]);
+
   // 🔥 新增：计算分页后的数据
   const paginatedTestRuns = useMemo(() => {
     const startIndex = (currentPage - 1) * pageSize;
     const endIndex = startIndex + pageSize;
-    return testRuns.slice(startIndex, endIndex);
-  }, [testRuns, currentPage, pageSize]);
+    return filteredTestRuns.slice(startIndex, endIndex);
+  }, [filteredTestRuns, currentPage, pageSize]);
 
   // 🔥 新增：全选/取消全选 - 分页场景下只选择当前页
   const handleSelectAll = useCallback(() => {
@@ -947,13 +1128,29 @@ export function TestRuns() {
 
   // 🔥 优化：使用useMemo缓存统计数据计算，避免每次渲染都重新计算
   const stats = useMemo(() => {
-    const running = testRuns.filter(run => run.status === 'running').length;
-    const queued = testRuns.filter(run => run.status === 'queued').length;
-    const completed = testRuns.filter(run => run.status === 'completed').length;
-    const failed = testRuns.filter(run => run.status === 'failed').length;
+    const running = filteredTestRuns.filter(run => run.status === 'running').length;
+    const queued = filteredTestRuns.filter(run => run.status === 'queued').length;
+    const completed = filteredTestRuns.filter(run => run.status === 'completed').length;
+    const failed = filteredTestRuns.filter(run => run.status === 'failed').length;
     
     return { running, queued, completed, failed };
-  }, [testRuns]);
+  }, [filteredTestRuns]);
+
+  // 🔥 新增：通过ref暴露函数和状态给父组件
+  useEffect(() => {
+    if (onStopAllRef) {
+      onStopAllRef.current = handleStopAllTests;
+    }
+    if (onRefreshRef) {
+      onRefreshRef.current = loadTestRuns;
+    }
+    if (statsRef) {
+      statsRef.current = stats;
+    }
+    if (stoppingAllRef) {
+      stoppingAllRef.current = stoppingAll;
+    }
+  }, [handleStopAllTests, loadTestRuns, stats, stoppingAll]);
 
   // 🔥 新增：处理每页条数变化
   const handlePageSizeChange = useCallback((newPageSize: number) => {
@@ -1227,9 +1424,9 @@ export function TestRuns() {
           {getStatusIcon(run.status)}
           <div className="flex-1">
             <div className="flex items-center space-x-3 mb-2">
-              <h4 className="font-medium text-gray-900">{run.name}</h4>
+              <h4 className="font-medium text-gray-900 truncate"  style={{ maxWidth: '1000px' }} title={run.name}>{run.name}</h4>
               <span className={clsx(
-                'inline-flex px-2 py-1 rounded-full text-xs font-medium',
+                'inline-flex px-2 py-1 rounded-md text-xs font-medium',
                 getStatusColor(run.status)
               )}>
                 {getStatusText(run.status)}
@@ -1241,10 +1438,61 @@ export function TestRuns() {
               )}
             </div>
             
+            {/* 🔥 新增：项目、版本、模块、标签、优先级 */}
+            <div className="flex items-center gap-2 flex-wrap mb-2">
+              {/* 项目 */}
+              {run.system && (
+                <span className="inline-flex items-center px-2 py-0.5 text-xs bg-blue-100 text-blue-700 rounded border border-blue-200">
+                  🖥️ {run.system}
+                </span>
+              )}
+              {/* 版本 */}
+              {run.projectVersion && (
+                <span className="inline-flex items-center px-2 py-0.5 text-xs bg-purple-100 text-purple-700 rounded border border-purple-200">
+                  📌 {run.projectVersion}
+                </span>
+              )}
+              {/* 模块 */}
+              {run.module && (
+                <span className="inline-flex items-center px-2 py-0.5 text-xs bg-green-100 text-green-700 rounded border border-green-200">
+                  📦 {run.module}
+                </span>
+              )}
+              {/* 🔥 新增：标签 */}
+              {run.tags && Array.isArray(run.tags) && run.tags.length > 0 && (
+                <div className="flex items-center flex-wrap gap-1">
+                  {run.tags.slice(0, 3).map((tag, idx) => (
+                    <span
+                      key={idx}
+                      className="inline-flex items-center px-2 py-0.5 text-xs font-medium
+                             bg-blue-50 text-blue-700 rounded border border-blue-200"
+                    >
+                      {tag}
+                    </span>
+                  ))}
+                  {run.tags.length > 3 && (
+                    <span className="text-xs text-gray-600 px-2 py-0.5">
+                      +{run.tags.length - 3}
+                    </span>
+                  )}
+                </div>
+              )}
+              {/* 优先级 */}
+              {run.priority && (
+                <span className={clsx(
+                  'inline-flex items-center px-2 py-0.5 rounded text-xs font-medium border',
+                  run.priority === 'high' ? 'bg-red-100 text-red-800 border-red-200' :
+                  run.priority === 'medium' ? 'bg-yellow-100 text-yellow-800 border-yellow-200' :
+                  'bg-gray-100 text-gray-800 border-gray-200'
+                )}>
+                  {run.priority === 'high' ? '高' : run.priority === 'medium' ? '中' : '低'}
+                </span>
+              )}
+            </div>
             {run.status === 'running' && (
               <div className="mb-2">
                 <div className="flex items-center justify-between text-xs text-gray-600 mb-1">
-                  <span>进度1 ({run.completedSteps}/{run.totalSteps})</span>
+                  <span>进度 ({run.completedSteps}/{run.totalSteps})</span>
                   <span>{run.progress}%</span>
                 </div>
                 <div className="w-full bg-gray-200 rounded-full h-2">
@@ -1255,55 +1503,49 @@ export function TestRuns() {
                 </div>
               </div>
             )}
-
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm text-gray-600">
-              <div><span className="font-medium">执行者:</span> {run.executor}</div>
-              <div><span className="font-medium">环境:</span> {run.environment}</div>
-              <div><span className="font-medium">用时:</span> {run.duration}</div>
+            <div className="flex items-center justify-between text-sm text-gray-600">
+              <div>执行者：{run.executor}</div>
+              <div>环境：{run.environment}</div>
+              <div>开始时间：{safeFormat(run.startTime, 'yyyy-MM-dd HH:mm:ss')}</div>
+              <div>结束时间：{safeFormat(run.endTime, 'yyyy-MM-dd HH:mm:ss')}</div>
+              <div>执行时长：{run.duration}</div>
+              <div className="flex items-center gap-1">
+              {(run.status === 'running' || run.status === 'queued') && (
+                <motion.button
+                  whileHover={{ scale: 1.1 }}
+                  whileTap={{ scale: 0.9 }}
+                  onClick={() => onStopTest(run)}
+                  disabled={isStoppingTest}
+                  className={clsx(
+                    "p-2 transition-colors",
+                    isStoppingTest
+                      ? "text-orange-500 cursor-not-allowed"
+                      : "text-gray-600 hover:text-red-600"
+                  )}
+                  title={isStoppingTest ? "正在停止..." : "停止测试"}
+                >
+                  {isStoppingTest ? (
+                    <RefreshCw className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Square className="h-4 w-4" />
+                  )}
+                </motion.button>
+              )}
+              {/* 🔥 只在非队列状态时显示查看日志按钮 */}
+              {run.status !== 'queued' && (
+                <motion.button
+                  whileHover={{ scale: 1.1 }}
+                  whileTap={{ scale: 0.9 }}
+                  onClick={() => onViewLogs(run)}
+                  className="p-2 text-gray-600 hover:text-blue-600 transition-colors"
+                  title="查看详细执行日志"
+                >
+                  <Terminal className="h-4 w-4" />
+                </motion.button>
+              )}
+              </div>
             </div>
           </div>
-        </div>
-
-        <div className="flex items-center space-x-2 ml-4">
-          <div className="text-right text-sm text-gray-600 mr-4">
-            <div>{safeFormat(run.startTime, 'yyyy-MM-dd HH:mm:ss')}</div>
-          </div>
-          
-          {(run.status === 'running' || run.status === 'queued') && (
-            <motion.button
-              whileHover={{ scale: 1.1 }}
-              whileTap={{ scale: 0.9 }}
-              onClick={() => onStopTest(run)}
-              disabled={isStoppingTest}
-              className={clsx(
-                "p-2 transition-colors",
-                isStoppingTest
-                  ? "text-orange-500 cursor-not-allowed"
-                  : "text-gray-600 hover:text-red-600"
-              )}
-              title={isStoppingTest ? "正在停止..." : "停止测试"}
-            >
-              {isStoppingTest ? (
-                <RefreshCw className="h-4 w-4 animate-spin" />
-              ) : (
-                <Square className="h-4 w-4" />
-              )}
-            </motion.button>
-          )}
-
-          {/* 🔥 只在非队列状态时显示查看日志按钮 */}
-          {run.status !== 'queued' && (
-            <motion.button
-              whileHover={{ scale: 1.1 }}
-              whileTap={{ scale: 0.9 }}
-              onClick={() => onViewLogs(run)}
-              className="p-2 text-gray-600 hover:text-blue-600 transition-colors"
-              title="查看详细执行日志"
-            >
-              <Terminal className="h-4 w-4" />
-            </motion.button>
-          )}
-
         </div>
       </div>
     </div>
@@ -1379,94 +1621,98 @@ export function TestRuns() {
   return (
     <ErrorFallback>
       <div className="space-y-6">
-        {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-          <div>
-            <h2 className="text-2xl font-bold text-gray-900">测试执行结果</h2>
-            <p className="text-gray-600">查看测试运行状态和断言结果</p>
-          </div>
-          <div className="flex items-center space-x-3">
-            {/* 🔥 全局停止按钮 */}
-            <motion.button
-              whileHover={{ scale: stats.running + stats.queued > 0 ? 1.02 : 1 }}
-              whileTap={{ scale: stats.running + stats.queued > 0 ? 0.98 : 1 }}
-              onClick={handleStopAllTests}
-              disabled={stoppingAll || stats.running + stats.queued === 0}
-              className={clsx(
-                "inline-flex items-center px-4 py-2 rounded-lg transition-colors font-medium",
-                stoppingAll
-                  ? "bg-orange-100 text-orange-700 cursor-not-allowed"
+        {/* Header - 仅在非隐藏模式下显示 */}
+        {!hideHeader && (
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div>
+              <h2 className="text-2xl font-bold text-gray-900">测试执行结果</h2>
+              <p className="text-gray-600">查看测试运行状态和断言结果</p>
+            </div>
+            <div className="flex items-center space-x-3">
+              {/* 🔥 全局停止按钮 */}
+              <motion.button
+                whileHover={{ scale: stats.running + stats.queued > 0 ? 1.02 : 1 }}
+                whileTap={{ scale: stats.running + stats.queued > 0 ? 0.98 : 1 }}
+                onClick={handleStopAllTests}
+                disabled={stoppingAll || stats.running + stats.queued === 0}
+                className={clsx(
+                  "inline-flex items-center px-4 py-2 rounded-lg transition-colors font-medium",
+                  stoppingAll
+                    ? "bg-orange-100 text-orange-700 cursor-not-allowed"
+                    : stats.running + stats.queued > 0
+                    ? "bg-red-600 text-white hover:bg-red-700"
+                    : "bg-gray-200 text-gray-500 cursor-not-allowed"
+                )}
+                title={
+                  stoppingAll
+                    ? "正在停止所有测试..."
+                    : stats.running + stats.queued > 0
+                    ? `停止所有运行中的测试 (${stats.running + stats.queued}个)`
+                    : "当前没有正在运行的测试"
+                }
+              >
+                {stoppingAll ? (
+                  <RefreshCw className="h-5 w-5 mr-2 animate-spin" />
+                ) : (
+                  <StopCircle className="h-5 w-5 mr-2" />
+                )}
+                {stoppingAll
+                  ? '停止中...'
                   : stats.running + stats.queued > 0
-                  ? "bg-red-600 text-white hover:bg-red-700"
-                  : "bg-gray-200 text-gray-500 cursor-not-allowed"
-              )}
-              title={
-                stoppingAll
-                  ? "正在停止所有测试..."
-                  : stats.running + stats.queued > 0
-                  ? `停止所有运行中的测试 (${stats.running + stats.queued}个)`
-                  : "当前没有正在运行的测试"
-              }
-            >
-              {stoppingAll ? (
-                <RefreshCw className="h-5 w-5 mr-2 animate-spin" />
-              ) : (
-                <StopCircle className="h-5 w-5 mr-2" />
-              )}
-              {stoppingAll
-                ? '停止中...'
-                : stats.running + stats.queued > 0
-                ? `停止所有 (${stats.running + stats.queued})`
-                : '停止所有'
-              }
-            </motion.button>
+                  ? `停止所有 (${stats.running + stats.queued})`
+                  : '停止所有'
+                }
+              </motion.button>
 
-            {/* 🔥 手动刷新按钮 - WebSocket失败时的备用方案 */}
-            <motion.button
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
-              onClick={loadTestRuns}
-              disabled={loading}
-              className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
-              title="手动刷新测试数据（通常由WebSocket自动更新）"
-            >
-              <RefreshCw className={clsx("h-5 w-5 mr-2", loading && "animate-spin")} />
-              刷新数据
-            </motion.button>
+              {/* 🔥 手动刷新按钮 - WebSocket失败时的备用方案 */}
+              <motion.button
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+                onClick={loadTestRuns}
+                disabled={loading}
+                className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
+                title="手动刷新测试数据（通常由WebSocket自动更新）"
+              >
+                <RefreshCw className={clsx("h-5 w-5 mr-2", loading && "animate-spin")} />
+                刷新数据
+              </motion.button>
+            </div>
           </div>
-        </div>
+        )}
 
         {/* 🔥 真实统计数据 */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-200">
-            <div className="flex items-center">
-              <div className="h-3 w-3 bg-blue-500 rounded-full animate-pulse mr-2"></div>
-              <div className="text-sm font-medium text-gray-600">执行中</div>
+        {!hideStats && (
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-200">
+              <div className="flex items-center">
+                <div className="h-3 w-3 bg-blue-500 rounded-full animate-pulse mr-2"></div>
+                <div className="text-sm font-medium text-gray-600">执行中</div>
+              </div>
+              <div className="text-2xl font-bold text-gray-900 mt-2">{stats.running}</div>
             </div>
-            <div className="text-2xl font-bold text-gray-900 mt-2">{stats.running}</div>
-          </div>
-          <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-200">
-            <div className="flex items-center">
-              <div className="h-3 w-3 bg-yellow-500 rounded-full mr-2"></div>
-              <div className="text-sm font-medium text-gray-600">队列中</div>
+            <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-200">
+              <div className="flex items-center">
+                <div className="h-3 w-3 bg-yellow-500 rounded-full mr-2"></div>
+                <div className="text-sm font-medium text-gray-600">队列中</div>
+              </div>
+              <div className="text-2xl font-bold text-gray-900 mt-2">{stats.queued}</div>
             </div>
-            <div className="text-2xl font-bold text-gray-900 mt-2">{stats.queued}</div>
-          </div>
-          <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-200">
-            <div className="flex items-center">
-              <div className="h-3 w-3 bg-green-500 rounded-full mr-2"></div>
-              <div className="text-sm font-medium text-gray-600">已完成</div>
+            <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-200">
+              <div className="flex items-center">
+                <div className="h-3 w-3 bg-green-500 rounded-full mr-2"></div>
+                <div className="text-sm font-medium text-gray-600">已完成</div>
+              </div>
+              <div className="text-2xl font-bold text-gray-900 mt-2">{stats.completed}</div>
             </div>
-            <div className="text-2xl font-bold text-gray-900 mt-2">{stats.completed}</div>
-          </div>
-          <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-200">
-            <div className="flex items-center">
-              <div className="h-3 w-3 bg-red-500 rounded-full mr-2"></div>
-              <div className="text-sm font-medium text-gray-600">失败</div>
+            <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-200">
+              <div className="flex items-center">
+                <div className="h-3 w-3 bg-red-500 rounded-full mr-2"></div>
+                <div className="text-sm font-medium text-gray-600">失败</div>
+              </div>
+              <div className="text-2xl font-bold text-gray-900 mt-2">{stats.failed}</div>
             </div>
-            <div className="text-2xl font-bold text-gray-900 mt-2">{stats.failed}</div>
           </div>
-        </div>
+        )}
 
         {/* 加载状态显示 */}
         {loading && (
@@ -1489,13 +1735,27 @@ export function TestRuns() {
           </div>
         )}
 
+        {/* 🔥 筛选后无结果提示 */}
+        {testRuns.length > 0 && filteredTestRuns.length === 0 && !loading && (
+          <div className="text-center py-16">
+            <div className="mx-auto w-32 h-32 mb-6 rounded-full bg-gray-100 flex items-center justify-center">
+              <Search className="h-16 w-16 text-gray-600" />
+            </div>
+            <h3 className="text-xl font-semibold text-gray-900 mb-3">没有匹配的测试运行</h3>
+            <p className="text-gray-600 mb-6 max-w-md mx-auto">
+              请尝试调整搜索条件或筛选器。
+            </p>
+          </div>
+        )}
+
         {/* 测试运行列表 */}
-        {testRuns.length > 0 && !loading && (
+        {filteredTestRuns.length > 0 && !loading && (
           <div className="space-y-4">
             {/* 🔥 视图切换和操作栏 */}
-            <div className="flex items-center justify-between">
-              {/* 视图切换器 */}
-              <div className="inline-flex items-center bg-white rounded-lg border border-gray-200 shadow-sm p-1">
+            {!hideViewSwitcher && (
+              <div className="flex items-center justify-between">
+                {/* 视图切换器 */}
+                <div className="inline-flex items-center bg-white rounded-lg border border-gray-200 shadow-sm p-1">
                 <button
                   onClick={() => setViewMode('table')}
                   className={clsx(
@@ -1553,7 +1813,8 @@ export function TestRuns() {
                   批量删除 ({selectedRunIds.size})
                 </motion.button>
               )}
-            </div>
+              </div>
+            )}
 
             {/* 🔥 根据视图模式渲染不同的组件 */}
             {viewMode === 'detailed' ? (
@@ -1589,7 +1850,7 @@ export function TestRuns() {
                   onSelectAll={handleSelectAll}
                   selectAll={selectAll}
                 />
-                <PaginationComponent total={testRuns.length} />
+                <PaginationComponent total={filteredTestRuns.length} />
               </div>
             ) : (
               // 卡片视图（原有样式）
@@ -1632,7 +1893,7 @@ export function TestRuns() {
                     />
                   ))}
                 </div>
-                <PaginationComponent total={testRuns.length} />
+                <PaginationComponent total={filteredTestRuns.length} />
               </div>
             )}
           </div>
