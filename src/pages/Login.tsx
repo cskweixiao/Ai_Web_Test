@@ -67,7 +67,7 @@ export const Login: React.FC = () => {
                 Ai Web Test
               </h1>
               <p className="text-slate-500 text-sm tracking-wide">
-                企业级智能自动化测试平台
+                WebAi自动化测试平台
               </p>
             </motion.div>
           </div>
