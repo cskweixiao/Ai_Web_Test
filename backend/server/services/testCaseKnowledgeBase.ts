@@ -79,6 +79,15 @@ export class TestCaseKnowledgeBase {
       // Gemini不使用OpenAI SDK，会在generateEmbedding中直接调用
       this.openai = null as any; // 占位，不使用
       console.log(`🔗 知识库服务初始化: Qdrant=${qdrantUrl}, System=${systemName || 'default'}, Collection=${this.collectionName}, Embedding=Google Gemini（免费）`);
+    } else if (this.embeddingProvider === 'aliyun') {
+      // 使用阿里云通义千问 Embedding
+      const aliyunApiKey = process.env.ALIYUN_API_KEY || process.env.DASHSCOPE_API_KEY;
+      if (!aliyunApiKey) {
+        throw new Error('❌ 请在.env中配置ALIYUN_API_KEY或DASHSCOPE_API_KEY');
+      }
+      // 阿里云使用自定义fetch调用，会在generateEmbedding中直接调用
+      this.openai = null as any; // 占位，不使用
+      console.log(`🔗 知识库服务初始化: Qdrant=${qdrantUrl}, System=${systemName || 'default'}, Collection=${this.collectionName}, Embedding=阿里云通义千问`);
     } else {
       // 使用OpenAI兼容的API（如OpenAI、Jina等）
       const apiBaseUrl = process.env.EMBEDDING_API_BASE_URL || 'https://api.openai.com/v1';
@@ -138,6 +147,8 @@ export class TestCaseKnowledgeBase {
     try {
       if (this.useGemini) {
         return await this.generateGeminiEmbedding(text);
+      } else if (this.embeddingProvider === 'aliyun') {
+        return await this.generateAliyunEmbedding(text);
       } else {
         return await this.generateOpenAIEmbedding(text);
       }
@@ -178,7 +189,7 @@ export class TestCaseKnowledgeBase {
       throw new Error(`Gemini API错误 (${response.status}): ${errorText}`);
     }
 
-    const data = await response.json();
+    const data: any = await response.json();
 
     if (!data.embedding || !data.embedding.values) {
       throw new Error('Gemini API响应格式不正确');
@@ -207,6 +218,47 @@ export class TestCaseKnowledgeBase {
 
     console.log(`✅ OpenAI Embedding生成成功: 维度=${response.data[0].embedding.length}`);
     return response.data[0].embedding;
+  }
+
+  /**
+   * 使用阿里云通义千问生成向量
+   */
+  private async generateAliyunEmbedding(text: string): Promise<number[]> {
+    const apiKey = process.env.ALIYUN_API_KEY || process.env.DASHSCOPE_API_KEY;
+    const model = process.env.ALIYUN_EMBEDDING_MODEL || 'text-embedding-v2';
+
+    console.log(`🔄 调用阿里云 Embedding API: 模型=${model}, 文本长度=${text.length}`);
+
+    const response = await fetch(
+      'https://dashscope.aliyuncs.com/api/v1/services/embeddings/text-embedding/text-embedding',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`
+        },
+        body: JSON.stringify({
+          model: model,
+          input: {
+            texts: [text]
+          }
+        })
+      }
+    );
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`阿里云 API错误 (${response.status}): ${errorText}`);
+    }
+
+    const data: any = await response.json();
+
+    if (!data.output || !data.output.embeddings || !data.output.embeddings[0] || !data.output.embeddings[0].embedding) {
+      throw new Error('阿里云 API响应格式不正确: ' + JSON.stringify(data));
+    }
+
+    console.log(`✅ 阿里云 Embedding生成成功: 维度=${data.output.embeddings[0].embedding.length}`);
+    return data.output.embeddings[0].embedding;
   }
 
   /**
