@@ -223,9 +223,15 @@ export class TestCaseKnowledgeBase {
     if (!apiKey) {
       throw new Error('❌ 使用阿里云 Embedding 需要配置 ALIYUN_API_KEY 或 DASHSCOPE_API_KEY。\n💡 请在 .env 中添加：ALIYUN_API_KEY=your_api_key');
     }
-    const model = process.env.ALIYUN_EMBEDDING_MODEL || 'text-embedding-v2';
+    
+    // 检查是否使用占位符
+    if (apiKey === 'your_aliyun_api_key_here' || apiKey === 'your_dashscope_api_key_here' || apiKey === 'your_aliyun_key') {
+      throw new Error('❌ 阿里云 API Key 是占位符，需要替换为真实的 Key。\n💡 请访问 https://dashscope.console.aliyun.com/apiKey 获取真实的 API Key\n💡 然后在 .env 中更新：ALIYUN_API_KEY=sk-your-real-key');
+    }
+    
+    const model = process.env.ALIYUN_EMBEDDING_MODEL || 'text-embedding-v4';
 
-    console.log(`🔄 调用阿里云 Embedding API: 模型=${model}, 文本长度=${text.length}`);
+    console.log(`🔄 调用阿里云 Embedding API: 模型=${model}, 文本长度=${text.length}, API Key=${apiKey.substring(0, 10)}...`);
 
     const response = await fetch(
       'https://dashscope.aliyuncs.com/api/v1/services/embeddings/text-embedding/text-embedding',
