@@ -72,20 +72,12 @@ export class TestCaseKnowledgeBase {
 
     if (this.useGemini) {
       // 使用Google Gemini Embedding（免费）
-      const geminiApiKey = process.env.GEMINI_API_KEY;
-      if (!geminiApiKey) {
-        throw new Error('❌ 请在.env中配置GEMINI_API_KEY');
-      }
-      // Gemini不使用OpenAI SDK，会在generateEmbedding中直接调用
+      // API Key 延迟检查，在实际使用时验证
       this.openai = null as any; // 占位，不使用
       console.log(`🔗 知识库服务初始化: Qdrant=${qdrantUrl}, System=${systemName || 'default'}, Collection=${this.collectionName}, Embedding=Google Gemini（免费）`);
     } else if (this.embeddingProvider === 'aliyun') {
       // 使用阿里云通义千问 Embedding
-      const aliyunApiKey = process.env.ALIYUN_API_KEY || process.env.DASHSCOPE_API_KEY;
-      if (!aliyunApiKey) {
-        throw new Error('❌ 请在.env中配置ALIYUN_API_KEY或DASHSCOPE_API_KEY');
-      }
-      // 阿里云使用自定义fetch调用，会在generateEmbedding中直接调用
+      // API Key 延迟检查，在实际使用时验证
       this.openai = null as any; // 占位，不使用
       console.log(`🔗 知识库服务初始化: Qdrant=${qdrantUrl}, System=${systemName || 'default'}, Collection=${this.collectionName}, Embedding=阿里云通义千问`);
     } else {
@@ -163,6 +155,9 @@ export class TestCaseKnowledgeBase {
    */
   private async generateGeminiEmbedding(text: string): Promise<number[]> {
     const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      throw new Error('❌ 使用 Gemini Embedding 需要配置 GEMINI_API_KEY。\n💡 提示：可以在 .env 中设置 EMBEDDING_PROVIDER=aliyun 来使用阿里云服务');
+    }
     const model = 'text-embedding-004';
 
     console.log(`🔄 调用Gemini Embedding API: 模型=${model}, 文本长度=${text.length}`);
@@ -225,6 +220,9 @@ export class TestCaseKnowledgeBase {
    */
   private async generateAliyunEmbedding(text: string): Promise<number[]> {
     const apiKey = process.env.ALIYUN_API_KEY || process.env.DASHSCOPE_API_KEY;
+    if (!apiKey) {
+      throw new Error('❌ 使用阿里云 Embedding 需要配置 ALIYUN_API_KEY 或 DASHSCOPE_API_KEY。\n💡 请在 .env 中添加：ALIYUN_API_KEY=your_api_key');
+    }
     const model = process.env.ALIYUN_EMBEDDING_MODEL || 'text-embedding-v2';
 
     console.log(`🔄 调用阿里云 Embedding API: 模型=${model}, 文本长度=${text.length}`);
