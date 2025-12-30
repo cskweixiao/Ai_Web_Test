@@ -41,94 +41,130 @@ import { TabProvider } from './contexts/TabContext';
 import { testService } from './services/testService';
 import './styles/globals.css';
 
+// 浅色主题 - 浅蓝色风格 (Chrome 适配优化版)
 const antdThemeConfig = {
   token: {
-    colorPrimary: '#3b82f6',
-    colorBgBase: '#f9fafb',
+    // 颜色系统 - 使用更清新的浅蓝色 (Sky Blue)
+    colorPrimary: '#0ea5e9', // Sky 500 - 保持良好的对比度
+    colorPrimaryActive: '#0284c7', // Sky 600
+    colorPrimaryHover: '#38bdf8', // Sky 400
+    
+    // 背景色 - 使用冷灰色系 (Slate) 配合蓝色
+    colorBgBase: '#f8fafc', // Slate 50
     colorBgContainer: '#ffffff',
-    colorBgLayout: '#f9fafb',
-    colorText: '#111827',
-    colorTextSecondary: '#6b7280',
-    colorTextTertiary: '#6b7280',
-    colorBorder: '#e5e7eb',
-    colorBorderSecondary: '#f3f4f6',
+    colorBgLayout: '#f1f5f9', // Slate 100
+    
+    // 文本色
+    colorText: '#0f172a', // Slate 900
+    colorTextSecondary: '#475569', // Slate 600
+    colorTextTertiary: '#94a3b8', // Slate 400
+    
+    // 边框色
+    colorBorder: '#e2e8f0', // Slate 200
+    colorBorderSecondary: '#f1f5f9', // Slate 100
+    
+    // 功能色
     colorSuccess: '#10b981',
     colorError: '#ef4444',
     colorWarning: '#f59e0b',
     colorInfo: '#06b6d4',
 
+    // 间距与布局 - 适配 Chrome 的舒适密度
     padding: 16,
-    paddingXS: 4,
-    paddingSM: 8,
+    paddingXS: 8,
+    paddingSM: 12,
     paddingLG: 24,
     paddingXL: 32,
 
+    // 圆角 - 现代 Chrome 风格 (更圆润)
     borderRadius: 8,
-    borderRadiusSM: 4,
+    borderRadiusSM: 6,
     borderRadiusLG: 12,
-    borderRadiusXS: 2,
+    borderRadiusXS: 4,
 
+    // 字体
     fontFamily:
-      "Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Helvetica Neue, Arial, Noto Sans, sans-serif",
-    fontSize: 16,
-    fontSizeSM: 14,
-    fontSizeLG: 18,
+      "Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'Noto Sans', sans-serif",
+    fontSize: 14, // 保持 14px 以获得最佳信息密度
+    fontSizeSM: 12,
+    fontSizeLG: 16,
     fontSizeXL: 20,
     fontWeightStrong: 600,
 
-    boxShadow: '0 1px 2px 0 rgba(0,0,0,0.05)',
-    boxShadowSecondary:
-      '0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -1px rgba(0,0,0,0.06)',
-    boxShadowTertiary:
-      '0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -2px rgba(0,0,0,0.05)',
+    // 阴影 - 更柔和的阴影
+    boxShadow: '0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1)',
+    boxShadowSecondary: '0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1)',
+    boxShadowTertiary: '0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1)',
   },
   components: {
     Layout: {
-      bodyBg: '#f9fafb',
+      bodyBg: '#f1f5f9',
       headerBg: '#ffffff',
       siderBg: '#ffffff',
       headerHeight: 64,
       headerPadding: '0 24px',
     },
     Card: {
-      boxShadowTertiary:
-        '0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -2px rgba(0,0,0,0.05)',
+      boxShadowTertiary: '0 4px 6px -1px rgb(0 0 0 / 0.05), 0 2px 4px -2px rgb(0 0 0 / 0.05)', // 更轻的卡片阴影
       borderRadiusLG: 12,
       paddingLG: 24,
       headerBg: 'transparent',
     },
     Menu: {
       itemBg: 'transparent',
-      itemSelectedBg: '#eff6ff',
-      itemSelectedColor: '#2563eb',
-      itemHoverBg: '#f9fafb',
-      itemActiveBg: '#eff6ff',
+      itemSelectedBg: '#e0f2fe', // Sky 100
+      itemSelectedColor: '#0284c7', // Sky 600
+      itemHoverBg: '#f0f9ff', // Sky 50
+      itemActiveBg: '#e0f2fe', // Sky 100
       borderRadius: 8,
+      itemHeight: 40, // 稍微增加菜单项高度，便于点击
     },
     Button: {
       borderRadius: 8,
-      controlHeight: 40,
-      paddingContentHorizontal: 24,
+      controlHeight: 36, // 36px 是 Chrome 比较标准的按钮高度
+      controlHeightSM: 28,
+      controlHeightLG: 44,
+      paddingContentHorizontal: 16,
       fontWeight: 500,
+      contentFontSize: 14,
+      colorPrimary: '#0ea5e9',
+      algorithm: true,
     },
     Input: {
       borderRadius: 8,
-      controlHeight: 40,
-      paddingBlock: 10,
+      controlHeight: 36,
+      paddingBlock: 6,
       paddingInline: 12,
+      activeBorderColor: '#0ea5e9',
+      hoverBorderColor: '#38bdf8',
     },
     Select: {
       borderRadius: 8,
-      controlHeight: 32,
+      controlHeight: 36,
     },
     Table: {
       borderRadiusLG: 12,
-      headerBg: '#f9fafb',
-      headerSplitColor: '#e5e7eb',
+      headerBg: '#f8fafc',
+      headerSplitColor: '#e2e8f0',
+      rowHoverBg: '#f0f9ff', // Sky 50
+      padding: 12, // 单元格内边距
     },
+    Tabs: {
+      itemColor: '#64748b', // Slate 500
+      itemSelectedColor: '#0ea5e9', // Sky 500
+      itemHoverColor: '#38bdf8', // Sky 400
+      inkBarColor: '#0ea5e9', // Sky 500
+    },
+    Tag: {
+      borderRadiusSM: 4,
+    },
+    Modal: {
+      borderRadiusLG: 16, // 模态框更圆润
+    }
   },
 };
 
+// 深色主题
 const darkThemeConfig = {
   token: {
     colorBgBase: '#0f172a',
@@ -139,16 +175,16 @@ const darkThemeConfig = {
     colorTextTertiary: '#94a3b8',
     colorBorder: '#334155',
     colorBorderSecondary: '#475569',
-    colorPrimary: '#3b82f6',
+    colorPrimary: '#38bdf8', // Sky 400 (在深色模式下使用稍亮的蓝色)
     colorSuccess: '#10b981',
     colorError: '#ef4444',
     colorWarning: '#f59e0b',
     colorInfo: '#06b6d4',
     fontFamily:
       "Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Helvetica Neue, Arial, Noto Sans, sans-serif",
-    borderRadius: 8,
-    borderRadiusSM: 4,
-    borderRadiusLG: 12,
+    borderRadius: 10,
+    borderRadiusSM: 6,
+    borderRadiusLG: 14,
     boxShadow: '0 1px 2px 0 rgba(0,0,0,0.25)',
     boxShadowSecondary:
       '0 4px 6px -1px rgba(0,0,0,0.3), 0 2px 4px -1px rgba(0,0,0,0.2)',
@@ -167,20 +203,29 @@ const darkThemeConfig = {
     },
     Menu: {
       itemBg: 'transparent',
-      itemSelectedBg: 'rgba(59, 130, 246, 0.1)',
+      itemSelectedBg: 'rgba(14, 165, 233, 0.15)', // Sky with opacity
       itemHoverBg: 'rgba(148, 163, 184, 0.1)',
       colorText: '#f1f5f9',
+      itemSelectedColor: '#38bdf8', // Sky 400
     },
     Button: {
       colorText: '#f1f5f9',
       colorBgContainer: '#334155',
       colorBorder: '#475569',
+      controlHeight: 36,
     },
     Input: {
       colorBgContainer: '#334155',
       colorBorder: '#475569',
       colorText: '#f1f5f9',
+      controlHeight: 36,
     },
+    Select: {
+      controlHeight: 36,
+    },
+    Table: {
+      rowHoverBg: 'rgba(14, 165, 233, 0.1)',
+    }
   },
 };
 

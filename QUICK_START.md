@@ -6,8 +6,8 @@
 
 ```bash
 # 1. 克隆项目
-git clone https://github.com/your-username/Sakura AI.git
-cd Sakura AI
+git clone https://github.com/your-username/Ai Web Test.git
+cd Ai Web Test
 
 # 2. 安装依赖
 npm install
@@ -85,5 +85,5 @@ npm start
 ## 更多帮助
 
 - 📖 [完整安装指南](docs/INSTALLATION.md)
-- 🐛 [问题反馈](https://github.com/your-username/Sakura AI/issues)
-- 💬 [讨论区](https://github.com/your-username/Sakura AI/discussions)
+- 🐛 [问题反馈](https://github.com/your-username/Ai Web Test/issues)
+- 💬 [讨论区](https://github.com/your-username/Ai Web Test/discussions)

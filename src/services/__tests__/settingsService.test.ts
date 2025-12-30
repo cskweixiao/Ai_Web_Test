@@ -101,7 +101,7 @@ describe('SettingsService', () => {
       await service.saveLLMSettings(validSettings);
       
       expect(localStorageMock.setItem).toHaveBeenCalledWith(
-        'Sakura AI_settings',
+        'Ai Web Test_settings',
         expect.stringContaining('"selectedModelId":"gpt-4o"')
       );
     });
@@ -217,7 +217,7 @@ describe('SettingsService', () => {
       await service.resetToDefaults();
       
       expect(localStorageMock.setItem).toHaveBeenCalledWith(
-        'Sakura AI_settings',
+        'Ai Web Test_settings',
         expect.stringContaining('"selectedModelId":"gpt-4o"')
       );
     });

@@ -1,4 +1,4 @@
-# Sakura AI - 开源AI测试平台：从Axure原型到自动化执行
+# Ai Web Test - 开源AI测试平台：从Axure原型到自动化执行
 
 大家好，最近在做一个开源的AI测试平台，核心功能是**AI生成测试用例**和**UI自动化执行**。
 
@@ -15,7 +15,7 @@
 
 所以做了这个项目，用AI来解决这些问题。
 
-**项目地址**: https://github.com/Sakura AI/Sakura AI
+**项目地址**: https://github.com/Ai Web Test/Ai Web Test
 **开源协议**: GPL-3.0
 
 ---
@@ -34,7 +34,7 @@
 - 没有人工审核环节，容易遗漏关键场景
 - 生成的用例无法直接落地执行
 
-**Sakura AI的解决方案**：
+**Ai Web Test的解决方案**：
 
 采用**分阶段、结构化**的生成流程，每个阶段都有明确的产物和人工审核点：
 
@@ -189,7 +189,7 @@ AI分析原型后，生成结构化的需求文档，包含：
 
 **第6步：RAG向量数据库增强（可选）**
 
-这是Sakura AI的核心优势之一。在生成测试用例时，系统会调用**Qdrant向量数据库**，自动检索四个维度的测试知识。
+这是Ai Web Test的核心优势之一。在生成测试用例时，系统会调用**Qdrant向量数据库**，自动检索四个维度的测试知识。
 
 **四个维度**：
 
@@ -380,7 +380,7 @@ test('登录测试', async ({ page }) => {
 });
 ```
 
-**Sakura AI的解决方案**：
+**Ai Web Test的解决方案**：
 
 只需要JSON格式的测试用例，系统自动转换为Playwright操作并执行：
 ```json
@@ -581,7 +581,7 @@ WebSocket实时推送状态到前端
 
 **支持的操作类型**：
 
-Sakura AI支持以下JSON操作类型（完整的Playwright操作覆盖）：
+Ai Web Test支持以下JSON操作类型（完整的Playwright操作覆盖）：
 
 | 操作类型 | 说明 | 参数示例 |
 |---------|------|---------|
@@ -654,7 +654,7 @@ Sakura AI支持以下JSON操作类型（完整的Playwright操作覆盖）：
 
 **总结**：
 
-Sakura AI的UI自动化执行核心优势：
+Ai Web Test的UI自动化执行核心优势：
 - **零代码**：只需JSON格式测试用例，不需要写Playwright代码
 - **实时监控**：WebSocket推送执行状态，可看到浏览器实时画面
 - **自动化证据**：每步自动截图，完整日志，支持视频录制
@@ -711,7 +711,7 @@ AI生成用例时会自动检索相关知识，质量提升明显：
 - 生成180个用例
 - 质量评分：平均78分
 
-**使用Sakura AI**：
+**使用Ai Web Test**：
 - 1个测试工程师，AI生成25分钟，人工审核2小时
 - 生成215个用例
 - 质量评分：平均89分
@@ -733,7 +733,7 @@ AI生成用例时会自动检索相关知识，质量提升明显：
 - 3人手动执行，2天
 - 6人天
 
-**使用Sakura AI**：
+**使用Ai Web Test**：
 - 自动化执行（并发6个），3小时
 - 1人监控
 
@@ -774,8 +774,8 @@ AI生成用例时会自动检索相关知识，质量提升明显：
 
 ```bash
 # 克隆项目
-git clone https://github.com/Sakura AI/Sakura AI.git
-cd Sakura AI
+git clone https://github.com/Ai Web Test/Ai Web Test.git
+cd Ai Web Test
 
 # 安装依赖
 npm install
@@ -828,7 +828,7 @@ DEEPSEEK_MODEL=deepseek-chat
 
 ## 欢迎试用和反馈
 
-**项目地址**: https://github.com/Sakura AI/Sakura AI
+**项目地址**: https://github.com/Ai Web Test/Ai Web Test
 
 目前已经在实际项目中使用，效果还不错。欢迎大家试用，有任何问题或建议都可以提Issue或者回复讨论。
 
@@ -837,4 +837,4 @@ DEEPSEEK_MODEL=deepseek-chat
 ---
 
 **开源协议**: GPL-3.0
-**联系方式**: support@Sakura AI.dev
+**联系方式**: support@Ai Web Test.dev

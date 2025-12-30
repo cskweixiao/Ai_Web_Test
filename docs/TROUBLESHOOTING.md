@@ -1,6 +1,6 @@
 # 🐛 故障排除指南
 
-Sakura AI 常见问题和解决方案。
+Ai Web Test 常见问题和解决方案。
 
 ---
 
@@ -134,7 +134,7 @@ npx prisma generate
 **解决**：
 ```sql
 # 确保数据库使用 utf8mb4 字符集
-ALTER DATABASE Sakura AI CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+ALTER DATABASE ai_web_test CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 ```
 
 ---
@@ -530,7 +530,7 @@ npx prisma studio
 
 ### 问题反馈
 
-- [提交 Bug](https://github.com/Sakura AI/Sakura AI/issues)
+- [提交 Bug](https://github.com/Ai Web Test/Ai Web Test/issues)
 
 ---
 

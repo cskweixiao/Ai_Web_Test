@@ -3,13 +3,18 @@
 
 export const themeTokens = {
   colors: {
-    // 主品牌色系
+    // 主品牌色系 - 浅蓝色 (Sky Blue)
     primary: {
-      50: '#eff6ff',
-      100: '#dbeafe',
-      500: '#3b82f6',  // 主色
-      600: '#2563eb',
-      900: '#1e3a8a',
+      50: '#f0f9ff',
+      100: '#e0f2fe',
+      200: '#bae6fd',
+      300: '#7dd3fc',
+      400: '#38bdf8',
+      500: '#0ea5e9',  // 主色 Sky 500
+      600: '#0284c7',
+      700: '#0369a1',
+      800: '#075985',
+      900: '#0c4a6e',
     },
     // 中性色系  
     gray: {
@@ -52,10 +57,10 @@ export const themeTokens = {
   },
   borderRadius: {
     none: '0',
-    sm: '0.25rem',   // 4px
-    md: '0.5rem',    // 8px
-    lg: '0.75rem',   // 12px
-    xl: '1rem',      // 16px
+    sm: '0.375rem',  // 6px
+    md: '0.625rem',  // 10px (Chrome-like)
+    lg: '0.875rem',  // 14px
+    xl: '1.25rem',   // 20px
     '2xl': '1.5rem', // 24px
     full: '9999px',
   },
@@ -126,34 +131,34 @@ export const antdThemeConfig = {
     colorWarning: themeTokens.colors.warning,
     colorInfo: themeTokens.colors.info,
     
-    // 间距系统 - 使用新的 spacing 系统
-    padding: 16, // themeTokens.spacing[4]
-    paddingXS: 4, // themeTokens.spacing[1] 
-    paddingSM: 8, // themeTokens.spacing[2]
-    paddingLG: 24, // themeTokens.spacing[6]
-    paddingXL: 32, // themeTokens.spacing[8]
+    // 间距系统
+    padding: 16,
+    paddingXS: 4, 
+    paddingSM: 8,
+    paddingLG: 24,
+    paddingXL: 32,
     
-    // 边框圆角 - 使用新的 borderRadius 系统
-    borderRadius: 8, // themeTokens.borderRadius.md
-    borderRadiusSM: 4, // themeTokens.borderRadius.sm  
-    borderRadiusLG: 12, // themeTokens.borderRadius.lg
+    // 边框圆角 - 更新为更现代的圆角
+    borderRadius: 10, // md
+    borderRadiusSM: 6, // sm
+    borderRadiusLG: 14, // lg
     borderRadiusXS: 2,
     
-    // 字体系统 - 使用新的 typography 系统
+    // 字体系统
     fontFamily: themeTokens.typography.fontFamily.sans.join(', '),
-    fontSize: 16, // themeTokens.typography.fontSize.base
-    fontSizeSM: 14, // themeTokens.typography.fontSize.sm
-    fontSizeLG: 18, // themeTokens.typography.fontSize.lg
-    fontSizeXL: 20, // themeTokens.typography.fontSize.xl
+    fontSize: 14, // 默认字体大小调整为14px，更符合Chrome紧凑风格
+    fontSizeSM: 12,
+    fontSizeLG: 16,
+    fontSizeXL: 20,
     fontWeightStrong: themeTokens.typography.fontWeight.semibold,
     
-    // 阴影 - 使用新的阴影系统
+    // 阴影
     boxShadow: themeTokens.shadows.sm,
     boxShadowSecondary: themeTokens.shadows.md,
     boxShadowTertiary: themeTokens.shadows.lg,
   },
   components: {
-    // 自定义组件样式 - 使用新的设计令牌
+    // 自定义组件样式
     Layout: {
       bodyBg: themeTokens.colors.gray[50],
       headerBg: '#ffffff',
@@ -163,7 +168,7 @@ export const antdThemeConfig = {
     },
     Card: {
       boxShadowTertiary: themeTokens.shadows.lg,
-      borderRadiusLG: 12,
+      borderRadiusLG: 14,
       paddingLG: 24,
       headerBg: 'transparent',
     },
@@ -173,28 +178,39 @@ export const antdThemeConfig = {
       itemSelectedColor: themeTokens.colors.primary[600],
       itemHoverBg: themeTokens.colors.gray[50],
       itemActiveBg: themeTokens.colors.primary[50],
-      borderRadius: 8,
+      borderRadius: 10,
     },
     Button: {
-      borderRadius: 8,
-      controlHeight: 40,
-      paddingContentHorizontal: 24,
+      borderRadius: 8, // 按钮保持稍微小一点的圆角
+      controlHeight: 36, // 稍微减小高度，更紧凑
+      paddingContentHorizontal: 16,
       fontWeight: themeTokens.typography.fontWeight.medium,
+      colorPrimary: themeTokens.colors.primary[500],
+      algorithm: true, // 启用算法生成悬停色
     },
     Input: {
       borderRadius: 8,
-      controlHeight: 40,
-      paddingBlock: 10,
+      controlHeight: 36,
+      paddingBlock: 8,
       paddingInline: 12,
+      activeBorderColor: themeTokens.colors.primary[500],
+      hoverBorderColor: themeTokens.colors.primary[400],
     },
     Select: {
       borderRadius: 8,
-      controlHeight: 32,
+      controlHeight: 36,
     },
     Table: {
-      borderRadiusLG: 12,
+      borderRadiusLG: 14,
       headerBg: themeTokens.colors.gray[50],
       headerSplitColor: themeTokens.colors.gray[200],
+      rowHoverBg: themeTokens.colors.primary[50], // 悬停行颜色
+    },
+    Tabs: {
+      itemColor: themeTokens.colors.gray[500],
+      itemSelectedColor: themeTokens.colors.primary[500],
+      itemHoverColor: themeTokens.colors.primary[400],
+      inkBarColor: themeTokens.colors.primary[500],
     },
   },
 };

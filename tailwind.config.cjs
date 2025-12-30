@@ -1,8 +1,15 @@
 /** @type {import('tailwindcss').Config} */
+const colors = require('tailwindcss/colors');
+
 module.exports = {
   content: ['./index.html', './src/**/*.{js,ts,jsx,tsx}'],
   theme: {
     extend: {
+      colors: {
+        // 将 Primary 和 Blue 都映射到 Sky (浅蓝色)，实现全局浅蓝色风格
+        primary: colors.sky,
+        blue: colors.sky, // 覆盖默认的 blue 为 sky
+      },
       animation: {
         'slide-in-right': 'slideInRight 0.3s ease-out',
         'fade-in': 'fadeIn 0.3s ease-out',
@@ -63,4 +70,3 @@ module.exports = {
     require('@tailwindcss/typography'),
   ],
 };
-

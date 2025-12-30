@@ -8,7 +8,7 @@
 
 | 项目 | 内容 |
 |------|------|
-| **项目名称** | Sakura AI AI Generator Redesign |
+| **项目名称** | Ai Web Test AI Generator Redesign |
 | **设计版本** | v2.0 |
 | **创建日期** | 2025-10-28 |
 | **目标页面** | `/functional-test-cases/generator` |
@@ -1005,6 +1005,6 @@ const staggerItem = {
 
 **文档版本**: v2.0
 **最后更新**: 2025-10-28
-**维护者**: Sakura AI Design Team
+**维护者**: Ai Web Test Design Team
 
 🎨 **Happy Designing!**

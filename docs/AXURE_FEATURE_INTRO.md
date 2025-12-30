@@ -1050,10 +1050,10 @@ async function batchSaveTestCases(testCases, sessionId) {
 
 ### 联系方式
 
-- 📧 **邮箱**: support@Sakura AI.com
-- 💬 **内部 Slack**: #Sakura AI-support
-- 📚 **文档中心**: https://docs.Sakura AI.com
-- 🐛 **Bug 反馈**: https://github.com/Sakura AI/issues
+- 📧 **邮箱**: support@Ai Web Test.com
+- 💬 **内部 Slack**: #Ai Web Test-support
+- 📚 **文档中心**: https://docs.Ai Web Test.com
+- 🐛 **Bug 反馈**: https://github.com/Ai Web Test/issues
 
 ### 培训资源
 
@@ -1098,4 +1098,4 @@ async function batchSaveTestCases(testCases, sessionId) {
 
 *文档版本: v1.0*
 *最后更新: 2025-10-28*
-*维护者: Sakura AI Team*
+*维护者: Ai Web Test Team*

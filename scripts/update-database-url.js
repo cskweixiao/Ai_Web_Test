@@ -92,7 +92,7 @@ try {
   console.log('📝 接下来需要：');
   console.log('   1. 重启应用（后端服务）');
   console.log('      - 开发环境：Ctrl+C 停止，然后运行 npm run dev');
-  console.log('      - 生产环境：pm2 restart Sakura AI');
+  console.log('      - 生产环境：pm2 restart Ai Web Test');
   console.log('   2. 测试创建新记录，验证时间是否正确');
   console.log('   3. (可选) 使用 scripts/fix-timezone-data.sql 修复历史数据\n');
   console.log('📚 详细说明请参考：TIMEZONE_FIX_GUIDE.md\n');

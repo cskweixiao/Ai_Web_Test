@@ -6,7 +6,7 @@
 
 ## 📖 功能概述
 
-Sakura AI 的核心创新之一：**自然语言驱动的 UI 自动化执行**。
+Ai Web Test 的核心创新之一：**自然语言驱动的 UI 自动化执行**。
 
 用户只需用自然语言描述测试步骤（如 "点击登录按钮"、"在用户名输入框输入 admin"），系统即可自动执行浏览器操作，无需编写任何代码。
 
@@ -60,7 +60,7 @@ WebDriverWait(driver, 10).until(
 - ❌ 无法处理动态数据
 - ❌ 维护成本极高（每次 UI 改变都需重新录制）
 
-### Sakura AI 自然语言执行
+### Ai Web Test 自然语言执行
 
 ```
 1. 导航到登录页面 https://example.com/login
@@ -337,7 +337,7 @@ case 'browser_click':
 
 ### 1. 无需编写代码
 
-| 传统方式 | Sakura AI |
+| 传统方式 | Ai Web Test |
 |---------|---------|
 | 需要学习 Selenium/Playwright API | 只需会写中文 |
 | 需要查找元素选择器（XPath/CSS） | AI 自动识别元素 |
@@ -352,7 +352,7 @@ case 'browser_click':
 driver.find_element(By.XPATH, "//button[@id='submit-btn']")
 ```
 
-**Sakura AI**：
+**Ai Web Test**：
 ```
 点击提交按钮  # AI 自动匹配最相关的按钮
 ```
@@ -365,7 +365,7 @@ driver.find_element(By.XPATH, "//button[@id='submit-btn']")
 
 ### 3. 自动处理复杂逻辑
 
-**Sakura AI 自动处理**：
+**Ai Web Test 自动处理**：
 - ✅ 页面加载等待
 - ✅ 元素可见性等待
 - ✅ 动态元素加载

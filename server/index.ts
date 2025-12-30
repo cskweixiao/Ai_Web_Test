@@ -470,7 +470,7 @@ async function startServer() {
       console.error('\n📋 解决方案：');
       console.error('   1. 创建 .env 文件在项目根目录');
       console.error('   2. 添加 DATABASE_URL 配置，例如：');
-      console.error('      DATABASE_URL="mysql://username:password@localhost:3306/Sakura AI"');
+      console.error('      DATABASE_URL="mysql://username:password@localhost:3306/ai_web_test"');
       console.error('\n💡 提示：可以参考 docs/CONFIGURATION.md 查看完整配置说明');
       throw new Error('DATABASE_URL 环境变量未设置');
     }

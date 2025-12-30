@@ -22,11 +22,11 @@ import type { DashboardStats, TrendData, RecentActivity } from '../services/dash
 // 统一卡片底板（不侵入子组件）
 const CardShell: React.FC<React.PropsWithChildren<{ hover?: boolean }>> = ({ children, hover = true }) => (
   <motion.div
-    className="rounded-2xl border border-slate-200/80 bg-white/75 backdrop-blur-sm shadow-sm overflow-hidden"
-    whileHover={hover ? { y: -6, boxShadow: '0 12px 30px rgba(15,23,42,0.08)' } : undefined}
-    transition={{ duration: 0.2 }}
+    className="h-full rounded-2xl border border-slate-100 bg-white/80 backdrop-blur-sm shadow-sm hover:shadow-md overflow-hidden transition-shadow duration-300"
+    whileHover={hover ? { y: -4 } : undefined}
+    transition={{ duration: 0.2, ease: 'easeOut' }}
   >
-    <div className="p-4 sm:p-5 lg:p-6">{children}</div>
+    <div className="p-5 lg:p-6 h-full">{children}</div>
   </motion.div>
 );
 
@@ -156,50 +156,38 @@ export function Dashboard() {
 
         {/* KPI 四宫格 */}
         <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.12 }}>
-          <Row gutter={[24, 24]} className="mb-8">
+          <Row gutter={[16, 16]} className="mb-8">
             <Col xs={24} sm={12} lg={6}>
-              <CardShell>
-                <StatCard
-                  icon={<TrophyOutlined />}
-                  title="成功率"
-                  value={stats.successRate.toFixed(1)}
-                  suffix="%"
-                  valueStyle={{ color: stats.successRate >= 90 ? '#16a34a' : stats.successRate >= 70 ? '#f59e0b' : '#ef4444' }}
-                />
-              </CardShell>
+              <StatCard
+                icon={<TrophyOutlined />}
+                title="成功率"
+                value={stats.successRate.toFixed(1)}
+                suffix="%"
+              />
             </Col>
             <Col xs={24} sm={12} lg={6}>
-              <CardShell>
-                <StatCard
-                  icon={<PlayCircleOutlined />}
-                  title="今日执行"
-                  value={stats.todayExecutions}
-                  suffix="次"
-                  valueStyle={{ color: '#1677ff' }}
-                />
-              </CardShell>
+              <StatCard
+                icon={<PlayCircleOutlined />}
+                title="今日执行"
+                value={stats.todayExecutions}
+                suffix="次"
+              />
             </Col>
             <Col xs={24} sm={12} lg={6}>
-              <CardShell>
-                <StatCard
-                  icon={<ClockCircleOutlined />}
-                  title="平均执行时长"
-                  value={stats.averageDuration.toFixed(1)}
-                  suffix="分钟"
-                  valueStyle={{ color: '#f59e0b' }}
-                />
-              </CardShell>
+              <StatCard
+                icon={<ClockCircleOutlined />}
+                title="平均执行时长"
+                value={stats.averageDuration.toFixed(1)}
+                suffix="分钟"
+              />
             </Col>
             <Col xs={24} sm={12} lg={6}>
-              <CardShell>
-                <StatCard
-                  icon={<BugOutlined />}
-                  title="本周失败"
-                  value={stats.weeklyFailures}
-                  suffix="个"
-                  valueStyle={{ color: '#ef4444' }}
-                />
-              </CardShell>
+              <StatCard
+                icon={<BugOutlined />}
+                title="本周失败"
+                value={stats.weeklyFailures}
+                suffix="个"
+              />
             </Col>
           </Row>
         </motion.div>

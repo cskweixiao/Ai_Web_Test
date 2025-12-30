@@ -1,4 +1,4 @@
-# Sakura AI 系统操作手册
+# Ai Web Test 系统操作手册
 
 <div align="center">
 
@@ -27,9 +27,9 @@
 
 ## 1. 系统简介
 
-### 1.1 Sakura AI 是什么？
+### 1.1 Ai Web Test 是什么？
 
-Sakura AI 是一个企业级 AI 驱动的自动化测试平台，核心特性包括：
+Ai Web Test 是一个企业级 AI 驱动的自动化测试平台，核心特性包括：
 
 - **🎨 AI测试用例生成**: 从Axure原型自动生成测试用例，效率提升20-50倍
 - **🎭 UI自动化测试**: 基于Playwright的浏览器自动化执行
@@ -79,7 +79,7 @@ Sakura AI 是一个企业级 AI 驱动的自动化测试平台，核心特性包
 
 ### 3.1 功能概述
 
-**AI测试用例生成器** 是Sakura AI的核心功能，可以从Axure原型文件一键生成完整的功能测试用例。
+**AI测试用例生成器** 是Ai Web Test的核心功能，可以从Axure原型文件一键生成完整的功能测试用例。
 
 **核心价值**:
 - ⏱️ **效率提升**: 10分钟完成2-3天的工作（提升20-50倍）
@@ -366,7 +366,7 @@ tail -f logs/server.log | grep "RAG"
 
 ### 4.1 功能概述
 
-Sakura AI 基于 **Playwright** 实现浏览器自动化测试，支持：
+Ai Web Test 基于 **Playwright** 实现浏览器自动化测试，支持：
 
 - 🌐 Chrome / Firefox / WebKit 多浏览器
 - 📡 实时WebSocket状态推送
@@ -1730,9 +1730,9 @@ A:
 
 **技术支持**:
 
-- 📧 邮箱: support@Sakura AI.dev
-- 🐛 Bug反馈: https://github.com/Sakura AI/Sakura AI/issues
-- 📚 在线文档: https://docs.Sakura AI.dev
+- 📧 邮箱: support@Ai Web Test.dev
+- 🐛 Bug反馈: https://github.com/Ai Web Test/Ai Web Test/issues
+- 📚 在线文档: https://docs.Ai Web Test.dev
 
 **反馈渠道**:
 
@@ -1743,10 +1743,10 @@ A:
 
 <div align="center">
 
-**Sakura AI - 让自动化测试变得简单而强大！** 🚀
+**Ai Web Test - 让自动化测试变得简单而强大！** 🚀
 
 版本 2.5.0 | 最后更新: 2025-11-11
 
-[⬆ 返回顶部](#Sakura AI-系统操作手册)
+[⬆ 返回顶部](#Ai Web Test-系统操作手册)
 
 </div>

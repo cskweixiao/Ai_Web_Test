@@ -24,7 +24,7 @@ const getBackendHost = (): string => {
   }
   
   // 开发环境使用 localhost
-  return '172.19.1.111';
+  return 'localhost';
 };
 
 // 构建 API 基础 URL

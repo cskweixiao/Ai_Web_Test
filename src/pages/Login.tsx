@@ -1,12 +1,9 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Form, Input, Button, Alert } from 'antd';
-import { User, Lock, ArrowRight } from 'lucide-react';
+import { UserOutlined, LockOutlined } from '@ant-design/icons';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../contexts/AuthContext';
-import NET from 'vanta/dist/vanta.net.min';
-import * as THREE from 'three';
-import '../styles/login.css';
 
 export const Login: React.FC = () => {
   const [form] = Form.useForm();
@@ -14,74 +11,6 @@ export const Login: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const { login } = useAuth();
   const navigate = useNavigate();
-
-  // VANTA.js 相关
-  const vantaRef = useRef<HTMLDivElement>(null);
-  const vantaEffect = useRef<any>(null);
-
-  // 初始化 VANTA.js NET 效果
-  useEffect(() => {
-    if (!vantaEffect.current && vantaRef.current) {
-      vantaEffect.current = NET({
-        el: vantaRef.current,
-        THREE: THREE,
-        mouseControls: true,
-        touchControls: true,
-        gyroControls: false,
-        minHeight: 200.0,
-        minWidth: 200.0,
-        scale: 1.0,
-        scaleMobile: 1.0,
-        color: 0xa855f7,        // 紫色网络线条
-        backgroundColor: 0x0f0a1e, // 深紫色背景
-        points: 8.0,            // 网络节点数量
-        maxDistance: 20.0,      // 连接线最大距离
-        spacing: 16.0,          // 节点间距
-        showDots: true          // 显示节点
-      });
-    }
-
-    // 组件卸载时清理 VANTA 实例
-    return () => {
-      if (vantaEffect.current) {
-        vantaEffect.current.destroy();
-        vantaEffect.current = null;
-      }
-    };
-  }, []);
-
-  // 生成网络背景元素（CSS 动画备用方案）
-  useEffect(() => {
-    const networkBg = document.getElementById('networkBg');
-    if (!networkBg) return;
-
-    // 清除已存在的元素
-    networkBg.innerHTML = '';
-
-    // 创建连接线
-    const lines = 20;
-    for (let i = 0; i < lines; i++) {
-      const line = document.createElement('div');
-      line.className = 'network-line';
-      line.style.top = Math.random() * 100 + '%';
-      line.style.left = '-100px';
-      line.style.width = Math.random() * 200 + 100 + 'px';
-      line.style.animationDelay = Math.random() * 20 + 's';
-      line.style.animationDuration = (Math.random() * 10 + 15) + 's';
-      networkBg.appendChild(line);
-    }
-
-    // 创建节点
-    const dots = 15;
-    for (let i = 0; i < dots; i++) {
-      const dot = document.createElement('div');
-      dot.className = 'network-dot';
-      dot.style.left = Math.random() * 100 + '%';
-      dot.style.top = Math.random() * 100 + '%';
-      dot.style.animationDelay = Math.random() * 2 + 's';
-      networkBg.appendChild(dot);
-    }
-  }, []);
 
   const handleSubmit = async (values: { username: string; password: string }) => {
     setError(null);
@@ -98,202 +27,147 @@ export const Login: React.FC = () => {
   };
 
   return (
-    <div className="h-screen relative overflow-hidden">
-      {/* VANTA.js 3D 网络背景 */}
-      <div
-        ref={vantaRef}
-        className="absolute inset-0"
-        style={{ zIndex: 0 }}
-      />
+    <div className="min-h-screen flex items-center justify-center bg-[#f0f9ff] relative overflow-hidden">
+      {/* 装饰背景圆 - 左上角 */}
+      <div className="absolute -top-20 -left-20 w-96 h-96 bg-blue-200 rounded-full mix-blend-multiply filter blur-3xl opacity-30 animate-blob"></div>
+      {/* 装饰背景圆 - 右下角 */}
+      <div className="absolute -bottom-32 -right-32 w-96 h-96 bg-sky-200 rounded-full mix-blend-multiply filter blur-3xl opacity-30 animate-blob animation-delay-2000"></div>
+      
+      {/* 渐变网格背景 */}
+      <div className="absolute inset-0 bg-[linear-gradient(to_right,#e0f2fe_1px,transparent_1px),linear-gradient(to_bottom,#e0f2fe_1px,transparent_1px)] bg-[size:4rem_4rem] [mask-image:radial-gradient(ellipse_60%_50%_at_50%_0%,#000_70%,transparent_100%)] pointer-events-none"></div>
 
-      {/* CSS 背景层（备用方案） */}
-      <div className="background-container">
-        <div className="network-background" id="networkBg"></div>
-        <div className="glow-effect glow-purple"></div>
-        <div className="glow-effect glow-blue"></div>
-      </div>
-
-      {/* 渐变背景（降级方案/VANTA加载前显示） */}
-      <div className="absolute inset-0 bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900" style={{ zIndex: -1 }} />
-
-      {/* 内容层 */}
-      <div className="relative z-10 h-screen flex items-center justify-center px-4 py-6">
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.8 }}
-          className="w-full max-w-md mx-auto"
-        >
-          {/* Logo 和标题 */}
-          <motion.div
-            className="flex flex-col items-center mb-10 py-4"
-            initial={{ opacity: 0, y: -20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.2, duration: 0.8 }}
-          >
-            {/* <motion.div
-              className="inline-flex items-center justify-center w-24 h-24 rounded-2xl bg-gradient-to-br from-purple-500 to-blue-600 mb-6 shadow-2xl shadow-purple-500/50 p-2"
-              animate={{
-                boxShadow: [
-                  '0 0 20px rgba(168, 85, 247, 0.5)',
-                  '0 0 60px rgba(168, 85, 247, 0.8)',
-                  '0 0 20px rgba(168, 85, 247, 0.5)',
-                ],
-              }}
-              transition={{ duration: 2, repeat: Infinity }}
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.6, ease: "easeOut" }}
+        className="w-full max-w-md px-4 relative z-10"
+      >
+        <div className="bg-white/80 backdrop-blur-xl rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-white p-8 md:p-10">
+          {/* Logo 区域 */}
+          <div className="text-center mb-10">
+            <motion.div
+              initial={{ scale: 0.8, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              transition={{ delay: 0.2, duration: 0.5 }}
+              className="inline-flex items-center justify-center w-20 h-20 mb-6 bg-blue-50 rounded-2xl p-4 shadow-sm"
             >
-              <div className="w-full h-full bg-white rounded-xl p-2 flex items-center justify-center">
-                <img
-                  src="/logo.png"
-                  alt="Sakura AI Logo"
-                  className="w-full h-full object-contain"
-                />
-              </div>
-            </motion.div> */}
-
-            <div className="w-[110px] h-[110px] mb-0 flex items-center justify-center">
               <img
                 src="/logo1.svg"
-                alt="Sakura Logo"
+                alt="Ai Web Test Logo"
                 className="w-full h-full object-contain"
               />
-            </div>
-            <h1 className="text-4xl font-bold mb-2 bg-clip-text text-transparent bg-gradient-to-r from-purple-300 via-purple-200 to-purple-100 drop-shadow-[0_0_8px_rgba(168,85,247,0.5)]">
-              Sakura AI
-            </h1>
-            <p className="text-sm font-light tracking-[0.15em] bg-clip-text text-transparent bg-gradient-to-r from-purple-300/90 via-purple-200/80 to-purple-100/90 drop-shadow-[0_0_4px_rgba(168,85,247,0.4)]">
-              企业级 · 智能自动化平台
-            </p>
-          </motion.div>
-
-          {/* 登录卡片 */}
-          <motion.div
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ delay: 0.3, duration: 0.5 }}
-            className="backdrop-blur-xl bg-white/10 rounded-3xl p-8 shadow-2xl border border-white/20"
-          >
-            <AnimatePresence mode="wait">
-              {error && (
-                <motion.div
-                  initial={{ opacity: 0, y: -10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -10 }}
-                  className="mb-6"
-                >
-                  <Alert
-                    message={error}
-                    type="error"
-                    closable
-                    onClose={() => setError(null)}
-                    className="login-alert rounded-xl"
-                  />
-                </motion.div>
-              )}
-            </AnimatePresence>
-
-            <Form
-              form={form}
-              onFinish={handleSubmit}
-              layout="vertical"
-              requiredMark={false}
-              className="space-y-5"
-            >
-              <Form.Item
-                name="username"
-                rules={[{ required: true, message: '请输入用户名' }]}
-                className="login-input"
-              >
-                <div className="relative group">
-                  <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                    <User className="w-5 h-5 text-purple-300 group-hover:text-purple-200 transition-colors" />
-                  </div>
-                  <Input
-                    placeholder="用户名"
-                    autoComplete="username"
-                    className="h-14 pl-12 pr-4 rounded-xl transition-all"
-                  />
-                </div>
-              </Form.Item>
-
-              <Form.Item
-                name="password"
-                rules={[{ required: true, message: '请输入密码' }]}
-                className="login-input"
-              >
-                <div className="relative group">
-                  <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none z-10">
-                    <Lock className="w-5 h-5 text-purple-300 group-hover:text-purple-200 transition-colors" />
-                  </div>
-                  <Input.Password
-                    placeholder="密码"
-                    autoComplete="current-password"
-                    className="h-14 pl-12 pr-4 rounded-xl transition-all"
-                  />
-                </div>
-              </Form.Item>
-
-              <Form.Item className="mb-0">
-                <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
-                  <Button
-                    type="primary"
-                    htmlType="submit"
-                    loading={loading}
-                    block
-                    className="login-button h-14 rounded-xl text-base font-semibold transition-all"
-                    // icon={!loading && <ArrowRight className="w-5 h-5 ml-2" />}
-                  >
-                    {loading ? '登录中...' : '登 录'}
-                  </Button>
-                </motion.div>
-              </Form.Item>
-            </Form>
-
-            {/* 提示信息 */}
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ delay: 0.5, duration: 0.5 }}
-              className="mt-6 pt-4 border-t border-white/10"
-            >
-              <div className="bg-purple-500/10 rounded-xl p-4 border border-purple-400/20">
-                <p className="text-purple-200/70 text-sm text-center mb-2">
-                  🔐 初始超级管理员账号
-                </p>
-                <div className="flex justify-center space-x-6 text-sm">
-                  <div className="text-center">
-                    <span className="text-purple-300/60 block mb-1">用户名</span>
-                    <code className="text-white font-mono bg-white/10 px-3 py-1 rounded-lg">admin</code>
-                  </div>
-                  <div className="text-center">
-                    <span className="text-purple-300/60 block mb-1">密码</span>
-                    <code className="text-white font-mono bg-white/10 px-3 py-1 rounded-lg">admin</code>
-                  </div>
-                </div>
-              </div>
             </motion.div>
-          </motion.div>
+            
+            <motion.div
+              initial={{ y: 10, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              transition={{ delay: 0.3, duration: 0.5 }}
+            >
+              <h1 className="text-3xl font-bold text-slate-900 mb-2 font-display">
+                Ai Web Test
+              </h1>
+              <p className="text-slate-500 text-sm tracking-wide">
+                企业级智能自动化测试平台
+              </p>
+            </motion.div>
+          </div>
 
-          {/* 底部装饰 */}
+          <AnimatePresence mode="wait">
+            {error && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                className="mb-6 overflow-hidden"
+              >
+                <Alert
+                  message={error}
+                  type="error"
+                  showIcon
+                  closable
+                  onClose={() => setError(null)}
+                  className="rounded-xl border-red-100 bg-red-50 text-red-600"
+                />
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          <Form
+            form={form}
+            onFinish={handleSubmit}
+            layout="vertical"
+            requiredMark={false}
+            size="large"
+            className="space-y-4"
+          >
+            <Form.Item
+              name="username"
+              rules={[{ required: true, message: '请输入用户名' }]}
+              className="mb-4"
+            >
+              <Input
+                prefix={<UserOutlined className="text-slate-400 mr-2" />}
+                placeholder="用户名"
+                className="h-12 bg-slate-50 border-slate-200 hover:bg-white focus:bg-white transition-all rounded-xl"
+              />
+            </Form.Item>
+
+            <Form.Item
+              name="password"
+              rules={[{ required: true, message: '请输入密码' }]}
+              className="mb-6"
+            >
+              <Input.Password
+                prefix={<LockOutlined className="text-slate-400 mr-2" />}
+                placeholder="密码"
+                className="h-12 bg-slate-50 border-slate-200 hover:bg-white focus:bg-white transition-all rounded-xl"
+              />
+            </Form.Item>
+
+            <Form.Item className="mb-2">
+              <Button
+                type="primary"
+                htmlType="submit"
+                loading={loading}
+                block
+                className="h-12 rounded-xl bg-sky-500 hover:bg-sky-600 border-none shadow-lg shadow-sky-500/30 text-base font-medium transition-all hover:scale-[1.02] active:scale-[0.98]"
+              >
+                {loading ? '登录中...' : '登 录'}
+              </Button>
+            </Form.Item>
+          </Form>
+
+          {/* 底部提示 */}
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            transition={{ delay: 0.6, duration: 0.5 }}
-            className="mt-4 text-center"
+            transition={{ delay: 0.6 }}
+            className="mt-8 pt-6 border-t border-slate-100"
           >
-            <p className="text-purple-300/50 text-sm">
-              {/* © 2025 Sakura AI. Powered by AI & Automation */}
-              <span className="text-purple-300/50 text-sm">
-                Sakura AI. Powered by AI & Automation
-              </span>
-              <br />
-              <span className="text-purple-300/50 text-sm">
-                Copyright © 2019-2025 SakuraTech. All rights reserved.
-              </span>
-            </p>
+            <div className="bg-blue-50/50 rounded-xl p-4">
+              <p className="text-slate-500 text-xs text-center mb-3 font-medium uppercase tracking-wider">
+                体验账号
+              </p>
+              <div className="flex justify-center gap-8 text-sm">
+                <div className="text-center">
+                  <span className="text-slate-400 text-xs block mb-1">Username</span>
+                  <code className="bg-white text-sky-600 px-2 py-1 rounded border border-blue-100 font-mono">admin</code>
+                </div>
+                <div className="text-center">
+                  <span className="text-slate-400 text-xs block mb-1">Password</span>
+                  <code className="bg-white text-sky-600 px-2 py-1 rounded border border-blue-100 font-mono">admin</code>
+                </div>
+              </div>
+            </div>
           </motion.div>
-        </motion.div>
-      </div>
+        </div>
+
+        <div className="text-center mt-8">
+          <p className="text-slate-400 text-xs">
+            © {new Date().getFullYear()} Ai Web Test. Powered by AI & Automation
+          </p>
+        </div>
+      </motion.div>
     </div>
   );
 };

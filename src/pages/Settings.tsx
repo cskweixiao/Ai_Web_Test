@@ -383,7 +383,7 @@ export function Settings() {
       
       const configData = await settingsService.exportSettings();
       const timestamp = new Date().toISOString().slice(0, 19).replace(/:/g, '-');
-      const filename = `Sakura AI-config-${timestamp}.json`;
+      const filename = `Ai Web Test-config-${timestamp}.json`;
       
       ImportExportManager.downloadConfig(configData, filename);
       setSaveMessage({ type: 'success', text: '配置导出成功' });

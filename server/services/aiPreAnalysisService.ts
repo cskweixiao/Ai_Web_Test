@@ -341,8 +341,8 @@ ${this.buildPageSummary(axureData)}
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${config.apiKey}`,
-          'HTTP-Referer': 'https://Sakura AI-ai.com',
-          'X-Title': 'Sakura AI AI Testing Platform',
+          'HTTP-Referer': 'https://Ai Web Test-ai.com',
+          'X-Title': 'Ai Web Test AI Testing Platform',
           'Content-Type': 'application/json'
         },
         body: JSON.stringify(requestBody)
