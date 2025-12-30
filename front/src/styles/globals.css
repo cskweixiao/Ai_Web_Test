@@ -1,0 +1,588 @@
+/* 全局样式和深色模式变量 */
+
+/* CSS 变量定义 */
+:root {
+  /* 浅色模式变量 */
+  --color-bg-primary: #ffffff;
+  --color-bg-secondary: #f9fafb;
+  --color-text-primary: #111827;
+  --color-text-secondary: #6b7280;
+  --color-border: #e5e7eb;
+  --color-shadow: rgba(0, 0, 0, 0.1);
+
+  /* 🔥 新增：语义化颜色 */
+  --color-success: #10b981;
+  --color-success-light: #d1fae5;
+  --color-warning: #f59e0b;
+  --color-warning-light: #fef3c7;
+  --color-error: #ef4444;
+  --color-error-light: #fee2e2;
+  --color-info: #06b6d4;
+  --color-info-light: #cffafe;
+
+  /* 🔥 新增：中性色阶 */
+  --color-gray-50: #f9fafb;
+  --color-gray-100: #f3f4f6;
+  --color-gray-200: #e5e7eb;
+  --color-gray-300: #d1d5db;
+  --color-gray-400: #9ca3af;
+  --color-gray-500: #6b7280;
+  --color-gray-600: #4b5563;
+  --color-gray-700: #374151;
+  --color-gray-800: #1f2937;
+  --color-gray-900: #111827;
+
+  /* 🔥 新增：品牌色渐变 */
+  --gradient-primary: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%);
+  --gradient-success: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  --gradient-warning: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+  --gradient-error: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+}
+
+.dark {
+  /* 深色模式变量 */
+  --color-bg-primary: #1e293b;
+  --color-bg-secondary: #0f172a;
+  --color-text-primary: #f1f5f9;
+  --color-text-secondary: #cbd5e1;
+  --color-border: #334155;
+  --color-shadow: rgba(0, 0, 0, 0.3);
+
+  /* 🔥 深色模式语义化颜色 */
+  --color-success: #22c55e;
+  --color-success-light: #064e3b;
+  --color-warning: #fbbf24;
+  --color-warning-light: #78350f;
+  --color-error: #f87171;
+  --color-error-light: #7f1d1d;
+  --color-info: #22d3ee;
+  --color-info-light: #164e63;
+}
+
+/* 基础样式 */
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background-color: var(--color-bg-secondary);
+  color: var(--color-text-primary);
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+/* 滚动条样式 */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--color-bg-secondary);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-text-secondary);
+}
+
+/* 🔥 Typography 系统 */
+.text-display {
+  font-size: 3rem;       /* 48px - 大标题 */
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+}
+
+.text-heading {
+  font-size: 2rem;       /* 32px - 页面标题 */
+  font-weight: 600;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+}
+
+.text-title {
+  font-size: 1.25rem;    /* 20px - 卡片标题 */
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.text-body {
+  font-size: 1rem;       /* 16px - 正文 */
+  font-weight: 400;
+  line-height: 1.5;
+}
+
+.text-caption {
+  font-size: 0.875rem;   /* 14px - 辅助文字 */
+  color: var(--color-text-secondary);
+  line-height: 1.4;
+}
+
+.text-small {
+  font-size: 0.75rem;    /* 12px - 最小文字 */
+  color: var(--color-text-secondary);
+  line-height: 1.33;
+}
+
+/* 🔥 间距系统 (8px Grid) */
+.spacing-1 { padding: 0.5rem; }   /* 8px */
+.spacing-2 { padding: 1rem; }     /* 16px */
+.spacing-3 { padding: 1.5rem; }   /* 24px */
+.spacing-4 { padding: 2rem; }     /* 32px */
+.spacing-5 { padding: 3rem; }     /* 48px */
+.spacing-6 { padding: 4rem; }     /* 64px */
+
+/* 自定义工具类 */
+.glass-effect {
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.dark .glass-effect {
+  background: rgba(30, 41, 59, 0.3);
+  border: 1px solid rgba(51, 65, 85, 0.3);
+}
+
+.gradient-text {
+  background: var(--gradient-primary);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.gradient-success-text {
+  background: var(--gradient-success);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.shadow-glow {
+  box-shadow: 0 0 20px rgba(59, 130, 246, 0.3);
+}
+
+.dark .shadow-glow {
+  box-shadow: 0 0 20px rgba(59, 130, 246, 0.2);
+}
+
+/* 动画 */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.3s ease-out;
+}
+
+@keyframes pulse-glow {
+  0%, 100% {
+    box-shadow: 0 0 5px rgba(59, 130, 246, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 20px rgba(59, 130, 246, 0.8);
+  }
+}
+
+.animate-pulse-glow {
+  animation: pulse-glow 2s ease-in-out infinite;
+}
+
+/* 🔥 Tab栏相关样式 */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+/* 添加第三层背景色 */
+:root {
+  --color-bg-tertiary: #f3f4f6;
+}
+
+.dark {
+  --color-bg-tertiary: #1e293b;
+}
+
+/* 🔥 Ant Design 组件样式覆盖 - 统一字体大小 */
+
+/* Table 组件 */
+.ant-table {
+  font-size: 14px; /* 保持与系统 text-sm 一致 */
+}
+
+.ant-table-thead > tr > th {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-gray-700);
+  background-color: var(--color-gray-50);
+}
+
+.dark .ant-table-thead > tr > th {
+  color: var(--color-gray-300);
+  background-color: var(--color-gray-800);
+}
+
+.ant-table-tbody > tr > td {
+  font-size: 14px;
+  color: var(--color-gray-900);
+}
+
+.dark .ant-table-tbody > tr > td {
+  color: var(--color-gray-100);
+}
+
+/* Button 组件 */
+.ant-btn {
+  font-size: 14px;
+}
+
+.ant-btn-lg {
+  font-size: 16px;
+}
+
+.ant-btn-sm {
+  font-size: 12px;
+}
+
+/* Modal 组件 */
+.ant-modal-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--color-gray-900);
+}
+
+.dark .ant-modal-title {
+  color: var(--color-gray-100);
+}
+
+.ant-modal-content {
+  background-color: var(--color-bg-primary);
+}
+
+.dark .ant-modal-content {
+  background-color: var(--color-gray-800);
+}
+
+/* Form 组件 */
+.ant-form-item-label > label {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-gray-700);
+}
+
+.dark .ant-form-item-label > label {
+  color: var(--color-gray-300);
+}
+
+.ant-input,
+.ant-input-password,
+.ant-select-selector {
+  font-size: 14px;
+}
+
+/* 🔥 去掉所有输入框点击后的黑边（outline） */
+input:focus,
+textarea:focus,
+select:focus {
+  outline: none !important;
+}
+
+/* 确保使用 focus:ring 或其他样式替代 outline */
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  outline: none !important;
+}
+
+/* Tag 组件 */
+.ant-tag {
+  font-size: 12px;
+}
+
+/* Pagination 组件 */
+.ant-pagination {
+  font-size: 14px;
+}
+
+/* Message 组件 */
+.ant-message-notice-content {
+  font-size: 14px;
+}
+
+/* Popconfirm 组件 */
+.ant-popconfirm-message-title {
+  font-size: 14px;
+}
+
+.ant-popconfirm-description {
+  font-size: 14px;
+}
+
+/* 🔥 用户管理表格特定样式 */
+.user-management-table .ant-table-thead > tr > th {
+  background-color: #f9fafb;
+  font-weight: 600;
+  padding: 16px;
+  border-bottom: 2px solid #e5e7eb;
+}
+
+.dark .user-management-table .ant-table-thead > tr > th {
+  background-color: #1f2937;
+  border-bottom-color: #374151;
+}
+
+.user-management-table .ant-table-tbody > tr > td {
+  padding: 16px;
+  vertical-align: middle;
+}
+
+.user-management-table .ant-table-tbody > tr:hover > td {
+  background-color: #f3f4f6;
+}
+
+.dark .user-management-table .ant-table-tbody > tr:hover > td {
+  background-color: #374151;
+}
+
+.user-management-table .ant-table-tbody > tr {
+  transition: all 0.2s ease;
+}
+
+/* Table 边框优化 */
+.user-management-table .ant-table {
+  border-radius: 0;
+}
+
+.user-management-table .ant-table-container {
+  border-radius: 0;
+}
+
+/* 🔥 优化所有 select 下拉箭头样式 */
+select {
+  /* 隐藏默认箭头 */
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  
+  /* 添加自定义箭头图标 */
+  background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
+  background-repeat: no-repeat;
+  background-position: right 0.75rem center;
+  background-size: 1.25em 1.25em;
+  
+  /* 确保有足够空间显示箭头 */
+  padding-right: 2.5rem !important;
+  
+  /* 平滑过渡效果 */
+  transition: all 0.2s ease;
+}
+
+/* hover 状态 - 箭头颜色变深 */
+select:hover:not(:disabled) {
+  background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23374151' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
+}
+
+/* focus 状态 - 箭头颜色使用主题色 */
+select:focus:not(:disabled) {
+  background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%233b82f6' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
+}
+
+/* disabled 状态 - 箭头颜色变淡 */
+select:disabled {
+  background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23d1d5db' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
+}
+
+/* 深色模式下的 select 箭头样式 */
+.dark select {
+  background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%239ca3af' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
+}
+
+.dark select:hover:not(:disabled) {
+  background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23cbd5e1' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
+}
+
+.dark select:focus:not(:disabled) {
+  background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2360a5fa' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
+}
+
+.dark select:disabled {
+  background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%234b5563' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
+}
+
+/* 针对 Ant Design Select 组件的箭头优化 */
+.ant-select-arrow {
+  color: #6b7280 !important;
+  transition: all 0.2s ease !important;
+  font-size: 12px !important;
+}
+
+.ant-select-arrow .anticon {
+  font-size: 12px !important;
+  transition: all 0.2s ease !important;
+}
+
+.ant-select:hover .ant-select-arrow {
+  color: #374151 !important;
+}
+
+.ant-select:hover .ant-select-arrow .anticon {
+  color: #374151 !important;
+}
+
+.ant-select-focused .ant-select-arrow,
+.ant-select-open .ant-select-arrow {
+  color: #3b82f6 !important;
+}
+
+.ant-select-focused .ant-select-arrow .anticon,
+.ant-select-open .ant-select-arrow .anticon {
+  color: #3b82f6 !important;
+}
+
+.ant-select-disabled .ant-select-arrow {
+  color: #d1d5db !important;
+}
+
+.ant-select-disabled .ant-select-arrow .anticon {
+  color: #d1d5db !important;
+}
+
+/* 优化箭头图标本身 */
+.ant-select-arrow .anticon svg {
+  transition: all 0.2s ease !important;
+}
+
+.ant-select:hover .ant-select-arrow .anticon svg {
+  transform: translateY(1px);
+}
+
+.ant-select-open .ant-select-arrow .anticon svg {
+  transform: rotate(180deg);
+}
+
+/* 深色模式支持 */
+.dark .ant-select-arrow {
+  color: #9ca3af !important;
+}
+
+.dark .ant-select-arrow .anticon {
+  color: #9ca3af !important;
+}
+
+.dark .ant-select:hover .ant-select-arrow {
+  color: #cbd5e1 !important;
+}
+
+.dark .ant-select:hover .ant-select-arrow .anticon {
+  color: #cbd5e1 !important;
+}
+
+.dark .ant-select-focused .ant-select-arrow,
+.dark .ant-select-open .ant-select-arrow {
+  color: #60a5fa !important;
+}
+
+.dark .ant-select-focused .ant-select-arrow .anticon,
+.dark .ant-select-open .ant-select-arrow .anticon {
+  color: #60a5fa !important;
+}
+
+.dark .ant-select-disabled .ant-select-arrow {
+  color: #4b5563 !important;
+}
+
+.dark .ant-select-disabled .ant-select-arrow .anticon {
+  color: #4b5563 !important;
+}
+
+/* 优化 Select 选择器的整体外观 */
+.ant-select-selector {
+  transition: all 0.2s ease !important;
+}
+
+.ant-select:hover .ant-select-selector {
+  border-color: #d1d5db !important;
+}
+
+.ant-select-focused .ant-select-selector,
+.ant-select-open .ant-select-selector {
+  border-color: #3b82f6 !important;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1) !important;
+}
+
+/* 针对页面中自定义样式的 Select 组件 */
+[class*="ant-select-selector"]:not([class*="ant-select-disabled"]) {
+  transition: all 0.2s ease !important;
+}
+
+/* 确保下拉箭头在所有情况下都显示 */
+.ant-select-show-arrow .ant-select-arrow {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+
+/* 🔥 表格列宽可拖动样式 - 使用原有分割线 */
+.functional-test-table .ant-table-thead > tr > th {
+  position: relative;
+}
+
+.column-resize-handle {
+  position: absolute;
+  right: -1px;
+  top: 10px;
+  bottom: 10px;
+  width: 5px;
+  cursor: col-resize;
+  z-index: 999;
+  background: transparent;
+}
+
+/* 悬停时高亮分割线 */
+.column-resize-handle:hover {
+  background: linear-gradient(to right, transparent 2px, #3b82f6 2px, #3b82f6 5px, transparent 5px);
+}
+
+/* 拖动时高亮分割线 */
+.column-resize-handle:active {
+  background: linear-gradient(to right, transparent 2px, #2563eb 2px, #2563eb 5px, transparent 5px);
+}
+
+/* 深色模式 */
+.dark .column-resize-handle:hover {
+  background: linear-gradient(to right, transparent 2px, #60a5fa 2px, #60a5fa 5px, transparent 5px);
+}
+
+.dark .column-resize-handle:active {
+  background: linear-gradient(to right, transparent 2px, #3b82f6 2px, #3b82f6 5px, transparent 5px);
+}
+
+/* 🔥 表格排序图标大小 */
+.functional-test-table .ant-table-column-sorter {
+  font-size: 12px;
+}
+
+.functional-test-table .ant-table-column-sorter .anticon {
+  font-size: 12px;
+}

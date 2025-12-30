@@ -1,0 +1,43 @@
+<svg width="200" height="200" viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <filter id="shadow" x="0" y="0" width="200" height="200" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feFlood flood-opacity="0" result="BackgroundImageFix"/>
+      <feColorMatrix in="SourceAlpha" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 127 0" result="hardAlpha"/>
+      <feOffset dy="4"/>
+      <feGaussianBlur stdDeviation="4"/>
+      <feComposite in2="hardAlpha" operator="out"/>
+      <feColorMatrix type="matrix" values="0 0 0 0 0.054902 0 0 0 0 0.647059 0 0 0 0 0.913725 0 0 0 0.25 0"/>
+      <feBlend mode="normal" in2="BackgroundImageFix" result="effect1_dropShadow"/>
+      <feBlend mode="normal" in="SourceGraphic" in2="effect1_dropShadow" result="shape"/>
+    </filter>
+  </defs>
+  
+  <g filter="url(#shadow)">
+    <!-- 顶部面 - 最浅色 -->
+    <path d="M100 20 L169.28 60 L100 100 L30.72 60 Z" fill="#e0f2fe" stroke="#38bdf8" stroke-width="1.5" stroke-linejoin="round"/>
+    
+    <!-- 右侧面 - 中间色 -->
+    <path d="M169.28 60 L169.28 140 L100 180 L100 100 Z" fill="#0ea5e9" stroke="#0ea5e9" stroke-width="1.5" stroke-linejoin="round"/>
+    
+    <!-- 左侧面 - 最深色 -->
+    <path d="M30.72 60 L100 100 L100 180 L30.72 140 Z" fill="#0284c7" stroke="#0284c7" stroke-width="1.5" stroke-linejoin="round"/>
+    
+    <!-- 顶部网格线 -->
+    <path d="M53.8 46.67 L123.1 86.67" stroke="#7dd3fc" stroke-width="1"/>
+    <path d="M76.9 33.33 L146.2 73.33" stroke="#7dd3fc" stroke-width="1"/>
+    <path d="M123.1 46.67 L53.8 86.67" stroke="#7dd3fc" stroke-width="1"/>
+    <path d="M146.2 33.33 L76.9 73.33" stroke="#7dd3fc" stroke-width="1"/>
+    
+    <!-- 右侧网格线 -->
+    <path d="M123.1 113.33 L169.28 86.67" stroke="#7dd3fc" stroke-width="1"/>
+    <path d="M123.1 140 L169.28 113.33" stroke="#7dd3fc" stroke-width="1"/>
+    <path d="M123.1 86.67 L123.1 166.67" stroke="#7dd3fc" stroke-width="1"/>
+    <path d="M146.2 73.33 L146.2 153.33" stroke="#7dd3fc" stroke-width="1"/>
+
+    <!-- 左侧网格线 -->
+    <path d="M30.72 86.67 L76.9 113.33" stroke="#38bdf8" stroke-width="1"/>
+    <path d="M30.72 113.33 L76.9 140" stroke="#38bdf8" stroke-width="1"/>
+    <path d="M53.8 73.33 L53.8 153.33" stroke="#38bdf8" stroke-width="1"/>
+    <path d="M76.9 86.67 L76.9 166.67" stroke="#38bdf8" stroke-width="1"/>
+  </g>
+</svg>
