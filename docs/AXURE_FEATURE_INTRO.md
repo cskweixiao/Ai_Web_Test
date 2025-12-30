@@ -112,7 +112,7 @@
 | 层级 | 技术 | 说明 |
 |------|------|------|
 | **前端** | React 18 + TypeScript | 类型安全 |
-| **UI 框架** | Ant Design + Tailwind CSS | 企业级组件 |
+| **UI 框架** | Ant Design + Tailwind CSS | 现代化组件 |
 | **动画** | Framer Motion | 流畅交互 |
 | **后端** | Node.js + Express | RESTful API |
 | **数据库** | MySQL + Prisma | 关系型存储 |

@@ -31,7 +31,7 @@
 - **TypeScript** - 类型安全的JavaScript
 - **Vite** - 快速构建工具
 - **Tailwind CSS** - 原子化CSS框架
-- **Ant Design** - 企业级UI组件库
+- **Ant Design** - React UI组件库
 - **Zustand** - 轻量级状态管理
 - **React Router** - 前端路由
 - **Framer Motion** - 动画库
