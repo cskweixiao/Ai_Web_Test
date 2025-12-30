@@ -55,7 +55,7 @@ export class LLMConfigManager {
         settings = await settingsService.getLLMSettings();
       } else {
         // 后端环境：使用动态导入避免打包服务器端代码
-        const { BackendSettingsService } = await import('../../server/services/settingsService.ts');
+        const { BackendSettingsService } = await import('../../../backend/server/services/settingsService.ts');
         settings = await BackendSettingsService.getInstance().getLLMSettings();
       }
       
@@ -240,7 +240,7 @@ export class LLMConfigManager {
         settings = await settingsService.getLLMSettings();
       } else {
         // 后端环境：使用动态导入避免打包服务器端代码
-        const { BackendSettingsService } = await import('../../server/services/settingsService.ts');
+        const { BackendSettingsService } = await import('../../../backend/server/services/settingsService.ts');
         settings = await BackendSettingsService.getInstance().getLLMSettings();
       }
       

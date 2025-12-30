@@ -45,7 +45,7 @@ import { FunctionalCaseSelectModal } from '../components/FunctionalCaseSelectMod
 import { getCaseTypeInfo } from '../utils/caseTypeHelper';
 import { Tag, Tooltip } from 'antd';
 import { useAuth } from '../contexts/AuthContext';
-import { formatDateTime } from '../../server/utils/timezone';
+import { formatDateTime } from '../../../backend/server/utils/timezone';
 
 export function TestPlanDetail() {
   const navigate = useNavigate();
