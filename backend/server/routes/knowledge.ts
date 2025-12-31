@@ -252,6 +252,37 @@ router.post('/:systemName/import-json', upload.single('file'), async (req: Reque
 });
 
 /**
+ * DELETE /api/v1/knowledge/:systemName/:knowledgeId
+ * 删除指定的单条知识
+ */
+router.delete('/:systemName/:knowledgeId', async (req: Request, res: Response) => {
+  try {
+    const { systemName, knowledgeId } = req.params;
+
+    if (!knowledgeId) {
+      return res.status(400).json({ error: '知识ID不能为空' });
+    }
+
+    await knowledgeService.deleteKnowledge(
+      systemName === 'default' ? undefined : systemName,
+      knowledgeId
+    );
+
+    res.json({
+      message: '知识删除成功',
+      systemName: systemName === 'default' ? '默认' : systemName,
+      knowledgeId
+    });
+  } catch (error) {
+    console.error('删除知识失败:', error);
+    res.status(500).json({
+      error: '删除知识失败',
+      message: error instanceof Error ? error.message : '未知错误'
+    });
+  }
+});
+
+/**
  * DELETE /api/v1/knowledge/:systemName/clear
  * 清空指定系统的知识库
  */

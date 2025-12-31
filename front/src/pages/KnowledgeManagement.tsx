@@ -210,6 +210,27 @@ const KnowledgeManagement: React.FC = () => {
     }
   };
 
+  const handleDelete = async (knowledge: KnowledgeItem) => {
+    if (!knowledge.id) {
+      message.error('知识ID不存在，无法删除');
+      return;
+    }
+
+    if (!selectedSystem) {
+      message.warning('请先选择系统');
+      return;
+    }
+
+    try {
+      await knowledgeService.deleteKnowledge(selectedSystem, knowledge.id);
+      message.success('删除成功');
+      loadKnowledgeAndStats();
+    } catch (error: any) {
+      message.error('删除失败: ' + (error.message || '未知错误'));
+      console.error(error);
+    }
+  };
+
   const handleBatchImport = async (file: File) => {
     if (!selectedSystem) {
       message.warning('请先选择系统');
@@ -313,7 +334,7 @@ const KnowledgeManagement: React.FC = () => {
     {
       title: '操作',
       key: 'action',
-      width: 120,
+      width: 180,
       fixed: 'right',
       render: (_, record) => (
         <Space>
@@ -325,6 +346,23 @@ const KnowledgeManagement: React.FC = () => {
           >
             编辑
           </Button>
+          <Popconfirm
+            title="确认删除"
+            description={`确定要删除知识 "${record.title}" 吗？此操作不可恢复。`}
+            onConfirm={() => handleDelete(record)}
+            okText="确定"
+            cancelText="取消"
+            okButtonProps={{ danger: true }}
+          >
+            <Button
+              type="link"
+              size="small"
+              danger
+              icon={<DeleteOutlined />}
+            >
+              删除
+            </Button>
+          </Popconfirm>
         </Space>
       )
     }

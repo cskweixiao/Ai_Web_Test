@@ -236,6 +236,20 @@ class KnowledgeService {
   }
 
   /**
+   * 删除单条知识
+   */
+  async deleteKnowledge(systemName: string, knowledgeId: string): Promise<void> {
+    const response = await fetch(
+      `${API_BASE_URL}/${encodeURIComponent(systemName)}/${encodeURIComponent(knowledgeId)}`,
+      {
+        method: 'DELETE',
+        headers: getAuthHeaders()
+      }
+    );
+    return handleResponse(response);
+  }
+
+  /**
    * 清空系统知识库
    */
   async clearKnowledge(systemName: string): Promise<void> {
